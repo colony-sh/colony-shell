@@ -26,3 +26,6 @@
 [2025-12-11 01:00] DECISION: Add prompt caching support (SDK013) - cost optimization feature
 [2025-12-11 01:00] DECISION: Add interactive REPL (SDK015) - testing/demo tool
 [2025-12-11 01:00] PROGRESS: Renumbered features: SDK013=caching, SDK014=Bedrock, SDK015=REPL, SDK016=docs
+[2025-12-11 01:05] INSIGHT: Prompt caching critical for Colony Shell - cache system prompt + tools
+[2025-12-11 01:05] INSIGHT: REPL useful for SDK testing, will inform Colony Shell REPL design
+[2025-12-11 01:05] DECISION: Colony Shell itself should have agent REPL mode (add to backlog)
