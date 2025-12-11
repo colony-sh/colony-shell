@@ -410,6 +410,20 @@ If `.claude/system/` does not exist, create it:
       "priority": 4,
       "dependencies": ["SDK011"],
       "notes": []
+    },
+    {
+      "id": "SDK013",
+      "name": "Amazon Bedrock support",
+      "description": "Support Claude models via AWS Bedrock. Implement AWS SigV4 signing, bedrock-runtime endpoint, handle different request/response envelope format.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": ["SDK003", "SDK005"],
+      "notes": [
+        "Bedrock uses AWS SigV4 authentication instead of API keys",
+        "Endpoint: bedrock-runtime.{region}.amazonaws.com",
+        "Request/response wrapped in Bedrock envelope",
+        "Use aws-config and aws-sigv4 crates"
+      ]
     }
   ]
 }
@@ -444,32 +458,36 @@ If `.claude/system/` does not exist, create it:
 8. Implement streaming and non-streaming — both modes fully supported
 9. Tool use with programmatic calling — disable_user_input field supported
 10. Handle all error cases — network, API errors, rate limits
+11. Support Amazon Bedrock deployment — AWS SigV4 auth, different endpoint
+12. Abstract over Anthropic vs Bedrock differences — unified client interface
 
 ## Technical Stack
 
-11. HTTP client: reqwest with rustls
-12. Async runtime: tokio
-13. Serialization: serde, serde_json
-14. Error handling: thiserror for library, anyhow for examples
-15. Streaming: tokio-stream, futures for Stream trait
-16. SSE parsing: eventsource-stream or custom implementation
-17. Testing: tokio::test for async tests
+13. HTTP client: reqwest with rustls
+14. Async runtime: tokio
+15. Serialization: serde, serde_json
+16. Error handling: thiserror for library, anyhow for examples
+17. Streaming: tokio-stream, futures for Stream trait
+18. SSE parsing: eventsource-stream or custom implementation
+19. AWS integration: aws-config, aws-sigv4, aws-types for Bedrock
+20. Testing: tokio::test for async tests
 
 ## Code Quality
 
-18. All public APIs have doc comments with examples
-19. Integration tests with real API (gated by ANTHROPIC_API_KEY env)
-20. Unit tests for parsing, error handling, builders
-21. No unwrap() in library code — always propagate errors
-22. Use tracing for structured logging, not println!
-23. Clippy clean with deny(warnings) in CI
+21. All public APIs have doc comments with examples
+22. Integration tests with real API (gated by ANTHROPIC_API_KEY and AWS_PROFILE env)
+23. Unit tests for parsing, error handling, builders
+24. No unwrap() in library code — always propagate errors
+25. Use tracing for structured logging, not println!
+26. Clippy clean with deny(warnings) in CI
 
 ## Non-Goals
 
-24. NOT a wrapper around TypeScript SDK
-25. NOT supporting Claude 2 legacy API
-26. NOT implementing client-side prompt caching (API feature)
-27. NOT building a REPL or chat interface (examples only)
+27. NOT a wrapper around TypeScript SDK
+28. NOT supporting Claude 2 legacy API
+29. NOT implementing client-side prompt caching (API feature)
+30. NOT building a REPL or chat interface (examples only)
+31. NOT supporting Azure OpenAI or other Claude deployments (Anthropic + Bedrock only)
 ```
 
 ---
@@ -692,6 +710,256 @@ Then progressively add features per the roadmap.
 
 ---
 
+## Amazon Bedrock Support (SDK013)
+
+### Overview
+
+Amazon Bedrock provides Claude models via AWS infrastructure. Key differences from Anthropic API:
+
+| Aspect | Anthropic API | AWS Bedrock |
+|--------|---------------|-------------|
+| **Authentication** | API key (x-api-key header) | AWS SigV4 signing |
+| **Endpoint** | api.anthropic.com | bedrock-runtime.{region}.amazonaws.com |
+| **Request format** | Direct JSON | Wrapped in Bedrock envelope |
+| **Response format** | Direct JSON | Wrapped in Bedrock envelope |
+| **Model IDs** | `claude-3-5-sonnet-20241022` | `anthropic.claude-3-5-sonnet-20241022-v2:0` |
+| **Streaming** | SSE | AWS event stream |
+
+### Client Interface Design
+
+Unified client that abstracts over both backends:
+
+```rust
+use aws_config::BehaviorVersion;
+
+pub enum ClaudeBackend {
+    Anthropic { api_key: String },
+    Bedrock { region: String },
+}
+
+pub struct ClaudeClient {
+    backend: ClaudeBackend,
+    http: reqwest::Client,
+}
+
+impl ClaudeClient {
+    /// Create client for Anthropic API
+    pub fn anthropic(api_key: impl Into<String>) -> Self {
+        Self {
+            backend: ClaudeBackend::Anthropic {
+                api_key: api_key.into(),
+            },
+            http: reqwest::Client::new(),
+        }
+    }
+
+    /// Create client for AWS Bedrock
+    pub async fn bedrock(region: impl Into<String>) -> Result<Self> {
+        // Load AWS credentials from environment/config
+        let _config = aws_config::defaults(BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.into()))
+            .load()
+            .await;
+
+        Ok(Self {
+            backend: ClaudeBackend::Bedrock {
+                region: region.into(),
+            },
+            http: reqwest::Client::new(),
+        })
+    }
+
+    /// Send message (works with both backends)
+    pub async fn send_message(
+        &self,
+        request: MessagesRequest,
+    ) -> Result<MessagesResponse> {
+        match &self.backend {
+            ClaudeBackend::Anthropic { .. } => {
+                self.send_anthropic(request).await
+            }
+            ClaudeBackend::Bedrock { .. } => {
+                self.send_bedrock(request).await
+            }
+        }
+    }
+}
+```
+
+### Bedrock Request Envelope
+
+Bedrock wraps requests:
+
+```rust
+// Internal type, not exposed to users
+#[derive(Serialize)]
+struct BedrockInvokeRequest {
+    #[serde(flatten)]
+    messages_request: MessagesRequest,
+
+    // Bedrock-specific fields
+    anthropic_version: String,
+}
+
+// Bedrock wraps responses
+#[derive(Deserialize)]
+struct BedrockInvokeResponse {
+    #[serde(flatten)]
+    messages_response: MessagesResponse,
+
+    // Bedrock metadata
+    #[serde(rename = "amazon-bedrock-invocationMetrics")]
+    metrics: Option<BedrockMetrics>,
+}
+```
+
+### AWS SigV4 Signing
+
+Use `aws-sigv4` crate for request signing:
+
+```rust
+use aws_sigv4::http_request::{sign, SigningSettings, SigningParams};
+use aws_credential_types::Credentials;
+
+async fn send_bedrock(&self, request: MessagesRequest) -> Result<MessagesResponse> {
+    let region = match &self.backend {
+        ClaudeBackend::Bedrock { region } => region,
+        _ => unreachable!(),
+    };
+
+    // Load AWS credentials
+    let config = aws_config::load_from_env().await;
+    let credentials = config.credentials_provider()
+        .expect("credentials required")
+        .provide_credentials()
+        .await?;
+
+    // Build HTTP request
+    let url = format!(
+        "https://bedrock-runtime.{}.amazonaws.com/model/{}/invoke",
+        region,
+        normalize_model_id(&request.model)
+    );
+
+    let body = serde_json::to_vec(&BedrockInvokeRequest {
+        messages_request: request,
+        anthropic_version: "bedrock-2023-05-31".into(),
+    })?;
+
+    // Sign request with SigV4
+    let signing_params = SigningParams::builder()
+        .access_key(credentials.access_key_id())
+        .secret_key(credentials.secret_access_key())
+        .region(region)
+        .service_name("bedrock")
+        .build()?;
+
+    let signable_request = /* ... build signable request ... */;
+    let signed = sign(signable_request, &signing_params)?;
+
+    // Send signed request
+    let response = self.http
+        .post(&url)
+        .headers(signed.headers())
+        .body(body)
+        .send()
+        .await?;
+
+    // Unwrap Bedrock envelope
+    let bedrock_response: BedrockInvokeResponse = response.json().await?;
+    Ok(bedrock_response.messages_response)
+}
+```
+
+### Model ID Normalization
+
+```rust
+fn normalize_model_id(model: &str) -> String {
+    // Anthropic: claude-3-5-sonnet-20241022
+    // Bedrock:   anthropic.claude-3-5-sonnet-20241022-v2:0
+
+    if model.starts_with("anthropic.") {
+        model.to_string()
+    } else {
+        // Convert Anthropic format to Bedrock format
+        format!("anthropic.{}", model)
+    }
+}
+```
+
+### Bedrock Streaming
+
+Bedrock uses AWS event stream format (not SSE):
+
+```rust
+// For streaming, Bedrock uses invoke-with-response-stream
+async fn send_bedrock_streaming(
+    &self,
+    request: MessagesRequest,
+) -> Result<impl Stream<Item = Result<StreamEvent>>> {
+    let url = format!(
+        "https://bedrock-runtime.{}.amazonaws.com/model/{}/invoke-with-response-stream",
+        region,
+        normalize_model_id(&request.model)
+    );
+
+    // Sign and send request
+    // Parse AWS event stream (different from SSE)
+    // Convert to our StreamEvent enum
+}
+```
+
+### Feature Flag (Optional)
+
+Gate Bedrock support behind feature flag for minimal builds:
+
+```toml
+[features]
+default = ["anthropic"]
+anthropic = []
+bedrock = ["aws-config", "aws-sigv4", "aws-types", "aws-credential-types"]
+full = ["anthropic", "bedrock"]
+```
+
+### Testing Bedrock
+
+```rust
+#[tokio::test]
+#[ignore]  // Requires AWS credentials
+async fn test_bedrock_basic_message() {
+    let client = ClaudeClient::bedrock("us-east-1")
+        .await
+        .expect("AWS credentials required");
+
+    let request = MessagesRequest {
+        model: "claude-3-5-sonnet-20241022".into(),
+        max_tokens: 100,
+        messages: vec![Message::user("Hello")],
+        ..Default::default()
+    };
+
+    let response = client.send_message(request).await.unwrap();
+    assert!(!response.content.is_empty());
+}
+```
+
+### Documentation
+
+Users can choose backend at runtime:
+
+```rust
+// Using Anthropic API
+let client = ClaudeClient::anthropic(std::env::var("ANTHROPIC_API_KEY")?);
+
+// Using AWS Bedrock
+let client = ClaudeClient::bedrock("us-east-1").await?;
+
+// Same interface for both!
+let response = client.send_message(request).await?;
+```
+
+---
+
 ## Success Criteria
 
 The port is complete when:
@@ -701,6 +969,8 @@ The port is complete when:
 ✅ Supports tool definitions with `disable_user_input`
 ✅ Handles multi-turn conversations with tool use
 ✅ Has comprehensive error handling and retry logic
+✅ Supports both Anthropic API and AWS Bedrock backends
+✅ Unified client interface abstracts over backend differences
 ✅ Includes examples and integration tests
 ✅ Documentation is clear and thorough
 ✅ Can be published to crates.io

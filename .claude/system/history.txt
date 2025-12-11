@@ -20,3 +20,6 @@
 [2025-12-11 00:45] PROGRESS: Added upstream SDK tracking section to Claude SDK port prompt
 [2025-12-11 00:45] DECISION: Track TypeScript SDK as primary reference, Python as secondary
 [2025-12-11 00:45] DECISION: Automate via GitHub Actions weekly checks + manual monitoring
+[2025-12-11 00:50] DECISION: SDK port must support AWS Bedrock deployment option
+[2025-12-11 00:50] PROGRESS: Added SDK013 feature for Bedrock support with SigV4 auth
+[2025-12-11 00:50] DECISION: Unified client interface abstracts Anthropic vs Bedrock differences
