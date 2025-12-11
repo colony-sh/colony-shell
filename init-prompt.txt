@@ -1,0 +1,410 @@
+# Colony Shell — Session Initialization
+
+You are the coding agent for Colony Shell, a POSIX-compliant shell written in Rust. Before doing any work, you must initialize and sync with the project's tracking system.
+
+## First-Time Setup
+
+If `.claude/system/` does not exist, create it with the following structure:
+```
+.claude/
+└── system/
+    ├── features.json      # Feature tracking
+    ├── history.txt        # Work log
+    └── rules.txt          # Project constraints and scope
+```
+
+### Create features.json
+```json
+{
+  "version": 1,
+  "features": [
+    {
+      "id": "F001",
+      "name": "Lexer with mode stack",
+      "description": "Hand-written lexer that tokenizes shell input with context-sensitive modes for quoting (single, double, heredoc, escape), operators, and reserved words. Must handle mode transitions correctly.",
+      "status": "new",
+      "priority": 1,
+      "dependencies": [],
+      "notes": []
+    },
+    {
+      "id": "F002", 
+      "name": "Recursive descent parser",
+      "description": "Parser that builds AST from token stream. Handles simple commands, pipelines, lists (&&, ||, ;, &), compound commands (if/while/for/case), subshells, brace groups, and function definitions.",
+      "status": "new",
+      "priority": 1,
+      "dependencies": ["F001"],
+      "notes": []
+    },
+    {
+      "id": "F003",
+      "name": "Expansion system",
+      "description": "Implement POSIX expansion order: tilde → parameter (all ${} forms) → command substitution → arithmetic → field splitting → pathname/glob → quote removal.",
+      "status": "new",
+      "priority": 2,
+      "dependencies": ["F002"],
+      "notes": []
+    },
+    {
+      "id": "F004",
+      "name": "Simple command execution",
+      "description": "Execute external commands via fork/exec using nix crate. Handle PATH lookup, environment passing, and exit status capture.",
+      "status": "new",
+      "priority": 2,
+      "dependencies": ["F003"],
+      "notes": []
+    },
+    {
+      "id": "F005",
+      "name": "Pipeline execution",
+      "description": "Execute pipelines (cmd1 | cmd2 | cmd3) with proper pipe creation, fd manipulation via dup2, and concurrent process management.",
+      "status": "new",
+      "priority": 2,
+      "dependencies": ["F004"],
+      "notes": []
+    },
+    {
+      "id": "F006",
+      "name": "Redirections",
+      "description": "Implement all POSIX redirections: >, >>, , >&, N>&M, N<&M. Handle heredocs with delimiter quoting rules.",
+      "status": "new",
+      "priority": 2,
+      "dependencies": ["F004"],
+      "notes": []
+    },
+    {
+      "id": "F007",
+      "name": "Core builtins",
+      "description": "Implement essential builtins that must run in shell process: cd, export, unset, exit, source/., echo, pwd, type, alias, unalias.",
+      "status": "new",
+      "priority": 2,
+      "dependencies": ["F004"],
+      "notes": []
+    },
+    {
+      "id": "F008",
+      "name": "Job control",
+      "description": "Process groups, foreground/background jobs, signal handling (SIGCHLD, SIGINT, SIGTSTP, SIGCONT), job table, fg/bg/jobs/wait builtins.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": ["F005"],
+      "notes": []
+    },
+    {
+      "id": "F009",
+      "name": "OSC 2337 protocol emitter",
+      "description": "Emit custom escape sequences to communicate with colony-terminal: Agent status, Widget requests, Output metadata, Memory operations.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": ["F004"],
+      "notes": []
+    },
+    {
+      "id": "F010",
+      "name": "Tuple space (in-process)",
+      "description": "Linda-style tuple space with out/in/rd/inp/rdp primitives using scc::HashMap and parking_lot for synchronization.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": [],
+      "notes": []
+    },
+    {
+      "id": "F011",
+      "name": "Tuple space (cross-process IPC)",
+      "description": "Extend tuple space to work across processes via ipc-channel from Servo project.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": ["F010"],
+      "notes": []
+    },
+    {
+      "id": "F012",
+      "name": "Memory substrate (SQLite)",
+      "description": "SQLite schema for memory metadata: scope, project, timestamps, importance, validity. CRUD operations with proper indexing.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": [],
+      "notes": []
+    },
+    {
+      "id": "F013",
+      "name": "Memory substrate (LanceDB vectors)",
+      "description": "Vector embeddings via LanceDB + fastembed (all-MiniLM-L6-v2). Semantic search over memories with hybrid text+vector queries.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": ["F012"],
+      "notes": []
+    },
+    {
+      "id": "F014",
+      "name": "Agent NL detection and routing",
+      "description": "Detect natural language input (# or ? prefix, failed parse heuristics) and route to LLM instead of shell execution.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": ["F002", "F009"],
+      "notes": []
+    },
+    {
+      "id": "F015",
+      "name": "Claude ADK integration",
+      "description": "Connect to Claude API via ADK, handle streaming responses, register MCP tools, manage conversation context.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F014", "F013"],
+      "notes": []
+    },
+    {
+      "id": "F016",
+      "name": "MCP connection pool",
+      "description": "Manage connections to multiple MCP servers via rmcp. Introspect tool schemas, handle reconnection.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": [],
+      "notes": []
+    },
+    {
+      "id": "F017",
+      "name": "MCP TypeScript codegen",
+      "description": "Generate typed TypeScript client classes from MCP server schemas using Tera templates. Cache by schema hash.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F016"],
+      "notes": []
+    },
+    {
+      "id": "F018",
+      "name": "MCP executor session",
+      "description": "Special agent session that receives tasks via tuple space, generates TS scripts, executes in rustyscript sandbox, returns results.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F010", "F017"],
+      "notes": []
+    },
+    {
+      "id": "F019",
+      "name": "Goal and task tracking",
+      "description": "Persistent goal trees with status, progress, blockers. Checkpoint creation, session summaries, resume capability.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F012"],
+      "notes": []
+    },
+    {
+      "id": "F020",
+      "name": ".colonyrc configuration",
+      "description": "Project config loading with direnv-style trust model. Agent personality, conventions, project goals, MCP servers.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": [],
+      "notes": []
+    }
+  ]
+}
+```
+
+### Create history.txt
+```
+# Colony Shell — Development History
+# Format: [YYYY-MM-DD HH:MM] ACTION: Description
+# Actions: START, PROGRESS, COMPLETE, BLOCKED, DECISION, REFACTOR, BUG, FIX
+
+[YYYY-MM-DD HH:MM] START: Project initialized
+```
+
+### Create rules.txt
+```
+# Colony Shell — Project Rules and Constraints
+
+## Scope
+
+1. This is the SHELL component only — no terminal rendering, no GUI, no TUI widgets
+2. POSIX compliance is mandatory for core shell features — real bash/zsh scripts must work
+3. Agent features are additive — the shell works without AI integration
+4. All AI memory lives locally — never send to external services without explicit user action
+5. Communication with colony-terminal happens via OSC 2337 escape sequences only
+
+## Technical Constraints
+
+6. Use nix crate for Unix syscalls, not raw libc
+7. Use parking_lot over std::sync for mutexes (smaller, faster)
+8. Use scc::HashMap for concurrent collections (better scaling than DashMap)
+9. Use thiserror for library errors, miette for user-facing diagnostics
+10. Use tokio for async runtime, but fork/exec requires spawn_blocking
+11. Feature-gate heavy dependencies: --features agent, --features mcp
+12. Parser must be hand-written (recursive descent) — parser generators can't handle shell grammar
+13. Lexer needs mode stack for context-sensitive tokenization
+
+## Code Quality
+
+14. All public APIs must have doc comments with examples
+15. Test POSIX compliance by comparing output with bash
+16. Integration tests for each feature before marking complete
+17. No unwrap() in library code — propagate errors properly
+18. Use tracing for structured logging, not println!
+
+## Architecture
+
+19. Crate separation: parser, expand, exec, protocol, agent, memory, tuple, mcp, focus
+20. Each crate should be independently testable
+21. Protocol types shared between shell and terminal via colony-protocol crate
+22. Memory operations are async — don't block the shell on vector search
+
+## Non-Goals
+
+23. NOT building readline/line editing — will use reedline crate
+24. NOT building completions — terminal handles display, shell provides candidates
+25. NOT implementing bash-isms unless POSIX-compatible (no [[ ]], no (( )) outside $)
+26. NOT supporting Windows (Unix-only via nix crate)
+```
+
+---
+
+## Session Start Protocol
+
+At the beginning of EVERY coding session, execute these steps IN ORDER:
+
+### 1. Check Git Status
+```bash
+git status
+git log --oneline -10
+```
+
+Review what's changed since last session. Note any uncommitted work.
+
+### 2. Read System Files
+```bash
+cat .claude/system/rules.txt
+cat .claude/system/features.json
+tail -50 .claude/system/history.txt
+```
+
+Understand: What are the constraints? What features exist and their status? What was done recently?
+
+### 3. Identify Current Focus
+
+From features.json, find:
+- Features with status "in_progress" — these are active work
+- Features with status "blocked" — check if blockers are resolved
+- Next "new" feature by priority (lowest number = highest priority) whose dependencies are "complete"
+
+### 4. Announce Plan
+
+Before writing any code, state:
+- What you found in git history and system files
+- What feature you're working on and why
+- What specific task you'll do this session
+- Any blockers or questions
+
+---
+
+## Updating System Files
+
+### Updating features.json
+
+When starting work on a feature:
+```json
+{
+  "id": "F001",
+  "status": "in_progress",
+  "notes": ["Started YYYY-MM-DD: Initial lexer structure"]
+}
+```
+
+When completing a feature:
+```json
+{
+  "id": "F001", 
+  "status": "complete",
+  "notes": ["Started YYYY-MM-DD: Initial lexer structure", "Completed YYYY-MM-DD: All tests passing"]
+}
+```
+
+When blocked:
+```json
+{
+  "id": "F001",
+  "status": "blocked",
+  "notes": ["BLOCKED: Need decision on how to handle heredoc edge case X"]
+}
+```
+
+### Updating history.txt
+
+Log significant actions as you work:
+```
+[2025-01-15 14:30] START: Beginning work on F001 (Lexer)
+[2025-01-15 14:45] PROGRESS: Token enum defined, basic word tokenization working
+[2025-01-15 15:30] DECISION: Using mode stack approach for quote handling
+[2025-01-15 16:00] PROGRESS: Single and double quote modes implemented
+[2025-01-15 17:00] BUG: Heredoc delimiter not detected when followed by comment
+[2025-01-15 17:30] FIX: Added lookahead for heredoc detection
+[2025-01-15 18:00] COMPLETE: F001 lexer complete, 47 tests passing
+```
+
+### Updating rules.txt
+
+Add rules when you discover important constraints:
+```
+27. Heredoc content must be read AFTER the command line is fully parsed — not inline
+28. SIGCHLD handler must be async-signal-safe — no allocations
+```
+
+---
+
+## Session End Protocol
+
+Before ending a session:
+
+1. **Commit work** with descriptive message referencing feature ID
+2. **Update features.json** with current status and notes
+3. **Add history.txt entries** for all significant work done
+4. **Summarize** what was accomplished and what's next
+
+---
+
+## Example Session Flow
+```
+Agent: Starting session. Let me check git and system files...
+
+[Runs git status, git log]
+[Reads rules.txt, features.json, history.txt]
+
+Agent: Git shows last commit was "F001: Complete lexer with mode stack" from yesterday.
+Features.json shows F001 is complete, F002 (parser) is "new" with dependency on F001 satisfied.
+History shows lexer was completed with 47 tests.
+
+Plan for this session: Begin F002 (Recursive descent parser)
+- First task: Define AST node types for simple commands and pipelines
+- Will update features.json to "in_progress" now
+
+[Updates features.json]
+[Logs: START: Beginning work on F002 (Parser)]
+
+... coding work ...
+
+[Logs: PROGRESS: AST types defined, simple command parsing working]
+[Logs: DECISION: Using Box<Command> for pipeline elements to allow recursion]
+
+Agent: Ending session. Committing work and updating tracking.
+
+[git commit -m "F002: AST types and simple command parsing"]
+[Updates history.txt with session summary]
+[Updates features.json notes]
+
+Summary: Defined AST node types, implemented simple command and pipeline parsing.
+Next session: Implement compound commands (if/while/for) parsing.
+```
+
+---
+
+## Important Reminders
+
+- ALWAYS read system files at session start — no exceptions
+- ALWAYS update files as you work — not just at the end
+- Feature IDs (F001, F002...) are permanent — never renumber
+- History is append-only — never delete entries
+- Rules accumulate — add discoveries, don't remove old rules
+- When uncertain, add a DECISION entry explaining your reasoning
+- When stuck, set status to "blocked" with clear description
+
+Your effectiveness depends on maintaining this system. Future you (and other agents) rely on accurate tracking to understand context quickly.

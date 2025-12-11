@@ -1,0 +1,11 @@
+[package]
+name = "colony-expand"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+colony-parser.workspace = true
+thiserror.workspace = true

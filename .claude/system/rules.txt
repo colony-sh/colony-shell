@@ -1,0 +1,42 @@
+# Colony Shell — Project Rules and Constraints
+
+## Scope
+
+1. This is the SHELL component only — no terminal rendering, no GUI, no TUI widgets
+2. POSIX compliance is mandatory for core shell features — real bash/zsh scripts must work
+3. Agent features are additive — the shell works without AI integration
+4. All AI memory lives locally — never send to external services without explicit user action
+5. Communication with colony-terminal happens via OSC 2337 escape sequences only
+
+## Technical Constraints
+
+6. Use nix crate for Unix syscalls, not raw libc
+7. Use parking_lot over std::sync for mutexes (smaller, faster)
+8. Use scc::HashMap for concurrent collections (better scaling than DashMap)
+9. Use thiserror for library errors, miette for user-facing diagnostics
+10. Use tokio for async runtime, but fork/exec requires spawn_blocking
+11. Feature-gate heavy dependencies: --features agent, --features mcp
+12. Parser must be hand-written (recursive descent) — parser generators can't handle shell grammar
+13. Lexer needs mode stack for context-sensitive tokenization
+
+## Code Quality
+
+14. All public APIs must have doc comments with examples
+15. Test POSIX compliance by comparing output with bash
+16. Integration tests for each feature before marking complete
+17. No unwrap() in library code — propagate errors properly
+18. Use tracing for structured logging, not println!
+
+## Architecture
+
+19. Crate separation: parser, expand, exec, protocol, agent, memory, tuple, mcp, focus
+20. Each crate should be independently testable
+21. Protocol types shared between shell and terminal via colony-protocol crate
+22. Memory operations are async — don't block the shell on vector search
+
+## Non-Goals
+
+23. NOT building readline/line editing — will use reedline crate
+24. NOT building completions — terminal handles display, shell provides candidates
+25. NOT implementing bash-isms unless POSIX-compatible (no [[ ]], no (( )) outside $)
+26. NOT supporting Windows (Unix-only via nix crate)

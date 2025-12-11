@@ -1,0 +1,1 @@
+/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/debug/libcolony_mcp.rlib: /Users/mcfearsome/src/github.com/mcfearsome/colony-shell/crates/colony-mcp/src/lib.rs /Users/mcfearsome/src/github.com/mcfearsome/colony-shell/crates/colony-tuple/src/lib.rs

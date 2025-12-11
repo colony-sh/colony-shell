@@ -1,0 +1,13 @@
+[package]
+name = "colony-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+colony-parser.workspace = true
+colony-protocol.workspace = true
+tokio.workspace = true
+serde.workspace = true

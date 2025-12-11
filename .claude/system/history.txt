@@ -1,0 +1,11 @@
+# Colony Shell — Development History
+# Format: [YYYY-MM-DD HH:MM] ACTION: Description
+# Actions: START, PROGRESS, COMPLETE, BLOCKED, DECISION, REFACTOR, BUG, FIX
+
+[2025-12-11 00:00] START: Project initialized with tracking system
+[2025-12-11 00:10] PROGRESS: README provided with full architecture specification
+[2025-12-11 00:10] DECISION: Crate names use colony- prefix (colony-parser, colony-exec, etc.)
+[2025-12-11 00:10] DECISION: Starting with minimal lexer per README guidance
+[2025-12-11 00:20] PROGRESS: Created Cargo workspace with all colony-* crates
+[2025-12-11 00:25] PROGRESS: Workspace builds successfully
+[2025-12-11 00:25] FIX: Fixed borrow checker errors in parser peek/advance methods

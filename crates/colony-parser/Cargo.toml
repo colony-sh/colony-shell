@@ -1,0 +1,13 @@
+[package]
+name = "colony-parser"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+miette.workspace = true
+
+[dev-dependencies]

@@ -1,0 +1,12 @@
+[package]
+name = "colony-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+colony-tuple.workspace = true
+tokio.workspace = true
+serde.workspace = true

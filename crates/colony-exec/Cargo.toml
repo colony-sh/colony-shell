@@ -1,0 +1,15 @@
+[package]
+name = "colony-exec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+colony-parser.workspace = true
+colony-expand.workspace = true
+nix.workspace = true
+signal-hook.workspace = true
+tokio.workspace = true
+thiserror.workspace = true

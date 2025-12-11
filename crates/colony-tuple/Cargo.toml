@@ -1,0 +1,13 @@
+[package]
+name = "colony-tuple"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+scc.workspace = true
+parking_lot.workspace = true
+tokio.workspace = true
+serde.workspace = true

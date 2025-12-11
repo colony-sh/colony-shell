@@ -1,0 +1,74 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/colony-parser",
+    "crates/colony-expand",
+    "crates/colony-exec",
+    "crates/colony-protocol",
+    "crates/colony-agent",
+    "crates/colony-memory",
+    "crates/colony-tuple",
+    "crates/colony-mcp",
+    "crates/colony-focus",
+    "crates/colony-shell",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Colony Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mcfearsome/colony-shell"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Unix syscalls
+nix = { version = "0.28", features = ["process", "signal", "term", "poll"] }
+
+# Signal handling
+signal-hook = "0.3"
+signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
+
+# Concurrent collections
+scc = "2.0"
+parking_lot = "0.12"
+
+# IPC
+ipc-channel = "0.18"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rmp-serde = "1.1"
+
+# Errors
+thiserror = "1.0"
+miette = { version = "7.0", features = ["fancy"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Internal crates
+colony-parser = { path = "crates/colony-parser" }
+colony-expand = { path = "crates/colony-expand" }
+colony-exec = { path = "crates/colony-exec" }
+colony-protocol = { path = "crates/colony-protocol" }
+colony-agent = { path = "crates/colony-agent" }
+colony-memory = { path = "crates/colony-memory" }
+colony-tuple = { path = "crates/colony-tuple" }
+colony-mcp = { path = "crates/colony-mcp" }
+colony-focus = { path = "crates/colony-focus" }
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

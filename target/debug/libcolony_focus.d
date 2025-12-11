@@ -1,0 +1,1 @@
+/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/debug/libcolony_focus.rlib: /Users/mcfearsome/src/github.com/mcfearsome/colony-shell/crates/colony-focus/src/lib.rs /Users/mcfearsome/src/github.com/mcfearsome/colony-shell/crates/colony-memory/src/lib.rs
