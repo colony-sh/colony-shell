@@ -23,3 +23,6 @@
 [2025-12-11 00:50] DECISION: SDK port must support AWS Bedrock deployment option
 [2025-12-11 00:50] PROGRESS: Added SDK013 feature for Bedrock support with SigV4 auth
 [2025-12-11 00:50] DECISION: Unified client interface abstracts Anthropic vs Bedrock differences
+[2025-12-11 01:00] DECISION: Add prompt caching support (SDK013) - cost optimization feature
+[2025-12-11 01:00] DECISION: Add interactive REPL (SDK015) - testing/demo tool
+[2025-12-11 01:00] PROGRESS: Renumbered features: SDK013=caching, SDK014=Bedrock, SDK015=REPL, SDK016=docs

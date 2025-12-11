@@ -413,6 +413,20 @@ If `.claude/system/` does not exist, create it:
     },
     {
       "id": "SDK013",
+      "name": "Prompt caching support",
+      "description": "Support API prompt caching via cache_control blocks. Reduces costs by caching system prompts, tool definitions, and long context. Add CacheControl type, support in Message content.",
+      "status": "new",
+      "priority": 2,
+      "dependencies": ["SDK002", "SDK006"],
+      "notes": [
+        "API feature - cache_control blocks mark cacheable content",
+        "Supports ephemeral (5 min TTL) caching",
+        "Saves tokens/cost on repeated context (system prompt, tools)",
+        "Just need to add cache_control field to content blocks"
+      ]
+    },
+    {
+      "id": "SDK014",
       "name": "Amazon Bedrock support",
       "description": "Support Claude models via AWS Bedrock. Implement AWS SigV4 signing, bedrock-runtime endpoint, handle different request/response envelope format.",
       "status": "new",
@@ -424,6 +438,32 @@ If `.claude/system/` does not exist, create it:
         "Request/response wrapped in Bedrock envelope",
         "Use aws-config and aws-sigv4 crates"
       ]
+    },
+    {
+      "id": "SDK015",
+      "name": "Interactive REPL",
+      "description": "Build interactive REPL binary for testing and debugging. Features: multi-turn chat, tool execution preview, streaming display, conversation save/load, token counting display.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": ["SDK005", "SDK007", "SDK013"],
+      "notes": [
+        "Separate binary: src/bin/claude-repl.rs",
+        "Use rustyline for readline functionality",
+        "Display streaming responses in real-time",
+        "Show token usage and costs",
+        "Save conversations to JSON",
+        "Test tool calls interactively",
+        "Useful for SDK demos and debugging"
+      ]
+    },
+    {
+      "id": "SDK016",
+      "name": "Documentation and publishing",
+      "description": "README with quickstart, API docs with examples, publish to crates.io as 'claude-sdk' or 'anthropic-sdk-rust'.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["SDK011", "SDK014", "SDK015"],
+      "notes": []
     }
   ]
 }
@@ -485,9 +525,9 @@ If `.claude/system/` does not exist, create it:
 
 27. NOT a wrapper around TypeScript SDK
 28. NOT supporting Claude 2 legacy API
-29. NOT implementing client-side prompt caching (API feature)
-30. NOT building a REPL or chat interface (examples only)
-31. NOT supporting Azure OpenAI or other Claude deployments (Anthropic + Bedrock only)
+29. NOT supporting Azure OpenAI or other Claude deployments (Anthropic + Bedrock only)
+30. NOT implementing agent orchestration (that's Colony Shell's job)
+31. NOT building production chat UI (REPL is for testing/demo only)
 ```
 
 ---
@@ -960,6 +1000,469 @@ let response = client.send_message(request).await?;
 
 ---
 
+## Prompt Caching Support (SDK013)
+
+### Overview
+
+Claude API supports prompt caching to reduce costs and latency for repeated context. Mark content blocks with `cache_control` and the API caches them for ~5 minutes (ephemeral cache).
+
+**Use cases:**
+- System prompts that don't change between requests
+- Tool definitions (stable across conversation)
+- Long documents/context provided upfront
+- RAG context, code repositories
+
+**Cost savings:**
+- Cached input tokens: ~90% cheaper than base input tokens
+- Cache writes: Slightly more expensive than base input
+- Cache hits: Massive savings on repeated context
+
+### API Format
+
+```json
+{
+  "model": "claude-3-5-sonnet-20241022",
+  "max_tokens": 1024,
+  "system": [
+    {
+      "type": "text",
+      "text": "You are a helpful assistant...",
+      "cache_control": {"type": "ephemeral"}  // Cache this!
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "...",
+      "input_schema": {...},
+      "cache_control": {"type": "ephemeral"}  // Cache tools too!
+    }
+  ],
+  "messages": [...]
+}
+```
+
+### Implementation
+
+Add `CacheControl` type:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CacheControl {
+    #[serde(rename = "type")]
+    pub cache_type: CacheType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CacheType {
+    Ephemeral,
+}
+
+impl CacheControl {
+    pub fn ephemeral() -> Self {
+        Self {
+            cache_type: CacheType::Ephemeral,
+        }
+    }
+}
+```
+
+Update content blocks to support caching:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentBlock {
+    Text {
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
+}
+```
+
+Update system prompt format:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SystemPrompt {
+    String(String),
+    Blocks(Vec<SystemBlock>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemBlock {
+    #[serde(rename = "type")]
+    pub block_type: String,  // "text"
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
+}
+```
+
+Update Tool definition:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disable_user_input: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,  // NEW!
+}
+```
+
+### Usage Example
+
+```rust
+use claude_sdk::{ClaudeClient, MessagesRequest, SystemBlock, CacheControl, Tool};
+
+let client = ClaudeClient::anthropic(api_key);
+
+let request = MessagesRequest {
+    model: "claude-3-5-sonnet-20241022".into(),
+    max_tokens: 1024,
+
+    // Cache system prompt
+    system: Some(SystemPrompt::Blocks(vec![
+        SystemBlock {
+            block_type: "text".into(),
+            text: "You are an expert programmer...".into(),
+            cache_control: Some(CacheControl::ephemeral()),
+        }
+    ])),
+
+    // Cache tool definitions
+    tools: Some(vec![
+        Tool {
+            name: "search_code".into(),
+            description: "Search through codebase...".into(),
+            input_schema: tool_schema,
+            cache_control: Some(CacheControl::ephemeral()),
+            ..Default::default()
+        }
+    ]),
+
+    messages: vec![Message::user("Fix the bug in auth.rs")],
+    ..Default::default()
+};
+
+// First request: Pays for cache write
+let response1 = client.send_message(request.clone()).await?;
+
+// Second request within 5 minutes: Cache hit! 90% cheaper on system + tools
+let response2 = client.send_message(request).await?;
+```
+
+### Response Usage Tracking
+
+The API returns cache metrics:
+
+```rust
+#[derive(Debug, Clone, Deserialize)]
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+
+    // Cache-related fields
+    pub cache_creation_input_tokens: Option<u32>,
+    pub cache_read_input_tokens: Option<u32>,
+}
+```
+
+Track in streaming responses too:
+
+```rust
+pub enum StreamEvent {
+    MessageDelta {
+        delta: MessageDelta,
+        usage: Usage  // Includes cache metrics
+    },
+    // ...
+}
+```
+
+### Builder Helper
+
+Make it easy to use:
+
+```rust
+impl ConversationBuilder {
+    /// Cache the system prompt
+    pub fn with_cached_system(&mut self, prompt: impl Into<String>) -> &mut Self {
+        self.system = Some(SystemPrompt::Blocks(vec![
+            SystemBlock {
+                block_type: "text".into(),
+                text: prompt.into(),
+                cache_control: Some(CacheControl::ephemeral()),
+            }
+        ]));
+        self
+    }
+
+    /// Add a tool with caching enabled
+    pub fn with_cached_tool(&mut self, mut tool: Tool) -> &mut Self {
+        tool.cache_control = Some(CacheControl::ephemeral());
+        self.tools.push(tool);
+        self
+    }
+}
+```
+
+---
+
+## Interactive REPL (SDK015)
+
+### Overview
+
+Build a standalone REPL binary for testing, debugging, and demonstrating the SDK. Useful for:
+- Trying out Claude interactively
+- Testing tool implementations
+- Debugging streaming responses
+- Demonstrating SDK features
+- Quick prototyping
+
+### Architecture
+
+```rust
+// src/bin/claude-repl.rs
+
+use claude_sdk::{ClaudeClient, ConversationBuilder, StreamEvent};
+use rustyline::{Editor, Result as RustylineResult};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct ReplConfig {
+    api_key: Option<String>,
+    use_bedrock: bool,
+    region: Option<String>,
+    model: String,
+    max_tokens: u32,
+}
+
+struct Repl {
+    client: ClaudeClient,
+    conversation: ConversationBuilder,
+    editor: Editor<()>,
+    config: ReplConfig,
+}
+
+impl Repl {
+    async fn run(&mut self) -> Result<()> {
+        println!("Claude REPL v{}", env!("CARGO_PKG_VERSION"));
+        println!("Type /help for commands, /quit to exit\n");
+
+        loop {
+            let prompt = self.editor.readline("You> ")?;
+            self.editor.add_history_entry(&prompt);
+
+            if prompt.starts_with('/') {
+                self.handle_command(&prompt).await?;
+            } else {
+                self.send_message(&prompt).await?;
+            }
+        }
+    }
+}
+```
+
+### Features
+
+**1. Multi-turn Conversation:**
+```rust
+async fn send_message(&mut self, content: &str) -> Result<()> {
+    self.conversation.add_user_message(content);
+
+    let request = self.conversation.build();
+    let mut stream = self.client.send_streaming(request).await?;
+
+    print!("Claude> ");
+    let mut response_text = String::new();
+
+    while let Some(event) = stream.next().await {
+        match event? {
+            StreamEvent::ContentBlockDelta { delta, .. } => {
+                if let Some(text) = delta.text {
+                    print!("{}", text);
+                    response_text.push_str(&text);
+                    stdout().flush()?;
+                }
+            }
+            StreamEvent::MessageStop => break,
+            _ => {}
+        }
+    }
+
+    println!("\n");
+    self.conversation.add_assistant_message(response_text);
+    Ok(())
+}
+```
+
+**2. Slash Commands:**
+```rust
+async fn handle_command(&mut self, cmd: &str) -> Result<()> {
+    match cmd.trim() {
+        "/help" => self.show_help(),
+        "/clear" => self.clear_conversation(),
+        "/save" => self.save_conversation().await?,
+        "/load" => self.load_conversation().await?,
+        "/tokens" => self.show_token_usage(),
+        "/model" => self.change_model().await?,
+        "/tools" => self.list_tools(),
+        "/backend" => self.switch_backend().await?,
+        "/quit" | "/exit" => std::process::exit(0),
+        _ => println!("Unknown command: {}", cmd),
+    }
+    Ok(())
+}
+```
+
+**3. Tool Execution Preview:**
+```rust
+// When Claude requests a tool
+StreamEvent::ContentBlockStart { content_block, .. } => {
+    if let ContentBlock::ToolUse { name, input, .. } = content_block {
+        println!("\n[Tool Call: {}]", name);
+        println!("Input: {}", serde_json::to_string_pretty(&input)?);
+
+        // Ask user to approve or provide result
+        let result = self.execute_tool_interactive(name, input).await?;
+
+        self.conversation.add_tool_result(tool_use_id, result);
+    }
+}
+```
+
+**4. Token Counting Display:**
+```rust
+StreamEvent::MessageDelta { usage, .. } => {
+    println!("\n--- Token Usage ---");
+    println!("Input:  {} tokens", usage.input_tokens);
+    println!("Output: {} tokens", usage.output_tokens);
+
+    if let Some(cache_read) = usage.cache_read_input_tokens {
+        println!("Cache hits: {} tokens (90% savings!)", cache_read);
+    }
+    if let Some(cache_write) = usage.cache_creation_input_tokens {
+        println!("Cache writes: {} tokens", cache_write);
+    }
+
+    let cost = calculate_cost(&usage, &self.config.model);
+    println!("Estimated cost: ${:.4}", cost);
+}
+```
+
+**5. Conversation Persistence:**
+```rust
+async fn save_conversation(&self) -> Result<()> {
+    let filename = format!("conversation-{}.json",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+
+    let json = serde_json::to_string_pretty(&self.conversation)?;
+    tokio::fs::write(&filename, json).await?;
+
+    println!("Saved to {}", filename);
+    Ok(())
+}
+
+async fn load_conversation(&mut self) -> Result<()> {
+    // Show available conversations
+    // Let user select one
+    // Load from JSON
+}
+```
+
+**6. Backend Switching:**
+```rust
+async fn switch_backend(&mut self) -> Result<()> {
+    println!("Current: {}",
+        if self.config.use_bedrock { "AWS Bedrock" } else { "Anthropic API" });
+
+    println!("Switch to: 1) Anthropic API  2) AWS Bedrock");
+    let choice = self.read_line()?;
+
+    match choice.trim() {
+        "1" => {
+            let api_key = self.prompt_api_key()?;
+            self.client = ClaudeClient::anthropic(api_key);
+            self.config.use_bedrock = false;
+        }
+        "2" => {
+            let region = self.prompt_region()?;
+            self.client = ClaudeClient::bedrock(region).await?;
+            self.config.use_bedrock = true;
+        }
+        _ => println!("Invalid choice"),
+    }
+
+    Ok(())
+}
+```
+
+### Usage
+
+```bash
+# Build the REPL
+cargo build --release --bin claude-repl
+
+# Run with Anthropic API
+export ANTHROPIC_API_KEY=sk-ant-...
+./target/release/claude-repl
+
+# Run with Bedrock
+export AWS_PROFILE=my-profile
+./target/release/claude-repl --backend bedrock --region us-east-1
+```
+
+### Example Session
+
+```
+Claude REPL v0.1.0
+Type /help for commands, /quit to exit
+
+You> Hello! What can you help me with?
+
+Claude> Hello! I'm Claude, an AI assistant. I can help with:
+- Answering questions and explaining concepts
+- Writing and debugging code
+- Analyzing data and documents
+- Creative writing and brainstorming
+- And much more!
+
+What would you like help with today?
+
+--- Token Usage ---
+Input:  12 tokens
+Output: 58 tokens
+Estimated cost: $0.0012
+
+You> /tools
+Available tools: (none loaded)
+Use /load-tools <file> to load tool definitions
+
+You> /save
+Saved to conversation-20251211-143052.json
+
+You> /quit
+```
+
+---
+
 ## Success Criteria
 
 The port is complete when:
@@ -969,8 +1472,10 @@ The port is complete when:
 ✅ Supports tool definitions with `disable_user_input`
 ✅ Handles multi-turn conversations with tool use
 ✅ Has comprehensive error handling and retry logic
+✅ Supports prompt caching with cache_control blocks
 ✅ Supports both Anthropic API and AWS Bedrock backends
 ✅ Unified client interface abstracts over backend differences
+✅ Includes interactive REPL for testing and demos
 ✅ Includes examples and integration tests
 ✅ Documentation is clear and thorough
 ✅ Can be published to crates.io
