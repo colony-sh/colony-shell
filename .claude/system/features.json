@@ -137,7 +137,10 @@
       "status": "new",
       "priority": 5,
       "dependencies": ["F014", "F013"],
-      "notes": []
+      "notes": [
+        "2025-12-11: Use programmatic tool calling (disable_user_input) for auto-execute tools",
+        "2025-12-11: Implement Rust port of Claude Agent SDK, not FFI wrapper"
+      ]
     },
     {
       "id": "F016",
@@ -164,7 +167,10 @@
       "status": "new",
       "priority": 5,
       "dependencies": ["F010", "F017"],
-      "notes": []
+      "notes": [
+        "2025-12-11: MCP tools classified as PROGRAMMATIC or USER_FACING based on manifest",
+        "2025-12-11: Approval requests routed to terminal via OSC 2337 Widget= protocol"
+      ]
     },
     {
       "id": "F019",

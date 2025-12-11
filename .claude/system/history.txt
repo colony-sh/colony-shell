@@ -9,3 +9,11 @@
 [2025-12-11 00:20] PROGRESS: Created Cargo workspace with all colony-* crates
 [2025-12-11 00:25] PROGRESS: Workspace builds successfully
 [2025-12-11 00:25] FIX: Fixed borrow checker errors in parser peek/advance methods
+[2025-12-11 00:30] COMPLETE: Initial workspace setup committed (49e0b6f)
+[2025-12-11 00:30] DECISION: F001 (Lexer) is now in_progress, ready for implementation
+[2025-12-11 00:35] DECISION: Adopting programmatic tool calling pattern from Claude API
+[2025-12-11 00:35] DECISION: Tool classification — PROGRAMMATIC vs USER_FACING for safety
+[2025-12-11 00:35] DECISION: Porting Claude Agent SDK to Rust rather than FFI to TypeScript
+[2025-12-11 00:40] DECISION: Claude SDK port will be native Rust implementation
+[2025-12-11 00:40] PROGRESS: Created initialization prompt for SDK port at docs/CLAUDE_SDK_PORT_PROMPT.md
+[2025-12-11 00:40] DECISION: SDK will be standalone crate, can be used outside Colony Shell
