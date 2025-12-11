@@ -11,6 +11,280 @@ This port is being developed as part of Colony Shell (F015 - Claude ADK integrat
 - Programmatic Tool Calling: https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling
 - Streaming: https://docs.anthropic.com/en/api/messages-streaming
 
+## Tracking Official SDKs for Updates
+
+To keep our Rust port in sync with official API changes, we track the canonical SDKs maintained by Anthropic.
+
+### Official SDK Repositories
+
+**TypeScript SDK (Primary Reference):**
+- Repo: https://github.com/anthropics/anthropic-sdk-typescript
+- Package: `@anthropic-ai/sdk` on npm
+- Why: Most actively maintained, first to receive updates
+- Watch: Releases, commits to `src/resources/messages.ts`
+
+**Python SDK (Secondary Reference):**
+- Repo: https://github.com/anthropics/anthropic-sdk-python
+- Package: `anthropic` on PyPI
+- Watch: `src/anthropic/resources/messages.py`
+
+**API Changelog:**
+- URL: https://docs.anthropic.com/en/api/changelog
+- RSS: Subscribe for notifications of API version bumps
+
+### What to Track
+
+Create `.claude/system/upstream.json` to track API compatibility:
+
+```json
+{
+  "last_checked": "2025-12-11",
+  "api_version": "2023-06-01",
+  "typescript_sdk_version": "0.28.0",
+  "python_sdk_version": "0.35.0",
+  "tracked_endpoints": [
+    {
+      "endpoint": "/v1/messages",
+      "method": "POST",
+      "last_schema_hash": "abc123...",
+      "fields_added": [],
+      "fields_deprecated": []
+    }
+  ],
+  "pending_updates": []
+}
+```
+
+### Automation Strategy
+
+#### 1. GitHub Actions Workflow
+
+Create `.github/workflows/upstream-check.yml`:
+
+```yaml
+name: Check Upstream SDKs
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch TypeScript SDK
+        run: |
+          npm view @anthropic-ai/sdk version > ts-version.txt
+
+      - name: Fetch Python SDK
+        run: |
+          pip index versions anthropic | head -1 > py-version.txt
+
+      - name: Check API Changelog
+        run: |
+          curl -s https://docs.anthropic.com/en/api/changelog | \
+          grep -A 5 "## 20" | head -20 > changelog.txt
+
+      - name: Compare with tracked versions
+        run: |
+          ./scripts/check-upstream-changes.sh
+
+      - name: Create issue if outdated
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Upstream SDK updates detected',
+              body: 'New API changes found. See CI logs.',
+              labels: ['upstream-sync', 'needs-review']
+            })
+```
+
+#### 2. Schema Validation Script
+
+Create `scripts/check-upstream-changes.sh`:
+
+```bash
+#!/bin/bash
+set -e
+
+# Fetch TypeScript SDK types
+curl -s https://raw.githubusercontent.com/anthropics/anthropic-sdk-typescript/main/src/resources/messages.ts > /tmp/ts-messages.ts
+
+# Extract type definitions using tree-sitter or regex
+grep -A 50 "interface MessageCreateParams" /tmp/ts-messages.ts > /tmp/ts-types.txt
+
+# Compare with our Rust types
+cargo run --bin schema-validator -- compare /tmp/ts-types.txt src/types.rs
+
+# Exit with error if differences found
+if [ $? -ne 0 ]; then
+  echo "Schema differences detected!"
+  echo "Check docs/UPSTREAM_CHANGES.md for details"
+  exit 1
+fi
+```
+
+#### 3. Schema Validator Tool
+
+Create `src/bin/schema-validator.rs`:
+
+```rust
+//! Validates our Rust types against TypeScript SDK
+
+use std::collections::HashMap;
+
+fn main() {
+    // Parse TypeScript interface definitions
+    // Compare with our serde struct fields
+    // Report missing fields, type mismatches, new additions
+
+    let ts_fields = parse_typescript_types("ts-messages.ts");
+    let rust_fields = parse_rust_types("src/types.rs");
+
+    let diff = compare_schemas(ts_fields, rust_fields);
+
+    if !diff.is_empty() {
+        println!("Schema differences found:");
+        for change in diff {
+            println!("  - {}", change);
+        }
+        std::process::exit(1);
+    }
+}
+```
+
+### Tracking Changes in System Files
+
+When upstream changes are detected:
+
+**1. Update `upstream.json`:**
+```json
+{
+  "pending_updates": [
+    {
+      "detected_on": "2025-12-11",
+      "source": "typescript-sdk-0.29.0",
+      "changes": [
+        {
+          "type": "field_added",
+          "location": "MessagesRequest",
+          "field": "metadata",
+          "rust_type": "Option<HashMap<String, String>>"
+        }
+      ],
+      "issue_url": "https://github.com/you/claude-sdk-rust/issues/42"
+    }
+  ]
+}
+```
+
+**2. Update `features.json`:**
+```json
+{
+  "id": "SDK013",
+  "name": "Metadata field support",
+  "description": "Add optional metadata field to MessagesRequest (added in TS SDK 0.29.0)",
+  "status": "new",
+  "priority": 2,
+  "dependencies": ["SDK002"],
+  "notes": [
+    "Upstream: TypeScript SDK 0.29.0",
+    "API version: 2023-06-01 (no change)",
+    "Field: metadata: Option<HashMap<String, String>>"
+  ]
+}
+```
+
+**3. Log in `history.txt`:**
+```
+[2025-12-11 10:00] UPSTREAM: TypeScript SDK 0.29.0 released
+[2025-12-11 10:05] UPSTREAM: New field detected: MessagesRequest.metadata
+[2025-12-11 10:10] PROGRESS: Created SDK013 for metadata support
+```
+
+### Manual Monitoring (Until Automation Complete)
+
+**Weekly checklist:**
+1. Check https://github.com/anthropics/anthropic-sdk-typescript/releases
+2. Check https://docs.anthropic.com/en/api/changelog
+3. Run: `npm view @anthropic-ai/sdk version`
+4. Run: `pip index versions anthropic | head -1`
+5. Compare with `.claude/system/upstream.json`
+6. Create feature tickets for new capabilities
+
+### Notification Strategy
+
+**GitHub Watch Settings:**
+- Watch TypeScript SDK repo: Releases only
+- Watch Python SDK repo: Releases only
+- Subscribe to API changelog RSS in feed reader
+
+**Slack/Discord Webhook (Optional):**
+```yaml
+# In CI workflow
+- name: Notify on changes
+  if: failure()
+  run: |
+    curl -X POST $SLACK_WEBHOOK \
+      -H 'Content-Type: application/json' \
+      -d '{"text":"Claude SDK upstream changes detected!"}'
+```
+
+### Testing Against Official API
+
+Create `tests/compatibility.rs`:
+
+```rust
+//! Compatibility tests against official Claude API
+//! Only run when ANTHROPIC_API_KEY is set
+
+#[tokio::test]
+#[ignore]  // Manual only
+async fn test_parity_with_typescript_sdk() {
+    // Same request sent via TS SDK and our Rust SDK
+    // Compare responses field-by-field
+    // Ensures we parse responses identically
+}
+```
+
+### Documentation of Differences
+
+Maintain `docs/UPSTREAM_DIFFERENCES.md`:
+
+```markdown
+# Known Differences from Official SDKs
+
+## Intentional Deviations
+
+- **Error types**: We use thiserror instead of JavaScript Error classes
+- **Streaming**: We use tokio Stream instead of AsyncIterator
+- **Builder pattern**: More idiomatic in Rust than chaining
+
+## Feature Parity Status
+
+| Feature | TS SDK | Py SDK | Rust SDK | Notes |
+|---------|--------|--------|----------|-------|
+| Basic messages | ✅ | ✅ | ✅ | Complete |
+| Streaming | ✅ | ✅ | ✅ | Complete |
+| Tool use | ✅ | ✅ | ✅ | Complete |
+| Prompt caching | ✅ | ✅ | 🚧 | Planned SDK014 |
+| Vision (images) | ✅ | ✅ | 🚧 | Planned SDK015 |
+
+## Version Compatibility Matrix
+
+| API Version | TS SDK | Py SDK | Rust SDK |
+|-------------|--------|--------|----------|
+| 2023-01-01 | 0.1.x  | 0.2.x  | ❌ |
+| 2023-06-01 | 0.20.x | 0.25.x | ✅ 0.1.x |
+```
+
 ## First-Time Setup
 
 If `.claude/system/` does not exist, create it:

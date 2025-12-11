@@ -17,3 +17,6 @@
 [2025-12-11 00:40] DECISION: Claude SDK port will be native Rust implementation
 [2025-12-11 00:40] PROGRESS: Created initialization prompt for SDK port at docs/CLAUDE_SDK_PORT_PROMPT.md
 [2025-12-11 00:40] DECISION: SDK will be standalone crate, can be used outside Colony Shell
+[2025-12-11 00:45] PROGRESS: Added upstream SDK tracking section to Claude SDK port prompt
+[2025-12-11 00:45] DECISION: Track TypeScript SDK as primary reference, Python as secondary
+[2025-12-11 00:45] DECISION: Automate via GitHub Actions weekly checks + manual monitoring
