@@ -9,5 +9,27 @@ license.workspace = true
 [dependencies]
 colony-parser.workspace = true
 colony-protocol.workspace = true
+colony-memory = { workspace = true, optional = true }
+colony-tuple = { workspace = true, optional = true }
 tokio.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# Claude SDK - our Rust port
+# TODO: Update once published to crates.io as "claude-sdk = 1.0"
+claude-sdk = { path = "/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust" }
+
+# For streaming
+futures = "0.3"
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+
+[features]
+default = []
+memory = ["colony-memory"]
+tuple = ["colony-tuple"]
+bedrock = ["claude-sdk/bedrock"]
+full = ["memory", "tuple", "bedrock"]

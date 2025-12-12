@@ -1,0 +1,17 @@
+/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/debug/deps/claude_sdk-81dc9d3b5c6c9ad0.d: /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/lib.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/batch.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/client.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/conversation.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/error.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/files.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/models.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/prompts.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/retry.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/streaming.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/structured.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/tokens.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/types.rs
+
+/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/debug/deps/libclaude_sdk-81dc9d3b5c6c9ad0.rmeta: /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/lib.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/batch.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/client.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/conversation.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/error.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/files.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/models.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/prompts.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/retry.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/streaming.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/structured.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/tokens.rs /Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/types.rs
+
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/lib.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/batch.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/client.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/conversation.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/error.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/files.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/models.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/prompts.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/retry.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/streaming.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/structured.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/tokens.rs:
+/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust/src/types.rs:

@@ -15,7 +15,11 @@ colony-parser.workspace = true
 colony-expand.workspace = true
 colony-exec.workspace = true
 colony-protocol.workspace = true
+colony-agent = { path = "../colony-agent" }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 miette.workspace = true
+
+# For REPL
+rustyline = "14.0"

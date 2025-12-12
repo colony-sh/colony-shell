@@ -134,14 +134,18 @@
       "id": "F015",
       "name": "Claude ADK integration",
       "description": "Connect to Claude API via ADK, handle streaming responses, register MCP tools, manage conversation context.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
       "dependencies": ["F014", "F013"],
       "notes": [
         "2025-12-11: Use programmatic tool calling (disable_user_input) for auto-execute tools",
         "2025-12-11: Implement Rust port of Claude Agent SDK, not FFI wrapper",
         "2025-12-11: SDK will support prompt caching - cache system prompt and tools",
-        "2025-12-11: SDK supports both Anthropic API and AWS Bedrock backends"
+        "2025-12-11: SDK supports both Anthropic API and AWS Bedrock backends",
+        "2025-12-11: SDK port completed, beginning integration into colony-agent",
+        "2025-12-11: COMPLETE - Agent, ToolRegistry, NaturalLanguageDetector implemented",
+        "2025-12-11: COMPLETE - Integrated into colony-shell binary with REPL",
+        "2025-12-11: COMPLETE - Streaming responses, tool classification, conversation state"
       ]
     },
     {

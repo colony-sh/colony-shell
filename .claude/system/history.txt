@@ -29,3 +29,13 @@
 [2025-12-11 01:05] INSIGHT: Prompt caching critical for Colony Shell - cache system prompt + tools
 [2025-12-11 01:05] INSIGHT: REPL useful for SDK testing, will inform Colony Shell REPL design
 [2025-12-11 01:05] DECISION: Colony Shell itself should have agent REPL mode (add to backlog)
+[2025-12-11 01:10] COMPLETE: Claude SDK Rust port finished and available
+[2025-12-11 01:10] START: F015 (Claude ADK integration) - integrating SDK into colony-agent
+[2025-12-11 01:10] DECISION: Colony Shell itself is the REPL - no separate agent REPL needed
+[2025-12-11 01:15] PROGRESS: Integrated claude-sdk into colony-agent crate
+[2025-12-11 01:20] PROGRESS: Implemented Agent with tool registry and streaming
+[2025-12-11 01:20] PROGRESS: Implemented ToolClassification (PROGRAMMATIC vs USER_FACING)
+[2025-12-11 01:25] PROGRESS: Implemented NaturalLanguageDetector with # and ? prefixes
+[2025-12-11 01:30] PROGRESS: Integrated agent into colony-shell REPL
+[2025-12-11 01:30] COMPLETE: F015 (Claude ADK integration) - ready for testing
+[2025-12-11 01:30] DECISION: Colony Shell IS the REPL - better than SDK standalone REPL
