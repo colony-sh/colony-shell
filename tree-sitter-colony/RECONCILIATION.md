@@ -6,11 +6,13 @@ Colony Shell uses **three parsers** for different purposes:
 
 ### 1. Tree-sitter (Editor Features)
 **Location:** `tree-sitter-colony/`
+**Implementation:** Pure Rust via `rust-sitter` (no C, no FFI)
 **Purpose:** Real-time syntax highlighting, folding, navigation
 **Characteristics:**
 - Incremental parsing (< 1ms for typical edits)
 - Error recovery (works with syntax errors)
 - Produces CST (Concrete Syntax Tree)
+- Pure Rust code generation (zero overhead)
 - Used by: editors, LSP, syntax highlighters
 
 **When it runs:** Every keystroke during editing

@@ -1,6 +1,9 @@
 node_modules/
 build/
-src/
+src/grammar.json
+src/node-types.json
+bindings/rust/src/parser.rs
 *.log
 npm-debug.log*
 package-lock.json
+target/

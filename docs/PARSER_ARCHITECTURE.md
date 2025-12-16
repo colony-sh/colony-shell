@@ -41,6 +41,8 @@ Colony Shell uses a **three-parser hybrid architecture** for optimal performance
 
 **Location:** `tree-sitter-colony/`
 
+**Implementation:** Pure Rust via `rust-sitter` (no C, no FFI)
+
 **Purpose:** Real-time editor features
 
 **Features:**
@@ -48,6 +50,7 @@ Colony Shell uses a **three-parser hybrid architecture** for optimal performance
 - Error recovery (keeps parsing after errors)
 - Language injection (heredocs, command subs)
 - Produces CST (every character represented)
+- Pure Rust code generation (zero FFI overhead)
 
 **Used for:**
 - Syntax highlighting (instant feedback)
@@ -58,17 +61,21 @@ Colony Shell uses a **three-parser hybrid architecture** for optimal performance
 
 **Example:**
 ```rust
-let mut parser = tree_sitter::Parser::new();
-parser.set_language(tree_sitter_colony::language())?;
+use tree_sitter_colony::{language, parse, parse_incremental};
 
-// Parse
-let tree = parser.parse(source, None)?;
+// Parse (convenience wrapper)
+let tree = parse(source)?;
 
-// Incremental re-parse (fast!)
-let new_tree = parser.parse(new_source, Some(&tree))?;
+// Incremental re-parse (< 1ms typically)
+let new_tree = parse_incremental(new_source, &tree)?;
+
+// Or use parser directly
+use tree_sitter::Parser;
+let mut parser = Parser::new();
+parser.set_language(language())?;
 
 // Query for highlights
-let query = Query::new(language, HIGHLIGHTS_QUERY)?;
+let query = Query::new(language(), tree_sitter_colony::HIGHLIGHTS_QUERY)?;
 let matches = query.matches(tree.root_node(), source.as_bytes());
 ```
 

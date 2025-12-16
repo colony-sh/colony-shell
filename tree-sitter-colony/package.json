@@ -1,19 +1,17 @@
 {
   "name": "tree-sitter-colony",
   "version": "0.1.0",
-  "description": "Tree-sitter grammar for Colony Shell",
+  "description": "Tree-sitter grammar for Colony Shell (rust-sitter)",
   "main": "bindings/node",
   "keywords": [
     "tree-sitter",
+    "rust-sitter",
     "parser",
     "shell",
     "colony"
   ],
   "author": "Colony Contributors",
   "license": "MIT OR Apache-2.0",
-  "dependencies": {
-    "nan": "^2.17.0"
-  },
   "devDependencies": {
     "tree-sitter-cli": "^0.20.8"
   },

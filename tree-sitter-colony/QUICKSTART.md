@@ -1,17 +1,17 @@
-# Tree-sitter Colony - Quick Start
+# Tree-sitter Colony - Quick Start (rust-sitter)
 
 ## Prerequisites
 
 ```bash
-# Install Node.js (16+ required)
-# macOS:
-brew install node
+# Install rust-sitter CLI
+cargo install rust-sitter-cli
 
-# Install Tree-sitter CLI globally
+# Verify installation
+rust-sitter --version
+
+# Also need tree-sitter CLI for grammar development
 npm install -g tree-sitter-cli
-
-# Or use npx (no global install)
-npx tree-sitter --version
+# Or use npx
 ```
 
 ## Generate Parser
@@ -19,16 +19,19 @@ npx tree-sitter --version
 ```bash
 cd tree-sitter-colony
 
-# Install dependencies
-npm install
-
-# Generate parser C code
+# First, generate grammar with tree-sitter
 npx tree-sitter generate
 
 # This creates:
-#   src/parser.c         - Generated parser
-#   src/node-types.json  - Type definitions
 #   src/grammar.json     - Compiled grammar
+#   src/node-types.json  - Type definitions
+
+# Then, generate Rust code with rust-sitter
+cd bindings/rust
+rust-sitter generate --rust-package-info Cargo.toml
+
+# This creates:
+#   src/parser.rs        - Pure Rust parser (no C!)
 ```
 
 ## Test Parser
@@ -49,13 +52,13 @@ npx tree-sitter highlight examples/test.sh
 ```bash
 cd bindings/rust
 
-# Build (compiles src/parser.c via build.rs)
+# Build (pure Rust, no C compilation!)
 cargo build
 
-# Run tests
+# Run tests (currently ignored until parser generated)
 cargo test
 
-# All tests should pass:
+# After rust-sitter generate, all tests should pass:
 #   - test_can_load_grammar
 #   - test_parse_simple_command
 #   - test_parse_pipeline
@@ -121,12 +124,13 @@ npm install -g tree-sitter-cli
 npx tree-sitter generate
 ```
 
-### Rust build fails: "parser.c not found"
+### Rust build fails: "parser module not found"
 ```bash
-# Generate parser before building Rust bindings
-cd ../..  # to tree-sitter-colony root
+# Generate grammar and Rust code
+cd tree-sitter-colony
 npx tree-sitter generate
 cd bindings/rust
+rust-sitter generate --rust-package-info Cargo.toml
 cargo build
 ```
 

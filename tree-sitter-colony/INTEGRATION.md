@@ -1,4 +1,4 @@
-# Tree-sitter Integration Guide
+# Tree-sitter Integration Guide (rust-sitter)
 
 How to integrate Tree-sitter Colony parser into editors and the Colony Shell REPL.
 
@@ -8,25 +8,36 @@ How to integrate Tree-sitter Colony parser into editors and the Colony Shell REP
 
 ```bash
 cd tree-sitter-colony
-npm install
+
+# Generate grammar
 npx tree-sitter generate
 npx tree-sitter test
 ```
 
 This generates:
-- `src/parser.c` - Generated C parser
-- `src/scanner.c` - External scanner (if needed)
+- `src/grammar.json` - Compiled grammar
 - `src/node-types.json` - Node type definitions
 
-### 2. Build Rust Bindings
+### 2. Generate Rust Code
 
 ```bash
 cd bindings/rust
+
+# Generate pure Rust parser (no C!)
+rust-sitter generate --rust-package-info Cargo.toml
+```
+
+This generates:
+- `src/parser.rs` - Pure Rust parser implementation
+
+### 3. Build and Test
+
+```bash
 cargo build
 cargo test
 ```
 
-The `build.rs` compiles the C parser and links it to Rust.
+No C compilation, no FFI - just pure Rust!
 
 ### 3. Use in Colony Shell
 
@@ -289,13 +300,18 @@ cargo test
 
 ### Parser Generation Fails
 - Check Node.js version (needs 16+)
-- Ensure `tree-sitter-cli` installed
+- Ensure `tree-sitter-cli` installed: `npm install -g tree-sitter-cli`
 - Check `grammar.js` for syntax errors
 
+### rust-sitter Generation Fails
+- Install rust-sitter: `cargo install rust-sitter-cli`
+- Generate grammar first: `npx tree-sitter generate`
+- Check rust-sitter.toml configuration
+
 ### Rust Build Fails
-- Ensure `cc` crate installed
-- Check that `src/parser.c` exists (run generate first)
-- Verify nix feature flags match workspace
+- Ensure parser.rs generated: `rust-sitter generate`
+- No C compiler needed (pure Rust!)
+- Check tree-sitter dependency version
 
 ### Highlights Not Showing
 - Check query syntax: `npx tree-sitter query queries/highlights.scm`

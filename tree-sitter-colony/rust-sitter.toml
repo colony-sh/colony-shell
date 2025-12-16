@@ -1,0 +1,14 @@
+# rust-sitter configuration for Colony Shell grammar
+
+[grammar]
+name = "tree_sitter_colony"
+path = "."
+
+[rust]
+# Generate pure Rust parser code
+package = "tree-sitter-colony"
+generate_binding = true
+
+# Use the workspace tree-sitter dependency
+[rust.dependencies]
+tree-sitter = { workspace = true }

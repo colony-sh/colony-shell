@@ -39,14 +39,15 @@ This session accomplished an extraordinary amount:
 - Exit status collection
 - **Tests:** 13 passing (2 new pipeline tests)
 
-### F022: Tree-sitter Parser ✓
-**Implemented:** Grammar and infrastructure for editor features
+### F022: Tree-sitter Parser (rust-sitter) ✓
+**Implemented:** Pure Rust grammar and infrastructure for editor features
 - Complete grammar.js (POSIX + Colony extensions)
 - Highlighting queries (highlights.scm)
-- Rust bindings with build system
+- Pure Rust bindings via rust-sitter (no C, no FFI)
+- rust-sitter.toml configuration
 - Test corpus (5 test cases)
-- Comprehensive documentation (4 docs)
-- **Status:** Ready for parser generation
+- Comprehensive documentation (5 docs)
+- **Status:** Ready for parser generation with rust-sitter CLI
 
 ## Architecture Established
 
@@ -140,12 +141,12 @@ ${#var}
 ## Next Steps
 
 ### Immediate (F022 completion)
-1. Generate Tree-sitter parser:
+1. Generate Tree-sitter parser with rust-sitter:
    ```bash
    cd tree-sitter-colony
-   npm install
    npx tree-sitter generate
-   npx tree-sitter test
+   cd bindings/rust
+   rust-sitter generate --rust-package-info Cargo.toml
    ```
 
 2. Add to workspace:
@@ -154,11 +155,15 @@ ${#var}
    members = [
        "tree-sitter-colony/bindings/rust",
    ]
+
+   [workspace.dependencies]
+   tree-sitter = "0.20"
    ```
 
 3. Test Rust bindings:
    ```bash
    cargo test -p tree-sitter-colony
+   # Tests currently ignored until parser.rs generated
    ```
 
 ### Coordination with F021 (Pest)
