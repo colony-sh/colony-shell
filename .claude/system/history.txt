@@ -112,3 +112,18 @@
 [2025-12-16 19:50] COMPLETE: Created pest quickstart guide (docs/pest-quickstart.md)
 [2025-12-16 19:55] RATIONALE: pest chosen for excellent error messages, IDE support, zero-copy parsing
 [2025-12-16 20:00] COMPLETE: Three deliverables ready - grammar, proposal, quickstart
+[2025-12-16 19:40] START: Adding Tree-sitter for hybrid parser architecture
+[2025-12-16 19:40] DECISION: Tree-sitter for editing/highlighting, existing parser for execution
+[2025-12-16 20:00] DECISION: Adopting pest PEG parser for Colony Shell (three-stage pipeline)
+[2025-12-16 20:05] START: pest migration - created feature/pest-parser branch
+[2025-12-16 20:10] PROGRESS: Added pest and pest_derive to workspace dependencies
+[2025-12-16 20:15] PROGRESS: Created colony.pest grammar (620 lines)
+[2025-12-16 20:20] FIX: Grammar left-recursion - RangeExpr, OrPattern removed from initial version
+[2025-12-16 20:25] FIX: Made Word atomic rule (@) to prevent whitespace issues
+[2025-12-16 20:30] COMPLETE: pest_parser module with ColonyParser derive - 7 tests passing
+[2025-12-16 20:35] PROGRESS: Implemented AST builder for SimpleCommand and Pipeline
+[2025-12-16 20:40] COMPLETE: Builder module with span tracking from pest Pairs
+[2025-12-16 20:45] COMPLETE: All 37 tests passing (28 existing + 7 pest + 2 builder)
+[2025-12-16 20:50] COMMIT: pest integration complete - grammar validates, basic builders work
+[2025-12-16 20:55] TODO: Implement remaining builders (if/for/while/var_decl/function)
+[2025-12-16 21:00] TODO: Connect preprocessor (F001) to emit pest-parseable tokens

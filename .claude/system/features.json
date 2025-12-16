@@ -237,6 +237,26 @@
       "priority": 4,
       "dependencies": [],
       "notes": []
+    },
+    {
+      "id": "F021",
+      "name": "pest PEG Parser Migration",
+      "description": "Migrate from hand-written recursive descent to hybrid pest-based parser. Three-stage pipeline: preprocessor (mode stack) → pest (syntax) → expander (word expansion). Maintains POSIX compliance while gaining declarative grammar, better error messages, and easier evolution.",
+      "status": "in_progress",
+      "priority": 2,
+      "dependencies": ["F001", "F002", "F003"],
+      "notes": [
+        "2025-12-16: Created feature/pest-parser branch",
+        "2025-12-16: Added pest v2.7 dependencies to workspace",
+        "2025-12-16: Created colony.pest grammar (620 lines) with full language coverage",
+        "2025-12-16: Fixed left-recursion in grammar (RangeExpr, OrPattern deferred)",
+        "2025-12-16: Created pest_parser module with derive macro - 7 tests passing",
+        "2025-12-16: Implemented builder module with SimpleCommand and Pipeline support",
+        "2025-12-16: All 37 tests passing (28 existing + 7 pest + 2 builder)",
+        "2025-12-16: Committed initial integration - grammar validates, basic parsing works",
+        "2025-12-16: TODO: Implement remaining builders (if/for/while/var_decl/function)",
+        "2025-12-16: TODO: Connect F001 preprocessor to emit pest-parseable tokens"
+      ]
     }
   ]
 }
