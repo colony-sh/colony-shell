@@ -22,10 +22,20 @@
       "id": "F002",
       "name": "Recursive descent parser",
       "description": "Parser that builds AST from token stream. Handles simple commands, pipelines, lists (&&, ||, ;, &), compound commands (if/while/for/case), subshells, brace groups, and function definitions.",
-      "status": "new",
+      "status": "complete",
       "priority": 1,
       "dependencies": ["F001"],
-      "notes": []
+      "notes": [
+        "2025-12-16: Starting F002 - F001 dependency satisfied",
+        "2025-12-16: Assessing existing parser stub and AST structure",
+        "2025-12-16: Implemented if/elif/else/fi with condition and body parsing",
+        "2025-12-16: Implemented while/until loops with do/done",
+        "2025-12-16: Implemented for loops with optional 'in' clause",
+        "2025-12-16: Implemented case/esac with pattern matching and terminators (;;, ;&, ;;&)",
+        "2025-12-16: Implemented POSIX function definitions (name() and function keyword)",
+        "2025-12-16: Fixed precedence: Statement→List→Pipeline→Simple/Compound",
+        "2025-12-16: COMPLETE - 28 tests passing (12 lexer + 16 parser)"
+      ]
     },
     {
       "id": "F003",

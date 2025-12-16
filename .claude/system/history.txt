@@ -53,3 +53,15 @@
 [2025-12-16 14:02] COMPLETE: Heredoc support with <<  and <<- (tab stripping) operators
 [2025-12-16 14:02] PROGRESS: Added 5 new tests - all 18 tests passing (12 lexer + 6 parser)
 [2025-12-16 14:02] COMPLETE: F001 (Lexer with mode stack) - ready for F002 (Parser)
+[2025-12-16 14:19] START: F002 (Recursive descent parser) - F001 complete
+[2025-12-16 14:19] PROGRESS: Parser foundation assessed - 525 lines, 6 tests passing
+[2025-12-16 14:19] COMPLETE: if/elif/else/fi statement parsing with multiple branches
+[2025-12-16 14:19] COMPLETE: while and until loop parsing with do/done
+[2025-12-16 14:19] COMPLETE: for loop parsing with optional 'in words...'  clause
+[2025-12-16 14:19] COMPLETE: case/esac with multi-pattern arms and terminators
+[2025-12-16 14:19] COMPLETE: POSIX function definitions - both name() and function syntaxes
+[2025-12-16 14:19] DECISION: parse_list() for top-level, parse_pipeline() for bodies
+[2025-12-16 14:19] FIX: Body parsing used parse_pipeline() to avoid semicolon consumption
+[2025-12-16 14:19] FIX: Lexer now handles $var as single Word token with expansion
+[2025-12-16 14:19] FIX: Added *, ?, [ as word-start characters for glob patterns
+[2025-12-16 14:19] COMPLETE: F002 - 28 tests passing (12 lexer + 16 parser)

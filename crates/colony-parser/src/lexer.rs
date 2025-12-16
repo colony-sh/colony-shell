@@ -950,6 +950,25 @@ impl<'src> Lexer<'src> {
                     Span::new(start, self.position),
                 ))
             }
+            Some(c) if is_ident_start(c) => {
+                // Simple variable reference $var - lex as a word with expansion marker
+                let mut var_name = String::new();
+                while let Some(c) = self.peek() {
+                    if is_ident_continue(c) {
+                        var_name.push(c);
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+
+                // Return as a Word token with $ prefix to indicate it's a variable
+                Ok(Token::new(
+                    TokenKind::Word,
+                    Span::new(start, self.position),
+                    TokenValue::String(format!("${}", var_name)),
+                ))
+            }
             _ => Ok(Token::simple(TokenKind::Dollar, Span::new(start, self.position))),
         }
     }
@@ -1072,7 +1091,7 @@ impl<'src> Lexer<'src> {
 
 /// Check if character can start a word
 fn is_word_start(c: char) -> bool {
-    c.is_alphabetic() || c == '_' || c == '/' || c == '.' || c == '-' || c == '~'
+    c.is_alphabetic() || c == '_' || c == '/' || c == '.' || c == '-' || c == '~' || c == '*' || c == '?' || c == '['
 }
 
 /// Check if character can continue a word
