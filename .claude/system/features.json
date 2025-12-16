@@ -269,7 +269,7 @@
       "id": "F022",
       "name": "Tree-sitter Parser for Editor Features",
       "description": "Incremental Tree-sitter parser using rust-sitter (pure Rust, no C/FFI) for real-time syntax highlighting, code folding, and navigation. Produces error-tolerant CST for editor features while Pest/hand-written parsers handle execution.",
-      "status": "complete",
+      "status": "blocked",
       "priority": 3,
       "dependencies": [],
       "notes": [
@@ -289,8 +289,10 @@
         "2025-12-16: Created rust-sitter.toml configuration",
         "2025-12-16: Removed build.rs and C compilation infrastructure",
         "2025-12-16: Created RUST_SITTER.md explaining benefits",
-        "2025-12-16: COMPLETE - Ready for generation with rust-sitter CLI",
-        "2025-12-16: Next: Run 'rust-sitter generate' to create parser.rs"
+        "2025-12-16: Tried comprehensive Colony grammar - has unresolved conflicts",
+        "2025-12-16: BLOCKED - Grammar conflicts prevent generation",
+        "2025-12-16: Created STATUS.md with analysis and recommendations",
+        "2025-12-16: Recommended: Fork tree-sitter-bash as proven baseline"
       ]
     }
   ]

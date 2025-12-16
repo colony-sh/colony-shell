@@ -168,3 +168,11 @@
 [2025-12-16 22:15] TODO: Connect F001 preprocessor for complex word expansion
 [2025-12-16 21:40] DECISION: Fork tree-sitter-bash instead of building grammar from scratch
 [2025-12-16 21:40] RATIONALE: Bash grammar is mature, handles shell tokenization edge cases
+[2025-12-16 21:50] BLOCKED: Tree-sitter grammar has unresolved conflicts
+[2025-12-16 21:50] DECISION: Recommend forking tree-sitter-bash instead of from-scratch grammar
+[2025-12-16 21:50] ALTERNATIVE: Defer Tree-sitter, focus on Pest/execution features
+[2025-12-16 21:55] CREATED: STATUS.md documenting current state and options
+[2025-12-16 21:50] BLOCKED: Tree-sitter grammar has unresolved conflicts
+[2025-12-16 21:50] DECISION: Recommend forking tree-sitter-bash instead of from-scratch grammar
+[2025-12-16 21:50] ALTERNATIVE: Defer Tree-sitter, focus on Pest/execution features (F021 at 45 tests!)
+[2025-12-16 21:55] CREATED: STATUS.md documenting current state and options
