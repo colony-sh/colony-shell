@@ -1,4 +1,47 @@
 //! Command execution with fork/exec and job control
+//!
+//! This crate handles:
+//! - Simple command execution (fork/exec)
+//! - PATH resolution
+//! - Environment passing
+//! - Exit status capture
+//! - Signal handling (future: job control)
 
-/// Placeholder for execution functionality
-pub struct Executor;
+mod command;
+mod error;
+mod path;
+mod process;
+
+pub use command::execute_command;
+pub use error::{ExecutionError, Result};
+pub use path::resolve_command;
+pub use process::{ExitStatus, ProcessHandle};
+
+use colony_expand::ExpansionContext;
+use colony_parser::SimpleCommand;
+
+/// Main executor for shell commands
+pub struct Executor {
+    context: ExpansionContext,
+}
+
+impl Executor {
+    pub fn new(context: ExpansionContext) -> Self {
+        Self { context }
+    }
+
+    /// Execute a simple command
+    pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
+        execute_command(cmd, &mut self.context).await
+    }
+
+    /// Get mutable reference to expansion context
+    pub fn context_mut(&mut self) -> &mut ExpansionContext {
+        &mut self.context
+    }
+
+    /// Get reference to expansion context
+    pub fn context(&self) -> &ExpansionContext {
+        &self.context
+    }
+}

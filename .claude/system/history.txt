@@ -81,3 +81,11 @@
 [2025-12-16 17:40] DECISION: Command substitution and arithmetic are stubs (need executor crate)
 [2025-12-16 17:45] FIX: Non-whitespace IFS must preserve empty fields (consecutive delimiters)
 [2025-12-16 17:50] COMPLETE: F003 (Expansion system) - 16 tests passing
+[2025-12-16 18:00] START: Beginning F004 (Simple command execution) - F003 complete
+[2025-12-16 18:10] PROGRESS: Designed executor architecture with Executor/ProcessHandle types
+[2025-12-16 18:15] COMPLETE: PATH resolution - absolute/relative paths, executable check
+[2025-12-16 18:20] COMPLETE: fork/exec using nix crate - spawn_process with CString conversion
+[2025-12-16 18:25] COMPLETE: Exit status capture - handle exit codes and signals (128+signal)
+[2025-12-16 18:30] COMPLETE: Command execution integration - expansion → resolve → spawn
+[2025-12-16 18:35] DECISION: Used spawn_blocking for async compatibility (rule #10)
+[2025-12-16 18:40] COMPLETE: F004 (Simple command execution) - 11 tests passing

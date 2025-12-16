@@ -60,10 +60,18 @@
       "id": "F004",
       "name": "Simple command execution",
       "description": "Execute external commands via fork/exec using nix crate. Handle PATH lookup, environment passing, and exit status capture.",
-      "status": "new",
+      "status": "complete",
       "priority": 2,
       "dependencies": ["F003"],
-      "notes": []
+      "notes": [
+        "2025-12-16: Starting F004 - F003 dependency satisfied",
+        "2025-12-16: Implemented PATH resolution with absolute/relative path handling",
+        "2025-12-16: Implemented fork/exec using nix crate (POSIX-compliant)",
+        "2025-12-16: Integrated word expansion before command execution",
+        "2025-12-16: Used spawn_blocking for async compatibility (rule #10)",
+        "2025-12-16: Exit status capture with signal handling (128+signal convention)",
+        "2025-12-16: COMPLETE - 11 tests passing (path, process, command execution)"
+      ]
     },
     {
       "id": "F005",

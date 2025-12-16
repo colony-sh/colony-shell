@@ -1,0 +1,32 @@
+//! Execution errors
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ExecutionError {
+    #[error("Command not found: {0}")]
+    CommandNotFound(String),
+
+    #[error("Permission denied: {0}")]
+    PermissionDenied(String),
+
+    #[error("Expansion error: {0}")]
+    ExpansionError(#[from] colony_expand::ExpansionError),
+
+    #[error("Fork failed: {0}")]
+    ForkError(nix::Error),
+
+    #[error("Exec failed: {0}")]
+    ExecError(nix::Error),
+
+    #[error("Wait failed: {0}")]
+    WaitError(nix::Error),
+
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("Invalid UTF-8 in argument")]
+    InvalidUtf8,
+}
+
+pub type Result<T> = std::result::Result<T, ExecutionError>;
