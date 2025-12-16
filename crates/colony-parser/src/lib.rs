@@ -21,6 +21,8 @@ pub mod token;
 pub mod lexer;
 pub mod parser;
 pub mod ast;
+pub mod pest_parser;
+pub mod builder;
 
 pub use span::{Position, Span};
 pub use token::{Token, TokenKind, TokenValue, InterpolatedPart};

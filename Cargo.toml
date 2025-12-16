@@ -51,6 +51,10 @@ futures = "0.3"
 thiserror = "1.0"
 miette = { version = "7.0", features = ["fancy"] }
 
+# Parser
+pest = "2.7"
+pest_derive = "2.7"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

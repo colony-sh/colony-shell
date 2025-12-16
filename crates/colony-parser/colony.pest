@@ -1,0 +1,683 @@
+// Colony Shell Grammar - pest syntax
+//
+// This pest grammar defines the core syntactic structure of Colony Shell.
+// Context-sensitive lexing and expansion handling require custom preprocessing.
+//
+// See docs/peg-proposal.md for integration strategy.
+
+// ============================================================================
+// Program Structure
+// ============================================================================
+
+Program = { SOI ~ Statement* ~ EOI }
+
+Statement = {
+    VarDecl
+  | FunctionDef
+  | ProcDef
+  | FuncDef
+  | AgentDef
+  | TryStatement
+  | IfStatement
+  | CaseStatement
+  | ForStatement
+  | WhileStatement
+  | UntilStatement
+  | MatchStatement
+  | ReturnStatement
+  | BreakStatement
+  | ContinueStatement
+  | CommandList
+  | Assignment
+  | Comment
+  | EmptyStatement
+}
+
+EmptyStatement = { Terminator }
+
+Terminator = { NEWLINE | ";" }
+
+// ============================================================================
+// Commands and Pipelines
+// ============================================================================
+
+CommandList = { AndOrList ~ (ListOp ~ AndOrList)* }
+
+AndOrList = { Pipeline ~ (AndOrOp ~ Pipeline)* }
+
+AndOrOp = { "&&" | "||" }
+
+Pipeline = { "!"? ~ PipelineElement ~ (PipeOp ~ PipelineElement)* }
+
+PipelineElement = {
+    CompoundCommand
+  | SimpleCommand
+  | Subshell
+}
+
+SimpleCommand = {
+    Assignment* ~ Word ~ Word* ~ Redirect*
+}
+
+PipeOp = {
+    "|&"
+  | "|"
+  | "->"
+  | "=>"
+  | "~>"
+}
+
+ListOp = {
+    "&&"
+  | "||"
+  | ";"
+  | "&"
+}
+
+// ============================================================================
+// Compound Commands
+// ============================================================================
+
+CompoundCommand = {
+    BraceGroup
+  | IfStatement
+  | CaseStatement
+  | ForStatement
+  | WhileStatement
+  | UntilStatement
+  | MatchStatement
+}
+
+BraceGroup = { "{" ~ Statement* ~ "}" }
+
+Subshell = { "(" ~ CommandList ~ ")" }
+
+// ============================================================================
+// Control Flow
+// ============================================================================
+
+IfStatement = {
+    "if" ~ Condition ~ "then"? ~ Block
+    ~ ("elif" ~ Condition ~ "then"? ~ Block)*
+    ~ ("else" ~ Block)?
+    ~ "fi"?
+}
+
+CaseStatement = {
+    "case" ~ CaseValue ~ "in"
+    ~ CaseArm*
+    ~ "esac"
+}
+
+CaseValue = { Expression | Word }
+
+CaseArm = {
+    CasePattern+ ~ ")" ~ Statement* ~ CaseTerminator
+}
+
+CasePattern = { "|"? ~ (Word | Expression) }
+
+CaseTerminator = {
+    ";;&"
+  | ";;"
+  | ";&"
+}
+
+ForStatement = { "for" ~ ForKind ~ Block }
+
+ForKind = {
+    Identifier ~ "," ~ Identifier ~ "in" ~ "enumerate" ~ "(" ~ Expression ~ ")"  // enumerate
+  | "(" ~ Expression? ~ ";" ~ Expression? ~ ";" ~ Expression? ~ ")"  // C-style
+  | Identifier ~ "in" ~ WordList  // words (must come before Expression)
+  | Identifier ~ "in" ~ Expression  // iterate
+}
+
+WordList = { Word+ }  // At least one word required
+
+WhileStatement = { "while" ~ Condition ~ Block }
+
+UntilStatement = { "until" ~ Condition ~ Block }
+
+MatchStatement = {
+    "match" ~ Expression ~ "{"
+    ~ MatchArm*
+    ~ "}"
+}
+
+MatchArm = {
+    MatchPattern ~ ("if" ~ Expression)? ~ "=>" ~ (Block | Expression)
+}
+
+MatchPattern = {
+    ListPattern
+  | DictPattern
+  | TuplePattern
+  | LiteralPattern
+  | BindingPattern
+  | WildcardPattern
+}
+
+ListPattern = {
+    "[" ~ (MatchPattern ~ ("," ~ MatchPattern)*)? ~ ("," ~ ".." ~ Identifier?)? ~ "]"
+}
+
+DictPattern = {
+    "{" ~ (DictPatternField ~ ("," ~ DictPatternField)*)? ~ ("," ~ "..")? ~ "}"
+}
+
+DictPatternField = { Identifier ~ (":" ~ MatchPattern)? }
+
+TuplePattern = { "(" ~ MatchPattern ~ ("," ~ MatchPattern)+ ~ ")" }
+
+// TODO: Re-add RangePattern with proper precedence
+// RangePattern = { Expression ~ ".." ~ "="? ~ Expression }
+
+LiteralPattern = { Expression }
+
+BindingPattern = { Identifier }
+
+WildcardPattern = { "_" }
+
+OrPattern = { MatchPattern ~ ("|" ~ MatchPattern)+ }
+
+TryStatement = {
+    "try" ~ Block
+    ~ ("catch" ~ CatchBlock)?
+    ~ ("finally" ~ Block)?
+}
+
+CatchBlock = {
+    Identifier? ~ (":" ~ Identifier)? ~ Block
+}
+
+Condition = { Expression | CommandList }
+
+Block = {
+    "{" ~ Statement* ~ "}"
+  | "do" ~ Statement* ~ "done"
+}
+
+// ============================================================================
+// Declarations
+// ============================================================================
+
+VarDecl = {
+    VarKind ~ Identifier ~ (":" ~ TypeAnnotation)? ~ "=" ~ Expression
+}
+
+VarKind = { "var" | "const" | "setvar" }
+
+Assignment = {
+    Identifier ~ AssignOp ~ Expression
+}
+
+AssignOp = {
+    "+="
+  | "-="
+  | "*="
+  | "/="
+  | "%="
+  | "&="
+  | "|="
+  | "^="
+  | "<<="
+  | ">>="
+  | "??="
+  | "="
+}
+
+FunctionDef = {
+    ("function" ~ Identifier ~ "(" ~ ")" ~ Block)
+  | (Identifier ~ "(" ~ ")" ~ Block)
+}
+
+ProcDef = {
+    "proc" ~ Identifier ~ PipelineTypeAnnot? ~ ProcParams ~ Block
+}
+
+ProcParams = {
+    "(" ~ (ProcParam ~ ("," ~ ProcParam)*)? ~ ")"
+}
+
+ProcParam = {
+    Identifier ~ (":" ~ TypeAnnotation)? ~ ("=" ~ Expression)?
+}
+
+PipelineTypeAnnot = {
+    "[" ~ TypeAnnotation ~ "->" ~ TypeAnnotation ~ "]"
+}
+
+FuncDef = {
+    "func" ~ Identifier ~ FuncParams ~ ("->" ~ TypeAnnotation)? ~ FuncBody
+}
+
+FuncParams = {
+    "(" ~ (FuncParam ~ ("," ~ FuncParam)*)? ~ ")"
+}
+
+FuncParam = {
+    Identifier ~ (":" ~ TypeAnnotation)? ~ ("=" ~ Expression)?
+}
+
+FuncBody = {
+    Block
+  | ("=" ~ Expression)
+}
+
+AgentDef = {
+    "agent" ~ Identifier ~ "{"
+    ~ AgentField*
+    ~ "}"
+}
+
+AgentField = {
+    ("description" ~ ":" ~ StringLiteral)
+  | ("version" ~ ":" ~ StringLiteral)
+  | ("param" ~ ProcParam)
+  | ("tools" ~ ":" ~ StringList)
+  | ("mcp_servers" ~ ":" ~ StringList)
+  | ("max_tokens" ~ ":" ~ Integer)
+  | ("temperature" ~ ":" ~ Float)
+  | ("model" ~ ":" ~ StringLiteral)
+  | ("context" ~ ":" ~ ContextCaps)
+  | ("prompt" ~ ":" ~ AgentPrompt)
+  | ("on_start" ~ Block)
+  | ("on_tool_call" ~ "(" ~ Identifier ~ "," ~ Identifier ~ ")" ~ Block)
+  | ("on_message" ~ "(" ~ Identifier ~ ")" ~ Block)
+  | ("on_complete" ~ "(" ~ Identifier ~ ")" ~ Block)
+  | ("on_error" ~ "(" ~ Identifier ~ ")" ~ Block)
+}
+
+StringList = {
+    "[" ~ (StringLiteral ~ ("," ~ StringLiteral)*)? ~ "]"
+}
+
+ContextCaps = {
+    "{" ~ (ContextCap ~ ("," ~ ContextCap)*)? ~ "}"
+}
+
+ContextCap = {
+    ("read" ~ ":" ~ Boolean)
+  | ("write" ~ ":" ~ Boolean)
+  | ("types" ~ ":" ~ StringList)
+}
+
+AgentPrompt = {
+    StringLiteral
+  | ("file" ~ "(" ~ StringLiteral ~ ")")
+}
+
+ReturnStatement = { "return" ~ Expression? }
+
+BreakStatement = { "break" ~ Identifier? }
+
+ContinueStatement = { "continue" ~ Identifier? }
+
+// ============================================================================
+// Redirections
+// ============================================================================
+
+Redirect = {
+    Integer? ~ RedirectOp ~ (Word | Integer)
+}
+
+RedirectOp = {
+    "<<<"  // here-string
+  | "<<-"  // here-doc strip
+  | "<<"   // here-doc
+  | ">>"   // append
+  | ">|"   // clobber
+  | "<>"   // read-write
+  | "<&"   // dup input
+  | ">&"   // dup output
+  | "<"    // input
+  | ">"    // output
+}
+
+// ============================================================================
+// Expressions
+// ============================================================================
+
+Expression = { TernaryExpr }
+
+TernaryExpr = {
+    NullCoalesceExpr ~ ("?" ~ Expression ~ ":" ~ Expression)?
+}
+
+NullCoalesceExpr = {
+    OrExpr ~ ("??" ~ OrExpr)*
+}
+
+OrExpr = {
+    AndExpr ~ ("||" ~ AndExpr)*
+}
+
+AndExpr = {
+    EqualityExpr ~ ("&&" ~ EqualityExpr)*
+}
+
+EqualityExpr = {
+    ComparisonExpr ~ (EqualityOp ~ ComparisonExpr)*
+}
+
+EqualityOp = {
+    "=="
+  | "!="
+  | "=~"
+  | "!~"
+  | "~~"
+}
+
+ComparisonExpr = {
+    BitwiseOrExpr ~ (ComparisonOp ~ BitwiseOrExpr)*
+}
+
+ComparisonOp = {
+    "<="
+  | ">="
+  | "<"
+  | ">"
+}
+
+BitwiseOrExpr = {
+    BitwiseXorExpr ~ ("|" ~ BitwiseXorExpr)*
+}
+
+BitwiseXorExpr = {
+    BitwiseAndExpr ~ ("^" ~ BitwiseAndExpr)*
+}
+
+BitwiseAndExpr = {
+    ShiftExpr ~ ("&" ~ ShiftExpr)*
+}
+
+ShiftExpr = {
+    AdditiveExpr ~ (ShiftOp ~ AdditiveExpr)*
+}
+
+ShiftOp = {
+    "<<"
+  | ">>"
+}
+
+AdditiveExpr = {
+    MultiplicativeExpr ~ (AdditiveOp ~ MultiplicativeExpr)*
+}
+
+AdditiveOp = {
+    "+"
+  | "-"
+}
+
+MultiplicativeExpr = {
+    PowerExpr ~ (MultiplicativeOp ~ PowerExpr)*
+}
+
+MultiplicativeOp = {
+    "//"
+  | "/"
+  | "*"
+  | "%"
+}
+
+PowerExpr = {
+    UnaryExpr ~ ("**" ~ UnaryExpr)*
+}
+
+UnaryExpr = {
+    (UnaryOp ~ UnaryExpr)
+  | PostfixExpr
+}
+
+UnaryOp = {
+    "!"
+  | "~"
+  | "-"
+  | "not"
+}
+
+PostfixExpr = {
+    PrimaryExpr ~ PostfixOp*
+}
+
+PostfixOp = {
+    ("[" ~ Expression ~ "]")  // index
+  | ("." ~ Identifier)        // field
+  | ("(" ~ ArgList ~ ")")     // call
+  | "?"                        // optional-chain
+  | "!"                        // unwrap
+}
+
+ArgList = {
+    (Expression ~ ("," ~ Expression)*)?
+}
+
+PrimaryExpr = {
+    Null
+  | Boolean
+  | Float
+  | Integer
+  | StringLiteral
+  | ListExpr
+  | DictExpr
+  | TupleExpr
+  | LambdaExpr
+  | Identifier
+  | ("(" ~ Expression ~ ")")
+}
+
+Null = { "null" }
+
+Boolean = { "true" | "false" }
+
+ListExpr = {
+    "[" ~ (Expression ~ ("," ~ Expression)* ~ ","?)? ~ "]"
+}
+
+DictExpr = {
+    "{" ~ (DictEntry ~ ("," ~ DictEntry)* ~ ","?)? ~ "}"
+}
+
+DictEntry = {
+    (Identifier | StringLiteral | ("[" ~ Expression ~ "]"))
+    ~ ":" ~ Expression
+}
+
+TupleExpr = {
+    "(" ~ Expression ~ "," ~ (Expression ~ ("," ~ Expression)*)? ~ ")"
+}
+
+// TODO: Re-add RangeExpr at proper precedence level (between comparison and bitwise?)
+// RangeExpr = {
+//     PostfixExpr ~ ".." ~ "="? ~ PostfixExpr ~ (".." ~ PostfixExpr)?
+// }
+
+LambdaExpr = {
+    "|" ~ (Identifier ~ ("," ~ Identifier)*)? ~ "|"
+    ~ (Block | Expression)
+}
+
+// ============================================================================
+// Type Annotations
+// ============================================================================
+
+TypeAnnotation = {
+    FunctionType
+  | UnionType
+  | OptionalType
+  | TupleType
+  | GenericType
+  | SimpleType
+}
+
+FunctionType = {
+    "(" ~ (TypeAnnotation ~ ("," ~ TypeAnnotation)*)? ~ ")"
+    ~ "->" ~ TypeAnnotation
+}
+
+UnionType = {
+    SimpleType ~ ("|" ~ SimpleType)+
+}
+
+OptionalType = {
+    SimpleType ~ "?"
+}
+
+TupleType = {
+    "(" ~ TypeAnnotation ~ ("," ~ TypeAnnotation)+ ~ ")"
+}
+
+GenericType = {
+    Identifier ~ "[" ~ (TypeAnnotation ~ ("," ~ TypeAnnotation)*)? ~ "]"
+}
+
+SimpleType = {
+    "Null"
+  | "Bool"
+  | "Int"
+  | "Float"
+  | "Str"
+  | "Bytes"
+  | "Any"
+  | "Never"
+  | Identifier
+}
+
+// ============================================================================
+// Words and Expansions (Preprocessing Required)
+// ============================================================================
+
+// Word must stop at whitespace - use atomic rule to prevent internal whitespace
+Word = @{ (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/" | ":" | "*" | "?" | "[" | "]")+ }
+
+WordPart = {
+    DollarExpansion
+  | Literal
+  | QuotedString
+}
+
+DollarExpansion = {
+    ("$[" ~ Expression ~ "]")            // expression
+  | ("$(" ~ CommandList ~ ")")           // command sub
+  | ("${" ~ VariableRef ~ "}")           // parameter
+  | ("$" ~ Identifier)                   // simple var
+}
+
+VariableRef = {
+    Identifier ~ VarModifier?
+}
+
+VarModifier = {
+    (":-" ~ Word)                        // default
+  | (":=" ~ Word)                        // assign
+  | (":?" ~ Word)                        // error
+  | (":+" ~ Word)                        // alternate
+  | ("##" ~ Word)                        // strip prefix greedy
+  | ("#" ~ Word)                         // strip prefix
+  | ("%%" ~ Word)                        // strip suffix greedy
+  | ("%" ~ Word)                         // strip suffix
+  | ("//" ~ Word ~ "/" ~ Word)           // replace all
+  | ("/" ~ Word ~ "/" ~ Word)            // replace first
+  | "^^"                                 // uppercase all
+  | "^"                                  // uppercase first
+  | ",,"                                 // lowercase all
+  | ","                                  // lowercase first
+  | "#"                                  // length
+  | ("[" ~ Slice ~ "]")                  // slice
+}
+
+Slice = {
+    Expression ~ (":" ~ Expression)?
+}
+
+QuotedString = {
+    SingleQuoted
+  | DoubleQuoted
+  | RawString
+  | TripleQuoted
+}
+
+// ============================================================================
+// Literals
+// ============================================================================
+
+Integer = @{
+    HexInt
+  | OctInt
+  | BinInt
+  | DecInt
+}
+
+DecInt = @{ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* }
+
+HexInt = @{ "0" ~ ("x" | "X") ~ ASCII_HEX_DIGIT ~ (ASCII_HEX_DIGIT | "_")* }
+
+OctInt = @{ "0" ~ ("o" | "O") ~ ASCII_OCT_DIGIT ~ (ASCII_OCT_DIGIT | "_")* }
+
+BinInt = @{ "0" ~ ("b" | "B") ~ ASCII_BIN_DIGIT ~ (ASCII_BIN_DIGIT | "_")* }
+
+Float = @{
+    (DecInt ~ "." ~ ASCII_DIGIT ~ (ASCII_DIGIT | "_")* ~ Exponent?)
+  | (DecInt ~ Exponent)
+}
+
+Exponent = @{ ("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+
+StringLiteral = {
+    DoubleQuoted
+  | SingleQuoted
+  | RawString
+  | TripleQuoted
+}
+
+// Note: Actual string tokenization requires custom lexer for interpolation
+// These are simplified for the PEG - preprocessor handles full complexity
+DoubleQuoted = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+SingleQuoted = @{ "'" ~ (!"'" ~ ANY)* ~ "'" }
+
+RawString = @{
+    "r" ~ ("'" ~ (!"'" ~ ANY)* ~ "'")
+  | "r" ~ ("\"" ~ (!"\"" ~ ANY)* ~ "\"")
+}
+
+TripleQuoted = @{
+    ("'''" ~ (!"'''" ~ ANY)* ~ "'''")
+  | ("\"\"\"" ~ (!"\"\"\"" ~ ANY)* ~ "\"\"\"")
+}
+
+Literal = @{ (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/" | ":")+ }
+
+Identifier = @{
+    !ReservedWord ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
+}
+
+ReservedWord = {
+    "if" | "then" | "else" | "elif" | "fi"
+  | "case" | "esac" | "in"
+  | "for" | "while" | "until" | "do" | "done"
+  | "function" | "proc" | "func" | "agent"
+  | "var" | "const" | "setvar"
+  | "try" | "catch" | "finally"
+  | "match" | "return" | "break" | "continue"
+  | "and" | "or" | "not"
+  | "true" | "false" | "null"
+}
+
+Comment = {
+    BlockComment
+  | LineComment
+}
+
+LineComment = @{ "#" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
+
+BlockComment = @{ "/#" ~ (!"#/" ~ ANY)* ~ "#/" }
+
+// ============================================================================
+// Whitespace (pest built-in handling)
+// ============================================================================
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+// pest uses WHITESPACE rule automatically between tokens
+// Use _ prefix for silent rules that don't create parse nodes
