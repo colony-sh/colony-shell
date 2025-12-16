@@ -181,3 +181,17 @@
 [2025-12-16 22:05] COMPLETE: Added typed pipes (-> => ~>) to pipeline rule
 [2025-12-16 22:05] VERIFIED: Typed pipes parse correctly in pipelines
 [2025-12-16 22:05] DECISION: Incremental Colony feature addition on proven bash foundation
+[2025-12-16 22:20] BREAKTHROUGH: Pure PEG approach validated - F001 lexer not needed!
+[2025-12-16 22:25] DISCOVERY: Grammar structure provides context - no mode stack required
+[2025-12-16 22:30] VALIDATED: SimpleCommand expects Word, Expression expects Identifier
+[2025-12-16 22:35] VALIDATED: Operator context from syntactic position (< redirect vs comparison)
+[2025-12-16 22:40] COMPLETE: Enhanced Word rule with Bareword, QuotedString, DollarExpansion
+[2025-12-16 22:45] COMPLETE: DoubleQuotedContent handles interpolation recursively
+[2025-12-16 22:50] COMPLETE: pest_api.rs public API - parse, parse_statement, parse_expression
+[2025-12-16 22:55] COMPLETE: Subshell and BraceGroup builders
+[2025-12-16 23:00] COMPLETE: 60 tests passing - pure PEG fully functional
+[2025-12-16 23:05] FINDING: Only heredocs need preprocessing (delayed content)
+[2025-12-16 23:10] COMMIT: Pure PEG implementation validates Option A approach
+[2025-12-16 22:10] DECISION: Hand-written parser (F001/F002) will be deprecated
+[2025-12-16 22:10] ARCHITECTURE: Final model is Tree-sitter (editor) + Pest (execution)
+[2025-12-16 22:10] RATIONALE: Two parsers cleaner than three, Pest handles all execution needs

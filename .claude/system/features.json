@@ -260,9 +260,18 @@
         "2025-12-16: FIX: Statement wrapper handling in Program and Block parsing",
         "2025-12-16: COMPLETE: 45 total tests passing (28 existing + 7 pest + 10 builder)",
         "2025-12-16: COMMIT: Complete AST builders - pest pipeline functional",
-        "2025-12-16: TODO: Connect F001 preprocessor for context-sensitive tokenization",
-        "2025-12-16: TODO: Implement full expression precedence climbing with operators",
-        "2025-12-16: TODO: Handle word-list based for loops (grammar needs 'in' handling)"
+        "2025-12-16: BREAKTHROUGH: Pure PEG approach works - F001 lexer NOT needed!",
+        "2025-12-16: DISCOVERY: Grammar structure provides context (no mode stack required)",
+        "2025-12-16: VALIDATED: SimpleCommand→Word vs Expression→Identifier distinction works",
+        "2025-12-16: VALIDATED: Operator context from syntactic position (< redirect vs comparison)",
+        "2025-12-16: COMPLETE: Enhanced grammar with Bareword, DoubleQuotedContent interpolation",
+        "2025-12-16: COMPLETE: pest_api.rs public API (parse, parse_statement, parse_expression)",
+        "2025-12-16: COMPLETE: Subshell and BraceGroup builders",
+        "2025-12-16: COMPLETE: 60 tests passing - pure PEG fully functional!",
+        "2025-12-16: FINDING: Only heredocs need preprocessing (delayed content after newline)",
+        "2025-12-16: COMMIT: Pure PEG validates Option A - F001+F002 can be replaced",
+        "2025-12-16: TODO: Implement expression operators (precedence already in grammar)",
+        "2025-12-16: TODO: Handle heredocs (minimal preprocessing or special grammar rule)"
       ]
     },
     {
