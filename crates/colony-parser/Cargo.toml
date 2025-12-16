@@ -6,6 +6,9 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[[example]]
+name = "parser_demo"
+
 [dependencies]
 thiserror.workspace = true
 miette.workspace = true

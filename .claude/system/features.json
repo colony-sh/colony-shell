@@ -5,12 +5,17 @@
       "id": "F001",
       "name": "Lexer with mode stack",
       "description": "Hand-written lexer that tokenizes shell input with context-sensitive modes for quoting (single, double, heredoc, escape), operators, and reserved words. Must handle mode transitions correctly.",
-      "status": "in_progress",
+      "status": "complete",
       "priority": 1,
       "dependencies": [],
       "notes": [
         "2025-12-11: Workspace setup complete, lexer stub created",
-        "2025-12-11: Ready to implement tokenization logic"
+        "2025-12-11: Ready to implement tokenization logic",
+        "2025-12-16: Core tokenization implemented - words, operators, strings",
+        "2025-12-16: Arithmetic expansion lexing complete",
+        "2025-12-16: Command substitution in double quotes complete (recursive)",
+        "2025-12-16: Heredoc support complete with eager buffering strategy",
+        "2025-12-16: COMPLETE - 18 tests passing (12 lexer + 6 parser)"
       ]
     },
     {
