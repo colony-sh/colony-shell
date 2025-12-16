@@ -1,0 +1,84 @@
+=====================================
+Simple command
+=====================================
+
+echo hello world
+
+---
+
+(program
+  (simple_command
+    (command_name (word))
+    (argument (word))
+    (argument (word))))
+
+=====================================
+Pipeline
+=====================================
+
+echo foo | grep f
+
+---
+
+(program
+  (pipeline
+    (simple_command
+      (command_name (word))
+      (argument (word)))
+    (simple_command
+      (command_name (word))
+      (argument (word)))))
+
+=====================================
+Command list with AND
+=====================================
+
+make && make test
+
+---
+
+(program
+  (command_list
+    (simple_command
+      (command_name (word)))
+    (simple_command
+      (command_name (word))
+      (argument (word)))))
+
+=====================================
+Variable assignment
+=====================================
+
+FOO=bar echo $FOO
+
+---
+
+(program
+  (simple_command
+    (variable_assignment
+      (variable_name)
+      (word))
+    (command_name (word))
+    (argument
+      (variable_reference
+        (variable_name)))))
+
+=====================================
+If statement
+=====================================
+
+if test -f file; then
+  echo exists
+fi
+
+---
+
+(program
+  (if_statement
+    (simple_command
+      (command_name (word))
+      (argument (word))
+      (argument (word)))
+    (simple_command
+      (command_name (word))
+      (argument (word)))))

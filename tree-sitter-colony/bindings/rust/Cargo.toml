@@ -1,0 +1,14 @@
+[package]
+name = "tree-sitter-colony"
+version = "0.1.0"
+edition = "2021"
+authors = ["Colony Contributors"]
+license = "MIT OR Apache-2.0"
+description = "Tree-sitter grammar for Colony Shell"
+repository = "https://github.com/mcfearsome/colony-shell"
+
+[dependencies]
+tree-sitter = "0.20"
+
+[build-dependencies]
+cc = "1.0"

@@ -34,19 +34,28 @@
 21. Protocol types shared between shell and terminal via colony-protocol crate
 22. Memory operations are async — don't block the shell on vector search
 
+## Parser Architecture (Three-Parser Hybrid)
+
+27. Tree-sitter parser for editor features (syntax highlight, folding, navigation)
+28. Pest PEG parser for execution validation (strict, better errors)
+29. Hand-written parser as fallback (legacy, complete)
+30. Tree-sitter produces CST for incremental updates (< 1ms)
+31. Pest/hand-written produce AST for execution
+32. Reconciliation layer coordinates all three parsers
+
 ## Claude Agent SDK Integration
 
-27. Port Claude Agent SDK to Rust — do not shell out to TypeScript/Python
-28. Use programmatic tool calling (disable_user_input) for automatic tools
-29. Tool classification:
+33. Port Claude Agent SDK to Rust — do not shell out to TypeScript/Python
+34. Use programmatic tool calling (disable_user_input) for automatic tools
+35. Tool classification:
     - PROGRAMMATIC (auto-execute): memory ops, tuple space, read-only queries, safe computations
     - USER_FACING (require approval): file system writes, external API calls, destructive ops
-30. MCP tools inherit classification from server manifest or default to USER_FACING
-31. Terminal widget for tool approval requests via OSC 2337 Widget= protocol
+36. MCP tools inherit classification from server manifest or default to USER_FACING
+37. Terminal widget for tool approval requests via OSC 2337 Widget= protocol
 
 ## Non-Goals
 
-32. NOT building readline/line editing — will use reedline crate
-33. NOT building completions — terminal handles display, shell provides candidates
-34. NOT implementing bash-isms unless POSIX-compatible (no [[ ]], no (( )) outside $)
-35. NOT supporting Windows (Unix-only via nix crate)
+38. NOT building readline/line editing — will use reedline crate
+39. NOT building completions — terminal handles display, shell provides candidates
+40. NOT implementing bash-isms unless POSIX-compatible (no [[ ]], no (( )) outside $)
+41. NOT supporting Windows (Unix-only via nix crate)

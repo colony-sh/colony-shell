@@ -127,3 +127,19 @@
 [2025-12-16 20:50] COMMIT: pest integration complete - grammar validates, basic builders work
 [2025-12-16 20:55] TODO: Implement remaining builders (if/for/while/var_decl/function)
 [2025-12-16 21:00] TODO: Connect preprocessor (F001) to emit pest-parseable tokens
+[2025-12-16 19:50] START: Adding Tree-sitter for hybrid parser architecture (F022)
+[2025-12-16 19:50] CONTEXT: F021 (Pest) in progress on feature/pest-parser branch
+[2025-12-16 19:55] DECISION: Three-parser hybrid - Tree-sitter (editor), Pest (exec), Hand-written (fallback)
+[2025-12-16 20:00] COMPLETE: Tree-sitter grammar.js with POSIX + Colony extensions
+[2025-12-16 20:05] COMPLETE: Highlighting queries (queries/highlights.scm)
+[2025-12-16 20:10] COMPLETE: Rust bindings (bindings/rust/) with build.rs
+[2025-12-16 20:15] COMPLETE: Test corpus (test/corpus/commands.txt)
+[2025-12-16 20:20] COMPLETE: Reconciliation design (RECONCILIATION.md)
+[2025-12-16 20:25] COMPLETE: Architecture documentation (docs/PARSER_ARCHITECTURE.md)
+[2025-12-16 20:30] COMPLETE: Integration guide (INTEGRATION.md)
+[2025-12-16 20:35] DECISION: Tree-sitter grammar ready for generation via npm/tree-sitter CLI
+[2025-12-16 20:40] COMPLETE: Tree-sitter grammar covers all POSIX + Colony extensions
+[2025-12-16 20:45] COMPLETE: Documentation suite (README, RECONCILIATION, INTEGRATION, QUICKSTART)
+[2025-12-16 20:50] COMPLETE: Test corpus and example scripts
+[2025-12-16 20:55] DECISION: Added rules 27-32 documenting three-parser hybrid architecture
+[2025-12-16 21:00] COMPLETE: F022 (Tree-sitter Parser) - ready for generation

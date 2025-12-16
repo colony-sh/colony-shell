@@ -257,6 +257,30 @@
         "2025-12-16: TODO: Implement remaining builders (if/for/while/var_decl/function)",
         "2025-12-16: TODO: Connect F001 preprocessor to emit pest-parseable tokens"
       ]
+    },
+    {
+      "id": "F022",
+      "name": "Tree-sitter Parser for Editor Features",
+      "description": "Incremental Tree-sitter parser for real-time syntax highlighting, code folding, and navigation. Produces error-tolerant CST for editor features while Pest/hand-written parsers handle execution.",
+      "status": "complete",
+      "priority": 3,
+      "dependencies": [],
+      "notes": [
+        "2025-12-16: Created tree-sitter-colony/ directory structure",
+        "2025-12-16: Implemented grammar.js with POSIX + Colony extensions",
+        "2025-12-16: Grammar supports: commands, pipelines, compound commands, functions",
+        "2025-12-16: Colony extensions: typed pipes (->, =>), var/const declarations",
+        "2025-12-16: Created highlighting queries with semantic tokens",
+        "2025-12-16: Created Rust bindings (lib.rs, build.rs) with 4 tests",
+        "2025-12-16: Created test corpus (5 test cases in corpus/commands.txt)",
+        "2025-12-16: Documented reconciliation layer (RECONCILIATION.md)",
+        "2025-12-16: Documented architecture (docs/PARSER_ARCHITECTURE.md)",
+        "2025-12-16: Created integration guide (INTEGRATION.md)",
+        "2025-12-16: Created quick-start guide (QUICKSTART.md)",
+        "2025-12-16: Added parser architecture rules (27-32) to rules.txt",
+        "2025-12-16: COMPLETE - Ready for parser generation with tree-sitter CLI",
+        "2025-12-16: Next: Run 'npx tree-sitter generate' to create parser.c"
+      ]
     }
   ]
 }
