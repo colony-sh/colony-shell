@@ -254,8 +254,15 @@
         "2025-12-16: Implemented builder module with SimpleCommand and Pipeline support",
         "2025-12-16: All 37 tests passing (28 existing + 7 pest + 2 builder)",
         "2025-12-16: Committed initial integration - grammar validates, basic parsing works",
-        "2025-12-16: TODO: Implement remaining builders (if/for/while/var_decl/function)",
-        "2025-12-16: TODO: Connect F001 preprocessor to emit pest-parseable tokens"
+        "2025-12-16: COMPLETE: Implemented all AST builders - if/while/until/for/var_decl/function",
+        "2025-12-16: COMPLETE: Expression builder with literals and variables",
+        "2025-12-16: COMPLETE: Assignment and redirect builders",
+        "2025-12-16: FIX: Statement wrapper handling in Program and Block parsing",
+        "2025-12-16: COMPLETE: 45 total tests passing (28 existing + 7 pest + 10 builder)",
+        "2025-12-16: COMMIT: Complete AST builders - pest pipeline functional",
+        "2025-12-16: TODO: Connect F001 preprocessor for context-sensitive tokenization",
+        "2025-12-16: TODO: Implement full expression precedence climbing with operators",
+        "2025-12-16: TODO: Handle word-list based for loops (grammar needs 'in' handling)"
       ]
     },
     {

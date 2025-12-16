@@ -151,3 +151,18 @@
 [2025-12-16 21:25] COMPLETE: Updated lib.rs for pure Rust parser module
 [2025-12-16 21:30] COMPLETE: Updated all documentation for rust-sitter
 [2025-12-16 21:30] DECISION: rust-sitter chosen for: no FFI, faster builds, type safety
+[2025-12-16 21:05] START: Implementing remaining AST builders for all statement types
+[2025-12-16 21:10] COMPLETE: if/elif/else builder with condition parsing
+[2025-12-16 21:15] COMPLETE: while/until loop builders
+[2025-12-16 21:20] COMPLETE: for loop builder (C-style working)
+[2025-12-16 21:25] COMPLETE: var_decl builder with kind classification
+[2025-12-16 21:30] COMPLETE: function_def builder (POSIX style)
+[2025-12-16 21:35] COMPLETE: Expression builder with literals and variables
+[2025-12-16 21:40] COMPLETE: Assignment and redirect builders
+[2025-12-16 21:45] FIX: build_block now descends into Statement wrappers properly
+[2025-12-16 21:50] FIX: build_program now handles Statement wrappers correctly
+[2025-12-16 21:55] COMPLETE: Added 10 comprehensive builder tests - all passing
+[2025-12-16 22:00] COMPLETE: 45 total tests passing (28 + 7 + 10)
+[2025-12-16 22:05] COMMIT: Complete AST builders for all statement types
+[2025-12-16 22:10] STATUS: pest parser now fully functional for basic constructs
+[2025-12-16 22:15] TODO: Connect F001 preprocessor for complex word expansion
