@@ -1,7 +1,7 @@
 //! Colony Shell - POSIX-compliant shell for AI-native terminal
 
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
-use colony_parser::{Lexer, Parser};
+use colony_parser::pest_api::parse_statement;
 use miette::Result;
 use rustyline::{error::ReadlineError, DefaultEditor};
 use tracing_subscriber::EnvFilter;
@@ -117,18 +117,11 @@ async fn run_repl(mut agent: Option<Agent>) -> Result<()> {
 }
 
 fn execute_shell_command(line: &str) -> Result<()> {
-    // Parse the command
-    let mut lexer = Lexer::new(line);
-    let tokens = lexer
-        .tokenize()
-        .map_err(|e| miette::miette!("lexer error: {}", e))?;
+    // Parse with pest (pure PEG - no lexer needed!)
+    let _stmt = parse_statement(line)
+        .map_err(|e| miette::miette!("parse error: {}", e))?;
 
-    let mut parser = Parser::new(tokens);
-    let _ast = parser
-        .parse()
-        .map_err(|e| miette::miette!("parser error: {}", e))?;
-
-    // TODO: Execute the parsed command
+    // TODO: Execute the parsed command with colony-exec
     println!("(Shell execution not yet implemented)");
 
     Ok(())

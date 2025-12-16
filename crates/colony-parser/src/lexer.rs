@@ -33,6 +33,20 @@ struct PendingHeredoc {
 }
 
 /// Lexer that tokenizes shell input
+///
+/// # Deprecated
+///
+/// This lexer is deprecated in favor of the pure PEG approach using `pest_api::parse()`.
+/// The pest parser operates directly on source text without a separate lexer phase.
+///
+/// Use `colony_parser::parse()` instead of `Lexer::new()` + `Parser::new()`.
+///
+/// This API is kept for reference and backward compatibility, but will be removed
+/// in a future version.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use colony_parser::pest_api::parse() instead. pest operates directly on source text."
+)]
 pub struct Lexer<'src> {
     source: &'src str,
     chars: std::iter::Peekable<std::str::CharIndices<'src>>,

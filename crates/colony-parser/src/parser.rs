@@ -10,6 +10,27 @@ use crate::{
 };
 
 /// Parser that builds AST from token stream
+///
+/// # Deprecated
+///
+/// This recursive descent parser is deprecated in favor of the pure PEG approach
+/// using `pest_api::parse()`. The pest parser operates directly on source text
+/// and uses a declarative grammar (colony.pest) instead of hand-written code.
+///
+/// **Benefits of pest**:
+/// - No separate lexer needed
+/// - Declarative grammar (easier to maintain)
+/// - Better error messages
+/// - Automatic precedence from grammar nesting
+///
+/// Use `colony_parser::pest_api::parse()` instead of `Lexer::new()` + `Parser::new()`.
+///
+/// This API is kept for reference and backward compatibility, but will be removed
+/// in a future version.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use colony_parser::pest_api::parse() instead. See docs/PURE_PEG_FINDINGS.md"
+)]
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
