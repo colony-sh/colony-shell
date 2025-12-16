@@ -1,21 +1,15 @@
 /**
  * Tree-sitter grammar for Colony Shell
- *
- * Supports:
- * - POSIX shell syntax (simple commands, pipelines, lists)
- * - Colony extensions (typed pipes, var/const, procs)
- * - Incremental parsing and error recovery
+ * 
+ * Colony is a POSIX-compatible shell with extensions for:
+ * - Extended I/O channels (beyond 0,1,2)
+ * - Named channels (@name)
+ * - Buffer references ($[n] or $[name])
+ * - Tuple space operations (out, in, rd, inp, rdp)
+ * - Agent invocation and piping
+ * - Reactive bindings
+ * - Capability-based security
  */
-
-const PREC = {
-  COMMENT: 1,
-  PIPELINE: 2,
-  AND_OR: 3,
-  BACKGROUND: 4,
-  SEQUENCE: 5,
-  REDIRECT: 6,
-  COMMAND: 7,
-};
 
 module.exports = grammar({
   name: 'colony',
@@ -26,90 +20,100 @@ module.exports = grammar({
   ],
 
   externals: $ => [
+    $.heredoc_start,
+    $.heredoc_body,
+    $.heredoc_end,
     $._newline,
-    $._heredoc_body_start,
-    $._heredoc_body_middle,
-    $._heredoc_body_end,
+    $._concat,  // For adjacent word concatenation
   ],
 
   word: $ => $.word,
 
+  conflicts: $ => [
+    [$.command, $.variable_assignment],
+    [$.redirected_statement, $.command],
+    [$.channel_number, $.file_descriptor],
+    [$.function_definition, $._literal],
+  ],
+
+  supertypes: $ => [
+    $._statement,
+    $._expression,
+    $._primary_expression,
+  ],
+
   rules: {
-    program: $ => repeat($._statement),
+    program: $ => optional($._statements),
 
-    _statement: $ => choice(
-      $.command_list,
-      $.pipeline,
-      $.simple_command,
-      $.compound_command,
-      $.function_definition,
-      $.variable_declaration,
-    ),
-
-    // ===== Commands =====
-
-    command_list: $ => prec.left(PREC.AND_OR, seq(
+    _statements: $ => prec(1, seq(
+      repeat(seq(
+        $._statement,
+        $._terminator,
+      )),
       $._statement,
-      choice(
-        seq('&&', $._statement),
-        seq('||', $._statement),
-        seq(';', optional($._statement)),
-        seq('&', optional($._statement)),
-      ),
+      optional($._terminator),
     )),
 
-    pipeline: $ => prec.left(PREC.PIPELINE, seq(
-      optional('!'),
-      $._pipeline_element,
-      repeat1(seq(
-        choice('|', '->', '=>', '~>', '|&'),
-        $._pipeline_element,
+    _terminator: $ => choice(
+      ';',
+      ';;',
+      $._newline,
+      '&',
+    ),
+
+    // ========================================
+    // STATEMENTS
+    // ========================================
+
+    _statement: $ => choice(
+      $.redirected_statement,
+      $._compound_statement,
+      $.variable_assignment,
+      $.command,
+      $.declaration_command,
+      $.negated_command,
+      $.pipeline,
+      $.list,
+      $.subshell,
+      $.function_definition,
+      // Colony extensions
+      $.tuple_operation,
+      $.agent_command,
+      $.reactive_binding,
+      $.capability_block,
+      $.watch_statement,
+    ),
+
+    redirected_statement: $ => prec.dynamic(-1, seq(
+      field('body', $._statement),
+      repeat1(choice(
+        $.file_redirect,
+        $.heredoc_redirect,
+        $.herestring_redirect,
+        // Colony: extended channel redirects
+        $.extended_channel_redirect,
+        $.named_channel_redirect,
+        $.buffer_redirect,
       )),
     )),
 
-    _pipeline_element: $ => choice(
-      $.simple_command,
-      $.compound_command,
-    ),
+    // ========================================
+    // CONTROL FLOW (POSIX)
+    // ========================================
 
-    simple_command: $ => prec.right(PREC.COMMAND, seq(
-      repeat($.variable_assignment),
-      choice(
-        seq(
-          $.command_name,
-          repeat($.argument),
-        ),
-        repeat1($.variable_assignment),
-      ),
-      repeat($.redirection),
-    )),
-
-    command_name: $ => $.word,
-
-    argument: $ => choice(
-      $.word,
-      $.string,
-      $.expansion,
-      $.command_substitution,
-    ),
-
-    // ===== Compound Commands =====
-
-    compound_command: $ => choice(
+    _compound_statement: $ => choice(
       $.if_statement,
-      $.case_statement,
-      $.for_statement,
       $.while_statement,
-      $.until_statement,
-      $.subshell,
-      $.brace_group,
+      $.for_statement,
+      $.case_statement,
+      $.compound_statement,
     ),
 
     if_statement: $ => seq(
       'if',
-      $._statement,
+      field('condition', $._statements),
       'then',
-      repeat($._statement),
+      field('consequence', optional($._statements)),
       repeat($.elif_clause),
       optional($.else_clause),
       'fi',
@@ -117,235 +121,704 @@ module.exports = grammar({
 
     elif_clause: $ => seq(
       'elif',
-      $._statement,
+      field('condition', $._statements),
       'then',
-      repeat($._statement),
+      field('consequence', optional($._statements)),
     ),
 
     else_clause: $ => seq(
       'else',
-      repeat($._statement),
+      optional($._statements),
+    ),
+
+    while_statement: $ => seq(
+      choice('while', 'until'),
+      field('condition', $._statements),
+      'do',
+      field('body', optional($._statements)),
+      'done',
+    ),
+
+    for_statement: $ => seq(
+      'for',
+      field('variable', $.variable_name),
+      optional(seq(
+        'in',
+        field('value', repeat1($._literal)),
+      )),
+      $._terminator,
+      'do',
+      field('body', optional($._statements)),
+      'done',
     ),
 
     case_statement: $ => seq(
       'case',
-      $.word,
+      field('value', $._literal),
+      optional($._terminator),
       'in',
+      optional($._terminator),
       repeat($.case_item),
       'esac',
     ),
 
     case_item: $ => seq(
       optional('('),
-      $.word,
-      repeat(seq('|', $.word)),
+      field('value', seq($._literal, repeat(seq('|', $._literal)))),
       ')',
-      repeat($._statement),
-      choice(';;', ';&', ';;&'),
+      optional($._statements),
+      prec(1, choice(';;', choice(';&', ';;&'))),
     ),
 
-    for_statement: $ => seq(
-      'for',
-      $.variable_name,
-      optional(seq(
-        'in',
-        repeat($.word),
-      )),
-      'do',
-      repeat($._statement),
-      'done',
-    ),
-
-    while_statement: $ => seq(
-      'while',
-      $._statement,
-      'do',
-      repeat($._statement),
-      'done',
-    ),
-
-    until_statement: $ => seq(
-      'until',
-      $._statement,
-      'do',
-      repeat($._statement),
-      'done',
+    compound_statement: $ => seq(
+      '{',
+      optional($._statements),
+      '}',
     ),
 
     subshell: $ => seq(
       '(',
-      repeat($._statement),
+      $._statements,
       ')',
     ),
 
-    brace_group: $ => seq(
-      '{',
-      repeat($._statement),
-      '}',
+    // ========================================
+    // PIPELINES AND LISTS
+    // ========================================
+
+    pipeline: $ => prec.left(1, seq(
+      choice(
+        seq(
+          $._statement,
+          choice('|', '|&'),
+          $._statement,
+        ),
+        // Colony: extended channel pipe
+        seq(
+          $._statement,
+          $.extended_pipe,
+          $._statement,
+        ),
+        // Colony: agent pipe
+        seq(
+          $._statement,
+          '|>',
+          $.agent_command,
+        ),
+      ),
+    )),
+
+    // Colony: Extended pipe syntax (3|4 means connect fd 3 to fd 4)
+    extended_pipe: $ => seq(
+      field('from_channel', $.channel_number),
+      '|',
+      field('to_channel', $.channel_number),
     ),
 
-    // ===== Function Definition =====
+    list: $ => prec.left(-1, seq(
+      $._statement,
+      choice('&&', '||'),
+      $._statement,
+    )),
+
+    negated_command: $ => seq(
+      '!',
+      choice(
+        $.command,
+        $.subshell,
+        $.compound_statement,
+      ),
+    ),
+
+    // ========================================
+    // COMMANDS
+    // ========================================
+
+    command: $ => prec.left(seq(
+      repeat(choice(
+        $.variable_assignment,
+        $.file_redirect,
+        $.extended_channel_redirect,
+        $.named_channel_redirect,
+        $.buffer_redirect,
+      )),
+      field('name', $.command_name),
+      repeat(choice(
+        field('argument', $._literal),
+        seq('=', field('argument', $._literal)),
+        $.file_redirect,
+        $.extended_channel_redirect,
+        $.named_channel_redirect,
+        $.buffer_redirect,
+      )),
+    )),
+
+    command_name: $ => $._literal,
+
+    declaration_command: $ => seq(
+      choice('declare', 'typeset', 'export', 'readonly', 'local'),
+      repeat(choice(
+        $._literal,
+        $.variable_assignment,
+      )),
+    ),
+
+    variable_assignment: $ => seq(
+      field('name', choice(
+        $.variable_name,
+        $.subscript,
+      )),
+      choice(
+        '=',
+        '+=',
+      ),
+      field('value', optional(choice(
+        $._literal,
+        $.array,
+      ))),
+    ),
+
+    subscript: $ => seq(
+      field('name', $.variable_name),
+      '[',
+      field('index', $._literal),
+      ']',
+    ),
 
     function_definition: $ => seq(
       optional('function'),
-      $.function_name,
-      '(',
-      ')',
-      choice($.compound_command, $.brace_group),
+      field('name', $.word),
+      optional(seq('(', ')')),
+      field('body', $.compound_statement),
     ),
 
-    function_name: $ => $.word,
+    // ========================================
+    // COLONY: AGENT COMMANDS
+    // ========================================
 
-    // ===== Colony Extensions =====
+    agent_command: $ => seq(
+      'agent',
+      repeat($.agent_flag),
+      field('prompt', choice(
+        $.string,
+        $.raw_string,
+        $.agent_block,
+      )),
+    ),
 
-    variable_declaration: $ => seq(
-      choice('var', 'const', 'setvar'),
-      $.variable_name,
+    agent_flag: $ => choice(
+      seq('-m', field('model', $.word)),
+      seq('--model', '=', field('model', $.word)),
+      seq('--caps', '=', field('capabilities', $.capability_list)),
+      seq('--timeout', '=', field('timeout', $.number)),
+      seq('-v', ),  // verbose
+      seq('--stream'),
+    ),
+
+    agent_block: $ => seq(
+      '{',
+      repeat(choice(
+        $.agent_block_content,
+        $.expansion,
+        $.command_substitution,
+      )),
+      '}',
+    ),
+
+    agent_block_content: $ => /[^{}$]+/,
+
+    // ========================================
+    // COLONY: TUPLE SPACE OPERATIONS
+    // ========================================
+
+    tuple_operation: $ => choice(
+      $.tuple_out,
+      $.tuple_in,
+      $.tuple_rd,
+      $.tuple_inp,
+      $.tuple_rdp,
+    ),
+
+    // out { key: value, ... } - Write tuple to space
+    tuple_out: $ => seq(
+      'out',
+      optional(field('space', $.tuple_space_name)),
+      field('tuple', $.tuple_literal),
+    ),
+
+    // in { pattern } - Blocking read and remove
+    tuple_in: $ => seq(
+      'in',
+      optional(field('space', $.tuple_space_name)),
+      field('pattern', $.tuple_pattern),
+      optional(field('timeout', $.timeout_clause)),
+    ),
+
+    // rd { pattern } - Blocking read without remove
+    tuple_rd: $ => seq(
+      'rd',
+      optional(field('space', $.tuple_space_name)),
+      field('pattern', $.tuple_pattern),
+      optional(field('timeout', $.timeout_clause)),
+    ),
+
+    // inp { pattern } - Non-blocking in
+    tuple_inp: $ => seq(
+      'inp',
+      optional(field('space', $.tuple_space_name)),
+      field('pattern', $.tuple_pattern),
+    ),
+
+    // rdp { pattern } - Non-blocking rd
+    tuple_rdp: $ => seq(
+      'rdp',
+      optional(field('space', $.tuple_space_name)),
+      field('pattern', $.tuple_pattern),
+    ),
+
+    tuple_space_name: $ => seq(
+      '@',
+      $.word,
+    ),
+
+    timeout_clause: $ => seq(
+      'timeout',
+      field('duration', $.number),
+      optional(field('unit', choice('s', 'ms', 'm'))),
+    ),
+
+    // Tuple literal: { key: value, key2: value2 }
+    tuple_literal: $ => seq(
+      '{',
+      optional(seq(
+        $.tuple_field,
+        repeat(seq(',', $.tuple_field)),
+        optional(','),
+      )),
+      '}',
+    ),
+
+    tuple_field: $ => seq(
+      field('key', choice($.word, $.string)),
+      ':',
+      field('value', $._expression),
+    ),
+
+    // Tuple pattern: { key: ?binding, key2: *, key3: literal }
+    tuple_pattern: $ => seq(
+      '{',
+      optional(seq(
+        $.pattern_field,
+        repeat(seq(',', $.pattern_field)),
+        optional(','),
+      )),
+      '}',
+    ),
+
+    pattern_field: $ => seq(
+      field('key', choice($.word, $.string, $.pattern_wildcard)),
+      ':',
+      field('pattern', choice(
+        $.pattern_binding,     // ?var - bind to variable
+        $.pattern_wildcard,    // * - match anything
+        $._expression,         // literal match
+      )),
+    ),
+
+    pattern_binding: $ => seq(
+      '?',
+      field('name', $.variable_name),
+    ),
+
+    pattern_wildcard: $ => '*',
+
+    // ========================================
+    // COLONY: BUFFER REFERENCES
+    // ========================================
+
+    buffer_reference: $ => seq(
+      '$[',
+      field('buffer', choice(
+        $.number,           // $[0], $[1]
+        $.word,             // $[ctx], $[result]
+      )),
+      ']',
+    ),
+
+    buffer_redirect: $ => choice(
+      // > $[n] - write to buffer
+      seq(
+        field('fd', optional($.file_descriptor)),
+        choice('>', '>>'),
+        field('buffer', $.buffer_reference),
+      ),
+      // < $[n] - read from buffer
+      seq(
+        field('fd', optional($.file_descriptor)),
+        '<',
+        field('buffer', $.buffer_reference),
+      ),
+    ),
+
+    // ========================================
+    // COLONY: EXTENDED CHANNEL REDIRECTS
+    // ========================================
+
+    channel_number: $ => /[0-9]+/,
+
+    // 3> file, 4>> file, 5< file
+    extended_channel_redirect: $ => seq(
+      field('channel', $.channel_number),
+      field('operator', choice('>', '>>', '<', '<>', '>&', '<&')),
+      field('destination', choice(
+        $._literal,
+        $.buffer_reference,
+        $.channel_number,  // 3>&4
+      )),
+    ),
+
+    // @name> file - named channel redirect
+    named_channel_redirect: $ => seq(
+      '@',
+      field('channel_name', $.word),
+      field('operator', choice('>', '>>', '<', '<>')),
+      field('destination', choice(
+        $._literal,
+        $.buffer_reference,
+      )),
+    ),
+
+    // ========================================
+    // COLONY: REACTIVE BINDINGS
+    // ========================================
+
+    reactive_binding: $ => seq(
+      'let!',
+      field('name', $.variable_name),
       '=',
-      $.expression,
+      field('expression', choice(
+        $.command_substitution,
+        $._expression,
+      )),
     ),
 
-    expression: $ => choice(
-      $.literal,
-      $.variable_reference,
+    watch_statement: $ => seq(
+      'watch',
+      field('target', choice(
+        $.buffer_reference,
+        $.simple_expansion,
+      )),
+      field('body', $.compound_statement),
+    ),
+
+    // ========================================
+    // COLONY: CAPABILITY BLOCKS
+    // ========================================
+
+    capability_block: $ => seq(
+      'with',
+      'caps',
+      '(',
+      field('capabilities', $.capability_list),
+      ')',
+      field('body', $.compound_statement),
+    ),
+
+    capability_list: $ => seq(
+      $.capability,
+      repeat(seq(',', $.capability)),
+    ),
+
+    capability: $ => seq(
+      field('type', choice('fs', 'net', 'env', 'exec', 'agent')),
+      optional(seq(
+        ':',
+        field('scope', $.capability_scope),
+      )),
+    ),
+
+    capability_scope: $ => choice(
+      $.word,
+      $.string,
+      $.glob_pattern,
+    ),
+
+    glob_pattern: $ => /[a-zA-Z0-9_.*?\[\]\/:-]+/,
+
+    // ========================================
+    // STANDARD REDIRECTIONS
+    // ========================================
+
+    file_redirect: $ => prec.left(seq(
+      field('fd', optional($.file_descriptor)),
+      choice(
+        seq(
+          field('operator', choice('<', '>', '>>', '&>', '&>>', '<&', '>&', '>|')),
+          field('destination', $._literal),
+        ),
+        seq(
+          field('operator', choice('<<<')),
+          field('destination', $._literal),
+        ),
+      ),
+    )),
+
+    file_descriptor: $ => /[0-9]+/,
+
+    heredoc_redirect: $ => seq(
+      field('operator', choice('<<', '<<-')),
+      $.heredoc_start,
+      /\n/,
+      optional($.heredoc_body),
+      $.heredoc_end,
+    ),
+
+    herestring_redirect: $ => seq(
+      '<<<',
+      $._literal,
+    ),
+
+    // ========================================
+    // EXPRESSIONS
+    // ========================================
+
+    _expression: $ => choice(
+      $._primary_expression,
       $.binary_expression,
       $.unary_expression,
+      $.ternary_expression,
       $.parenthesized_expression,
     ),
 
-    literal: $ => choice(
-      $.number,
-      $.string,
-      'null',
-      'true',
-      'false',
+    _primary_expression: $ => choice(
+      $._literal,
+      $.buffer_reference,
+      $.tuple_literal,
     ),
 
     binary_expression: $ => choice(
-      prec.left(1, seq($.expression, '||', $.expression)),
-      prec.left(2, seq($.expression, '&&', $.expression)),
-      prec.left(3, seq($.expression, choice('==', '!='), $.expression)),
-      prec.left(4, seq($.expression, choice('<', '<=', '>', '>='), $.expression)),
-      prec.left(5, seq($.expression, choice('+', '-'), $.expression)),
-      prec.left(6, seq($.expression, choice('*', '/', '%'), $.expression)),
-      prec.right(7, seq($.expression, '**', $.expression)),
+      ...[
+        ['||', 0],
+        ['&&', 1],
+        ['|', 2],
+        ['^', 3],
+        ['&', 4],
+        ['==', 5], ['!=', 5],
+        ['<', 6], ['>', 6], ['<=', 6], ['>=', 6],
+        ['<<', 7], ['>>', 7],
+        ['+', 8], ['-', 8],
+        ['*', 9], ['/', 9], ['%', 9],
+      ].map(([op, prec_val]) =>
+        prec.left(prec_val, seq(
+          field('left', $._expression),
+          field('operator', op),
+          field('right', $._expression),
+        ))
+      ),
     ),
 
-    unary_expression: $ => prec.right(8, seq(
-      choice('-', '!', 'not'),
-      $.expression,
+    unary_expression: $ => prec.right(10, seq(
+      field('operator', choice('!', '-', '+', '~')),
+      field('argument', $._expression),
+    )),
+
+    ternary_expression: $ => prec.right(seq(
+      field('condition', $._expression),
+      '?',
+      field('consequence', $._expression),
+      ':',
+      field('alternative', $._expression),
     )),
 
     parenthesized_expression: $ => seq(
       '(',
-      $.expression,
+      $._expression,
       ')',
     ),
 
-    // ===== Expansions =====
+    // ========================================
+    // LITERALS AND EXPANSIONS
+    // ========================================
 
-    expansion: $ => choice(
-      $.parameter_expansion,
+    _literal: $ => choice(
+      $.concatenation,
+      $.word,
+      $.string,
+      $.raw_string,
+      $.ansii_c_string,
+      $.number,
+      $.expansion,
+      $.simple_expansion,
+      $.command_substitution,
+      $.process_substitution,
       $.arithmetic_expansion,
-      $.tilde_expansion,
+      $.brace_expression,
+      $.buffer_reference,
     ),
 
-    parameter_expansion: $ => seq(
-      '${',
-      $.variable_name,
-      optional(seq(
-        choice(':-', '-', ':=', '=', ':?', '?', ':+', '+'),
+    concatenation: $ => prec(-1, seq(
+      choice(
         $.word,
+        $.string,
+        $.raw_string,
+        $.ansii_c_string,
+        $.expansion,
+        $.simple_expansion,
+        $.command_substitution,
+        $.process_substitution,
+        $.buffer_reference,
+      ),
+      repeat1(seq(
+        $._concat,
+        choice(
+          $.word,
+          $.string,
+          $.raw_string,
+          $.ansii_c_string,
+          $.expansion,
+          $.simple_expansion,
+          $.command_substitution,
+          $.process_substitution,
+          $.buffer_reference,
+        ),
       )),
+    )),
+
+    word: $ => /[a-zA-Z_][a-zA-Z0-9_-]*/,
+
+    number: $ => /[0-9]+(\.[0-9]+)?/,
+
+    // Double-quoted string with expansions
+    string: $ => seq(
+      '"',
+      repeat(choice(
+        $.string_content,
+        $.expansion,
+        $.simple_expansion,
+        $.command_substitution,
+        $.arithmetic_expansion,
+        $.buffer_reference,
+      )),
+      '"',
+    ),
+
+    string_content: $ => prec.right(repeat1(choice(
+      /[^"$\\`]+/,
+      /\\./,
+    ))),
+
+    // Single-quoted raw string
+    raw_string: $ => seq(
+      "'",
+      optional(/[^']*/),
+      "'",
+    ),
+
+    ansii_c_string: $ => seq(
+      "$'",
+      repeat(choice(
+        /[^'\\]+/,
+        /\\./,
+      )),
+      "'",
+    ),
+
+    // ${...} expansion
+    expansion: $ => seq(
+      '${',
+      optional('#'),
+      choice(
+        seq(
+          $.variable_name,
+          optional(choice(
+            seq(
+              choice(':', ''),
+              choice('-', '=', '+', '?'),
+              optional($._literal),
+            ),
+            seq(
+              choice('/', '//', '#', '##', '%', '%%'),
+              optional($._literal),
+            ),
+            seq(
+              ':',
+              optional($._literal),
+              optional(seq(':', optional($._literal))),
+            ),
+            seq(
+              choice('@', '*'),
+            ),
+          )),
+        ),
+        $.command_substitution,
+      ),
       '}',
     ),
 
-    arithmetic_expansion: $ => seq(
-      '$((',
-      repeat(choice($.word, $.number, /[+\-*\/%()]/)),
-      '))',
-    ),
-
-    tilde_expansion: $ => seq(
-      '~',
-      optional($.word),
-    ),
-
-    variable_reference: $ => seq(
+    // $var expansion
+    simple_expansion: $ => seq(
       '$',
       choice(
         $.variable_name,
-        seq('{', $.variable_name, '}'),
+        $.special_variable_name,
       ),
-    ),
-
-    command_substitution: $ => choice(
-      seq('$(', repeat($._statement), ')'),
-      seq('`', repeat(/[^`]/), '`'),
-    ),
-
-    // ===== Redirections =====
-
-    redirection: $ => prec.right(PREC.REDIRECT, seq(
-      optional($.file_descriptor),
-      choice(
-        seq('>', $.word),
-        seq('>>', $.word),
-        seq('<', $.word),
-        seq('>&', choice($.word, $.file_descriptor)),
-        seq('<&', choice($.word, $.file_descriptor)),
-        seq('<<', $.heredoc_start),
-        seq('<<<', $.word),
-      ),
-    )),
-
-    heredoc_start: $ => $.word,
-
-    file_descriptor: $ => /[0-9]+/,
-
-    // ===== Primitives =====
-
-    variable_assignment: $ => seq(
-      $.variable_name,
-      '=',
-      optional(choice($.word, $.string, $.expansion)),
     ),
 
     variable_name: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
 
-    word: $ => /[a-zA-Z0-9_\-\.\/]+/,
-
-    number: $ => choice(
+    special_variable_name: $ => choice(
       /[0-9]+/,
-      /[0-9]+\.[0-9]+/,
+      '$',
+      '!',
+      '@',
+      '*',
+      '#',
+      '?',
+      '-',
+      '_',
     ),
 
-    string: $ => choice(
-      $.single_quoted_string,
-      $.double_quoted_string,
+    // $(command) or `command`
+    command_substitution: $ => choice(
+      seq('$(', $._statements, ')'),
+      prec(-1, seq('`', /[^`]+/, '`')),
     ),
 
-    single_quoted_string: $ => seq(
-      "'",
-      repeat(choice(
-        /[^']/,
-      )),
-      "'",
+    // <(command) or >(command)
+    process_substitution: $ => seq(
+      choice('<(', '>('),
+      $._statements,
+      ')',
     ),
 
-    double_quoted_string: $ => seq(
-      '"',
-      repeat(choice(
-        /[^"$`\\]/,
-        $.variable_reference,
-        $.command_substitution,
-        $.escape_sequence,
-      )),
-      '"',
+    // $((expression))
+    arithmetic_expansion: $ => seq(
+      '$((',
+      $._expression,
+      '))',
     ),
 
-    escape_sequence: $ => token(seq('\\', /./))),
+    // {a,b,c} or {1..10}
+    brace_expression: $ => seq(
+      '{',
+      choice(
+        seq($._literal, repeat1(seq(',', $._literal))),
+        seq($.number, '..', $.number, optional(seq('..', $.number))),
+      ),
+      '}',
+    ),
 
-    comment: $ => token(prec(PREC.COMMENT, seq('#', /.*/))),
+    // Array literal
+    array: $ => seq(
+      '(',
+      repeat($._literal),
+      ')',
+    ),
+
+    // ========================================
+    // COMMENTS
+    // ========================================
+
+    comment: $ => token(prec(-10, seq('#', /.*/))),
   },
 });

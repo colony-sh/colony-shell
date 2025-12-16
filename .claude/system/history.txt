@@ -166,3 +166,5 @@
 [2025-12-16 22:05] COMMIT: Complete AST builders for all statement types
 [2025-12-16 22:10] STATUS: pest parser now fully functional for basic constructs
 [2025-12-16 22:15] TODO: Connect F001 preprocessor for complex word expansion
+[2025-12-16 21:40] DECISION: Fork tree-sitter-bash instead of building grammar from scratch
+[2025-12-16 21:40] RATIONALE: Bash grammar is mature, handles shell tokenization edge cases
