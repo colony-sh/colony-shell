@@ -1,68 +1,73 @@
 # Parser Reconciliation Layer
 
-Colony Shell uses **three parsers** for different purposes:
+Colony Shell uses **two parsers** for complementary purposes:
 
-## The Three Parsers
+## The Two Parsers
 
-### 1. Tree-sitter (Editor Features)
+### 1. Tree-sitter (Editor Features Only)
 **Location:** `tree-sitter-colony/`
-**Implementation:** Pure Rust via `rust-sitter` (no C, no FFI)
+**Implementation:** Forked from tree-sitter-bash (proven, 30k line grammar)
 **Purpose:** Real-time syntax highlighting, folding, navigation
 **Characteristics:**
 - Incremental parsing (< 1ms for typical edits)
 - Error recovery (works with syntax errors)
 - Produces CST (Concrete Syntax Tree)
-- Pure Rust code generation (zero overhead)
+- Forked from tree-sitter-bash (battle-tested)
+- Includes scanner.c for context-sensitive parsing
 - Used by: editors, LSP, syntax highlighters
 
 **When it runs:** Every keystroke during editing
 
-### 2. Pest PEG Parser (Validation)
-**Location:** `crates/colony-parser/` (F021 branch)
-**Purpose:** Strict POSIX validation before execution
+### 2. Pest PEG Parser (Execution Only)
+**Location:** `crates/colony-parser/` (F021)
+**Purpose:** Strict validation and AST generation for execution
 **Characteristics:**
 - Declarative grammar (`colony.pest`)
-- PEG parsing (unambiguous)
-- Better error messages than hand-written
-- Produces validated AST
+- Pure PEG (no lexer needed - breakthrough!)
+- Unambiguous parsing
+- Detailed error messages
+- Produces execution AST
+- 60 tests passing
 
 **When it runs:** Before executing a command
 
-### 3. Hand-written Parser (Legacy/Fallback)
-**Location:** `crates/colony-parser/` (main branch, F001/F002)
-**Purpose:** Original implementation, now fallback
-**Characteristics:**
-- Recursive descent
-- Full control over error messages
-- Direct AST construction
-- Complete POSIX support
+### ~~3. Hand-written Parser~~ (DEPRECATED)
+**Status:** **F001/F002 deprecated** - Pest replaces it entirely
 
-**Status:** Being replaced by Pest (F021), but still functional
+**Reason for Deprecation:**
+- Pest pure PEG works without F001 lexer
+- Grammar structure provides parsing context
+- Simpler two-parser architecture
+- Hand-written served its bootstrap purpose
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    User Input / File                         │
-└───────────────────────┬──────────────────────────────────────┘
-                        │
-        ┌───────────────┼───────────────────┐
-        │               │                   │
-        ▼               ▼                   ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ Tree-sitter  │  │  Pest PEG    │  │ Hand-written │
-│   (fast)     │  │  (precise)   │  │  (fallback)  │
-└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-       │                 │                  │
-       │ CST             │ AST              │ AST
-       ▼                 ▼                  ▼
 ┌──────────────────────────────────────────────────┐
-│          Reconciliation Layer                    │
-│                                                  │
-│  • Tree-sitter CST → Highlighting               │
-│  • Pest AST → Execution                         │
-│  • Hand-written AST → Fallback                  │
-└──────────────────────────────────────────────────┘
+│              User Input / File                   │
+└──────────────────────┬───────────────────────────┘
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+          ▼                         ▼
+  ┌──────────────┐          ┌──────────────┐
+  │ Tree-sitter  │          │   Pest PEG   │
+  │  (editor)    │          │  (execution) │
+  │              │          │              │
+  │ • Fast       │          │ • Precise    │
+  │ • Tolerant   │          │ • Validated  │
+  │ • Bash fork  │          │ • Pure PEG   │
+  └──────┬───────┘          └──────┬───────┘
+         │                         │
+         │ CST                     │ AST
+         ▼                         ▼
+  ┌────────────────────────────────────────┐
+  │      Reconciliation Layer              │
+  │                                        │
+  │  • Tree-sitter CST → Highlighting     │
+  │  • Pest AST → Execution               │
+  │  • Combined insights → Error messages │
+  └────────────────────────────────────────┘
 ```
 
 ## Use Cases
@@ -81,32 +86,33 @@ User types: "echo hell"
 User runs: "echo hello | grep h"
   → Pest parser validates syntax
   → Produces AST for execution
-  → If Pest fails → fallback to hand-written parser
-  → If both fail → show error
+  → If Pest fails → show detailed error
+  → If success → execute
 ```
 
 ### Execution Flow
 ```
 1. User submits command
-2. Check Tree-sitter parse (quick sanity check)
+2. Optional: Check Tree-sitter CST (quick sanity check)
 3. Parse with Pest (strict validation)
-4. If Pest fails, try hand-written parser
-5. Execute AST with colony-exec
+4. If Pest fails → show error with Tree-sitter context
+5. If success → Execute AST with colony-exec
 ```
 
 ## Reconciliation Strategy
 
-### Phase 1: Editor Features Only
+### Phase 1: Editor Features Only (Current)
 - Tree-sitter active for syntax highlighting
-- Pest/hand-written used for execution
-- No reconciliation needed (separate concerns)
+- Pest used for execution
+- Minimal reconciliation (separate concerns work independently)
 
-### Phase 2: Error Hints
-- Tree-sitter identifies error regions
-- Pest validates those regions more strictly
-- Show combined error messages:
-  - Tree-sitter: "incomplete command"
-  - Pest: "expected 'then' after 'if' condition"
+### Phase 2: Combined Error Messages (Next)
+- Tree-sitter CST shows structural issues
+- Pest provides precise error location and message
+- Combine insights for better user experience:
+  - Tree-sitter: "incomplete if_statement node"
+  - Pest: "expected 'then' after 'if' condition at line 2:15"
+  - Combined: Detailed error with structural context
 
 ### Phase 3: Incremental Validation (Future)
 - Tree-sitter tracks which nodes changed
@@ -137,30 +143,41 @@ executor.execute(&ast).await?;
 
 ### Error Reconciliation
 ```rust
-// Try Pest first (strict)
+// Parse with Pest (only execution parser)
 match pest_parse(source) {
     Ok(ast) => execute(ast),
     Err(pest_err) => {
-        // Try hand-written (lenient)
-        match handwritten_parse(source) {
-            Ok(ast) => execute(ast),
-            Err(hw_err) => {
-                // Both failed - combine errors
-                show_combined_error(pest_err, hw_err, tree_sitter_cst)
-            }
-        }
+        // Get Tree-sitter CST for context
+        let cst = tree_sitter_parse(source);
+
+        // Combine Pest error with Tree-sitter structural info
+        show_combined_error(pest_err, cst)
+    }
+}
+
+fn show_combined_error(pest_err: PestError, cst: Tree) {
+    // Use Tree-sitter to understand what user was trying to do
+    let incomplete_nodes = find_error_nodes(&cst);
+
+    // Combine with Pest's precise error location
+    eprintln!("Syntax error at {}", pest_err.location());
+    eprintln!("{}", pest_err.message());
+
+    if !incomplete_nodes.is_empty() {
+        eprintln!("\nTree-sitter detected: {}", describe_nodes(&incomplete_nodes));
     }
 }
 ```
 
 ## Implementation Status
 
-- ✓ Tree-sitter grammar defined
-- ✓ Rust bindings created
+- ✓ Tree-sitter grammar (forked from bash)
+- ✓ Typed pipes added (-> => ~>)
+- ✓ Bash grammar validates and parses correctly
 - ✓ Highlighting queries written
-- ⏳ Pest parser (F021 in progress on feature/pest-parser branch)
-- ✓ Hand-written parser (F001/F002 complete)
-- ⏳ Reconciliation layer (this document is design spec)
+- ⏳ Pest parser (F021 - 60 tests, nearly complete)
+- ⚠️ Hand-written parser (F001/F002 - deprecated)
+- ⏳ Reconciliation layer (design complete, impl pending)
 
 ## Integration Plan
 
