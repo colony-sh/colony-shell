@@ -9,7 +9,7 @@ license.workspace = true
 [dependencies]
 colony-parser.workspace = true
 colony-expand.workspace = true
-nix.workspace = true
+nix = { workspace = true, features = ["fs"] }
 signal-hook.workspace = true
 tokio.workspace = true
 thiserror.workspace = true

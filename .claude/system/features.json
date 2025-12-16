@@ -77,10 +77,19 @@
       "id": "F005",
       "name": "Pipeline execution",
       "description": "Execute pipelines (cmd1 | cmd2 | cmd3) with proper pipe creation, fd manipulation via dup2, and concurrent process management.",
-      "status": "new",
+      "status": "complete",
       "priority": 2,
       "dependencies": ["F004"],
-      "notes": []
+      "notes": [
+        "2025-12-16: Starting F005 - F004 dependency satisfied",
+        "2025-12-16: Implemented pipe creation with nix pipe() - N-1 pipes for N commands",
+        "2025-12-16: File descriptor setup with dup2() - stdin/stdout redirection",
+        "2025-12-16: Concurrent process spawning - all commands run in parallel",
+        "2025-12-16: Parent closes all pipe ends to prevent child hangs",
+        "2025-12-16: Wait for all children, return last command's exit status",
+        "2025-12-16: Enabled nix 'fs' feature for dup2() support",
+        "2025-12-16: COMPLETE - 13 tests passing (11 previous + 2 pipeline tests)"
+      ]
     },
     {
       "id": "F006",

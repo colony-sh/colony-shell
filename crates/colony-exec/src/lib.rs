@@ -10,15 +10,17 @@
 mod command;
 mod error;
 mod path;
+mod pipeline;
 mod process;
 
 pub use command::execute_command;
 pub use error::{ExecutionError, Result};
 pub use path::resolve_command;
+pub use pipeline::execute_pipeline;
 pub use process::{ExitStatus, ProcessHandle};
 
 use colony_expand::ExpansionContext;
-use colony_parser::SimpleCommand;
+use colony_parser::{Pipeline, SimpleCommand};
 
 /// Main executor for shell commands
 pub struct Executor {
@@ -33,6 +35,11 @@ impl Executor {
     /// Execute a simple command
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
         execute_command(cmd, &mut self.context).await
+    }
+
+    /// Execute a pipeline
+    pub async fn execute_pipeline(&mut self, pipeline: &Pipeline) -> Result<ExitStatus> {
+        execute_pipeline(pipeline, &mut self.context).await
     }
 
     /// Get mutable reference to expansion context

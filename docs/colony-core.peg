@@ -1,0 +1,646 @@
+# Colony Shell Core Grammar - PEG
+#
+# This PEG defines the core syntactic structure of Colony Shell.
+# Context-sensitive lexing and expansion handling require custom preprocessing.
+#
+# See docs/peg-proposal.md for integration strategy.
+
+# ============================================================================
+# Program Structure
+# ============================================================================
+
+Program
+  = _ Statement* _
+
+Statement
+  = VarDecl
+  / FunctionDef
+  / ProcDef
+  / FuncDef
+  / AgentDef
+  / TryStatement
+  / IfStatement
+  / CaseStatement
+  / ForStatement
+  / WhileStatement
+  / UntilStatement
+  / MatchStatement
+  / ReturnStatement
+  / BreakStatement
+  / ContinueStatement
+  / CommandList
+  / Assignment
+  / Comment
+  / EmptyStatement
+
+EmptyStatement
+  = _ Terminator
+
+Terminator
+  = _ (Newline / ";") _
+
+# ============================================================================
+# Commands and Pipelines
+# ============================================================================
+
+CommandList
+  = first:AndOrList rest:(_ ListOp _ AndOrList)* _
+
+AndOrList
+  = first:Pipeline rest:(_ ("&&" / "||") _ Pipeline)* _
+
+Pipeline
+  = negation:"!"? _ elements:PipelineElements _
+
+PipelineElements
+  = first:PipelineElement rest:(_ PipeOp _ PipelineElement)* _
+
+PipelineElement
+  = CompoundCommand
+  / SimpleCommand
+  / Subshell
+
+SimpleCommand
+  = env:(_ Assignment)* _ name:Word args:(_ Word)* redirects:(_ Redirect)* _
+
+PipeOp
+  = "|&"
+  / "|"
+  / "->"
+  / "=>"
+  / "~>"
+
+ListOp
+  = "&&"
+  / "||"
+  / ";"
+  / "&"
+
+# ============================================================================
+# Compound Commands
+# ============================================================================
+
+CompoundCommand
+  = BraceGroup
+  / IfStatement
+  / CaseStatement
+  / ForStatement
+  / WhileStatement
+  / UntilStatement
+  / MatchStatement
+
+BraceGroup
+  = "{" _ body:Statement* _ "}" _
+
+Subshell
+  = "(" _ body:CommandList _ ")" _
+
+# ============================================================================
+# Control Flow
+# ============================================================================
+
+IfStatement
+  = "if" _ cond:Condition _ ("then" _)? then_body:Block
+    elif:(__ "elif" _ Condition _ ("then" _)? Block)*
+    else:(__ "else" _ Block)?
+    _ ("fi" _)?
+
+CaseStatement
+  = "case" _ value:CaseValue _ "in" _
+    arms:CaseArm*
+    _ "esac" _
+
+CaseValue
+  = Expression
+  / Word
+
+CaseArm
+  = patterns:CasePattern+ _ ")" _
+    body:Statement*
+    terminator:CaseTerminator _
+
+CasePattern
+  = "|"? _ pattern:(Word / Expression) _
+
+CaseTerminator
+  = ";;&"
+  / ";;"
+  / ";&"
+
+ForStatement
+  = "for" _ kind:ForKind _ body:Block
+
+ForKind
+  = idx:Identifier _ "," _ var:Identifier _ "in" _ "enumerate" _ "(" _ expr:Expression _ ")" # enumerate
+  / var:Identifier _ "in" _ words:WordList _ # words
+  / var:Identifier _ "in" _ expr:Expression _ # iterate
+  / "(" _ init:Expression? _ ";" _ cond:Expression? _ ";" _ step:Expression? _ ")" # C-style
+
+WordList
+  = words:(_ Word)* _
+
+WhileStatement
+  = "while" _ cond:Condition _ body:Block
+
+UntilStatement
+  = "until" _ cond:Condition _ body:Block
+
+MatchStatement
+  = "match" _ value:Expression _ "{" _
+    arms:MatchArm*
+    _ "}" _
+
+MatchArm
+  = pattern:MatchPattern guard:(_ "if" _ Expression)? _ "=>" _
+    body:(Block / Expression) _
+
+MatchPattern
+  = ListPattern
+  / DictPattern
+  / TuplePattern
+  / RangePattern
+  / LiteralPattern
+  / BindingPattern
+  / WildcardPattern
+  / OrPattern
+
+ListPattern
+  = "[" _ items:(MatchPattern (_ "," _ MatchPattern)*)? rest:(_ "," _ ".." _ Identifier?)? _ "]"
+
+DictPattern
+  = "{" _ fields:(DictPatternField (_ "," _ DictPatternField)*)? rest:(_ "," _ "..")? _ "}"
+
+DictPatternField
+  = key:Identifier value:(_ ":" _ MatchPattern)? _
+
+TuplePattern
+  = "(" _ first:MatchPattern rest:(_ "," _ MatchPattern)+ _ ")"
+
+RangePattern
+  = start:Expression _ ".." inclusive:"="? _ end:Expression _
+
+LiteralPattern
+  = Expression
+
+BindingPattern
+  = Identifier
+
+WildcardPattern
+  = "_"
+
+OrPattern
+  = first:MatchPattern rest:(_ "|" _ MatchPattern)+ _
+
+TryStatement
+  = "try" _ try_body:Block
+    catch:(_ "catch" _ CatchBlock)?
+    finally:(_ "finally" _ Block)?
+
+CatchBlock
+  = var:Identifier? type:(_ ":" _ Identifier)? _ body:Block
+
+Condition
+  = Expression
+  / CommandList
+
+Block
+  = "{" _ body:Statement* _ "}" _
+  / "do" _ body:Statement* _ "done" _
+
+# ============================================================================
+# Declarations
+# ============================================================================
+
+VarDecl
+  = kind:VarKind __ name:Identifier type:(_ ":" _ TypeAnnotation)? _ "=" _ value:Expression _
+
+VarKind
+  = "var"
+  / "const"
+  / "setvar"
+
+Assignment
+  = name:Identifier _ op:AssignOp _ value:Expression _
+
+AssignOp
+  = "+="
+  / "-="
+  / "*="
+  / "/="
+  / "%="
+  / "&="
+  / "|="
+  / "^="
+  / "<<="
+  / ">>="
+  / "??="
+  / "="
+
+FunctionDef
+  = "function" __ name:Identifier _ "(" _ ")" _ body:Block
+  / name:Identifier _ "(" _ ")" _ body:Block
+
+ProcDef
+  = "proc" __ name:Identifier _ pipeline_type:PipelineTypeAnnot? _ params:ProcParams _ body:Block
+
+ProcParams
+  = "(" _ params:(ProcParam (_ "," _ ProcParam)*)? _ ")"
+
+ProcParam
+  = name:Identifier type:(_ ":" _ TypeAnnotation)? default:(_ "=" _ Expression)? _
+
+PipelineTypeAnnot
+  = "[" _ input:TypeAnnotation _ "->" _ output:TypeAnnotation _ "]"
+
+FuncDef
+  = "func" __ name:Identifier _ params:FuncParams _ return_type:(_ "->" _ TypeAnnotation)? _ body:FuncBody
+
+FuncParams
+  = "(" _ params:(FuncParam (_ "," _ FuncParam)*)? _ ")"
+
+FuncParam
+  = name:Identifier type:(_ ":" _ TypeAnnotation)? default:(_ "=" _ Expression)? _
+
+FuncBody
+  = Block
+  / "=" _ Expression _
+
+AgentDef
+  = "agent" __ name:Identifier _ "{" _
+    fields:AgentField*
+    _ "}" _
+
+AgentField
+  = "description" _ ":" _ value:String _
+  / "version" _ ":" _ value:String _
+  / "param" __ param:ProcParam _
+  / "tools" _ ":" _ tools:StringList _
+  / "mcp_servers" _ ":" _ servers:StringList _
+  / "max_tokens" _ ":" _ value:Integer _
+  / "temperature" _ ":" _ value:Float _
+  / "model" _ ":" _ value:String _
+  / "context" _ ":" _ caps:ContextCaps _
+  / "prompt" _ ":" _ prompt:AgentPrompt _
+  / "on_start" _ body:Block _
+  / "on_tool_call" _ "(" _ tool:Identifier _ "," _ args:Identifier _ ")" _ body:Block _
+  / "on_message" _ "(" _ msg:Identifier _ ")" _ body:Block _
+  / "on_complete" _ "(" _ result:Identifier _ ")" _ body:Block _
+  / "on_error" _ "(" _ error:Identifier _ ")" _ body:Block _
+
+StringList
+  = "[" _ items:(String (_ "," _ String)*)? _ "]"
+
+ContextCaps
+  = "{" _ caps:(ContextCap (_ "," _ ContextCap)*)? _ "}"
+
+ContextCap
+  = "read" _ ":" _ Boolean
+  / "write" _ ":" _ Boolean
+  / "types" _ ":" _ StringList
+
+AgentPrompt
+  = String
+  / "file" _ "(" _ path:String _ ")"
+
+ReturnStatement
+  = "return" value:(__ Expression)? _
+
+BreakStatement
+  = "break" label:(__ Identifier)? _
+
+ContinueStatement
+  = "continue" label:(__ Identifier)? _
+
+# ============================================================================
+# Redirections
+# ============================================================================
+
+Redirect
+  = fd:Integer? op:RedirectOp _ target:(Word / Integer) _
+
+RedirectOp
+  = "<<<" # here-string
+  / "<<-" # here-doc strip
+  / "<<" # here-doc
+  / ">>" # append
+  / ">|" # clobber
+  / "<>" # read-write
+  / "<&" # dup input
+  / ">&" # dup output
+  / "<" # input
+  / ">" # output
+
+# ============================================================================
+# Expressions
+# ============================================================================
+
+Expression
+  = TernaryExpr
+
+TernaryExpr
+  = cond:NullCoalesceExpr rest:(_ "?" _ Expression _ ":" _ Expression)? _
+
+NullCoalesceExpr
+  = first:OrExpr rest:(_ "??" _ OrExpr)* _
+
+OrExpr
+  = first:AndExpr rest:(_ "||" _ AndExpr)* _
+
+AndExpr
+  = first:EqualityExpr rest:(_ "&&" _ EqualityExpr)* _
+
+EqualityExpr
+  = first:ComparisonExpr rest:(_ EqualityOp _ ComparisonExpr)* _
+
+EqualityOp
+  = "=="
+  / "!="
+  / "=~"
+  / "!~"
+  / "~~"
+
+ComparisonExpr
+  = first:BitwiseOrExpr rest:(_ ComparisonOp _ BitwiseOrExpr)* _
+
+ComparisonOp
+  = "<="
+  / ">="
+  / "<"
+  / ">"
+
+BitwiseOrExpr
+  = first:BitwiseXorExpr rest:(_ "|" _ BitwiseXorExpr)* _
+
+BitwiseXorExpr
+  = first:BitwiseAndExpr rest:(_ "^" _ BitwiseAndExpr)* _
+
+BitwiseAndExpr
+  = first:ShiftExpr rest:(_ "&" _ ShiftExpr)* _
+
+ShiftExpr
+  = first:AdditiveExpr rest:(_ ShiftOp _ AdditiveExpr)* _
+
+ShiftOp
+  = "<<"
+  / ">>"
+
+AdditiveExpr
+  = first:MultiplicativeExpr rest:(_ AdditiveOp _ MultiplicativeExpr)* _
+
+AdditiveOp
+  = "+"
+  / "-"
+
+MultiplicativeExpr
+  = first:PowerExpr rest:(_ MultiplicativeOp _ PowerExpr)* _
+
+MultiplicativeOp
+  = "//"
+  / "/"
+  / "*"
+  / "%"
+
+PowerExpr
+  = base:UnaryExpr rest:(_ "**" _ UnaryExpr)* _
+
+UnaryExpr
+  = op:UnaryOp _ operand:UnaryExpr
+  / PostfixExpr
+
+UnaryOp
+  = "!"
+  / "~"
+  / "-"
+  / "not"
+
+PostfixExpr
+  = primary:PrimaryExpr suffixes:PostfixOp* _
+
+PostfixOp
+  = _ "[" _ index:Expression _ "]" # index
+  / _ "." _ field:Identifier # field
+  / _ "(" _ args:ArgList _ ")" # call
+  / _ "?" # optional-chain
+  / _ "!" # unwrap
+
+ArgList
+  = args:(Expression (_ "," _ Expression)*)? _
+
+PrimaryExpr
+  = Null
+  / Boolean
+  / Float
+  / Integer
+  / String
+  / ListExpr
+  / DictExpr
+  / TupleExpr
+  / RangeExpr
+  / LambdaExpr
+  / Identifier
+  / "(" _ expr:Expression _ ")"
+
+Null
+  = "null" !IdentifierChar
+
+Boolean
+  = ("true" / "false") !IdentifierChar
+
+ListExpr
+  = "[" _ items:(Expression (_ "," _ Expression)* (_ ",")?)? _ "]"
+
+DictExpr
+  = "{" _ entries:(DictEntry (_ "," _ DictEntry)* (_ ",")?)? _ "}"
+
+DictEntry
+  = key:(Identifier / String / "[" _ Expression _ "]") _ ":" _ value:Expression _
+
+TupleExpr
+  = "(" _ first:Expression _ "," _ rest:(Expression (_ "," _ Expression)*)? _ ")"
+
+RangeExpr
+  = start:Expression _ ".." inclusive:"="? _ end:Expression (__ ".." _ step:Expression)? _
+
+LambdaExpr
+  = "|" _ params:(Identifier (_ "," _ Identifier)*)? _ "|" _ body:(Block / Expression) _
+
+# ============================================================================
+# Type Annotations
+# ============================================================================
+
+TypeAnnotation
+  = FunctionType
+  / UnionType
+  / OptionalType
+  / TupleType
+  / GenericType
+  / SimpleType
+
+FunctionType
+  = "(" _ params:(TypeAnnotation (_ "," _ TypeAnnotation)*)? _ ")" _ "->" _ return_type:TypeAnnotation
+
+UnionType
+  = first:SimpleType rest:(_ "|" _ SimpleType)+ _
+
+OptionalType
+  = base:SimpleType _ "?" _
+
+TupleType
+  = "(" _ types:(TypeAnnotation (_ "," _ TypeAnnotation)+) _ ")"
+
+GenericType
+  = name:Identifier _ "[" _ args:(TypeAnnotation (_ "," _ TypeAnnotation)*)? _ "]"
+
+SimpleType
+  = "Null"
+  / "Bool"
+  / "Int"
+  / "Float"
+  / "Str"
+  / "Bytes"
+  / "Any"
+  / "Never"
+  / Identifier
+
+# ============================================================================
+# Words and Expansions (Preprocessing Required)
+# ============================================================================
+
+Word
+  = parts:WordPart+ _
+
+WordPart
+  = DollarExpansion
+  / Literal
+  / QuotedString
+
+DollarExpansion
+  = "$[" _ expr:Expression _ "]" # expression
+  / "$(" _ cmd:CommandList _ ")" # command sub
+  / "${" _ var:VariableRef _ "}" # parameter
+  / "$" name:Identifier # simple var
+
+VariableRef
+  = name:Identifier modifier:VarModifier? _
+
+VarModifier
+  = ":-" _ word:Word # default
+  / ":=" _ word:Word # assign
+  / ":?" _ word:Word # error
+  / ":+" _ word:Word # alternate
+  / "##" _ pattern:Word # strip prefix greedy
+  / "#" _ pattern:Word # strip prefix
+  / "%%" _ pattern:Word # strip suffix greedy
+  / "%" _ pattern:Word # strip suffix
+  / "//" _ pattern:Word _ "/" _ replacement:Word # replace all
+  / "/" _ pattern:Word _ "/" _ replacement:Word # replace first
+  / "^^" # uppercase all
+  / "^" # uppercase first
+  / ",," # lowercase all
+  / "," # lowercase first
+  / "#" # length
+  / "[" _ slice:Slice _ "]" # slice
+
+Slice
+  = start:Expression rest:(_ ":" _ Expression)? _
+
+QuotedString
+  = SingleQuoted
+  / DoubleQuoted
+  / RawString
+  / TripleQuoted
+
+# ============================================================================
+# Literals
+# ============================================================================
+
+Integer
+  = HexInt
+  / OctInt
+  / BinInt
+  / DecInt
+
+DecInt
+  = [0-9] [0-9_]* !IdentifierChar
+
+HexInt
+  = "0" [xX] [0-9a-fA-F] [0-9a-fA-F_]* !IdentifierChar
+
+OctInt
+  = "0" [oO] [0-7] [0-7_]* !IdentifierChar
+
+BinInt
+  = "0" [bB] [01] [01_]* !IdentifierChar
+
+Float
+  = DecInt "." [0-9] [0-9_]* Exponent? !IdentifierChar
+  / DecInt Exponent !IdentifierChar
+
+Exponent
+  = [eE] [+\-]? [0-9]+
+
+String
+  = DoubleQuoted
+  / SingleQuoted
+  / RawString
+  / TripleQuoted
+
+# Note: Actual string tokenization requires custom lexer for interpolation
+DoubleQuoted
+  = '"' [^"]* '"'
+
+SingleQuoted
+  = "'" [^']* "'"
+
+RawString
+  = "r" ("'" [^']* "'" / '"' [^"]* '"')
+
+TripleQuoted
+  = "'''" (!"'''" .)* "'''"
+  / '"""' (!'"""' .)* '"""'
+
+Literal
+  = [a-zA-Z0-9_\-./:]+ !IdentifierChar
+
+Identifier
+  = !ReservedWord [a-zA-Z_] [a-zA-Z0-9_]* !IdentifierChar
+
+IdentifierChar
+  = [a-zA-Z0-9_]
+
+ReservedWord
+  = ( "if" / "then" / "else" / "elif" / "fi"
+    / "case" / "esac" / "in"
+    / "for" / "while" / "until" / "do" / "done"
+    / "function" / "proc" / "func" / "agent"
+    / "var" / "const" / "setvar"
+    / "try" / "catch" / "finally"
+    / "match" / "return" / "break" / "continue"
+    / "and" / "or" / "not"
+    / "true" / "false" / "null"
+    ) !IdentifierChar
+
+Comment
+  = BlockComment
+  / LineComment
+
+LineComment
+  = "#" [^\n]* Newline?
+
+BlockComment
+  = "/#" (!"#/" .)* "#/"
+
+# ============================================================================
+# Whitespace
+# ============================================================================
+
+_
+  = ([ \t\r\n] / LineComment)*
+
+__
+  = ([ \t\r\n] / LineComment)+
+
+Newline
+  = "\r\n"
+  / "\n"
+  / "\r"

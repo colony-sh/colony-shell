@@ -89,3 +89,11 @@
 [2025-12-16 18:30] COMPLETE: Command execution integration - expansion → resolve → spawn
 [2025-12-16 18:35] DECISION: Used spawn_blocking for async compatibility (rule #10)
 [2025-12-16 18:40] COMPLETE: F004 (Simple command execution) - 11 tests passing
+[2025-12-16 18:50] START: Beginning F005 (Pipeline execution) - F004 complete
+[2025-12-16 19:00] PROGRESS: Designed pipeline execution with N-1 pipes for N commands
+[2025-12-16 19:05] COMPLETE: Pipe creation using nix pipe() with OwnedFd handling
+[2025-12-16 19:10] COMPLETE: FD redirection using dup2() - enabled via nix 'fs' feature
+[2025-12-16 19:15] COMPLETE: Concurrent process spawning - all pipeline commands in parallel
+[2025-12-16 19:20] DECISION: Parent must close all pipe ends after fork (prevent deadlock)
+[2025-12-16 19:25] COMPLETE: Exit status collection - wait for all, return last status
+[2025-12-16 19:30] COMPLETE: F005 (Pipeline execution) - 13 tests passing
