@@ -97,3 +97,18 @@
 [2025-12-16 19:20] DECISION: Parent must close all pipe ends after fork (prevent deadlock)
 [2025-12-16 19:25] COMPLETE: Exit status collection - wait for all, return last status
 [2025-12-16 19:30] COMPLETE: F005 (Pipeline execution) - 13 tests passing
+[2025-12-16 19:00] START: Session started - analyzing colony spec for PEG grammar
+[2025-12-16 19:05] PROGRESS: Read grammar spec (docs/spec/15-grammar.md) and related files
+[2025-12-16 19:10] ANALYSIS: Identified shell-specific complexities incompatible with pure PEG
+[2025-12-16 19:10] DECISION: Hybrid approach - PEG for syntax, custom preprocessing for shell semantics
+[2025-12-16 19:15] COMPLETE: Generated colony-core.peg with full grammar specification
+[2025-12-16 19:20] COMPLETE: Wrote comprehensive proposal (docs/peg-proposal.md)
+[2025-12-16 19:25] DOCUMENT: Proposal covers three-stage pipeline: preprocess → PEG → expand
+[2025-12-16 19:25] DOCUMENT: Details handling of context-sensitive tokens, heredocs, expansions
+[2025-12-16 19:30] COMPLETE: PEG analysis and proposal complete - ready for review
+[2025-12-16 19:35] DECISION: Selected pest as PEG parser generator
+[2025-12-16 19:40] COMPLETE: Converted grammar to pest syntax (docs/colony.pest)
+[2025-12-16 19:45] COMPLETE: Updated proposal with pest-specific details
+[2025-12-16 19:50] COMPLETE: Created pest quickstart guide (docs/pest-quickstart.md)
+[2025-12-16 19:55] RATIONALE: pest chosen for excellent error messages, IDE support, zero-copy parsing
+[2025-12-16 20:00] COMPLETE: Three deliverables ready - grammar, proposal, quickstart
