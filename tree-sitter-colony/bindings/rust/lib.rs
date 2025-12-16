@@ -49,4 +49,104 @@ mod tests {
             .set_language(super::language())
             .expect("Error loading colony language");
     }
+
+    #[test]
+    fn test_parse_simple_command() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(super::language()).unwrap();
+
+        let source = "echo hello world";
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        assert!(!root.has_error());
+        assert_eq!(root.kind(), "program");
+    }
+
+    #[test]
+    fn test_parse_pipeline() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(super::language()).unwrap();
+
+        let source = "cat file.txt | grep pattern";
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        assert!(!root.has_error());
+    }
+
+    #[test]
+    fn test_parse_if_statement() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(super::language()).unwrap();
+
+        let source = r#"if [ $x -gt 10 ]; then
+    echo "big"
+fi"#;
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        assert!(!root.has_error());
+    }
+
+    #[test]
+    fn test_parse_for_loop() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(super::language()).unwrap();
+
+        let source = r#"for file in *.txt; do
+    echo "$file"
+done"#;
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        assert!(!root.has_error());
+    }
+
+    #[test]
+    fn test_parse_function() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(super::language()).unwrap();
+
+        let source = r#"function greet() {
+    echo "Hello, $1"
+}"#;
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        assert!(!root.has_error());
+    }
+
+    #[test]
+    fn test_parse_variable_expansion() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(super::language()).unwrap();
+
+        let source = r#"echo "Count: $count"
+echo ${var:-default}"#;
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+
+        assert!(!root.has_error());
+    }
+
+    #[test]
+    fn test_incremental_parsing() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(super::language()).unwrap();
+
+        // Parse original
+        let source1 = "echo hello";
+        let tree1 = parser.parse(source1, None).unwrap();
+        assert!(!tree1.root_node().has_error());
+
+        // Modify and re-parse (incremental)
+        let source2 = "echo world";
+        let tree2 = parser.parse(source2, Some(&tree1)).unwrap();
+        assert!(!tree2.root_node().has_error());
+
+        // Verify both parsed successfully
+        assert_eq!(tree1.root_node().kind(), "program");
+        assert_eq!(tree2.root_node().kind(), "program");
+    }
 }

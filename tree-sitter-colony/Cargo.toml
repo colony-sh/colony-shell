@@ -1,3 +1,6 @@
+[workspace]
+# This package is standalone, not part of the parent workspace
+
 [package]
 name = "tree-sitter-colony"
 description = "colony grammar for the tree-sitter parsing library"

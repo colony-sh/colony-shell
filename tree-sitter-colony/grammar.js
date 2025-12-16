@@ -43,7 +43,7 @@ const PREC = {
 };
 
 module.exports = grammar({
-  name: 'bash',
+  name: 'colony',
 
   conflicts: $ => [
     [$._expression, $.command_name],
