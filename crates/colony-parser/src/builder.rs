@@ -89,6 +89,20 @@ impl AstBuilder {
                 Self::build_function_def(pair)
                     .map(Statement::FunctionDef)
             }
+            Rule::Subshell => {
+                Self::build_subshell(pair)
+                    .map(Statement::Subshell)
+            }
+            Rule::BraceGroup => {
+                Self::build_brace_group(pair)
+                    .map(Statement::BraceGroup)
+            }
+            Rule::CompoundCommand => {
+                // CompoundCommand is a wrapper, descend into it
+                let inner = pair.into_inner().next()
+                    .ok_or(BuildError::EmptyCompoundCommand)?;
+                Self::build_statement(inner)
+            }
             // Assignments are env assignments before commands, not standalone statements
             // Rule::Assignment handled in SimpleCommand
             Rule::EmptyStatement => {
@@ -572,7 +586,39 @@ impl AstBuilder {
         })
     }
 
-    fn build_expression(pair: Pair<Rule>) -> Result<Expression, BuildError> {
+    fn build_subshell(pair: Pair<Rule>) -> Result<Subshell, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        // Subshell = "(" ~ CommandList ~ ")"
+        let cmd_list = inner.next()
+            .ok_or(BuildError::MissingBody)?;
+
+        let body_stmt = Self::build_statement(cmd_list)?;
+
+        // Convert to vec of statements
+        let body = match body_stmt {
+            Statement::List(list) => {
+                let mut stmts = vec![*list.first];
+                stmts.extend(list.rest.into_iter().map(|(_, s)| s));
+                stmts
+            }
+            other => vec![other],
+        };
+
+        Ok(Subshell { body, span })
+    }
+
+    fn build_brace_group(pair: Pair<Rule>) -> Result<BraceGroup, BuildError> {
+        let span = span_from_pair(&pair);
+
+        // BraceGroup = "{" ~ Statement* ~ "}"
+        let body = Self::build_block(pair)?;
+
+        Ok(BraceGroup { body, span })
+    }
+
+    pub fn build_expression(pair: Pair<Rule>) -> Result<Expression, BuildError> {
         // For now, parse simple literals
         // TODO: Implement full expression parsing with operators
 
@@ -781,6 +827,9 @@ pub enum BuildError {
 
     #[error("empty and-or list")]
     EmptyAndOrList,
+
+    #[error("empty compound command")]
+    EmptyCompoundCommand,
 
     #[error("empty condition")]
     EmptyCondition,

@@ -72,4 +72,89 @@ mod tests {
         let result = ColonyParser::parse(Rule::Program, source);
         assert!(result.is_ok(), "Failed to parse program: {:?}", result.err());
     }
+
+    // === Pure PEG Tests - No Preprocessing Required ===
+
+    #[test]
+    fn test_context_sensitive_barewords() {
+        // Bareword "hello" is Word in command context
+        let source = "echo hello";
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "Bareword should work in command: {:?}", result.err());
+
+        // Bareword "hello" is Identifier in expression context
+        let source = "var x = hello";
+        let result = ColonyParser::parse(Rule::VarDecl, source);
+        assert!(result.is_ok(), "Identifier should work in expression: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_context_sensitive_operators() {
+        // '<' as redirect in command context
+        let source = "cat < file.txt";
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "< should be redirect in command: {:?}", result.err());
+
+        // '<' as comparison in expression context
+        let source = "x < 10";
+        let result = ColonyParser::parse(Rule::Expression, source);
+        assert!(result.is_ok(), "< should be comparison in expression: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_variable_expansion_in_command() {
+        // pest parses $var directly from source
+        let source = "echo $count";
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "Should parse $var expansion: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_quoted_strings() {
+        // Single-quoted (no interpolation)
+        let source = "echo 'hello world'";
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "Should parse single-quoted: {:?}", result.err());
+
+        // Double-quoted (with interpolation)
+        let source = r#"echo "Count: $count""#;
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "Should parse double-quoted: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_command_substitution() {
+        // pest parses $(cmd) recursively from source
+        let source = "echo $(ls)";
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "Should parse command substitution: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_nested_quotes() {
+        // Nested quotes in command substitution
+        let source = r#"echo "Files: $(ls "*.txt")""#;
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "Should handle nested quotes: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_expression_in_if() {
+        // Expression parsing inside if condition
+        let source = "if (x > 10 && y < 20) { echo ok }";
+        let result = ColonyParser::parse(Rule::IfStatement, source);
+        assert!(result.is_ok(), "Should parse expression condition: {:?}", result.err());
+    }
+
+    #[test]
+    #[ignore] // Heredocs require preprocessing - content appears after command line
+    fn test_heredoc() {
+        let source = r#"cat <<EOF
+This is content
+More content
+EOF"#;
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        // This will likely fail - heredocs are the one thing needing preprocessing
+        assert!(result.is_ok(), "Heredoc parsing: {:?}", result.err());
+    }
 }

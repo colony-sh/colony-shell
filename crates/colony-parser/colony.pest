@@ -547,16 +547,25 @@ SimpleType = {
 // Words and Expansions (Preprocessing Required)
 // ============================================================================
 
-// Word must stop at whitespace - use atomic rule to prevent internal whitespace
-Word = @{ (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/" | ":" | "*" | "?" | "[" | "]")+ }
-
-WordPart = {
-    DollarExpansion
-  | Literal
-  | QuotedString
+// Word in command context - barewords allowed, expansions handled
+// This is MORE PERMISSIVE than Identifier
+Word = ${
+    QuotedString
+  | DollarExpansion
+  | Bareword
 }
 
-DollarExpansion = {
+Bareword = @{
+    (!WHITESPACE ~ !SpecialChar ~ ANY)+
+}
+
+SpecialChar = {
+    "|" | "&" | ";" | "<" | ">" | "(" | ")" | "{" | "}"
+  | "\n" | "\r" | "\t"
+}
+
+// Dollar expansions - handled directly by pest
+DollarExpansion = ${
     ("$[" ~ Expression ~ "]")            // expression
   | ("$(" ~ CommandList ~ ")")           // command sub
   | ("${" ~ VariableRef ~ "}")           // parameter
@@ -630,10 +639,31 @@ StringLiteral = {
   | TripleQuoted
 }
 
-// Note: Actual string tokenization requires custom lexer for interpolation
-// These are simplified for the PEG - preprocessor handles full complexity
-DoubleQuoted = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+// Double-quoted strings with interpolation
+DoubleQuoted = ${
+    "\"" ~ DoubleQuotedContent* ~ "\""
+}
 
+DoubleQuotedContent = {
+    DollarExpansion
+  | BacktickExpansion
+  | EscapeSequence
+  | DoubleQuotedChar
+}
+
+DoubleQuotedChar = {
+    !("\"" | "$" | "`" | "\\") ~ ANY
+}
+
+BacktickExpansion = {
+    "`" ~ CommandList ~ "`"
+}
+
+EscapeSequence = @{
+    "\\" ~ ("n" | "t" | "r" | "\\" | "\"" | "$" | "`" | "0")
+}
+
+// Single-quoted strings are literal (no interpolation)
 SingleQuoted = @{ "'" ~ (!"'" ~ ANY)* ~ "'" }
 
 RawString = @{

@@ -23,12 +23,16 @@ pub mod parser;
 pub mod ast;
 pub mod pest_parser;
 pub mod builder;
+pub mod pest_api;
 
 pub use span::{Position, Span};
 pub use token::{Token, TokenKind, TokenValue, InterpolatedPart};
 pub use lexer::{Lexer, LexerMode};
 pub use parser::Parser;
 pub use ast::*;
+
+// Primary API - Pure PEG parsing
+pub use pest_api::{parse, parse_statement, parse_expression, ParseError as PestParseError};
 
 /// Lexer error types
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
