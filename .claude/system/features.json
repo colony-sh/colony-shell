@@ -269,7 +269,7 @@
       "id": "F022",
       "name": "Tree-sitter Parser for Editor Features",
       "description": "Incremental Tree-sitter parser using rust-sitter (pure Rust, no C/FFI) for real-time syntax highlighting, code folding, and navigation. Produces error-tolerant CST for editor features while Pest/hand-written parsers handle execution.",
-      "status": "blocked",
+      "status": "in_progress",
       "priority": 3,
       "dependencies": [],
       "notes": [

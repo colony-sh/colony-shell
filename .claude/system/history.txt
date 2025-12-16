@@ -176,3 +176,8 @@
 [2025-12-16 21:50] DECISION: Recommend forking tree-sitter-bash instead of from-scratch grammar
 [2025-12-16 21:50] ALTERNATIVE: Defer Tree-sitter, focus on Pest/execution features (F021 at 45 tests!)
 [2025-12-16 21:55] CREATED: STATUS.md documenting current state and options
+[2025-12-16 22:00] SUCCESS: Forked tree-sitter-bash as Colony Shell baseline
+[2025-12-16 22:00] COMPLETE: Bash grammar + scanner.c working perfectly
+[2025-12-16 22:05] COMPLETE: Added typed pipes (-> => ~>) to pipeline rule
+[2025-12-16 22:05] VERIFIED: Typed pipes parse correctly in pipelines
+[2025-12-16 22:05] DECISION: Incremental Colony feature addition on proven bash foundation
