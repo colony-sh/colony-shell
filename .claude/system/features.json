@@ -4,8 +4,8 @@
     {
       "id": "F001",
       "name": "Lexer with mode stack",
-      "description": "Hand-written lexer that tokenizes shell input with context-sensitive modes for quoting (single, double, heredoc, escape), operators, and reserved words. Must handle mode transitions correctly.",
-      "status": "complete",
+      "description": "[DEPRECATED] Hand-written lexer that tokenizes shell input with context-sensitive modes for quoting (single, double, heredoc, escape), operators, and reserved words. DEPRECATED: Pest pure PEG approach works without lexer.",
+      "status": "deprecated",
       "priority": 1,
       "dependencies": [],
       "notes": [
@@ -21,8 +21,8 @@
     {
       "id": "F002",
       "name": "Recursive descent parser",
-      "description": "Parser that builds AST from token stream. Handles simple commands, pipelines, lists (&&, ||, ;, &), compound commands (if/while/for/case), subshells, brace groups, and function definitions.",
-      "status": "complete",
+      "description": "[DEPRECATED] Parser that builds AST from token stream. Handles simple commands, pipelines, lists (&&, ||, ;, &), compound commands (if/while/for/case), subshells, brace groups, and function definitions. DEPRECATED: Pest PEG parser (F021) replaces this.",
+      "status": "deprecated",
       "priority": 1,
       "dependencies": ["F001"],
       "notes": [
@@ -301,8 +301,15 @@
         "2025-12-16: Tried comprehensive Colony grammar - has unresolved conflicts",
         "2025-12-16: BLOCKED - Grammar conflicts prevent generation",
         "2025-12-16: Created STATUS.md with analysis and recommendations",
-        "2025-12-16: Recommended: Fork tree-sitter-bash as proven baseline"
+        "2025-12-16: Recommended: Fork tree-sitter-bash as proven baseline",
+        "2025-12-16: FORKED tree-sitter-bash successfully (30k lines, scanner.c)",
+        "2025-12-16: ADDED Colony typed pipes (-> => ~>) to pipeline rule",
+        "2025-12-16: VERIFIED: Bash grammar + typed pipes working perfectly",
+        "2025-12-16: IN_PROGRESS: Adding more Colony features incrementally"
       ]
     }
+  ]
+}
+
   ]
 }

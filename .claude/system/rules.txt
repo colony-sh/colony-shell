@@ -34,14 +34,14 @@
 21. Protocol types shared between shell and terminal via colony-protocol crate
 22. Memory operations are async — don't block the shell on vector search
 
-## Parser Architecture (Three-Parser Hybrid)
+## Parser Architecture (Two-Parser Hybrid)
 
-27. Tree-sitter parser for editor features (syntax highlight, folding, navigation)
-28. Pest PEG parser for execution validation (strict, better errors)
-29. Hand-written parser as fallback (legacy, complete)
+27. Tree-sitter parser for editor features (forked from tree-sitter-bash)
+28. Pest PEG parser for execution (pure PEG, no lexer needed)
+29. Hand-written parser (F001/F002) DEPRECATED - Pest replaces it
 30. Tree-sitter produces CST for incremental updates (< 1ms)
-31. Pest/hand-written produce AST for execution
-32. Reconciliation layer coordinates all three parsers
+31. Pest produces AST for execution (~1-5ms, strict validation)
+32. Reconciliation layer coordinates Tree-sitter + Pest
 
 ## Claude Agent SDK Integration
 
