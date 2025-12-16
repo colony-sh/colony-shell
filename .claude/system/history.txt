@@ -204,3 +204,16 @@
 [2025-12-16 23:50] PLANNING: Critical path identified - 8-9 days minimum
 [2025-12-16 23:55] PLANNING: Quick wins identified (rust-sitter gen, expression ops)
 [2025-12-16 00:00] COMMIT: Combined task list with dependencies and timeline
+[2025-12-16 23:20] START: Tree-sitter integration work (T5 from PARSER_TODO)
+[2025-12-16 23:25] DISCOVERY: rust-sitter requires rewriting grammar in Rust (not practical)
+[2025-12-16 23:30] DECISION: Use standard tree-sitter with C parser (battle-tested, works well)
+[2025-12-16 23:35] FIX: Changed grammar name from 'bash' to 'colony' in grammar.js
+[2025-12-16 23:40] FIX: Regenerated parser.c with tree-sitter generate
+[2025-12-16 23:45] FIX: Updated scanner.c function names (bash → colony)
+[2025-12-16 23:50] FIX: Enabled scanner.c compilation in build.rs
+[2025-12-16 23:55] COMPLETE: Tree-sitter compiles and links successfully
+[2025-12-17 00:00] COMPLETE: Added 7 comprehensive parsing tests - all passing
+[2025-12-17 00:05] VALIDATED: Simple commands, pipelines, if/for, functions, expansions
+[2025-12-17 00:10] VALIDATED: Incremental parsing working (re-parse with old tree)
+[2025-12-17 00:15] COMMIT: F022 tree-sitter fully functional - 8 tests passing
+[2025-12-17 00:20] STATUS: Both parsers now working (pest: 60 tests, tree-sitter: 8 tests)
