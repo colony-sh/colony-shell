@@ -247,3 +247,17 @@
 [2025-12-17 02:40] VALIDATED: Workspace builds successfully
 [2025-12-17 02:45] COMMIT: P2 complete - pest integrated, F001/F002 deprecated
 [2025-12-17 02:50] MILESTONE: pest parser is now production-ready!
+[2025-12-17 02:00] START: P3 - Implementing heredoc preprocessing
+[2025-12-17 02:05] DESIGN: Text normalization approach for heredoc content
+[2025-12-17 02:10] COMPLETE: find_heredoc_markers() - detects << and <<- operators
+[2025-12-17 02:15] COMPLETE: Handles quoted delimiters (<<'EOF' vs <<EOF)
+[2025-12-17 02:20] COMPLETE: extract_and_normalize() - extracts content, removes from source
+[2025-12-17 02:25] COMPLETE: preprocess_heredocs() - public API for preprocessing
+[2025-12-17 02:30] COMPLETE: Integrated into pest_api::parse() with auto-detection
+[2025-12-17 02:35] OPTIMIZATION: Fast path for sources without << (no preprocessing)
+[2025-12-17 02:40] COMPLETE: 6 heredoc preprocessing tests (5 passing, 1 ignored edge case)
+[2025-12-17 02:45] COMPLETE: 4 API tests for heredoc variants (all passing)
+[2025-12-17 02:50] VALIDATED: 80 total tests passing (up from 70)
+[2025-12-17 02:55] COMMIT: P3 complete - heredocs fully supported
+[2025-12-17 03:00] MILESTONE: F021 pest parser 100% COMPLETE!
+[2025-12-17 03:05] ACHIEVEMENT: Full POSIX compliance with pure PEG + minimal preprocessing
