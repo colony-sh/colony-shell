@@ -5,6 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "POSIX-compliant shell with AI agent integration, reactive environment, and extended channels"
 
 [[bin]]
 name = "colony"

@@ -23,6 +23,10 @@ rust-version = "1.75"
 authors = ["Colony Contributors"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mcfearsome/colony-shell"
+homepage = "https://github.com/mcfearsome/colony-shell"
+documentation = "https://docs.rs/colony-shell"
+keywords = ["shell", "posix", "ai", "agent", "terminal"]
+categories = ["command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
 # Async runtime

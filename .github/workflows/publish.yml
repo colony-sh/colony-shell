@@ -1,0 +1,117 @@
+name: Publish Crates
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify CARGO_REGISTRY_TOKEN is set
+        run: |
+          if [ -z "${{ secrets.CARGO_REGISTRY_TOKEN }}" ]; then
+            echo "Error: CARGO_REGISTRY_TOKEN secret not set"
+            exit 1
+          fi
+          echo "✅ CARGO_REGISTRY_TOKEN is configured"
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) doesn't match Cargo version ($CARGO_VERSION)"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: cargo test --workspace --all-features
+
+      - name: Smoke test with agent (optional)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "Testing agent initialization..."
+            cargo test -p colony-agent -- --nocapture || echo "⚠️ Agent tests failed"
+          else
+            echo "⚠️ ANTHROPIC_API_KEY not set, skipping agent tests"
+          fi
+
+      - name: Publish crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          # Publish in dependency order (leaf crates first)
+
+          echo "Publishing colony-protocol..."
+          cargo publish -p colony-protocol --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-memory..."
+          cargo publish -p colony-memory --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-tuple..."
+          cargo publish -p colony-tuple --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-parser..."
+          cargo publish -p colony-parser --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-expand..."
+          cargo publish -p colony-expand --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-channels..."
+          cargo publish -p colony-channels --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-config..."
+          cargo publish -p colony-config --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-tree-sitter..."
+          cargo publish -p colony-tree-sitter --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-exec..."
+          cargo publish -p colony-exec --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-mcp..."
+          cargo publish -p colony-mcp --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-focus..."
+          cargo publish -p colony-focus --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony-agent..."
+          cargo publish -p colony-agent --allow-dirty || echo "Already published or failed"
+          sleep 10
+
+          echo "Publishing colony (main binary)..."
+          cargo publish -p colony-shell --allow-dirty || echo "Already published or failed"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/release/colony
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
