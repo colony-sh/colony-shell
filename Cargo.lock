@@ -691,6 +691,7 @@ dependencies = [
  "signal-hook",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -755,6 +756,7 @@ dependencies = [
  "colony-parser",
  "colony-protocol",
  "colony-tree-sitter",
+ "colony-tuple",
  "miette",
  "rustyline",
  "tokio",

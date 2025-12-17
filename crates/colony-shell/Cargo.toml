@@ -17,6 +17,7 @@ colony-exec.workspace = true
 colony-protocol.workspace = true
 colony-agent = { path = "../colony-agent" }
 colony-tree-sitter = { path = "../colony-tree-sitter" }
+colony-tuple = { path = "../colony-tuple" }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

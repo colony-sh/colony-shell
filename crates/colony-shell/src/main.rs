@@ -5,6 +5,7 @@ use colony_exec::Executor;
 use colony_expand::ExpansionContext;
 use colony_parser::pest_api::parse_statement;
 use colony_tree_sitter::parse;
+use colony_tuple::{Tuple, Value};
 use miette::Result;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
@@ -182,7 +183,10 @@ async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()
 
                 // Try parsing and executing shell command
                 match execute_shell_command(line, &mut executor).await {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        // Display any reactive tuples that were emitted
+                        display_tuple_activity(&executor);
+                    }
                     Err(e) => {
                         eprintln!("Error: {}", e);
                     }
@@ -276,4 +280,55 @@ async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()
     }
 
     Ok(())
+}
+
+/// Display reactive tuple activity from the tuple space
+///
+/// Reads and displays env_change and dir_change tuples to show
+/// the reactive environment in action (Rules 42-47)
+fn display_tuple_activity(executor: &Executor) {
+    let tuple_space = executor.tuple_space();
+
+    // Check for env_change tuples: ("env_change", var_name, old_value, new_value)
+    let env_pattern = Tuple::pattern(&[
+        Value::Str("env_change".to_string()),
+        Value::Wildcard,
+        Value::Wildcard,
+        Value::Wildcard,
+    ]);
+
+    while let Some(tuple) = tuple_space.inp(env_pattern.clone()) {
+        if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) =
+            (tuple.fields.get(1), tuple.fields.get(2), tuple.fields.get(3))
+        {
+            match new {
+                Value::Null => {
+                    println!("🔄 Environment: unset {}", var);
+                }
+                Value::Str(new_val) => {
+                    if old.is_empty() {
+                        println!("🔄 Environment: {} = {}", var, new_val);
+                    } else {
+                        println!("🔄 Environment: {} = {} (was: {})", var, new_val, old);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Check for dir_change tuples: ("dir_change", old_dir, new_dir)
+    let dir_pattern = Tuple::pattern(&[
+        Value::Str("dir_change".to_string()),
+        Value::Wildcard,
+        Value::Wildcard,
+    ]);
+
+    while let Some(tuple) = tuple_space.inp(dir_pattern.clone()) {
+        if let (Some(Value::Str(_old)), Some(Value::Str(new))) =
+            (tuple.fields.get(1), tuple.fields.get(2))
+        {
+            println!("🔄 Directory: {}", new);
+        }
+    }
 }
