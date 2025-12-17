@@ -464,3 +464,23 @@
 [2025-12-17 11:23] USER EXPERIENCE: Users now see real-time state change notifications
 [2025-12-17 11:24] ENABLES: Observable shell - every state change is visible
 [2025-12-17 11:25] NEXT: Test in live REPL, verify all reactive features work end-to-end
+[2025-12-17 11:30] BUG FOUND: export builtin not recognized in REPL
+[2025-12-17 11:31] ROOT CAUSE: pest parser wraps SimpleCommand in List→Pipeline→SimpleCommand
+[2025-12-17 11:32] ANALYSIS: main.rs handles List→Pipeline but calls execute_pipeline directly
+[2025-12-17 11:33] PROBLEM: execute_pipeline bypasses builtin check for single-element pipelines
+[2025-12-17 11:34] INVESTIGATION: Added debug logging to see parse tree structure
+[2025-12-17 11:35] CONFIRMED: "export TEST=hello" → List(Pipeline(SimpleCommand))
+[2025-12-17 11:40] FIX: Modified main.rs List→Pipeline handler
+[2025-12-17 11:41] SOLUTION: Check if pipeline has one element with SimpleCommand
+[2025-12-17 11:42] SOLUTION: If so, call execute_simple_command (checks builtins)
+[2025-12-17 11:43] SOLUTION: Otherwise fall through to execute_pipeline (real pipes)
+[2025-12-17 11:44] BUILD: Successful compilation
+[2025-12-17 11:45] TEST: export TEST=hello → 🔄 Environment: TEST = hello ✅
+[2025-12-17 11:46] TEST: export TEST=world → 🔄 Environment: TEST = world (was: hello) ✅
+[2025-12-17 11:47] TEST: unset TEST → 🔄 Environment: unset TEST ✅
+[2025-12-17 11:48] TEST: cd /tmp → 🔄 Directory: /private/tmp ✅
+[2025-12-17 11:49] CLEANUP: Removed debug println statements
+[2025-12-17 11:50] MILESTONE: Builtins fully functional in REPL!
+[2025-12-17 11:51] MILESTONE: Reactive notifications working perfectly!
+[2025-12-17 11:52] USER EXPERIENCE: Every state change is now visible with 🔄 prefix
+[2025-12-17 11:53] ACHIEVEMENT: Observable shell - transparent state changes

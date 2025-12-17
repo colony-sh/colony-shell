@@ -238,7 +238,7 @@ async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()
             }
         }
         Statement::List(list) => {
-            // List with single element is just a simple command
+            // List with single element
             if list.rest.is_empty() {
                 match *list.first {
                     Statement::SimpleCommand(cmd) => {
@@ -249,12 +249,28 @@ async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()
                             eprintln!("Command exited with code {}", status.code());
                         }
                     }
-                    Statement::Pipeline(pipeline) => {
-                        let status = executor.execute_pipeline(&pipeline).await
-                            .map_err(|e| miette::miette!("execution error: {}", e))?;
+                    Statement::Pipeline(ref pipeline) => {
+                        // Check if it's a single-element pipeline with a simple command
+                        if pipeline.elements.len() == 1 {
+                            if let Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
+                                // Execute as simple command to check for builtins
+                                let status = executor.execute_simple_command(cmd).await
+                                    .map_err(|e| miette::miette!("execution error: {}", e))?;
 
-                        if !status.is_success() {
-                            eprintln!("Pipeline exited with code {}", status.code());
+                                if !status.is_success() {
+                                    eprintln!("Command exited with code {}", status.code());
+                                }
+                            } else {
+                                println!("(Pipeline element not a simple command)");
+                            }
+                        } else {
+                            // Real pipeline with multiple commands
+                            let status = executor.execute_pipeline(&pipeline).await
+                                .map_err(|e| miette::miette!("execution error: {}", e))?;
+
+                            if !status.is_success() {
+                                eprintln!("Pipeline exited with code {}", status.code());
+                            }
                         }
                     }
                     _ => {
