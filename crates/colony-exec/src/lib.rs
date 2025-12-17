@@ -7,6 +7,7 @@
 //! - Exit status capture
 //! - Signal handling (future: job control)
 
+mod builtin_redirect;
 mod builtins;
 mod command;
 mod command_sub;
@@ -125,17 +126,25 @@ impl Executor {
         // 1. Try builtin (now with reactive tuple space!)
         tracing::debug!("Checking if command is builtin: {:?}", cmd.name);
 
-        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space, &mut self.channels) {
-            tracing::debug!("Command is builtin, executing");
-            let result = builtin_result?;
+        if is_builtin(command_name) {
+            tracing::debug!("Command is builtin, executing with redirect support");
 
-            // Handle exit builtin specially
-            if result.is_exit() {
-                // TODO: Propagate exit request to shell
-                // For now, just return the exit code
+            // Apply redirects for builtin (saves and restores FDs automatically)
+            let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?;
+
+            // Execute builtin with redirects applied
+            if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space, &mut self.channels) {
+                let result = builtin_result?;
+
+                // Handle exit builtin specially
+                if result.is_exit() {
+                    // TODO: Propagate exit request to shell
+                    // For now, just return the exit code
+                }
+
+                // Guard drops here, restoring FDs automatically
+                return Ok(ExitStatus::new(result.exit_code()));
             }
-
-            return Ok(ExitStatus::new(result.exit_code()));
         }
 
         tracing::debug!("Not a builtin, executing as external command");

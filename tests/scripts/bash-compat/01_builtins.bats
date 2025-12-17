@@ -99,7 +99,7 @@ teardown() {
 }
 
 @test "compare pwd output with bash" {
-    cd /tmp
+    cd ~
 
     run bash -c "pwd"
     local bash_output="$output"
