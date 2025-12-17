@@ -478,6 +478,26 @@ pub enum Expression {
         span: Span,
     },
 
+    // === Conditionals ===
+    Ternary {
+        condition: Box<Expression>,
+        then_expr: Box<Expression>,
+        else_expr: Box<Expression>,
+        span: Span,
+    },
+    NullCoalesce {
+        left: Box<Expression>,
+        right: Box<Expression>,
+        span: Span,
+    },
+
+    // === Field Access ===
+    Field {
+        target: Box<Expression>,
+        field: String,
+        span: Span,
+    },
+
     // === Calls ===
     FuncCall {
         name: String,
@@ -488,6 +508,19 @@ pub enum Expression {
     // === Substitutions ===
     CommandSub {
         command: Box<Statement>,
+        span: Span,
+    },
+
+    // === Collections (Additional) ===
+    Tuple {
+        items: Vec<Expression>,
+        span: Span,
+    },
+
+    // === Lambda ===
+    Lambda {
+        params: Vec<String>,
+        body: Box<Expression>,
         span: Span,
     },
 
@@ -512,8 +545,13 @@ impl Expression {
             Expression::Index { span, .. } => span,
             Expression::Binary { span, .. } => span,
             Expression::Unary { span, .. } => span,
+            Expression::Ternary { span, .. } => span,
+            Expression::NullCoalesce { span, .. } => span,
+            Expression::Field { span, .. } => span,
             Expression::FuncCall { span, .. } => span,
             Expression::CommandSub { span, .. } => span,
+            Expression::Tuple { span, .. } => span,
+            Expression::Lambda { span, .. } => span,
             Expression::Paren { span, .. } => span,
         }
     }
@@ -536,9 +574,18 @@ pub enum BinaryOp {
     Le,
     Gt,
     Ge,
+    // Pattern matching
+    Match,
+    NotMatch,
     // Logical
     And,
     Or,
+    // Bitwise
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -547,4 +594,6 @@ pub enum UnaryOp {
     Neg,
     /// not, !
     Not,
+    /// ~ (bitwise not)
+    BitNot,
 }

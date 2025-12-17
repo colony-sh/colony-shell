@@ -1,6 +1,9 @@
-//! Demo of the Colony parser
+//! Demo of the Colony parser - Pure PEG Edition
+//!
+//! This example demonstrates the new pest-based parser which operates
+//! directly on source text without a separate lexer phase.
 
-use colony_parser::{Lexer, Parser, ShellOptions};
+use colony_parser::pest_api::parse;
 
 fn main() {
     let examples = vec![
@@ -10,7 +13,14 @@ fn main() {
         "echo one && echo two || echo three",
         "(echo subshell)",
         "{ echo brace; echo group; }",
+        "var x = 42",
+        "if (x > 10) { echo big }",
+        "for (;;) { echo loop }",
+        "function greet() { echo hello }",
     ];
+
+    println!("Colony Shell Parser Demo - Pure PEG Architecture");
+    println!("pest operates directly on source text (no lexer needed!)\n");
 
     for input in examples {
         println!("\n{}", "=".repeat(70));
@@ -25,15 +35,8 @@ fn main() {
 }
 
 fn parse_and_show(input: &str) -> Result<String, String> {
-    let mut lexer = Lexer::new(input, ShellOptions::posix());
-    let tokens = lexer
-        .tokenize()
-        .map_err(|e| format!("Lexer error: {}", e))?;
-
-    println!("Tokens: {:?}", tokens.iter().map(|t| t.kind).collect::<Vec<_>>());
-
-    let mut parser = Parser::new(tokens);
-    let program = parser.parse().map_err(|e| format!("Parser error: {}", e))?;
+    // Pure PEG parsing - one call, no preprocessing
+    let program = parse(input).map_err(|e| format!("Parse error: {}", e))?;
 
     Ok(describe_program(&program))
 }
@@ -74,6 +77,25 @@ fn describe_program(prog: &colony_parser::Program) -> String {
             }
             Statement::BraceGroup(b) => {
                 desc.push_str(&format!("BraceGroup with {} statement(s)\n", b.body.len()));
+            }
+            Statement::If(if_stmt) => {
+                desc.push_str("If statement\n");
+                desc.push_str(&format!("      then: {} statement(s)\n", if_stmt.then_body.len()));
+                if let Some(ref else_body) = if_stmt.else_body {
+                    desc.push_str(&format!("      else: {} statement(s)\n", else_body.len()));
+                }
+            }
+            Statement::While(w) => {
+                desc.push_str(&format!("While loop with {} statement(s)\n", w.body.len()));
+            }
+            Statement::For(f) => {
+                desc.push_str(&format!("For loop: var={}, body={} statement(s)\n", f.var, f.body.len()));
+            }
+            Statement::VarDecl(v) => {
+                desc.push_str(&format!("Variable declaration: {} = <expr>\n", v.name));
+            }
+            Statement::FunctionDef(func) => {
+                desc.push_str(&format!("Function: {}() with {} statement(s)\n", func.name, func.body.len()));
             }
             _ => desc.push_str("Other statement type\n"),
         }

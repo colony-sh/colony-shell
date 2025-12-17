@@ -1,6 +1,6 @@
 //! Natural language detection for routing to agent vs shell execution
 
-use colony_parser::{Lexer, Parser};
+use colony_parser::pest_api::parse_statement;
 
 /// Detects whether input should be routed to agent or shell parser
 pub struct NaturalLanguageDetector;
@@ -15,7 +15,7 @@ impl NaturalLanguageDetector {
             return true;
         }
 
-        // Try parsing as shell command
+        // Try parsing as shell command with pest
         if Self::parse_fails(trimmed) {
             return true;
         }
@@ -24,16 +24,10 @@ impl NaturalLanguageDetector {
         Self::has_nl_patterns(trimmed)
     }
 
-    /// Try to parse as shell command
+    /// Try to parse as shell command using pest
     fn parse_fails(input: &str) -> bool {
-        let mut lexer = Lexer::new(input);
-        let tokens = match lexer.tokenize() {
-            Ok(tokens) => tokens,
-            Err(_) => return true, // Parse error = probably NL
-        };
-
-        let mut parser = Parser::new(tokens);
-        parser.parse().is_err()
+        // Pure PEG parsing - if it fails, likely natural language
+        parse_statement(input).is_err()
     }
 
     /// Check for natural language patterns
