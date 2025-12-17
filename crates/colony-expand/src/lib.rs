@@ -176,6 +176,32 @@ impl Expander {
                 out.push_unquoted(&expanded);
             }
 
+            WordPart::CommandSubRaw(cmd_str) => {
+                // Parse the command string, then execute
+                if let Some(ref executor) = self.command_executor {
+                    // Parse the command string into a statement
+                    match colony_parser::pest_api::parse_statement(cmd_str) {
+                        Ok(stmt) => {
+                            match executor(&stmt, &mut self.context) {
+                                Ok(output) => {
+                                    // POSIX: Remove trailing newlines from command substitution
+                                    let trimmed = output.trim_end_matches('\n');
+                                    out.push_unquoted(trimmed);
+                                }
+                                Err(e) => {
+                                    return Err(ExpansionError::CommandFailed(e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            return Err(ExpansionError::CommandFailed(format!("parse error: {}", e)));
+                        }
+                    }
+                } else {
+                    out.push_unquoted("");
+                }
+            }
+
             WordPart::CommandSub(cmd) => {
                 // Execute command substitution if executor is available
                 if let Some(ref executor) = self.command_executor {

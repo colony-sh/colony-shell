@@ -1326,8 +1326,16 @@ impl AstBuilder {
                 // ${VAR} or ${VAR:-default}
                 Self::build_variable_ref(inner).map(WordPart::Variable)
             }
+            Rule::DollarCommandSubRaw => {
+                // $(command) - captured as raw string, will be parsed during expansion
+                let text = inner.as_str();
+                // Extract content between $( and )
+                let content = &text[2..text.len()-1]; // Strip "$(" and ")"
+                // Store as CommandSubRaw with unparsed string
+                Ok(WordPart::CommandSubRaw(content.to_string()))
+            }
             Rule::CommandList => {
-                // $(command)
+                // $(command) - old approach, still here for backwards compat
                 let stmt = Self::build_command_list(inner)?;
                 Ok(WordPart::CommandSub(Box::new(Statement::List(stmt))))
             }

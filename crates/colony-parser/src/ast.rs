@@ -255,8 +255,10 @@ pub enum WordPart {
     DoubleQuoted(Vec<WordPart>),
     /// Variable reference: $var, ${var}, ${var:-default}
     Variable(VariableRef),
-    /// Command substitution: $(cmd) or `cmd`
+    /// Command substitution: $(cmd) or `cmd` - pre-parsed AST (legacy)
     CommandSub(Box<Statement>),
+    /// Command substitution: $(cmd) - raw string, parsed during expansion (new)
+    CommandSubRaw(String),
     /// Tilde expansion: ~ or ~user
     Tilde(Option<String>),
 }

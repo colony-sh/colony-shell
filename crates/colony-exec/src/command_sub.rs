@@ -58,11 +58,9 @@ pub fn execute_and_capture(
                 match read(read_fd.as_raw_fd(), &mut buffer) {
                     Ok(0) => break, // EOF
                     Ok(n) => {
-                        eprintln!("DEBUG: Read {} bytes from child", n);
                         output.extend_from_slice(&buffer[..n])
                     },
                     Err(e) => {
-                        eprintln!("DEBUG: Read error: {}", e);
                         let _ = nix::sys::wait::waitpid(child, None);
                         return Err(format!("read() failed: {}", e));
                     }
@@ -76,7 +74,6 @@ pub fn execute_and_capture(
                 Ok(status) => {
                     // Convert output to string
                     let output_str = String::from_utf8_lossy(&output).to_string();
-                    eprintln!("DEBUG: Captured output: {:?}", output_str);
 
                     // Check if command failed (non-zero exit code)
                     use nix::sys::wait::WaitStatus;
@@ -108,9 +105,11 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
     use crate::JobTable;
     use std::io::Write;
 
+
     // For command substitution, we only support simple commands and pipelines
     match stmt {
         Statement::SimpleCommand(cmd) => {
+
             // Check if it's a builtin
             let jobs = JobTable::new();
             let tuple_space = TupleSpace::new();
@@ -122,14 +121,22 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
                 let _ = std::io::stdout().flush();
 
                 match result {
-                    Ok(builtin_result) => builtin_result.exit_code(),
-                    Err(_) => 1,
+                    Ok(builtin_result) => {
+                        builtin_result.exit_code()
+                    }
+                    Err(e) => {
+                        1
+                    }
                 }
             } else {
                 // External command - call synchronous helper
                 match execute_command_in_child_blocking(cmd, context) {
-                    Ok(status) => status.code(),
-                    Err(_) => 1,
+                    Ok(status) => {
+                        status.code()
+                    }
+                    Err(e) => {
+                        1
+                    }
                 }
             }
         }
@@ -164,7 +171,7 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
             last_code
         }
 
-        _ => {
+        other => {
             eprintln!("command substitution: unsupported statement type");
             1
         }
@@ -241,6 +248,7 @@ fn execute_pipeline_in_child_blocking(
     pipeline: &colony_parser::Pipeline,
     context: &ExpansionContext,
 ) -> Result<crate::ExitStatus> {
+
     // For command substitution, we can just execute the first command
     // and ignore piping complexity (the child process will exec anyway)
     if let Some(first) = pipeline.elements.first() {
@@ -298,7 +306,6 @@ mod tests {
         let output = execute_and_capture(&stmt, &mut context).unwrap();
 
         // Should capture "world\n"
-        eprintln!("DEBUG: Captured output: {:?}", output);
         assert!(!output.is_empty(), "Output should not be empty");
         assert!(output.contains("world"), "Output should contain 'world', got: {:?}", output);
     }

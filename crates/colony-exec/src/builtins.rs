@@ -97,9 +97,11 @@ pub fn execute_builtin(
 
     // Expand arguments
     let mut args = Vec::new();
-    for arg_word in &cmd.args {
+    for (i, arg_word) in cmd.args.iter().enumerate() {
         let fields = match expander.expand_word(arg_word) {
-            Ok(fields) => fields,
+            Ok(fields) => {
+                fields
+            }
             Err(e) => return Some(Err(e.into())),
         };
         for field in fields {

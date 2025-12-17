@@ -303,6 +303,148 @@ mod tests {
     }
 
     #[test]
+    fn test_command_sub_with_args() {
+        use pest::Parser;
+        use crate::pest_parser::{ColonyParser, Rule};
+
+        // Test -1: Can we parse "world" as a Word?
+        eprintln!("\n=== Test -1: Parse 'world' as Word ===");
+        match ColonyParser::parse(Rule::Word, "world") {
+            Ok(mut pairs) => {
+                if let Some(pair) = pairs.next() {
+                    eprintln!("✓ Word parsed: {:?}", pair.as_str());
+                }
+            }
+            Err(e) => {
+                eprintln!("✗ Cannot parse as Word: {}", e);
+            }
+        }
+
+        // Test 0: Can we parse "echo world" as CommandList?
+        eprintln!("\n=== Test 0: Parse 'echo world' as CommandList ===");
+        match ColonyParser::parse(Rule::CommandList, "echo world") {
+            Ok(pairs) => {
+                for pair in pairs {
+                    eprintln!("✓ CommandList: {:?}", pair.as_str());
+                    for inner in pair.into_inner() {
+                        eprintln!("  {:?} = {:?}", inner.as_rule(), inner.as_str());
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("✗ Cannot parse as CommandList: {}", e);
+            }
+        }
+
+        // Test 0b: Can we parse "echo world" as SimpleCommand?
+        eprintln!("\n=== Test 0b: Parse 'echo world' as SimpleCommand ===");
+        match ColonyParser::parse(Rule::SimpleCommand, "echo world") {
+            Ok(pairs) => {
+                for pair in pairs {
+                    eprintln!("✓ SimpleCommand: {:?}", pair.as_str());
+                    for inner in pair.into_inner() {
+                        eprintln!("  {:?} = {:?}", inner.as_rule(), inner.as_str());
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("✗ Cannot parse as SimpleCommand: {}", e);
+            }
+        }
+
+        // First test: Can we parse $(echo world) as a Word by itself?
+        eprintln!("\n=== Test 1: Parse $(echo world) as Word ===");
+        match ColonyParser::parse(Rule::Word, "$(echo world)") {
+            Ok(mut pairs) => {
+                if let Some(pair) = pairs.next() {
+                    eprintln!("✓ Word parsed: {:?}", pair.as_str());
+                    for inner in pair.into_inner() {
+                        eprintln!("  Part: {:?} = {:?}", inner.as_rule(), inner.as_str());
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("✗ Cannot parse as Word: {}", e);
+            }
+        }
+
+        // Second test: Can we parse "hello $(echo world)" as two Words?
+        eprintln!("\n=== Test 2: Parse 'hello $(echo world)' as Words ===");
+        let test2 = "hello $(echo world)";
+        match ColonyParser::parse(Rule::SimpleCommand, test2) {
+            Ok(pairs) => {
+                for pair in pairs {
+                    eprintln!("Matched: {:?} = {:?}", pair.as_rule(), pair.as_str());
+                    for inner in pair.into_inner() {
+                        eprintln!("  {:?} = {:?}", inner.as_rule(), inner.as_str());
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+            }
+        }
+
+        let source = "echo hello $(echo world)";
+
+        // Test raw pest parsing
+        eprintln!("\n=== Test 3: Full command with $(echo world) ===");
+        match ColonyParser::parse(Rule::SimpleCommand, source) {
+            Ok(pairs) => {
+                for pair in pairs {
+                    eprintln!("Rule: {:?}, Text: {:?}, Span: {:?}", pair.as_rule(), pair.as_str(), pair.as_span());
+                    for inner in pair.into_inner() {
+                        eprintln!("  Inner Rule: {:?}, Text: {:?}", inner.as_rule(), inner.as_str());
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Pest parse error: {}", e);
+            }
+        }
+
+        // Now test parse_statement
+        let result = parse_statement(source);
+
+        if let Err(ref e) = result {
+            eprintln!("Parse error: {}", e);
+        }
+        assert!(result.is_ok(), "Should parse command sub with args");
+
+        let stmt = result.unwrap();
+        eprintln!("\n=== AST Structure ===");
+        eprintln!("{:#?}", stmt);
+
+        // Navigate through List/Pipeline to get to SimpleCommand
+        let cmd = match stmt {
+            crate::ast::Statement::SimpleCommand(ref cmd) => cmd,
+            crate::ast::Statement::List(ref list) => {
+                match &*list.first {
+                    crate::ast::Statement::Pipeline(ref pipeline) => {
+                        if let crate::ast::Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
+                            cmd
+                        } else {
+                            panic!("Pipeline doesn't contain SimpleCommand");
+                        }
+                    }
+                    crate::ast::Statement::SimpleCommand(ref cmd) => cmd,
+                    _ => panic!("List doesn't contain expected structure"),
+                }
+            }
+            _ => panic!("Unexpected statement type"),
+        };
+
+        eprintln!("\n=== SimpleCommand Details ===");
+        eprintln!("Command name: {:?}", cmd.name);
+        eprintln!("Number of args: {}", cmd.args.len());
+        for (i, arg) in cmd.args.iter().enumerate() {
+            eprintln!("Arg {}: {:?}", i, arg);
+        }
+
+        assert_eq!(cmd.args.len(), 2, "Should have 2 arguments: 'hello' and $(echo world)");
+    }
+
+    #[test]
     fn test_heredoc_basic() {
         let source = r#"cat <<EOF
 line 1

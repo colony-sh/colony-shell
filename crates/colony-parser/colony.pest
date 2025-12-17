@@ -557,6 +557,7 @@ SimpleType = {
 
 // Word in command context - can contain multiple parts
 // Example: "hello$world" or "$a:$b" or "pre${var}post"
+// MUST use ${...} (compound_atomic) so WordParts stick together without whitespace
 Word = ${
     WordPart+
 }
@@ -583,11 +584,18 @@ SpecialChar = {
 }
 
 // Dollar expansions - handled directly by pest
-DollarExpansion = ${
-    ("$[" ~ Expression ~ "]")            // expression
-  | ("$(" ~ CommandList ~ ")")           // command sub
-  | ("${" ~ VariableRef ~ "}")           // parameter
-  | ("$" ~ Identifier)                   // simple var
+// For command substitution, we capture the string and parse it during expansion
+DollarExpansion = {
+    DollarCommandSubRaw                  // $(...)  captured as string
+  | ("$[" ~ Expression ~ "]")            // $[expr] - parsed inline
+  | ("${" ~ VariableRef ~ "}")           // ${var}  - parsed inline
+  | ("$" ~ Identifier)                   // $var    - parsed inline
+}
+
+// Command substitution as raw string - parsed during expansion not during initial parse
+// This avoids the compound_atomic whitespace issues
+DollarCommandSubRaw = @{
+    "$(" ~ (!")" ~ ANY)* ~ ")"
 }
 
 VariableRef = {
