@@ -12,6 +12,11 @@
 //! - `inp(pattern)` - Non-blocking `in` (returns None if not found)
 //! - `rdp(pattern)` - Non-blocking `rd` (returns None if not found)
 //!
+//! ## Storage Backends
+//!
+//! - `TupleSpace` - In-memory only (ephemeral, single process)
+//! - `PersistentTupleSpace` - SQLite-backed (persistent, multi-process)
+//!
 //! ## Example
 //!
 //! ```rust
@@ -44,6 +49,10 @@
 //! - **Agent Coordination**: `out("task", agent_id, work_item)`
 //! - **Event Notification**: `out("file_change", path, mtime)`
 //! - **Request/Response**: `out("request", id, data)` → `in("response", id, *)`
+
+mod persistent;
+
+pub use persistent::{PersistentTupleSpace, StorageError};
 
 use parking_lot::{Condvar, Mutex};
 use scc::HashMap;

@@ -230,12 +230,30 @@
     },
     {
       "id": "F012",
-      "name": "Memory substrate (SQLite)",
-      "description": "SQLite schema for memory metadata: scope, project, timestamps, importance, validity. CRUD operations with proper indexing.",
-      "status": "new",
+      "name": "Persistent tuple space (SQLite)",
+      "description": "SQLite-backed persistent tuple space for cross-process coordination. Hybrid storage (memory cache + disk), write-through cache, transaction support for locks, background cleanup of expired tuples. Enables distributed locks, task queues, and messaging that survive shell restarts.",
+      "status": "complete",
       "priority": 4,
-      "dependencies": [],
-      "notes": []
+      "dependencies": ["F010"],
+      "notes": [
+        "2025-12-17: Starting F012 - F010 dependency satisfied",
+        "2025-12-17: REPURPOSED: Originally 'Memory substrate' but reinterpreted as persistent tuple space",
+        "2025-12-17: RATIONALE: In-memory tuple space can't coordinate across shell instances",
+        "2025-12-17: DESIGN: Hybrid storage - memory cache for hot paths, SQLite for persistence",
+        "2025-12-17: DESIGN: Write-through on out(), read-through on inp/rdp with fallback to disk",
+        "2025-12-17: LOCATION: ~/.config/colony/tuple-space.db (global coordination)",
+        "2025-12-17: SCHEMA: tuples(id, fields, created_at, expires_at, source, length)",
+        "2025-12-17: INDEXES: idx_length (bucketing), idx_expires (cleanup), idx_source",
+        "2025-12-17: IMPLEMENTED: PersistentTupleSpace struct with clone() for Arc sharing",
+        "2025-12-17: IMPLEMENTED: All Linda primitives (out, in, rd, inp, rdp)",
+        "2025-12-17: IMPLEMENTED: load_from_disk() populates memory on startup",
+        "2025-12-17: IMPLEMENTED: cleanup_loop() background task (5min interval)",
+        "2025-12-17: FIX: SQLite doesn't support DELETE...LIMIT - use SELECT id first",
+        "2025-12-17: TESTS: 7 persistent tests + 8 in-memory tests + 8 doc tests = 23 total",
+        "2025-12-17: VALIDATED: Persistence across shell restarts",
+        "2025-12-17: VALIDATED: Memory/disk fallback, distributed lock pattern",
+        "2025-12-17: COMPLETE - F012 100% functional, all tests passing"
+      ]
     },
     {
       "id": "F013",

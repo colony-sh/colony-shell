@@ -364,3 +364,37 @@
 [2025-12-17 01:57] TOTAL: 12 tests - all passing
 [2025-12-17 01:57] MILESTONE: F009 100% COMPLETE - Terminal communication ready!
 [2025-12-17 01:57] ENABLES: Agent UI, tool widgets, syntax highlighting, session management
+[2025-12-17 02:04] START: Reactive Environment Integration
+[2025-12-17 02:04] GOAL: Implement Rules 42-47 (tuple space observable environment)
+[2025-12-17 02:04] FOUNDATION: F010 (tuple space) + F009 (OSC 2337) + F007 (builtins)
+[2025-12-17 02:04] PLAN: Emit tuples from export/unset/cd, demonstrate reactivity
+[2025-12-17 02:12] START: Beginning F012 (Persistent Tuple Space)
+[2025-12-17 02:12] CONTEXT: User identified critical gap - in-memory tuples can't coordinate across shells
+[2025-12-17 02:12] REPURPOSE: F012 changed from generic "memory substrate" to persistent tuple space
+[2025-12-17 02:12] RATIONALE: Distributed locks, task queues, messaging require persistence
+[2025-12-17 02:12] DEPENDENCY: F010 (in-memory) provides foundation, F012 adds persistence layer
+[2025-12-17 02:15] DESIGN: Hybrid storage - memory cache (fast) + SQLite (persistent)
+[2025-12-17 02:15] DESIGN: Write-through cache - out() writes to disk then memory
+[2025-12-17 02:15] DESIGN: Read-through cache - inp/rdp try memory first, fallback to disk
+[2025-12-17 02:15] LOCATION: ~/.config/colony/tuple-space.db (global coordination)
+[2025-12-17 02:18] SCHEMA: tuples table with id, fields (JSON), created_at, expires_at, source, length
+[2025-12-17 02:18] INDEXES: idx_length (bucketing), idx_expires (cleanup), idx_source (filtering)
+[2025-12-17 02:20] IMPLEMENTED: PersistentTupleSpace with hybrid storage
+[2025-12-17 02:20] IMPLEMENTED: out() - writes to disk then memory
+[2025-12-17 02:20] IMPLEMENTED: inp()/rdp() - memory first with disk fallback
+[2025-12-17 02:20] IMPLEMENTED: in()/rd() - blocking with periodic disk checks
+[2025-12-17 02:20] IMPLEMENTED: load_from_disk() - populates memory cache on open
+[2025-12-17 02:20] IMPLEMENTED: cleanup_loop() - background task removes expired tuples (5min interval)
+[2025-12-17 02:20] CONCURRENCY: parking_lot::Mutex wraps Connection for Send + thread-safety
+[2025-12-17 02:20] DEPENDENCIES: rusqlite 0.32 with bundled feature, uuid v4 for IDs
+[2025-12-17 02:22] TESTS: 7 comprehensive tests - all passing
+[2025-12-17 02:22] TEST: Persistence across open (simulates shell restart)
+[2025-12-17 02:22] TEST: Memory fallback to disk (cache miss scenario)
+[2025-12-17 02:22] TEST: Distributed lock pattern (acquire/check/release)
+[2025-12-17 02:22] TEST: Max tuples limit enforcement
+[2025-12-17 02:22] TEST: Basic out/inp, rdp non-destructive, wildcard matching
+[2025-12-17 02:22] FIX: Remove SQLite LIMIT in DELETE (not supported) - use SELECT id first
+[2025-12-17 02:22] TOTAL: 15 unit tests + 8 doc tests = 23 tests, all passing
+[2025-12-17 02:22] MILESTONE: F012 COMPLETE - Persistent tuple space operational!
+[2025-12-17 02:22] ENABLES: Cross-shell coordination, distributed locks, persistent task queues
+[2025-12-17 02:22] UNLOCKS: F019 (goal tracking), cross-shell agent coordination
