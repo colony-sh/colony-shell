@@ -61,8 +61,8 @@ fn execute_command_blocking(
     // TODO: Handle cmd.env_assignments
     let env: Vec<(String, String)> = std::env::vars().collect();
 
-    // 5. Spawn process
-    let handle = spawn_process(&program_path, &args, &env)?;
+    // 5. Spawn process with redirects
+    let handle = spawn_process(&program_path, &args, &env, &cmd.redirects, context)?;
 
     // 6. Wait for completion
     handle.wait()

@@ -1,6 +1,9 @@
 //! Low-level process execution using nix
 
+use crate::redirect::apply_redirects;
 use crate::{ExecutionError, Result};
+use colony_expand::ExpansionContext;
+use colony_parser::Redirect;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{execve, fork, ForkResult, Pid};
 use std::ffi::CString;
@@ -67,10 +70,14 @@ impl ProcessHandle {
 /// This is the low-level primitive that directly uses fork/exec.
 /// It runs synchronously - the caller is responsible for using spawn_blocking
 /// if async execution is needed.
+///
+/// Redirects are applied in the child process before exec.
 pub fn spawn_process(
     program: &Path,
     args: &[String],
     env: &[(String, String)],
+    redirects: &[Redirect],
+    context: &mut ExpansionContext,
 ) -> Result<ProcessHandle> {
     // Convert arguments to CStrings
     let c_program = path_to_cstring(program)?;
@@ -91,7 +98,14 @@ pub fn spawn_process(
             Ok(ProcessHandle::new(child))
         }
         Ok(ForkResult::Child) => {
-            // Child process - exec the command
+            // Child process - apply redirects then exec
+
+            // Apply all redirects BEFORE execve()
+            if let Err(e) = apply_redirects(redirects, context) {
+                eprintln!("colony-exec: redirect failed: {}", e);
+                std::process::exit(126); // Convention: 126 = command found but not executable
+            }
+
             // This replaces the current process image
             let exec_result = execve(&c_program, &c_args, &c_env);
 
@@ -128,8 +142,10 @@ mod tests {
         let program = PathBuf::from("/bin/echo");
         let args = vec!["echo".to_string(), "hello".to_string()];
         let env = vec![];
+        let redirects = vec![];
+        let mut context = ExpansionContext::new();
 
-        let handle = spawn_process(&program, &args, &env).unwrap();
+        let handle = spawn_process(&program, &args, &env, &redirects, &mut context).unwrap();
         let status = handle.wait().unwrap();
 
         assert!(status.is_success());
@@ -140,8 +156,10 @@ mod tests {
         let program = PathBuf::from("/usr/bin/false");
         let args = vec!["false".to_string()];
         let env = vec![];
+        let redirects = vec![];
+        let mut context = ExpansionContext::new();
 
-        let handle = spawn_process(&program, &args, &env).unwrap();
+        let handle = spawn_process(&program, &args, &env, &redirects, &mut context).unwrap();
         let status = handle.wait().unwrap();
 
         assert!(!status.is_success());
@@ -153,8 +171,10 @@ mod tests {
         let program = PathBuf::from("/usr/bin/true");
         let args = vec!["true".to_string()];
         let env = vec![];
+        let redirects = vec![];
+        let mut context = ExpansionContext::new();
 
-        let handle = spawn_process(&program, &args, &env).unwrap();
+        let handle = spawn_process(&program, &args, &env, &redirects, &mut context).unwrap();
         let status = handle.wait().unwrap();
 
         assert!(status.is_success());

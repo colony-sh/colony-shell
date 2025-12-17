@@ -27,6 +27,15 @@ pub enum ExecutionError {
 
     #[error("Invalid UTF-8 in argument")]
     InvalidUtf8,
+
+    #[error("Redirect error: {0}")]
+    RedirectError(String),
+
+    #[error("Ambiguous redirect")]
+    AmbiguousRedirect,
+
+    #[error("Invalid redirect: {0}")]
+    InvalidRedirect(String),
 }
 
 pub type Result<T> = std::result::Result<T, ExecutionError>;

@@ -12,12 +12,14 @@ mod error;
 mod path;
 mod pipeline;
 mod process;
+mod redirect;
 
 pub use command::execute_command;
 pub use error::{ExecutionError, Result};
 pub use path::resolve_command;
 pub use pipeline::execute_pipeline;
 pub use process::{ExitStatus, ProcessHandle};
+pub use redirect::apply_redirects;
 
 use colony_expand::ExpansionContext;
 use colony_parser::{Pipeline, SimpleCommand};

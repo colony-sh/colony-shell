@@ -95,10 +95,23 @@
       "id": "F006",
       "name": "Redirections",
       "description": "Implement all POSIX redirections: >, >>, <, >&, N>&M, N<&M. Handle heredocs with delimiter quoting rules.",
-      "status": "new",
+      "status": "complete",
       "priority": 2,
       "dependencies": ["F004"],
-      "notes": []
+      "notes": [
+        "2025-12-17: Starting F006 - F004 dependency satisfied",
+        "2025-12-17: Plan: Implement redirect handling using nix::fcntl::open and dup2",
+        "2025-12-17: Created redirect.rs module with all POSIX redirect forms",
+        "2025-12-17: Implemented file redirects: <, >, >>, >|, <>",
+        "2025-12-17: Implemented fd operations: N>&M, N<&M, N>&-, N<&-",
+        "2025-12-17: Implemented heredocs and herestrings: <<, <<-, <<<",
+        "2025-12-17: Redirects applied in child process before execve()",
+        "2025-12-17: Used nix::fcntl::open with OFlag and Mode for file opens",
+        "2025-12-17: Used nix::unistd::dup2 for fd duplication",
+        "2025-12-17: Heredocs via pipe() - write in parent, dup to stdin in child",
+        "2025-12-17: Added 5 comprehensive tests - all passing",
+        "2025-12-17: COMPLETE - 18 tests total (13 + 5 redirect tests)"
+      ]
     },
     {
       "id": "F007",

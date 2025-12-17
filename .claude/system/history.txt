@@ -281,3 +281,15 @@
 [2025-12-17 00:05] PERFORMANCE: < 1ms parse time per validation
 [2025-12- 00:05] FUTURE: Full highlighting requires OSC 2337 emission to terminal
 [2025-12-17 00:05] MILESTONE: Two-parser hybrid fully operational (tree-sitter + pest)
+[2025-12-17 00:07] START: Beginning F006 (Redirections)
+[2025-12-17 00:07] SCOPE: All POSIX redirections (>, >>, <, >&, N>&M, N<&M, heredocs, herestrings)
+[2025-12-17 00:07] DEPENDENCY: F004 (Simple command execution) satisfied - complete
+[2025-12-17 00:07] PLAN: Implement redirect handling in colony-exec using nix crate
+[2025-12-17 00:23] COMPLETE: F006 Redirections implementation
+[2025-12-17 00:23] IMPLEMENTED: All POSIX redirect forms (>, >>, <, >&, N>&M, heredocs)
+[2025-12-17 00:23] MODULE: redirect.rs with apply_redirects() function
+[2025-12-17 00:23] ARCHITECTURE: Redirects applied in child before execve()
+[2025-12-17 00:23] SYSCALLS: nix::fcntl::open, nix::unistd::dup2, pipe()
+[2025-12-17 00:23] TESTS: 5 new tests (output, input, append, fd_dup, heredoc) - all passing
+[2025-12-17 00:23] TOTAL TESTS: 18 passing (13 original + 5 redirects)
+[2025-12-17 00:23] MILESTONE: F006 100% COMPLETE - Full POSIX redirect support
