@@ -1,0 +1,70 @@
+# Colony Shell Configuration Template
+# Copy to .colonyrc in your project root and customize for your needs
+
+version = 1
+
+[agent]
+# Custom agent personality for your project
+# This completely replaces the default system prompt
+personality = """
+You are an expert assistant for this project.
+
+Describe your project here and what kind of help you need.
+Examples:
+- "You are a Python Django expert. This project uses Django 4.2..."
+- "You are a Rust systems programmer. This project builds..."
+- "You are a DevOps engineer. This infrastructure uses Kubernetes..."
+"""
+
+# Preferred model provider (optional)
+# Options: "anthropic", "openai", "ollama"
+# preferred_provider = "anthropic"
+
+# Preferred model name (optional)
+# Examples:
+# - anthropic: "claude-3-5-sonnet-20241022", "claude-3-opus-20240229"
+# - openai: "gpt-4-turbo", "gpt-3.5-turbo"
+# - ollama: "llama3", "mistral", "codellama"
+# preferred_model = "claude-3-5-sonnet-20241022"
+
+# Temperature (0.0-1.0, optional)
+# Lower = more focused/deterministic, Higher = more creative
+# temperature = 0.7
+
+# Max tokens per response (optional)
+# max_tokens = 4096
+
+[project]
+# Project metadata (helps agent understand context)
+name = "my-project"
+description = "What does this project do?"
+language = "rust"  # or "python", "typescript", etc.
+
+# Project goals (shown to agent)
+goals = [
+    "Describe your project goals here",
+    "Examples: 'High performance', 'Type safety', 'Easy to maintain'",
+]
+
+# Coding conventions (shown to agent)
+conventions = [
+    "List your coding standards here",
+    "Examples: 'Use async/await', 'Prefer composition over inheritance'",
+    "Examples: 'All functions must have docstrings'",
+]
+
+# Documentation links
+docs = [
+    "https://your-project-docs.com",
+    "README.md",
+]
+
+# Future: MCP servers (F016-F018)
+# [mcp]
+# servers = [
+#     { name = "filesystem", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+# ]
+
+# Future: Tool classifications
+# [tools]
+# classifications = { "read_file" = "programmatic", "write_file" = "user_facing" }

@@ -595,3 +595,29 @@
 [2025-12-17 16:10] ACHIEVEMENT: Test suite validates 70% POSIX compliance
 [2025-12-17 16:11] ACHIEVEMENT: Command lists (;, &&, ||) fully operational
 [2025-12-17 16:12] STATUS: F023 at 90% - infrastructure complete, for loops blocked on grammar
+[2025-12-17 16:45] CREATED: colony-config crate (400 lines)
+[2025-12-17 16:46] IMPLEMENTED: ColonyConfig struct with TOML deserialization
+[2025-12-17 16:47] SECTIONS: agent, project, mcp, tools, completion
+[2025-12-17 16:48] IMPLEMENTED: TrustManager with SHA256 hashing (200 lines)
+[2025-12-17 16:49] TRUST STORAGE: ~/.config/colony/trusted.toml
+[2025-12-17 16:50] TRUST WORKFLOW: Detect → Hash → Check → Prompt → Save
+[2025-12-17 16:51] CHANGE DETECTION: Hash comparison on every load
+[2025-12-17 16:52] IMPLEMENTED: Config discovery (150 lines)
+[2025-12-17 16:53] DISCOVERY: Walk up tree from cwd, also check ~/.colonyrc
+[2025-12-17 16:54] LAYERING: System config + project config merged
+[2025-12-17 16:55] INTEGRATED: load_colonyrc_with_trust() in main.rs (100 lines)
+[2025-12-17 16:56] PROMPTS: "Trust this directory? [y/N/show]" with show option
+[2025-12-17 16:57] PROMPTS: "Re-trust?" when config changes
+[2025-12-17 16:58] IMPLEMENTED: build_agent_config() merges .colonyrc into AgentConfig
+[2025-12-17 16:59] PERSONALITY INJECTION: Custom system prompts override defaults
+[2025-12-17 17:00] PROJECT CONTEXT: Goals, conventions, docs injected into prompt
+[2025-12-17 17:01] CREATED: .colonyrc for Colony Shell project (60 lines)
+[2025-12-17 17:02] EXAMPLE: Rust expert personality, POSIX goals, coding conventions
+[2025-12-17 17:03] CREATED: .colonyrc.example template (70 lines)
+[2025-12-17 17:04] TESTED: Trust prompt on first load ✅
+[2025-12-17 17:05] TESTED: Trust save and auto-load on second run ✅
+[2025-12-17 17:06] TESTED: "show" command displays config content ✅
+[2025-12-17 17:07] MILESTONE: F020 COMPLETE - Project-specific agent configuration operational!
+[2025-12-17 17:08] ARCHITECTURE: 750+ lines across 3 modules (lib, trust, discovery)
+[2025-12-17 17:09] SECURITY: direnv-style trust prevents malicious configs
+[2025-12-17 17:10] ENABLES: Per-project agent personalities, context-aware assistance

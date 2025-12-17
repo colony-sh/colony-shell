@@ -367,15 +367,25 @@
       "id": "F020",
       "name": ".colonyrc configuration",
       "description": "Project config loading with direnv-style trust model. Agent personality, conventions, project goals, MCP servers.",
-      "status": "in_progress",
+      "status": "complete",
       "priority": 4,
       "dependencies": [],
       "notes": [
         "2025-12-17: Starting F020 - no dependencies",
-        "2025-12-17: DESIGN: direnv-style trust model (~/.config/colony/trusted.toml)",
-        "2025-12-17: DESIGN: TOML format for .colonyrc (human-editable, strongly typed)",
-        "2025-12-17: PLAN: colony-config crate for loading and validation",
-        "2025-12-17: PLAN: Integration with Agent for personality injection"
+        "2025-12-17: CREATED: colony-config crate (750+ lines)",
+        "2025-12-17: IMPLEMENTED: ColonyConfig with sections: agent, project, mcp, tools, completion",
+        "2025-12-17: IMPLEMENTED: TrustManager with SHA256 hashing (direnv-style)",
+        "2025-12-17: TRUST STORAGE: ~/.config/colony/trusted.toml",
+        "2025-12-17: TRUST WORKFLOW: Detect → Hash → Check → Prompt → Save",
+        "2025-12-17: CHANGE DETECTION: Re-prompt when config content changes",
+        "2025-12-17: IMPLEMENTED: Config discovery (walk up directory tree + ~/.colonyrc)",
+        "2025-12-17: LAYERING: System config + project config merged",
+        "2025-12-17: INTEGRATED: load_colonyrc_with_trust() with interactive prompts",
+        "2025-12-17: IMPLEMENTED: build_agent_config() injects personality and project context",
+        "2025-12-17: TESTED: Trust prompt on first load, auto-load on second, show command",
+        "2025-12-17: CREATED: .colonyrc for Colony Shell with Rust expert personality",
+        "2025-12-17: CREATED: .colonyrc.example template for users",
+        "2025-12-17: COMPLETE: Per-project agent customization with security"
       ]
     },
     {
