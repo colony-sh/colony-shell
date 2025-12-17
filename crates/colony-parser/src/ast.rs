@@ -87,13 +87,22 @@ pub struct SimpleCommand {
     pub span: Span,
 }
 
-/// An assignment: name=value or name+=value
+/// An assignment: name=value or name=(array values)
 #[derive(Clone, Debug)]
 pub struct Assignment {
     pub name: String,
     pub op: AssignOp,
-    pub value: Word,
+    pub value: AssignmentValue,
     pub span: Span,
+}
+
+/// Value in an assignment
+#[derive(Clone, Debug)]
+pub enum AssignmentValue {
+    /// Single word: name=value
+    Word(Word),
+    /// Array literal: name=(word1 word2 word3)
+    Array(Vec<Word>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -265,12 +274,34 @@ pub enum WordPart {
     Tilde(Option<String>),
 }
 
-/// Variable reference with optional modifier
+/// Variable reference with optional prefix, subscript and modifier
 #[derive(Clone, Debug)]
 pub struct VariableRef {
     pub name: String,
+    pub prefix: Option<VarPrefix>,
+    pub subscript: Option<ArraySubscript>,
     pub modifier: Option<VarModifier>,
     pub span: Span,
+}
+
+/// Prefix modifier (comes before variable name)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum VarPrefix {
+    /// # - Length
+    Length,
+    /// ! - Indices
+    Indices,
+}
+
+/// Array subscript
+#[derive(Clone, Debug)]
+pub enum ArraySubscript {
+    /// [index] - numeric or expression
+    Index(Box<Expression>),
+    /// [@] - all elements as separate words
+    All,
+    /// [*] - all elements as single word
+    Star,
 }
 
 /// Variable expansion modifier
@@ -296,8 +327,10 @@ pub enum VarModifier {
         word: Box<Word>,
         check_null: bool,
     },
-    /// ${#var}
+    /// ${#var} or ${#arr[@]}
     Length,
+    /// ${!arr[@]} - array indices
+    Indices,
 }
 
 /// if/elif/else/fi

@@ -59,6 +59,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "alias" | "unalias" | "." | "source"
         | "fg" | "bg" | "jobs" | "wait"
         | "[" | "test"  // POSIX test command
+        | ":"           // POSIX null utility (no-op, returns 0)
         | "context"     // Extended channel system (F024)
     )
 }
@@ -126,6 +127,7 @@ pub fn execute_builtin(
         "jobs" => builtin_jobs(&args, jobs),
         "wait" => builtin_wait(&args, jobs),
         "[" | "test" => builtin_test(&args),
+        ":" => builtin_noop(&args),
         "context" => builtin_context(&args, channels),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
@@ -593,6 +595,15 @@ fn builtin_test(args: &[String]) -> Result<BuiltinResult> {
     // Complex expressions not supported
     eprintln!("test: complex expressions not yet supported");
     Ok(BuiltinResult::Failure(2))
+}
+
+/// : - POSIX null utility
+///
+/// Usage: :
+/// Does nothing, returns success (0).
+/// Used for variable assignments and as a no-op command.
+fn builtin_noop(_args: &[String]) -> Result<BuiltinResult> {
+    Ok(BuiltinResult::Success(0))
 }
 
 /// context - Manage context channel (fd 3)

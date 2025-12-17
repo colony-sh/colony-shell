@@ -17,8 +17,103 @@ use colony_parser::{VarModifier, VariableRef};
 
 /// Expand a parameter (variable) reference
 pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Result<String> {
+    use colony_parser::VarPrefix;
+
+    // Get variable (may be scalar or array)
+    let variable = context.get_variable(&var_ref.name);
     let var_value = context.get_var_or_env(&var_ref.name);
 
+    // Handle prefix modifiers (# and !)
+    // These apply to the final result after subscript resolution
+    if let Some(prefix) = var_ref.prefix {
+        match prefix {
+            VarPrefix::Length => {
+                // ${#var} or ${#arr[@]}
+                return match (&variable, &var_ref.subscript) {
+                    (Some(crate::Variable::Array(arr)), Some(colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star)) => {
+                        // ${#arr[@]} or ${#arr[*]} - number of elements
+                        Ok(arr.len().to_string())
+                    }
+                    (Some(crate::Variable::Array(arr)), None) => {
+                        // ${#arr} - length of first element
+                        Ok(arr.first().map(|s| s.len()).unwrap_or(0).to_string())
+                    }
+                    (Some(crate::Variable::String(s)), _) => {
+                        // ${#var} - string length
+                        Ok(s.len().to_string())
+                    }
+                    (None, _) => Ok("0".to_string()),
+                    _ => Ok("0".to_string()),
+                };
+            }
+            VarPrefix::Indices => {
+                // ${!arr[@]} - array indices
+                return match variable {
+                    Some(crate::Variable::Array(arr)) => {
+                        let indices: Vec<String> = (0..arr.len()).map(|i| i.to_string()).collect();
+                        Ok(indices.join(" "))
+                    }
+                    _ => Ok(String::new()),
+                };
+            }
+        }
+    }
+
+    // Handle array subscripts (without prefix)
+    if let Some(subscript) = &var_ref.subscript {
+        let array = match variable {
+            Some(crate::Variable::Array(arr)) => arr,
+            Some(crate::Variable::String(s)) => {
+                // Treat scalar as array with one element at index 0
+                return match subscript {
+                    colony_parser::ArraySubscript::Index(expr) => {
+                        // TODO: Evaluate expression to get index
+                        // For now, treat as index 0
+                        Ok(s.clone())
+                    }
+                    colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star => {
+                        Ok(s.clone())
+                    }
+                };
+            }
+            None => {
+                // Undefined variable - return empty
+                return Ok(String::new());
+            }
+        };
+
+        return match subscript {
+            colony_parser::ArraySubscript::Index(expr) => {
+                // TODO: Evaluate expression to get numeric index
+                // For now, parse as integer if possible
+                // This is a simplification - full implementation needs expression evaluator
+                if let colony_parser::Expression::Int(idx, _) = **expr {
+                    let index = if idx < 0 {
+                        // Negative index counts from end
+                        let len = array.len() as i64;
+                        (len + idx) as usize
+                    } else {
+                        idx as usize
+                    };
+                    Ok(array.get(index).cloned().unwrap_or_default())
+                } else {
+                    // Complex expression - not yet supported
+                    Ok(String::new())
+                }
+            }
+            colony_parser::ArraySubscript::All => {
+                // ${arr[@]} - all elements as separate words
+                // Space-separated for now (caller should handle word splitting)
+                Ok(array.join(" "))
+            }
+            colony_parser::ArraySubscript::Star => {
+                // ${arr[*]} - all elements as single word
+                Ok(array.join(" "))
+            }
+        };
+    }
+
+    // No subscript - handle modifiers
     match &var_ref.modifier {
         None => {
             // Simple ${var} or $var
@@ -26,8 +121,28 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
         }
 
         Some(VarModifier::Length) => {
-            // ${#var} - string length
-            Ok(var_value.map(|v| v.len().to_string()).unwrap_or_else(|| "0".to_string()))
+            // ${#var} or ${#arr[@]}
+            match variable {
+                Some(crate::Variable::Array(arr)) => {
+                    Ok(arr.len().to_string())
+                }
+                Some(crate::Variable::String(s)) => {
+                    Ok(s.len().to_string())
+                }
+                None => Ok("0".to_string()),
+            }
+        }
+
+        Some(VarModifier::Indices) => {
+            // ${!arr[@]} - array indices
+            match variable {
+                Some(crate::Variable::Array(arr)) => {
+                    // Return indices: 0 1 2 3 ...
+                    let indices: Vec<String> = (0..arr.len()).map(|i| i.to_string()).collect();
+                    Ok(indices.join(" "))
+                }
+                _ => Ok(String::new()),
+            }
         }
 
         Some(VarModifier::Default { word, check_null }) => {
@@ -125,6 +240,8 @@ mod tests {
     fn make_var_ref(name: &str, modifier: Option<VarModifier>) -> VariableRef {
         VariableRef {
             name: name.to_string(),
+            prefix: None,
+            subscript: None,
             modifier,
             span: Span::DUMMY,
         }

@@ -255,6 +255,8 @@ impl Parser {
                             crate::InterpolatedPart::Variable(v) => {
                                 WordPart::Variable(VariableRef {
                                     name: v.clone(),
+                                    prefix: None,
+                                    subscript: None,
                                     modifier: None,
                                     span,
                                 })

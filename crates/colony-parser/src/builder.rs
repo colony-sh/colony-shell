@@ -103,6 +103,22 @@ impl AstBuilder {
                     .ok_or(BuildError::EmptyCompoundCommand)?;
                 Self::build_statement(inner)
             }
+            Rule::BashAssignment => {
+                // Standalone bash assignment: arr=(a b c)
+                // Convert to SimpleCommand with special handling
+                let assignment = Self::build_bash_assignment(pair)?;
+                let span = assignment.span.clone();
+
+                // Create a pseudo-command ":" (POSIX no-op) that does nothing
+                // This allows assignment-only statements to execute
+                Ok(Statement::SimpleCommand(SimpleCommand {
+                    name: Word::literal(":", span.clone()),
+                    args: vec![],
+                    redirects: vec![],
+                    env_assignments: vec![assignment],
+                    span,
+                }))
+            }
             Rule::BreakStatement => {
                 // Convert to SimpleCommand for execution handling
                 let span = span_from_pair(&pair);
@@ -155,7 +171,11 @@ impl AstBuilder {
 
         for part in inner {
             match part.as_rule() {
+                Rule::BashAssignment => {
+                    env_assignments.push(Self::build_bash_assignment(part)?);
+                }
                 Rule::Assignment => {
+                    // Legacy support - treat as bash assignment
                     env_assignments.push(Self::build_assignment(part)?);
                 }
                 Rule::Word => {
@@ -1245,6 +1265,50 @@ impl AstBuilder {
         Ok(Assignment {
             name,
             op,
+            value: AssignmentValue::Word(value),
+            span,
+        })
+    }
+
+    fn build_bash_assignment(pair: Pair<Rule>) -> Result<Assignment, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        // BashAssignment = Identifier ~ "=" ~ (ArrayLiteral | Word)
+
+        let name = inner.next()
+            .ok_or(BuildError::MissingAssignmentName)?
+            .as_str()
+            .to_string();
+
+        let value_pair = inner.next()
+            .ok_or(BuildError::MissingAssignmentValue)?;
+
+        let value = match value_pair.as_rule() {
+            Rule::ArrayLiteral => {
+                // Build array from words
+                let mut array_words = Vec::new();
+                for word_pair in value_pair.into_inner() {
+                    if word_pair.as_rule() == Rule::Word {
+                        array_words.push(Self::build_word(word_pair)?);
+                    }
+                }
+                AssignmentValue::Array(array_words)
+            }
+            Rule::Word => {
+                AssignmentValue::Word(Self::build_word(value_pair)?)
+            }
+            _ => {
+                return Err(BuildError::UnexpectedRule {
+                    expected: "ArrayLiteral or Word",
+                    found: format!("{:?}", value_pair.as_rule()),
+                });
+            }
+        };
+
+        Ok(Assignment {
+            name,
+            op: AssignOp::Assign,
             value,
             span,
         })
@@ -1318,12 +1382,14 @@ impl AstBuilder {
                 let name = inner.as_str().to_string();
                 Ok(WordPart::Variable(VariableRef {
                     name,
+                    prefix: None,
+                    subscript: None,
                     modifier: None,
                     span: span_from_pair(&inner),
                 }))
             }
             Rule::VariableRef => {
-                // ${VAR} or ${VAR:-default}
+                // ${VAR} or ${VAR:-default} or ${VAR[0]}
                 Self::build_variable_ref(inner).map(WordPart::Variable)
             }
             Rule::DollarArithRaw => {
@@ -1392,28 +1458,85 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // VariableRef = Identifier ~ VarModifier?
-        let name = inner.next()
-            .ok_or(BuildError::MissingVariableName)?
-            .as_str()
-            .to_string();
+        // VariableRef = VarPrefix? ~ Identifier ~ ArraySubscript? ~ VarModifier?
+        let mut prefix = None;
+        let mut subscript = None;
+        let mut modifier = None;
 
-        let modifier = if let Some(mod_pair) = inner.next() {
-            Some(Self::build_var_modifier(mod_pair)?)
+        // First part might be prefix or identifier
+        let first = inner.next().ok_or(BuildError::MissingVariableName)?;
+
+        let name = if first.as_rule() == Rule::VarPrefix {
+            // Parse prefix
+            prefix = Some(match first.as_str() {
+                "#" => VarPrefix::Length,
+                "!" => VarPrefix::Indices,
+                _ => return Err(BuildError::InvalidVarPrefix(first.as_str().to_string())),
+            });
+            // Next must be identifier
+            inner.next()
+                .ok_or(BuildError::MissingVariableName)?
+                .as_str()
+                .to_string()
         } else {
-            None
+            // No prefix, this is the identifier
+            first.as_str().to_string()
         };
+
+        // Parse optional subscript and modifier
+        while let Some(part) = inner.next() {
+            match part.as_rule() {
+                Rule::ArraySubscript => {
+                    subscript = Some(Self::build_array_subscript(part)?);
+                }
+                Rule::VarModifier => {
+                    modifier = Some(Self::build_var_modifier(part)?);
+                }
+                _ => {}
+            }
+        }
 
         Ok(VariableRef {
             name,
+            prefix,
+            subscript,
             modifier,
             span,
         })
     }
 
+    fn build_array_subscript(pair: Pair<Rule>) -> Result<ArraySubscript, BuildError> {
+        // ArraySubscript = "[" ~ (ArraySpecial | Expression) ~ "]"
+        let inner = pair.into_inner().next()
+            .ok_or(BuildError::EmptyExpression)?;
+
+        match inner.as_rule() {
+            Rule::ArraySpecial => {
+                match inner.as_str() {
+                    "@" => Ok(ArraySubscript::All),
+                    "*" => Ok(ArraySubscript::Star),
+                    _ => Err(BuildError::InvalidArraySubscript(inner.as_str().to_string())),
+                }
+            }
+            Rule::Expression => {
+                let expr = Self::build_expression(inner)?;
+                Ok(ArraySubscript::Index(Box::new(expr)))
+            }
+            _ => Err(BuildError::InvalidArraySubscript(inner.as_str().to_string())),
+        }
+    }
+
     fn build_var_modifier(pair: Pair<Rule>) -> Result<VarModifier, BuildError> {
         let text = pair.as_str();
         let mut inner = pair.into_inner();
+
+        // Handle modifiers that don't require a Word argument
+        if text == "#" {
+            return Ok(VarModifier::Length);
+        }
+        if text == "!" {
+            return Ok(VarModifier::Indices);
+        }
 
         // VarModifier = (":-" ~ Word) | (":=" ~ Word) | (":?" ~ Word) | (":+" ~ Word) | ...
         let word = inner.next()
@@ -1762,6 +1885,12 @@ pub enum BuildError {
 
     #[error("invalid var modifier: {0}")]
     InvalidVarModifier(String),
+
+    #[error("invalid array subscript: {0}")]
+    InvalidArraySubscript(String),
+
+    #[error("invalid var prefix: {0}")]
+    InvalidVarPrefix(String),
 
     #[error("unexpected quoted string type: {0}")]
     UnexpectedQuotedString(String),

@@ -28,6 +28,7 @@ Statement = {
   | BreakStatement
   | ContinueStatement
   | CommandList
+  | BashAssignment
   | Assignment
   | Comment
   | EmptyStatement
@@ -56,7 +57,12 @@ PipelineElement = {
 }
 
 SimpleCommand = {
-    Assignment* ~ Word ~ Word* ~ Redirect*
+    BashAssignment* ~ Word ~ Word* ~ Redirect*
+}
+
+// Bash-style assignment: name=value or name=(array values)
+BashAssignment = {
+    Identifier ~ "=" ~ (ArrayLiteral | Word)
 }
 
 PipeOp = {
@@ -568,6 +574,11 @@ WordPart = _{
   | Bareword
 }
 
+// Array literal: (word1 word2 word3)
+ArrayLiteral = {
+    "(" ~ Word* ~ ")"
+}
+
 // Bareword - must not match reserved keywords, stops at $ or quotes
 // Split into two rules: check !ReservedWord, then match chars
 Bareword = {
@@ -610,7 +621,24 @@ DollarCommandSubRaw = @{
 }
 
 VariableRef = {
-    Identifier ~ VarModifier?
+    VarPrefix? ~ Identifier ~ ArraySubscript? ~ VarModifier?
+}
+
+// Prefix modifiers that come before identifier
+VarPrefix = {
+    "#"   // Length
+  | "!"   // Indices (for arrays)
+}
+
+// Array subscript: [index], [@], [*]
+ArraySubscript = {
+    "[" ~ (ArraySpecial | Expression) ~ "]"
+}
+
+// Special array subscripts
+ArraySpecial = {
+    "@"   // All elements as separate words
+  | "*"   // All elements as single word
 }
 
 VarModifier = {
@@ -628,7 +656,8 @@ VarModifier = {
   | "^"                                  // uppercase first
   | ",,"                                 // lowercase all
   | ","                                  // lowercase first
-  | "#"                                  // length
+  | "#"                                  // length (scalar or array)
+  | "!"                                  // array indices
   | ("[" ~ Slice ~ "]")                  // slice
 }
 

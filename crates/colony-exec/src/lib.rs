@@ -83,13 +83,37 @@ impl Executor {
     ///
     /// **F024 Phase 2:** Processes channel writes from child processes via tuple space.
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
-        use colony_expand::Expander;
+        use colony_expand::{Expander, Variable};
+        use colony_parser::AssignmentValue;
 
-        // 0. Expand command name to check for aliases
+        // 0. Process assignments (arr=(a b c) or VAR=value)
         let mut expander = Expander::with_executor(self.context.clone(), |stmt, ctx| {
             crate::execute_and_capture(stmt, ctx)
         });
 
+        for assignment in &cmd.env_assignments {
+            match &assignment.value {
+                AssignmentValue::Word(word) => {
+                    // Expand the word
+                    let fields = expander.expand_word(word)?;
+                    let value = fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" ");
+                    self.context.set_var(assignment.name.clone(), value);
+                }
+                AssignmentValue::Array(words) => {
+                    // Expand each word and store as array
+                    let mut array_values = Vec::new();
+                    for word in words {
+                        let fields = expander.expand_word(word)?;
+                        for field in fields {
+                            array_values.push(field.text.clone());
+                        }
+                    }
+                    self.context.set_variable(assignment.name.clone(), Variable::Array(array_values));
+                }
+            }
+        }
+
+        // 1. Expand command name to check for aliases
         let name_fields = expander.expand_word(&cmd.name)?;
         if name_fields.is_empty() {
             return Err(ExecutionError::CommandNotFound("<empty>".to_string()));

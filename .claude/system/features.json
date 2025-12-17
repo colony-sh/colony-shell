@@ -726,6 +726,28 @@
       "priority": 6,
       "dependencies": ["F028"],
       "notes": []
+    },
+    {
+      "id": "F037",
+      "name": "Bash Array Support",
+      "description": "Indexed arrays with bash-compatible syntax: arr=(a b c), ${arr[0]}, ${arr[@]}, ${#arr[@]}, ${!arr[@]}. Includes array literals, subscript access, length, all-elements expansion, and for-loop iteration. Phase 1 covers core indexed arrays; associative arrays deferred.",
+      "status": "in_progress",
+      "priority": 2,
+      "dependencies": ["F021", "F023"],
+      "notes": [
+        "2025-12-17: Starting F037 - array compatibility tests",
+        "2025-12-17: CREATED: 03_arrays.bats with 44 comprehensive array tests",
+        "2025-12-17: GRAMMAR: Added ArrayLiteral, ArraySubscript, ArraySpecial, VarPrefix",
+        "2025-12-17: AST: Added AssignmentValue, ArraySubscript, VarPrefix enums",
+        "2025-12-17: BUILDER: build_bash_assignment, build_array_subscript implemented",
+        "2025-12-17: EXPANSION: Array subscripts and prefix modifiers working",
+        "2025-12-17: EXECUTOR: Variable::Array storage integrated",
+        "2025-12-17: BUILTIN: Added ':' (POSIX null utility)",
+        "2025-12-17: BUG FIX: parse() used instead of parse_statement() for -c mode",
+        "2025-12-17: RESULT: 16/44 tests passing (40% baseline)",
+        "2025-12-17: WORKING: Declaration, indexing, ${arr[@]}, ${#arr[@]}, iteration",
+        "2025-12-17: DEFERRED: Negative indices, sparse arrays, element assignment, slicing"
+      ]
     }
   ]
 }

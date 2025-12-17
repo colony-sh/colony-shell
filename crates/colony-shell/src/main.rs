@@ -860,11 +860,16 @@ fn _old_execute_statement_for_code<'a>(
         Statement::List(list) => {
             use colony_parser::ListOp;
 
+            eprintln!("DEBUG: Executing list with {} items in rest", list.rest.len());
+
             // Execute first statement
             let mut last_exit_code = execute_statement_for_code(&*list.first, executor).await;
+            eprintln!("DEBUG: First statement exit code: {}", last_exit_code);
 
             // Execute rest of list based on operators
-            for (op, stmt) in &list.rest {
+            for (i, (op, stmt)) in list.rest.iter().enumerate() {
+                eprintln!("DEBUG: Processing list item {} with op {:?}", i, op);
+
                 let should_execute = match op {
                     ListOp::Semi => true,              // ; always executes
                     ListOp::And => last_exit_code == 0, // && executes if prev succeeded
@@ -875,8 +880,11 @@ fn _old_execute_statement_for_code<'a>(
                     }
                 };
 
+                eprintln!("DEBUG: Should execute: {}", should_execute);
+
                 if should_execute {
                     last_exit_code = execute_statement_for_code(stmt, executor).await;
+                    eprintln!("DEBUG: Statement {} exit code: {}", i, last_exit_code);
                 }
             }
 
@@ -907,17 +915,23 @@ fn _old_execute_statement_for_code<'a>(
 
 /// Execute a shell command and return its exit code (for -c mode)
 async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32 {
-    // Parse with pest
-    let stmt = match parse_statement(line) {
-        Ok(stmt) => stmt,
+    // Parse with pest - use parse() not parse_statement() to handle multiple statements
+    use colony_parser::pest_api::parse;
+
+    let program = match parse(line) {
+        Ok(program) => program,
         Err(e) => {
             eprintln!("parse error: {}", e);
             return 2; // Parse error exit code
         }
     };
 
-    // Execute using helper
-    execute_statement_for_code(&stmt, executor).await
+    // Execute all statements in sequence
+    let mut last_exit = 0;
+    for stmt in &program.statements {
+        last_exit = execute_statement_for_code(stmt, executor).await;
+    }
+    last_exit
 }
 
 async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {
