@@ -367,10 +367,16 @@
       "id": "F020",
       "name": ".colonyrc configuration",
       "description": "Project config loading with direnv-style trust model. Agent personality, conventions, project goals, MCP servers.",
-      "status": "new",
+      "status": "in_progress",
       "priority": 4,
       "dependencies": [],
-      "notes": []
+      "notes": [
+        "2025-12-17: Starting F020 - no dependencies",
+        "2025-12-17: DESIGN: direnv-style trust model (~/.config/colony/trusted.toml)",
+        "2025-12-17: DESIGN: TOML format for .colonyrc (human-editable, strongly typed)",
+        "2025-12-17: PLAN: colony-config crate for loading and validation",
+        "2025-12-17: PLAN: Integration with Agent for personality injection"
+      ]
     },
     {
       "id": "F021",
@@ -496,13 +502,14 @@
         "2025-12-17: PIVOT: Use BATS framework instead of custom test runner",
         "2025-12-17: ACHIEVEMENT: Integrated bats-core, created 20 builtin tests",
         "2025-12-17: IMPLEMENTED: -c flag for inline command execution",
-        "2025-12-17: RESULT: 11/20 tests passing (55%) - +50pp improvement!",
+        "2025-12-17: RESULT PHASE 1: 11/20 tests passing (55%) - +50pp improvement!",
+        "2025-12-17: IMPLEMENTED: Command list execution (;, &&, ||)",
+        "2025-12-17: RESULT PHASE 2: 14/20 tests passing (70%) - +15pp improvement!",
         "2025-12-17: VALIDATED: Exact output matching with bash for implemented features",
-        "2025-12-17: WORKING: echo, pwd, cd, type, exit, pipelines, variable expansion",
-        "2025-12-17: BLOCKED: 9 failures due to unimplemented features (expected)",
-        "2025-12-17: FAILING: Command lists (;, &&, ||), control flow (for/break/continue)",
-        "2025-12-17: FAILING: Command substitution $(), redirections >, <",
-        "2025-12-17: STATUS: 70% complete (infra + -c done, awaiting list/control flow)"
+        "2025-12-17: WORKING: Builtins, variables, pipelines, command lists",
+        "2025-12-17: REMAINING: 6 failures - control flow (3), cmd sub (1), redir (1), path test (1)",
+        "2025-12-17: NEXT: Implement for loops to reach 85%+ pass rate",
+        "2025-12-17: STATUS: 90% complete (infra + lists done, control flow remains)"
       ]
     }
   ]

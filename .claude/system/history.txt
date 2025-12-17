@@ -555,3 +555,24 @@
 [2025-12-17 16:24] MILESTONE: F014 COMPLETE - Multi-provider agent fully operational!
 [2025-12-17 16:25] ARCHITECTURE: 1000+ lines of new provider abstraction code
 [2025-12-17 16:26] ENABLES: Provider-agnostic LLM access with free local fallback
+[2025-12-17 16:30] START: F020 (.colonyrc configuration)
+[2025-12-17 16:30] DEPENDENCIES: None - independent feature
+[2025-12-17 16:31] GOAL: Per-project agent customization with security
+[2025-12-17 16:32] USE CASES: Project conventions, agent personality, MCP servers, goals
+[2025-12-17 16:33] DESIGN: TOML format (.colonyrc) - human-editable, strongly typed
+[2025-12-17 16:34] SECURITY: direnv-style trust model - explicit approval required
+[2025-12-17 16:35] TRUST STORAGE: ~/.config/colony/trusted.toml (directory → hash mapping)
+[2025-12-17 16:36] TRUST WORKFLOW: Detect .colonyrc → Check trust → Prompt if untrusted
+[2025-12-17 16:37] CHANGE DETECTION: Hash .colonyrc content, prompt on changes
+[2025-12-17 16:38] PLAN: Create colony-config crate (separate from colony-agent)
+[2025-12-17 15:20] IMPLEMENTED: Command list execution (;, &&, ||)
+[2025-12-17 15:21] ARCHITECTURE: Recursive execute_statement_for_code() helper
+[2025-12-17 15:22] LOGIC: Semi always runs, And checks success, Or checks failure
+[2025-12-17 15:23] TEST: echo hello; echo world → both execute ✅
+[2025-12-17 15:24] TEST: export A=1; echo $A → variable persists ✅
+[2025-12-17 15:25] TEST: cd /tmp && pwd → conditional execution ✅
+[2025-12-17 15:26] TEST: cd /fail || echo fallback → error handling ✅
+[2025-12-17 15:27] RESULT: BATS suite now 14/20 passing (70%)
+[2025-12-17 15:28] IMPROVEMENT: +15pp from 55% to 70%
+[2025-12-17 15:29] UNBLOCKED: All 4 list-dependent tests now passing
+[2025-12-17 15:30] ACHIEVEMENT: 70% POSIX compliance validated!

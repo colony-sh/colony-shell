@@ -2,8 +2,9 @@
 # Test Colony shell builtins for POSIX compliance
 # Compare behavior against bash
 
-# Path to colony binary
-COLONY="${COLONY_BIN:-target/debug/colony}"
+# Path to colony binary (use absolute path set by runner)
+# Don't use $(pwd) here - BATS will try to execute it
+COLONY="${COLONY_BIN}"
 
 setup() {
     # Create temp directory for test files
