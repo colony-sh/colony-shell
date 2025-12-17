@@ -1,0 +1,7 @@
+# Useful Resources
+
+## Tool Use & MCP
+- Anthropic Advanced Tool Use: https://www.anthropic.com/engineering/advanced-tool-use
+  (For F016: MCP connection pool, F018: MCP executor session)
+  Topics: Tool chaining, error handling, structured outputs, best practices
+
