@@ -453,6 +453,209 @@ async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()
     Ok(())
 }
 
+/// Execute a list with control flow propagation
+async fn execute_list_with_control(list: &colony_parser::CommandList, executor: &mut Executor) -> (i32, ControlFlow) {
+    use colony_parser::ListOp;
+
+    // Execute first statement
+    let (mut last_exit_code, mut control) = execute_statement_with_control(&*list.first, executor).await;
+
+    // If we got break/continue, propagate it immediately
+    if control != ControlFlow::Normal {
+        return (last_exit_code, control);
+    }
+
+    // Execute rest of list based on operators
+    for (op, stmt) in &list.rest {
+        let should_execute = match op {
+            ListOp::Semi => true,
+            ListOp::And => last_exit_code == 0,
+            ListOp::Or => last_exit_code != 0,
+            ListOp::Background => {
+                eprintln!("Background jobs (&) not yet supported");
+                false
+            }
+        };
+
+        if should_execute {
+            let (code, flow) = execute_statement_with_control(stmt, executor).await;
+            last_exit_code = code;
+            control = flow;
+
+            // Propagate break/continue
+            if control != ControlFlow::Normal {
+                return (last_exit_code, control);
+            }
+        }
+    }
+
+    (last_exit_code, control)
+}
+
+/// Execute if with control flow propagation
+async fn execute_if_with_control(if_stmt: &colony_parser::IfStatement, executor: &mut Executor) -> (i32, ControlFlow) {
+    use colony_parser::Condition;
+
+    // Evaluate the condition
+    let (condition_exit, _) = match &if_stmt.condition {
+        Condition::Command(cmd) => execute_statement_with_control(cmd, executor).await,
+        Condition::Expression(_expr) => {
+            eprintln!("Expression conditions not yet supported");
+            (1, ControlFlow::Normal)
+        }
+    };
+
+    let condition_result = condition_exit == 0;
+
+    // Execute appropriate branch
+    if condition_result {
+        // Execute then body
+        let mut last_exit = 0;
+        for stmt in &if_stmt.then_body {
+            let (code, flow) = execute_statement_with_control(stmt, executor).await;
+            last_exit = code;
+            if flow != ControlFlow::Normal {
+                return (last_exit, flow);  // Propagate break/continue
+            }
+        }
+        (last_exit, ControlFlow::Normal)
+    } else {
+        // Check elif branches
+        for elif in &if_stmt.elif_branches {
+            let (elif_exit, _) = match &elif.condition {
+                Condition::Command(cmd) => execute_statement_with_control(cmd, executor).await,
+                Condition::Expression(_) => (1, ControlFlow::Normal),
+            };
+
+            if elif_exit == 0 {
+                let mut last_exit = 0;
+                for stmt in &elif.body {
+                    let (code, flow) = execute_statement_with_control(stmt, executor).await;
+                    last_exit = code;
+                    if flow != ControlFlow::Normal {
+                        return (last_exit, flow);
+                    }
+                }
+                return (last_exit, ControlFlow::Normal);
+            }
+        }
+
+        // Execute else body if present
+        if let Some(else_body) = &if_stmt.else_body {
+            let mut last_exit = 0;
+            for stmt in else_body {
+                let (code, flow) = execute_statement_with_control(stmt, executor).await;
+                last_exit = code;
+                if flow != ControlFlow::Normal {
+                    return (last_exit, flow);
+                }
+            }
+            (last_exit, ControlFlow::Normal)
+        } else {
+            (0, ControlFlow::Normal)
+        }
+    }
+}
+
+/// Execute for loop with control flow returns
+async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
+    use colony_expand::Expander;
+
+    // Expand the word list
+    let mut expander = Expander::new(executor.context().clone());
+    let mut values = Vec::new();
+
+    for word in &for_stmt.words {
+        match expander.expand_word(word) {
+            Ok(fields) => {
+                values.extend(fields);
+            }
+            Err(e) => {
+                eprintln!("expansion error: {}", e);
+                return 1;
+            }
+        }
+    }
+
+    // Iterate over values
+    let mut last_exit = 0;
+    for field in values {
+        // Set loop variable
+        executor.context_mut().set_var(for_stmt.var.clone(), field.text);
+
+        // Execute body
+        for stmt in &for_stmt.body {
+            let (code, flow) = execute_statement_with_control(stmt, executor).await;
+            last_exit = code;
+
+            match flow {
+                ControlFlow::Break => return last_exit,
+                ControlFlow::Continue => break,  // Skip to next iteration
+                _ => {}
+            }
+        }
+    }
+
+    last_exit
+}
+
+/// Execute an if statement (old version for compatibility)
+async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &mut Executor) -> i32 {
+    use colony_parser::Condition;
+
+    // Evaluate the condition
+    let condition_result = match &if_stmt.condition {
+        Condition::Command(cmd) => {
+            // Execute command and check exit code
+            execute_statement_for_code(cmd, executor).await == 0
+        }
+        Condition::Expression(_expr) => {
+            // Expression conditions not yet implemented
+            eprintln!("Expression conditions not yet supported");
+            false
+        }
+    };
+
+    // Execute appropriate branch
+    if condition_result {
+        // Execute then body
+        let mut last_exit = 0;
+        for stmt in &if_stmt.then_body {
+            last_exit = execute_statement_for_code(stmt, executor).await;
+        }
+        last_exit
+    } else {
+        // Check elif branches
+        for elif in &if_stmt.elif_branches {
+            let elif_result = match &elif.condition {
+                Condition::Command(cmd) => {
+                    execute_statement_for_code(cmd, executor).await == 0
+                }
+                Condition::Expression(_) => false,
+            };
+
+            if elif_result {
+                let mut last_exit = 0;
+                for stmt in &elif.body {
+                    last_exit = execute_statement_for_code(stmt, executor).await;
+                }
+                return last_exit;
+            }
+        }
+
+        // Execute else body if present
+        if let Some(else_body) = &if_stmt.else_body {
+            let mut last_exit = 0;
+            for stmt in else_body {
+                last_exit = execute_statement_for_code(stmt, executor).await;
+            }
+            last_exit
+        } else {
+            0  // No else, return success
+        }
+    }
+}
+
 /// Execute a for loop with break/continue support
 async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
     use colony_expand::Expander;
@@ -501,8 +704,109 @@ async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut
     last_exit
 }
 
-/// Helper: Execute any statement and return exit code
+/// Helper: Execute any statement and return (exit_code, control_flow)
+fn execute_statement_with_control<'a>(
+    stmt: &'a Statement,
+    executor: &'a mut Executor,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = (i32, ControlFlow)> + 'a>> {
+    Box::pin(async move {
+    match stmt {
+        Statement::SimpleCommand(cmd) => {
+            // Check for break/continue
+            if let Some(literal) = cmd.name.as_literal() {
+                match literal {
+                    "break" => return (0, ControlFlow::Break),
+                    "continue" => return (0, ControlFlow::Continue),
+                    _ => {}
+                }
+            }
+
+            match executor.execute_simple_command(cmd).await {
+                Ok(status) => (status.code(), ControlFlow::Normal),
+                Err(e) => {
+                    eprintln!("execution error: {}", e);
+                    (1, ControlFlow::Normal)
+                }
+            }
+        }
+        Statement::Pipeline(pipeline) => {
+            // Check for simple command in single-element pipeline
+            if pipeline.elements.len() == 1 {
+                if let Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
+                    if let Some(literal) = cmd.name.as_literal() {
+                        match literal {
+                            "break" => return (0, ControlFlow::Break),
+                            "continue" => return (0, ControlFlow::Continue),
+                            _ => {}
+                        }
+                    }
+
+                    match executor.execute_simple_command(cmd).await {
+                        Ok(status) => (status.code(), ControlFlow::Normal),
+                        Err(e) => {
+                            eprintln!("execution error: {}", e);
+                            (1, ControlFlow::Normal)
+                        }
+                    }
+                } else {
+                    match executor.execute_pipeline(&pipeline).await {
+                        Ok(status) => (status.code(), ControlFlow::Normal),
+                        Err(e) => {
+                            eprintln!("execution error: {}", e);
+                            (1, ControlFlow::Normal)
+                        }
+                    }
+                }
+            } else {
+                match executor.execute_pipeline(&pipeline).await {
+                    Ok(status) => (status.code(), ControlFlow::Normal),
+                    Err(e) => {
+                        eprintln!("execution error: {}", e);
+                        (1, ControlFlow::Normal)
+                    }
+                }
+            }
+        }
+        Statement::List(list) => {
+            execute_list_with_control(list, executor).await
+        }
+        Statement::For(for_stmt) => {
+            (execute_for_loop_with_control(for_stmt, executor).await, ControlFlow::Normal)
+        }
+        Statement::If(if_stmt) => {
+            execute_if_with_control(if_stmt, executor).await
+        }
+        Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
+            eprintln!("This control flow not yet supported");
+            (1, ControlFlow::Normal)
+        }
+        Statement::BraceGroup(_) | Statement::Subshell(_) => {
+            eprintln!("Compound commands not yet supported");
+            (1, ControlFlow::Normal)
+        }
+        Statement::VarDecl(_) | Statement::FunctionDef(_) | Statement::ProcDef(_) | Statement::Return(_) => {
+            eprintln!("Declarations not yet supported");
+            (1, ControlFlow::Normal)
+        }
+        Statement::Empty => (0, ControlFlow::Normal),
+    }
+    })
+}
+
+/// Helper for backwards compatibility: Execute and return only exit code
 fn execute_statement_for_code<'a>(
+    stmt: &'a Statement,
+    executor: &'a mut Executor,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>> {
+    Box::pin(async move {
+        let (code, _) = execute_statement_with_control(stmt, executor).await;
+        code
+    })
+}
+
+/// Old implementation - kept for reference but now uses new version
+#[allow(dead_code)]
+fn _old_execute_statement_for_code<'a>(
     stmt: &'a Statement,
     executor: &'a mut Executor,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>> {
@@ -577,7 +881,10 @@ fn execute_statement_for_code<'a>(
         Statement::For(for_stmt) => {
             execute_for_loop(for_stmt, executor).await
         }
-        Statement::If(_) | Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
+        Statement::If(if_stmt) => {
+            execute_if_statement(if_stmt, executor).await
+        }
+        Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
             eprintln!("This control flow not yet supported");
             1
         }

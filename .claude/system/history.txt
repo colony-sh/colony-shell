@@ -649,3 +649,15 @@
 [2025-12-17 17:43] RESULT: 16/20 tests passing (80%)!
 [2025-12-17 17:44] IMPROVEMENT: +10pp from 70% to 80%!
 [2025-12-17 17:45] MILESTONE: 80% POSIX compliance achieved!
+[2025-12-17 18:00] IMPLEMENTED: [ test builtin for POSIX conditionals
+[2025-12-17 18:01] OPERATORS: =, !=, -eq, -ne, -lt, -le, -gt, -ge, -n, -z, -f, -d, -e
+[2025-12-17 18:02] IMPLEMENTED: If statement execution with command conditions
+[2025-12-17 18:03] GRAMMAR FIX: IfStatement now allows ; before then
+[2025-12-17 18:04] GRAMMAR FIX: If body uses IfThenBody/IfElseBody (lookahead to elif/else/fi)
+[2025-12-17 18:05] REFACTOR: Control flow propagation through all statements
+[2025-12-17 18:06] ARCHITECTURE: execute_statement_with_control returns (code, ControlFlow)
+[2025-12-17 18:07] PROPAGATION: Break/continue now works through if statements
+[2025-12-17 18:08] TEST: for i in a b c; if [$i=b] continue; echo $i → a c ✅
+[2025-12-17 18:09] RESULT: 17/20 tests passing (85%)!
+[2025-12-17 18:10] IMPROVEMENT: +5pp from 80% to 85%!
+[2025-12-17 18:11] MILESTONE: 85% POSIX compliance achieved!

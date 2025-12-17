@@ -97,11 +97,14 @@ Subshell = { "(" ~ CommandList ~ ")" }
 // ============================================================================
 
 IfStatement = {
-    "if" ~ Condition ~ "then"? ~ Block
-    ~ ("elif" ~ Condition ~ "then"? ~ Block)*
-    ~ ("else" ~ Block)?
-    ~ "fi"?
+    "if" ~ Condition ~ ";"? ~ "then" ~ IfThenBody
+    ~ ("elif" ~ Condition ~ ";"? ~ "then" ~ IfThenBody)*
+    ~ ("else" ~ IfElseBody)?
+    ~ "fi"
 }
+
+IfThenBody = { Statement* ~ &("elif" | "else" | "fi") }
+IfElseBody = { Statement* ~ &"fi" }
 
 CaseStatement = {
     "case" ~ CaseValue ~ "in"
@@ -199,6 +202,7 @@ Condition = { Expression | CommandList }
 Block = {
     "{" ~ Statement* ~ "}"
   | "do" ~ Statement* ~ "done"
+  | "then" ~ Statement* ~ ("elif" | "else" | "fi")  // if/elif/else blocks
 }
 
 // ============================================================================

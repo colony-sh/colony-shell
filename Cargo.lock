@@ -716,6 +716,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-channels"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "colony-config"
 version = "0.1.0"
 dependencies = [
@@ -733,6 +744,7 @@ dependencies = [
 name = "colony-exec"
 version = "0.1.0"
 dependencies = [
+ "colony-channels",
  "colony-expand",
  "colony-parser",
  "colony-tuple",

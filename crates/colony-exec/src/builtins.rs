@@ -57,6 +57,7 @@ pub fn is_builtin(name: &str) -> bool {
         "cd" | "export" | "unset" | "exit" | "pwd" | "echo" | "type"
         | "alias" | "unalias" | "." | "source"
         | "fg" | "bg" | "jobs" | "wait"
+        | "[" | "test"  // POSIX test command
     )
 }
 
@@ -117,6 +118,7 @@ pub fn execute_builtin(
         "bg" => builtin_bg(&args, jobs),
         "jobs" => builtin_jobs(&args, jobs),
         "wait" => builtin_wait(&args, jobs),
+        "[" | "test" => builtin_test(&args),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -417,6 +419,122 @@ fn builtin_wait(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
 
     eprintln!("wait: would wait for jobs (not yet implemented)");
     Ok(BuiltinResult::Success(0))
+}
+
+/// [ or test - Evaluate conditional expressions
+///
+/// Usage: [ expression ] or test expression
+/// Returns 0 (true) or 1 (false)
+///
+/// Supported tests:
+/// - [ string ] - true if non-empty
+/// - [ string = string ] - true if equal
+/// - [ string != string ] - true if not equal
+/// - [ -n string ] - true if non-empty
+/// - [ -z string ] - true if empty
+/// - [ -f file ] - true if file exists
+/// - [ -d dir ] - true if directory exists
+fn builtin_test(args: &[String]) -> Result<BuiltinResult> {
+    // Remove trailing ] if present (for [ command)
+    let args = if args.last().map(|s| s.as_str()) == Some("]") {
+        &args[..args.len() - 1]
+    } else {
+        args
+    };
+
+    if args.is_empty() {
+        // Empty test is false
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    // Handle unary operators
+    if args.len() == 2 {
+        let op = &args[0];
+        let arg = &args[1];
+
+        let result = match op.as_str() {
+            "-n" => !arg.is_empty(),  // non-zero length
+            "-z" => arg.is_empty(),    // zero length
+            "-f" => std::path::Path::new(arg).is_file(),
+            "-d" => std::path::Path::new(arg).is_dir(),
+            "-e" => std::path::Path::new(arg).exists(),
+            _ => {
+                // Not a unary operator - maybe it's just a string test
+                !args[0].is_empty()
+            }
+        };
+
+        return Ok(if result {
+            BuiltinResult::Success(0)
+        } else {
+            BuiltinResult::Failure(1)
+        });
+    }
+
+    // Handle binary operators
+    if args.len() == 3 {
+        let left = &args[0];
+        let op = &args[1];
+        let right = &args[2];
+
+        let result = match op.as_str() {
+            "=" | "==" => left == right,
+            "!=" => left != right,
+            "-eq" => left.parse::<i64>().ok() == right.parse::<i64>().ok(),
+            "-ne" => left.parse::<i64>().ok() != right.parse::<i64>().ok(),
+            "-lt" => {
+                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                    l < r
+                } else {
+                    false
+                }
+            }
+            "-le" => {
+                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                    l <= r
+                } else {
+                    false
+                }
+            }
+            "-gt" => {
+                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                    l > r
+                } else {
+                    false
+                }
+            }
+            "-ge" => {
+                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                    l >= r
+                } else {
+                    false
+                }
+            }
+            _ => {
+                eprintln!("test: unknown operator: {}", op);
+                return Ok(BuiltinResult::Failure(2));
+            }
+        };
+
+        return Ok(if result {
+            BuiltinResult::Success(0)
+        } else {
+            BuiltinResult::Failure(1)
+        });
+    }
+
+    // Single argument: test if non-empty
+    if args.len() == 1 {
+        return Ok(if !args[0].is_empty() {
+            BuiltinResult::Success(0)
+        } else {
+            BuiltinResult::Failure(1)
+        });
+    }
+
+    // Complex expressions not supported
+    eprintln!("test: complex expressions not yet supported");
+    Ok(BuiltinResult::Failure(2))
 }
 
 #[cfg(test)]

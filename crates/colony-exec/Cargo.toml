@@ -10,6 +10,7 @@ license.workspace = true
 colony-parser.workspace = true
 colony-expand.workspace = true
 colony-tuple = { path = "../colony-tuple" }
+colony-channels = { path = "../colony-channels" }
 nix = { workspace = true, features = ["fs"] }
 signal-hook.workspace = true
 tokio.workspace = true

@@ -353,51 +353,41 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // IfStatement = "if" ~ Condition ~ ("then")? ~ Block
-        //               ~ ("elif" ~ Condition ~ ("then")? ~ Block)*
-        //               ~ ("else" ~ Block)?
-        //               ~ ("fi")?
+        // IfStatement = "if" ~ Condition ~ ";"? ~ "then" ~ IfThenBody
+        //               ~ ("elif" ~ Condition ~ ";"? ~ "then" ~ IfThenBody)*
+        //               ~ ("else" ~ IfElseBody)?
+        //               ~ "fi"
 
         // Parse condition
         let condition = Self::build_condition(
             inner.next().ok_or(BuildError::MissingCondition)?
         )?;
 
-        // Parse then body
-        let then_body = Self::build_block(
-            inner.next().ok_or(BuildError::MissingThenBody)?
-        )?;
+        // Parse then body (IfThenBody = Statement* until elif/else/fi)
+        let then_body_pair = inner.next().ok_or(BuildError::MissingThenBody)?;
+        let then_body = Self::build_if_body(then_body_pair)?;
 
         let mut elif_branches = Vec::new();
         let mut else_body = None;
 
         // Parse elif and else branches
         while let Some(part) = inner.next() {
-            match part.as_str() {
-                "elif" => {
-                    let elif_condition = Self::build_condition(
-                        inner.next().ok_or(BuildError::MissingCondition)?
-                    )?;
-                    let elif_body = Self::build_block(
-                        inner.next().ok_or(BuildError::MissingBody)?
-                    )?;
+            match part.as_rule() {
+                Rule::Condition => {
+                    // This is an elif condition
+                    let elif_condition = Self::build_condition(part)?;
+                    let elif_body_pair = inner.next().ok_or(BuildError::MissingBody)?;
+                    let elif_body = Self::build_if_body(elif_body_pair)?;
                     elif_branches.push(ElifBranch {
                         condition: elif_condition,
                         body: elif_body,
                     });
                 }
-                "else" => {
-                    else_body = Some(Self::build_block(
-                        inner.next().ok_or(BuildError::MissingElseBody)?
-                    )?);
+                Rule::IfElseBody => {
+                    else_body = Some(Self::build_if_body(part)?);
                 }
-                "fi" => break,
                 _ => {
-                    // Could be Block rule
-                    if part.as_rule() == Rule::Block {
-                        // This might be an else body
-                        else_body = Some(Self::build_block(part)?);
-                    }
+                    // Skip keywords like "elif", "else", "fi"
                 }
             }
         }
@@ -409,6 +399,20 @@ impl AstBuilder {
             else_body,
             span,
         })
+    }
+
+    fn build_if_body(pair: Pair<Rule>) -> Result<Vec<Statement>, BuildError> {
+        let mut statements = Vec::new();
+
+        for part in pair.into_inner() {
+            if part.as_rule() == Rule::Statement {
+                if let Some(inner_stmt) = part.into_inner().next() {
+                    statements.push(Self::build_statement(inner_stmt)?);
+                }
+            }
+        }
+
+        Ok(statements)
     }
 
     fn build_condition(pair: Pair<Rule>) -> Result<Condition, BuildError> {

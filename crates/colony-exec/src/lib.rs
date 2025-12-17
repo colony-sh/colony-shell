@@ -25,6 +25,7 @@ pub use pipeline::execute_pipeline;
 pub use process::{ExitStatus, ProcessHandle};
 pub use redirect::apply_redirects;
 
+use colony_channels::ChannelManager;
 use colony_expand::ExpansionContext;
 use colony_parser::{Pipeline, SimpleCommand};
 use colony_tuple::TupleSpace;
@@ -35,6 +36,8 @@ pub struct Executor {
     jobs: JobTable,
     /// Tuple space for reactive environment (Rules 42-47)
     tuple_space: TupleSpace,
+    /// Extended channels (stdcontext, stdllm, stdtool, stdtrace)
+    channels: ChannelManager,
 }
 
 impl Executor {
@@ -43,7 +46,18 @@ impl Executor {
             context,
             jobs: JobTable::new(),
             tuple_space: TupleSpace::new(),
+            channels: ChannelManager::new(),
         }
+    }
+
+    /// Get reference to channel manager
+    pub fn channels(&self) -> &ChannelManager {
+        &self.channels
+    }
+
+    /// Get mutable reference to channel manager
+    pub fn channels_mut(&mut self) -> &mut ChannelManager {
+        &mut self.channels
     }
 
     /// Get reference to job table

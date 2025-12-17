@@ -50,6 +50,12 @@ pub trait Channel: Send + Sync {
 
     /// Get line count (for display)
     fn line_count(&self) -> usize;
+
+    /// Downcast to Any for type-specific access
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Downcast to Any for mutable type-specific access
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 #[cfg(test)]
