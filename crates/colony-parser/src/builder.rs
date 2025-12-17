@@ -103,6 +103,28 @@ impl AstBuilder {
                     .ok_or(BuildError::EmptyCompoundCommand)?;
                 Self::build_statement(inner)
             }
+            Rule::BreakStatement => {
+                // Convert to SimpleCommand for execution handling
+                let span = span_from_pair(&pair);
+                Ok(Statement::SimpleCommand(SimpleCommand {
+                    name: Word::literal("break", span.clone()),
+                    args: vec![],
+                    redirects: vec![],
+                    env_assignments: vec![],
+                    span,
+                }))
+            }
+            Rule::ContinueStatement => {
+                // Convert to SimpleCommand for execution handling
+                let span = span_from_pair(&pair);
+                Ok(Statement::SimpleCommand(SimpleCommand {
+                    name: Word::literal("continue", span.clone()),
+                    args: vec![],
+                    redirects: vec![],
+                    env_assignments: vec![],
+                    span,
+                }))
+            }
             // Assignments are env assignments before commands, not standalone statements
             // Rule::Assignment handled in SimpleCommand
             Rule::EmptyStatement => {
@@ -450,15 +472,27 @@ impl AstBuilder {
         // Skip "in" keyword
         let _ = kind_inner.next();
 
-        // Parse words
+        // Parse words - WordList = { (!BlockStart ~ Word)+ }
         let words_pair = kind_inner.next()
             .ok_or(BuildError::MissingForWords)?;
 
+        // Debug: print what rule we got
+        eprintln!("DEBUG: words_pair rule = {:?}, text = '{}'", words_pair.as_rule(), words_pair.as_str());
+
         let mut words = Vec::new();
-        for word_pair in words_pair.into_inner() {
+        for (i, word_pair) in words_pair.into_inner().enumerate() {
+            eprintln!("DEBUG: word_pair[{}] rule = {:?}, text = '{}'", i, word_pair.as_rule(), word_pair.as_str());
+            // WordList contains Word children directly
+            // (the !BlockStart is just a lookahead, doesn't create nodes)
             if word_pair.as_rule() == Rule::Word {
                 words.push(Self::build_word(word_pair)?);
             }
+        }
+
+        eprintln!("DEBUG: extracted {} words", words.len());
+
+        if words.is_empty() {
+            return Err(BuildError::MissingForWords);
         }
 
         Ok(ForStatement {

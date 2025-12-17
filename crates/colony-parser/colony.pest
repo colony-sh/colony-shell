@@ -559,7 +559,13 @@ Word = ${
   | Bareword
 }
 
-Bareword = @{
+// Bareword - must not match reserved keywords
+// Split into two rules: check !ReservedWord, then match chars
+Bareword = {
+    !ReservedWord ~ BarewordChars
+}
+
+BarewordChars = @{
     (!WHITESPACE ~ !SpecialChar ~ ANY)+
 }
 
