@@ -259,6 +259,8 @@ pub enum WordPart {
     CommandSub(Box<Statement>),
     /// Command substitution: $(cmd) - raw string, parsed during expansion (new)
     CommandSubRaw(String),
+    /// Arithmetic expansion: $((expr)) - raw string, evaluated during expansion
+    ArithRaw(String),
     /// Tilde expansion: ~ or ~user
     Tilde(Option<String>),
 }

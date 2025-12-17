@@ -25,6 +25,7 @@ mod context;
 pub use context::{ExpansionContext, Variable};
 pub use tilde::expand_tilde;
 pub use parameter::expand_parameter;
+pub use arithmetic::expand_arithmetic;
 pub use field_split::split_fields;
 pub use pathname::expand_pathname;
 
@@ -174,6 +175,12 @@ impl Expander {
             WordPart::Variable(var_ref) => {
                 let expanded = expand_parameter(var_ref, &self.context)?;
                 out.push_unquoted(&expanded);
+            }
+
+            WordPart::ArithRaw(expr_str) => {
+                // Evaluate arithmetic expression
+                let result = expand_arithmetic(expr_str, &self.context)?;
+                out.push_unquoted(&result);
             }
 
             WordPart::CommandSubRaw(cmd_str) => {

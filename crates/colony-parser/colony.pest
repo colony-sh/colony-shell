@@ -584,18 +584,27 @@ SpecialChar = {
 }
 
 // Dollar expansions - handled directly by pest
-// For command substitution, we capture the string and parse it during expansion
+// For command substitution and arithmetic, we capture the string and parse it during expansion
 DollarExpansion = {
-    DollarCommandSubRaw                  // $(...)  captured as string
-  | ("$[" ~ Expression ~ "]")            // $[expr] - parsed inline
-  | ("${" ~ VariableRef ~ "}")           // ${var}  - parsed inline
-  | ("$" ~ Identifier)                   // $var    - parsed inline
+    DollarArithRaw                       // $((expr)) captured as string
+  | DollarCommandSubRaw                  // $(cmd)   captured as string
+  | ("$[" ~ Expression ~ "]")            // $[expr]  - parsed inline (Colony)
+  | ("${" ~ VariableRef ~ "}")           // ${var}   - parsed inline
+  | ("$" ~ Identifier)                   // $var     - parsed inline
+}
+
+// Arithmetic expansion as raw string - parsed and evaluated during expansion
+// Must match $(( before $( to avoid ambiguity
+// Using @{} (atomic) to capture everything between $(( and ))
+DollarArithRaw = @{
+    "$((" ~ (!")" ~ ANY)* ~ "))"
 }
 
 // Command substitution as raw string - parsed during expansion not during initial parse
-// This avoids the compound_atomic whitespace issues
+// Must NOT match $(( - that's arithmetic
+// Lookahead: "$(" but not followed by "("
 DollarCommandSubRaw = @{
-    "$(" ~ (!")" ~ ANY)* ~ ")"
+    "$(" ~ !"(" ~ (!")" ~ ANY)* ~ ")"
 }
 
 VariableRef = {

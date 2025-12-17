@@ -1326,6 +1326,13 @@ impl AstBuilder {
                 // ${VAR} or ${VAR:-default}
                 Self::build_variable_ref(inner).map(WordPart::Variable)
             }
+            Rule::DollarArithRaw => {
+                // $((expr)) - captured as raw string, will be evaluated during expansion
+                let text = inner.as_str();
+                // Extract content between $(( and ))
+                let content = &text[3..text.len()-2]; // Strip "$((" and "))"
+                Ok(WordPart::ArithRaw(content.to_string()))
+            }
             Rule::DollarCommandSubRaw => {
                 // $(command) - captured as raw string, will be parsed during expansion
                 let text = inner.as_str();
