@@ -734,3 +734,33 @@
 [2025-12-17 20:04] STATUS: F023 at 85% baseline, infrastructure ready for debugging/polish
 [2025-12-17 20:05] NEXT: Debug $(echo world) parsing/expansion issue
 [2025-12-17 20:06] NEXT: Implement builtin redirect support (architectural enhancement)
+[2025-12-17 20:10] START: F024 Phase 2 - Tuple space IPC for channel redirects
+[2025-12-17 20:11] GOAL: Enable external commands to write to channels via >&3-6
+[2025-12-17 20:12] ARCHITECTURE: Child writes → pipe → tuple → channel buffer
+[2025-12-17 20:15] IMPLEMENTED: prepare_channel_redirects() - detects >&3-6 before fork
+[2025-12-17 20:16] IMPLEMENTED: ChannelPipe struct with read/write OwnedFds
+[2025-12-17 20:17] IMPLEMENTED: apply_channel_redirects_in_child() - dups write to fd 3-6
+[2025-12-17 20:18] IMPLEMENTED: process_channel_writes() - reads pipes, emits tuples
+[2025-12-17 20:19] IMPLEMENTED: sync_channels_from_tuple_space() in Executor
+[2025-12-17 20:20] MODIFIED: ProcessHandle includes channel_pipes field
+[2025-12-17 20:21] ADDED: take_channel_pipes() method to extract before wait()
+[2025-12-17 20:25] DESIGN: ChannelPipe.write_end = Option (None in parent after close)
+[2025-12-17 20:30] FIX: Parser bug - >&3 creates File("3") not Fd(3)
+[2025-12-17 20:31] WORKAROUND: Both prepare and apply detect File("N") and parse as fd
+[2025-12-17 20:35] FIX: Borrow checker - ProcessHandle.wait() consumes self
+[2025-12-17 20:36] SOLUTION: take_channel_pipes() before wait()
+[2025-12-17 20:40] FIX: Pipe reads hanging - write ends not closed in parent
+[2025-12-17 20:41] SOLUTION: Explicit drop(write_end) before returning ProcessHandle
+[2025-12-17 20:45] FIX: apply_redirects skipping channel fd dup2
+[2025-12-17 20:46] SOLUTION: Call apply_fd_redirect even for channel fds (they're already set up)
+[2025-12-17 20:50] TESTED: Debug logs show complete flow
+[2025-12-17 20:51] VALIDATED: "Captured 7 bytes from fd=3: 'VERIFY\n'" ✓
+[2025-12-17 20:52] VALIDATED: "Wrote 7 bytes to channel 3" ✓
+[2025-12-17 20:53] VALIDATED: context show displays captured content ✓
+[2025-12-17 20:55] ADDED: chrono dependency for RFC3339 timestamps
+[2025-12-17 21:00] COMMIT: F024 Phase 2 complete (e0871dd) - 438 insertions, 13 deletions
+[2025-12-17 21:01] MILESTONE: F024 100% COMPLETE!
+[2025-12-17 21:02] ACHIEVEMENT: Full channel redirect system operational
+[2025-12-17 21:03] ENABLES: context tracking from both builtins AND external commands
+[2025-12-17 21:04] NOTE: PersistentTupleSpace deferred - current impl uses in-memory (sufficient for single session)
+[2025-12-17 21:05] FUTURE: Integrate PersistentTupleSpace for cross-invocation persistence
