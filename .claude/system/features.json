@@ -165,10 +165,30 @@
       "id": "F010",
       "name": "Tuple space (in-process)",
       "description": "Linda-style tuple space with out/in/rd/inp/rdp primitives using scc::HashMap and parking_lot for synchronization.",
-      "status": "new",
+      "status": "complete",
       "priority": 3,
       "dependencies": [],
-      "notes": []
+      "notes": [
+        "2025-12-17: Starting F010 - no dependencies",
+        "2025-12-17: Designed Value enum: Str, Int, Float, Bool, Null, Wildcard",
+        "2025-12-17: Designed Tuple struct: ordered Vec<Value> with pattern matching",
+        "2025-12-17: Implemented TupleSpace with scc::HashMap (Rule #8)",
+        "2025-12-17: Used parking_lot Mutex+Condvar for blocking operations",
+        "2025-12-17: Implemented out() - non-blocking tuple write with notify",
+        "2025-12-17: Implemented inp() - non-blocking read-and-remove",
+        "2025-12-17: Implemented rdp() - non-blocking read (non-destructive)",
+        "2025-12-17: Implemented in() - blocking read-and-remove with Condvar",
+        "2025-12-17: Implemented rd() - blocking read without removing",
+        "2025-12-17: Pattern matching with wildcards for flexible queries",
+        "2025-12-17: Tuple bucketing by length for O(1) lookup",
+        "2025-12-17: Arc-based sharing - Clone creates cheap reference",
+        "2025-12-17: Added 8 comprehensive tests - all passing",
+        "2025-12-17: Added 6 doc tests demonstrating each primitive",
+        "2025-12-17: Test: reactive environment pattern (env_change tuples)",
+        "2025-12-17: Test: blocking coordination between threads",
+        "2025-12-17: COMPLETE - 14 tests total (8 unit + 6 doc)",
+        "2025-12-17: UNLOCKED: Rules 42-47 (reactive environment via tuples)"
+      ]
     },
     {
       "id": "F011",
