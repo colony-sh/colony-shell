@@ -1208,6 +1208,212 @@ pub enum EvalError {
 }
 ```
 
+## 5.9 Error Catalog
+
+This section provides a comprehensive catalog of all error types with codes, causes, and remediation.
+
+### 5.9.1 Error Code Format
+
+Errors follow the format `COL-XXXX` where:
+- `COL-1xxx`: Parse errors
+- `COL-2xxx`: Expansion errors
+- `COL-3xxx`: Execution errors
+- `COL-4xxx`: Type errors
+- `COL-5xxx`: I/O errors
+- `COL-6xxx`: Agent errors
+- `COL-7xxx`: Internal errors
+
+### 5.9.2 Parse Errors (COL-1xxx)
+
+| Code | Name | Description | Remediation |
+|------|------|-------------|-------------|
+| COL-1001 | `UnexpectedToken` | Unexpected token in input | Check syntax near reported position |
+| COL-1002 | `UnmatchedQuote` | Unclosed quote string | Add closing quote character |
+| COL-1003 | `UnmatchedBrace` | Unclosed brace group | Add closing `}` |
+| COL-1004 | `UnmatchedParen` | Unclosed parenthesis | Add closing `)` |
+| COL-1005 | `UnmatchedBracket` | Unclosed bracket | Add closing `]` |
+| COL-1006 | `InvalidHeredoc` | Malformed here-document | Check delimiter and content |
+| COL-1007 | `InvalidRedirect` | Malformed redirection | Check fd number and target |
+| COL-1008 | `ReservedWord` | Reserved word used as name | Use different identifier |
+| COL-1009 | `InvalidEscape` | Invalid escape sequence | Check escape character |
+| COL-1010 | `UnterminatedCommand` | Command missing terminator | Add `;` or newline |
+
+### 5.9.3 Expansion Errors (COL-2xxx)
+
+| Code | Name | Description | Remediation |
+|------|------|-------------|-------------|
+| COL-2001 | `BadSubstitution` | Malformed parameter expansion | Check `${...}` syntax |
+| COL-2002 | `UnsetVariable` | Required variable is unset | Set variable or use default |
+| COL-2003 | `BadArithmetic` | Arithmetic expression error | Check expression syntax |
+| COL-2004 | `CommandSubFailed` | Command substitution failed | Check inner command |
+| COL-2005 | `GlobNoMatch` | Glob pattern matched no files | Check pattern or disable `strict_glob` |
+| COL-2006 | `TildeExpansion` | Tilde expansion failed | Check username or HOME |
+| COL-2007 | `BraceExpansion` | Brace expansion error | Check `{a,b}` syntax |
+| COL-2008 | `ProcessSubFailed` | Process substitution failed | Check inner command |
+
+### 5.9.4 Execution Errors (COL-3xxx)
+
+| Code | Name | Description | Remediation |
+|------|------|-------------|-------------|
+| COL-3001 | `CommandNotFound` | Command not in PATH | Install command or check PATH |
+| COL-3002 | `PermissionDenied` | Insufficient permissions | Check file permissions |
+| COL-3003 | `NotExecutable` | File is not executable | Run `chmod +x` on file |
+| COL-3004 | `ForkFailed` | Unable to fork process | Check system resources |
+| COL-3005 | `ExecFailed` | Unable to exec command | Check binary format |
+| COL-3006 | `SignalReceived` | Process terminated by signal | Handle signal appropriately |
+| COL-3007 | `PipelineError` | Pipeline construction failed | Check pipe limits |
+| COL-3008 | `JobNotFound` | Referenced job doesn't exist | Check job number |
+| COL-3009 | `BackgroundFailed` | Cannot background process | Check terminal control |
+| COL-3010 | `FunctionNotFound` | Called function not defined | Define function first |
+| COL-3011 | `MaxRecursion` | Maximum recursion exceeded | Check for infinite loops |
+| COL-3012 | `BreakOutsideLoop` | Break outside loop | Move break inside loop |
+| COL-3013 | `ContinueOutsideLoop` | Continue outside loop | Move continue inside loop |
+| COL-3014 | `ReturnOutsideFunc` | Return outside function | Move return inside function |
+
+### 5.9.5 Type Errors (COL-4xxx)
+
+| Code | Name | Description | Remediation |
+|------|------|-------------|-------------|
+| COL-4001 | `TypeMismatch` | Value type doesn't match expected | Convert value or fix type |
+| COL-4002 | `NotIterable` | Value cannot be iterated | Use iterable type |
+| COL-4003 | `NotIndexable` | Value cannot be indexed | Use indexable type |
+| COL-4004 | `NotCallable` | Value cannot be called | Use function/proc |
+| COL-4005 | `DivisionByZero` | Division by zero attempted | Check divisor |
+| COL-4006 | `IndexOutOfBounds` | Index exceeds bounds | Check array length |
+| COL-4007 | `FieldNotFound` | Object field doesn't exist | Check field name |
+| COL-4008 | `ReadOnlyVariable` | Cannot modify readonly var | Use different variable |
+| COL-4009 | `TypeCoercionFailed` | Cannot coerce value | Check input format |
+| COL-4010 | `InvalidOperation` | Operation not valid for type | Check operator usage |
+| COL-4011 | `NullAccess` | Accessed null value | Check for null first |
+
+### 5.9.6 I/O Errors (COL-5xxx)
+
+| Code | Name | Description | Remediation |
+|------|------|-------------|-------------|
+| COL-5001 | `FileNotFound` | File doesn't exist | Check path |
+| COL-5002 | `DirectoryNotFound` | Directory doesn't exist | Create directory |
+| COL-5003 | `NotAFile` | Path is not a regular file | Use correct path type |
+| COL-5004 | `NotADirectory` | Path is not a directory | Use correct path type |
+| COL-5005 | `RedirectFailed` | Redirection failed | Check path permissions |
+| COL-5006 | `HeredocError` | Here-document error | Check delimiter |
+| COL-5007 | `BadFd` | Invalid file descriptor | Check fd number |
+| COL-5008 | `FdNotOpen` | File descriptor not open | Open fd first |
+| COL-5009 | `PipeClosed` | Pipe was closed | Check pipeline |
+| COL-5010 | `IoError` | Generic I/O error | Check errno |
+
+### 5.9.7 Agent Errors (COL-6xxx)
+
+| Code | Name | Description | Remediation |
+|------|------|-------------|-------------|
+| COL-6001 | `AgentNotFound` | Agent not defined | Define agent first |
+| COL-6002 | `AgentTimeout` | Agent execution timed out | Increase timeout |
+| COL-6003 | `MaxIterations` | Agent exceeded max iterations | Increase limit or fix loop |
+| COL-6004 | `ToolNotFound` | Requested tool not available | Register tool |
+| COL-6005 | `ToolDenied` | Tool execution denied | Approve tool or check permissions |
+| COL-6006 | `LlmError` | LLM API error | Check API key and quota |
+| COL-6007 | `McpError` | MCP server error | Check server status |
+| COL-6008 | `PromptError` | Prompt template error | Check template syntax |
+| COL-6009 | `SessionNotFound` | Agent session not found | Create session first |
+| COL-6010 | `AgentAborted` | Agent was aborted | Check abort reason |
+
+### 5.9.8 Internal Errors (COL-7xxx)
+
+| Code | Name | Description | Remediation |
+|------|------|-------------|-------------|
+| COL-7001 | `InternalError` | Unexpected internal error | Report bug |
+| COL-7002 | `StackOverflow` | Evaluation stack overflow | Reduce nesting |
+| COL-7003 | `OutOfMemory` | Memory allocation failed | Reduce memory usage |
+| COL-7004 | `InvalidState` | Invalid internal state | Report bug |
+
+### 5.9.9 Error Struct Extension
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub struct ColonyError {
+    pub code: ErrorCode,
+    pub message: String,
+    pub span: Option<Span>,
+    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub help: Option<String>,
+}
+
+impl ColonyError {
+    pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            span: None,
+            source: None,
+            help: None,
+        }
+    }
+
+    pub fn with_span(mut self, span: Span) -> Self {
+        self.span = Some(span);
+        self
+    }
+
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+}
+
+impl std::fmt::Display for ColonyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)?;
+        if let Some(ref help) = self.help {
+            write!(f, "\n  help: {}", help)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ErrorCode(u16);
+
+impl ErrorCode {
+    pub const COMMAND_NOT_FOUND: ErrorCode = ErrorCode(3001);
+    pub const UNDEFINED_VARIABLE: ErrorCode = ErrorCode(2002);
+    pub const TYPE_MISMATCH: ErrorCode = ErrorCode(4001);
+    // ... etc
+}
+
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "COL-{:04}", self.0)
+    }
+}
+```
+
+### 5.9.10 Error Display Examples
+
+```
+error[COL-3001]: Command not found: 'gitf': No such file or directory
+  --> script.sh:15:1
+   |
+15 | gitf status
+   | ^^^^
+   |
+  help: did you mean 'git'?
+
+error[COL-2002]: Required variable is unset: API_KEY
+  --> deploy.sh:23:12
+   |
+23 | curl -H "Authorization: $API_KEY" ...
+   |            ^^^^^^^^
+   |
+  help: set variable with 'export API_KEY=...' or use default '${API_KEY:-default}'
+
+error[COL-4005]: Division by zero attempted
+  --> math.sh:8:10
+   |
+ 8 | var result = 100 / $divisor
+   |              ^^^^^^^^^^^^^^
+   |
+  help: check that divisor is not zero before dividing
+```
+
 ---
 
 *Continue to Part 6: Pipelines*

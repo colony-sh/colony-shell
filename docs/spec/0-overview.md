@@ -42,6 +42,7 @@ Colony is an agent-first shell that provides full POSIX compatibility while intr
 | 13 | `13-interactive.md` | Live preview, help system |
 | 14 | `14-builtins.md` | Builtin commands reference |
 | 15 | `15-grammar.md` | Formal grammar specification |
+| 16 | `16-context.md` | Context management system |
 
 ## 0.4 Conventions
 

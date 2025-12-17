@@ -32,22 +32,45 @@
 colony/
 ├── Cargo.toml                     # Workspace manifest
 ├── crates/
-│   ├── colony-core/               # Core types and traits
-│   ├── colony-parser/             # Lexer, parser, AST
-│   ├── colony-runtime/            # Execution engine
-│   ├── colony-channels/           # Extended I/O channels
-│   ├── colony-agents/             # Agent framework
-│   ├── colony-tuple-space/        # Coordination primitives
-│   ├── colony-mcp/                # MCP client
-│   ├── colony-ui/                 # Terminal UI (GPUI)
-│   └── colony-cli/                # Binary entry points
+│   ├── colony-parser/             # Pest PEG parser, AST, expansion
+│   ├── colony-exec/               # Execution engine, jobs, builtins
+│   ├── colony-expand/             # POSIX word expansion
+│   ├── colony-agent/              # Agent framework, Claude SDK
+│   ├── colony-mcp/                # MCP client (rmcp)
+│   ├── colony-tuple/              # Tuple space coordination
+│   ├── colony-memory/             # Memory substrate (SQLite + vectors)
+│   ├── colony-protocol/           # OSC 2337 terminal protocol
+│   ├── colony-focus/              # Focus tracking
+│   ├── colony-tree-sitter/        # Tree-sitter parser (editor features)
+│   └── colony-shell/              # Binary entry points, REPL
 ├── docs/
-│   └── spec/                      # This specification
+│   ├── spec/                      # This specification
+│   ├── design/                    # Design documents
+│   └── archive/                   # Historical documents
 └── tests/
     ├── posix/                     # POSIX compliance tests
     ├── integration/               # Integration tests
     └── fixtures/                  # Test fixtures
 ```
+
+### 1.2.1 Crate Mapping (Spec to Implementation)
+
+| Spec Name | Implementation | Status | Notes |
+|-----------|----------------|--------|-------|
+| colony-core | (merged into others) | N/A | Core types distributed |
+| colony-parser | colony-parser | Complete | Pest PEG + Tree-sitter |
+| colony-runtime | colony-exec | Complete | Renamed for clarity |
+| colony-channels | (planned) | Future | Extended channel system |
+| colony-agents | colony-agent | Complete | Singular, with claude-sdk |
+| colony-tuple-space | colony-tuple | Partial | In-process only |
+| colony-mcp | colony-mcp | Stubbed | Awaiting rmcp integration |
+| colony-ui | (planned) | Future | GPUI terminal |
+| colony-cli | colony-shell | Complete | Includes REPL |
+| — | colony-expand | Added | Split from parser |
+| — | colony-memory | Added | Memory substrate |
+| — | colony-protocol | Added | OSC 2337 |
+| — | colony-focus | Added | Focus tracking |
+| — | colony-tree-sitter | Added | Editor parser |
 
 ## 1.3 Crate: colony-core
 
@@ -232,28 +255,27 @@ pub mod parser;     // Recursive descent parser
 pub mod span;       // Source spans
 ```
 
-## 1.5 Crate: colony-runtime
+## 1.5 Crate: colony-exec
 
 Execution engine, job control, and process management.
 
 ```rust
-// crates/colony-runtime/src/lib.rs
-pub mod evaluator;  // AST evaluation
-pub mod scope;      // Variable scoping
+// crates/colony-exec/src/lib.rs
+pub mod executor;   // AST evaluation
 pub mod pipeline;   // Pipeline execution
 pub mod process;    // Process spawning
-pub mod job;        // Job control
-pub mod builtin;    // Builtin commands
+pub mod jobs;       // Job control (process groups, signals)
+pub mod builtins;   // Builtin commands (cd, export, etc.)
 pub mod redirect;   // I/O redirection
-pub mod expand;     // Word expansion
+pub mod expand;     // Word expansion (re-exports colony-expand)
 ```
 
-## 1.6 Crate: colony-channels
+## 1.6 Crate: colony-channels (Planned)
 
-Extended I/O channels beyond stdin/stdout/stderr.
+Extended I/O channels beyond stdin/stdout/stderr. **Not yet implemented.**
 
 ```rust
-// crates/colony-channels/src/lib.rs
+// crates/colony-channels/src/lib.rs (planned)
 pub mod channel;    // Channel trait and registry
 pub mod context;    // stdcontext (fd 3)
 pub mod llm;        // stdllm (fd 4)
@@ -262,32 +284,41 @@ pub mod trace;      // stdtrace (fd 6)
 pub mod buffer;     // Buffer storage
 ```
 
-## 1.7 Crate: colony-agents
+> **Implementation Note:** Channel functionality is currently handled via
+> OSC 2337 protocol (colony-protocol crate) which communicates with the
+> terminal emulator rather than using additional file descriptors.
 
-Agent definition, parsing, and execution.
+## 1.7 Crate: colony-agent
+
+Agent definition, parsing, and execution. Includes Rust port of Claude SDK.
 
 ```rust
-// crates/colony-agents/src/lib.rs
-pub mod definition; // Agent struct
-pub mod parser;     // AGENT.md parser
-pub mod executor;   // Agent invocation
-pub mod session;    // Multi-turn sessions
-pub mod tools;      // Tool definitions
-pub mod llm;        // LLM client abstraction
+// crates/colony-agent/src/lib.rs
+pub mod agent;      // Agent struct and lifecycle
+pub mod sdk;        // Claude SDK (Rust port)
+pub mod nl;         // Natural language detection
+pub mod tools;      // Tool registry and classification
+pub mod session;    // Multi-turn conversation state
 ```
 
-## 1.8 Crate: colony-tuple-space
+> **Implementation Note:** This crate includes a native Rust implementation
+> of the Claude Agent SDK, supporting both Anthropic API and AWS Bedrock
+> backends with streaming responses and tool use.
+
+## 1.8 Crate: colony-tuple
 
 Linda-style tuple space for coordination.
 
 ```rust
-// crates/colony-tuple-space/src/lib.rs
-pub mod tuple;      // Tuple type
-pub mod pattern;    // Pattern matching
-pub mod space;      // TupleSpace implementation
-pub mod ops;        // out, in, rd, inp, rdp
-pub mod distributed;// Remote tuple spaces
+// crates/colony-tuple/src/lib.rs
+pub mod tuple;      // Tuple type (Value enum)
+pub mod pattern;    // Pattern matching with wildcards
+pub mod space;      // TupleSpace (scc::HashMap based)
+pub mod ops;        // out, in, rd, inp, rdp primitives
 ```
+
+> **Implementation Note:** Uses `scc::HashMap` for lock-free concurrent access
+> (Rule #8). Cross-process IPC via `ipc-channel` is planned but not yet implemented.
 
 ## 1.9 Crate: colony-mcp
 
@@ -302,12 +333,12 @@ pub mod resources;  // Resource management
 pub mod server;     // Server definitions
 ```
 
-## 1.10 Crate: colony-ui
+## 1.10 Crate: colony-ui (Planned)
 
-Terminal UI using GPUI.
+Terminal UI using GPUI. **Not yet implemented.**
 
 ```rust
-// crates/colony-ui/src/lib.rs
+// crates/colony-ui/src/lib.rs (planned)
 pub mod terminal;   // Terminal emulation
 pub mod buffer;     // Buffer rendering
 pub mod pane;       // Pane management
@@ -317,19 +348,28 @@ pub mod input;      // Input handling
 pub mod theme;      // Theming
 ```
 
-## 1.11 Crate: colony-cli
+> **Implementation Note:** Colony currently runs in existing terminal emulators.
+> The GPUI-based terminal (colony-terminal) is a separate project that will
+> receive OSC 2337 protocol messages from the shell.
 
-Binary entry points.
+## 1.11 Crate: colony-shell
+
+Binary entry points and REPL.
 
 ```rust
-// crates/colony-cli/src/main.rs
+// crates/colony-shell/src/main.rs
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     let mode = determine_mode();
 
+    // Initialize Tree-sitter for syntax validation
+    let ts_parser = colony_tree_sitter::ColonyParser::new();
+
+    // Run REPL or execute script
     match mode {
-        ShellMode::Posix => run_posix_shell(),
-        ShellMode::Modern => run_modern_shell(),
+        ShellMode::Posix => run_posix_shell().await,
+        ShellMode::Modern => run_modern_shell().await,
     }
 }
 
@@ -356,12 +396,77 @@ pub enum ShellMode {
 }
 ```
 
-## 1.12 Dual-Binary Setup
+> **Implementation Note:** The REPL integrates both Tree-sitter (for real-time
+> syntax validation) and Pest (for execution). Natural language queries (# or ?)
+> are routed to the agent system.
+
+## 1.12 Additional Crates
+
+### 1.12.1 colony-expand
+
+POSIX word expansion (split from parser for modularity).
+
+```rust
+// crates/colony-expand/src/lib.rs
+pub mod tilde;      // Tilde expansion (~, ~user)
+pub mod parameter;  // Parameter expansion (${var}, ${var:-default})
+pub mod command;    // Command substitution $(...)
+pub mod arithmetic; // Arithmetic expansion $((...))
+pub mod field;      // IFS field splitting
+pub mod pathname;   // Glob expansion
+```
+
+### 1.12.2 colony-protocol
+
+OSC 2337 terminal protocol for shell-terminal communication.
+
+```rust
+// crates/colony-protocol/src/lib.rs
+pub mod osc;        // OSC escape sequence encoding
+pub mod message;    // Protocol message types
+pub mod emit;       // Terminal emission functions
+```
+
+### 1.12.3 colony-memory
+
+Memory substrate for persistent context and agent memory.
+
+```rust
+// crates/colony-memory/src/lib.rs
+pub mod store;      // SQLite schema and operations
+pub mod vector;     // LanceDB vector embeddings
+pub mod search;     // Hybrid text + semantic search
+```
+
+### 1.12.4 colony-tree-sitter
+
+Tree-sitter parser for editor features (syntax highlighting, navigation).
+
+```rust
+// crates/colony-tree-sitter/src/lib.rs
+pub fn language() -> tree_sitter::Language;
+pub struct ColonyParser { /* ... */ }
+```
+
+> **Implementation Note:** Forked from tree-sitter-bash with Colony extensions
+> (typed pipes, var/const declarations, type annotations).
+
+### 1.12.5 colony-focus
+
+Focus tracking for determining active context.
+
+```rust
+// crates/colony-focus/src/lib.rs
+pub mod tracker;    // Window/project focus tracking
+pub mod context;    // Context determination from focus
+```
+
+## 1.13 Dual-Binary Setup
 
 The same codebase produces two binaries:
 
 ```toml
-# crates/colony-cli/Cargo.toml
+# crates/colony-shell/Cargo.toml
 [[bin]]
 name = "colony"
 path = "src/main.rs"
@@ -379,7 +484,7 @@ Installation creates both, plus symlinks:
 /usr/local/bin/csh         # Optional symlink to colony
 ```
 
-## 1.13 Mode Detection Order
+## 1.14 Mode Detection Order
 
 1. **Binary name** (`argv[0]`)
    - `colony-sh`, `sh` → POSIX mode
@@ -410,9 +515,9 @@ Installation creates both, plus symlinks:
    default_mode = "modern"  # or "posix"
    ```
 
-## 1.14 Dependencies
+## 1.15 Dependencies
 
-### 1.14.1 External Crates
+### 1.15.1 External Crates
 
 ```toml
 # Workspace Cargo.toml
@@ -436,7 +541,7 @@ nix = { version = "0.27", features = ["process", "signal", "term"] }
 libc = "0.2"
 ```
 
-### 1.14.2 GPUI (for UI)
+### 1.15.2 GPUI (for UI)
 
 GPUI is vendored or included as a git dependency:
 
@@ -444,9 +549,9 @@ GPUI is vendored or included as a git dependency:
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
 ```
 
-## 1.15 Configuration
+## 1.16 Configuration
 
-### 1.15.1 Config File Location
+### 1.16.1 Config File Location
 
 ```
 ~/.config/colony/config.toml       # User config
@@ -454,7 +559,7 @@ gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
 .colony/config.toml                # Project config (merged)
 ```
 
-### 1.15.2 Config Schema
+### 1.16.2 Config Schema
 
 ```toml
 # ~/.config/colony/config.toml

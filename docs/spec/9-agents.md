@@ -1127,6 +1127,311 @@ agent supervisor {
 }
 ```
 
+## 9.8 Tool Classification
+
+Tools are classified by their safety profile for agent execution:
+
+```rust
+// crates/colony-agent/src/tools.rs
+
+/// Tool classification for agent auto-execution
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolClassification {
+    /// Safe for automatic execution without user approval.
+    /// Examples: read_file, search, list_directory
+    Programmatic,
+
+    /// Requires user approval before execution.
+    /// Examples: write_file, delete_file, execute_command
+    UserFacing,
+}
+
+/// Tool definition with classification
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+    pub classification: ToolClassification,
+}
+
+/// Tool registry with classification-based dispatch
+pub struct ToolRegistry {
+    tools: IndexMap<String, (ToolDefinition, Arc<dyn Tool>)>,
+}
+
+impl ToolRegistry {
+    /// Register a tool with classification
+    pub fn register<T: Tool + 'static>(
+        &mut self,
+        name: &str,
+        description: &str,
+        classification: ToolClassification,
+        tool: T,
+    ) {
+        let def = ToolDefinition {
+            name: name.to_string(),
+            description: description.to_string(),
+            input_schema: T::schema(),
+            classification,
+        };
+        self.tools.insert(name.to_string(), (def, Arc::new(tool)));
+    }
+
+    /// Check if a tool requires user approval
+    pub fn requires_approval(&self, name: &str) -> bool {
+        self.tools.get(name)
+            .map(|(def, _)| def.classification == ToolClassification::UserFacing)
+            .unwrap_or(true) // Unknown tools require approval
+    }
+
+    /// Get all programmatic tools (safe for auto-execution)
+    pub fn programmatic_tools(&self) -> Vec<&ToolDefinition> {
+        self.tools.values()
+            .filter(|(def, _)| def.classification == ToolClassification::Programmatic)
+            .map(|(def, _)| def)
+            .collect()
+    }
+}
+```
+
+### 9.8.1 Default Classifications
+
+| Tool | Classification | Rationale |
+|------|---------------|-----------|
+| `read_file` | Programmatic | Read-only, safe |
+| `search` | Programmatic | Read-only, safe |
+| `list_directory` | Programmatic | Read-only, safe |
+| `write_file` | UserFacing | Modifies filesystem |
+| `delete_file` | UserFacing | Destructive |
+| `execute_command` | UserFacing | Arbitrary code execution |
+| `git_commit` | UserFacing | Modifies repository |
+| `send_email` | UserFacing | External communication |
+
+### 9.8.2 Approval Flow
+
+```
+Agent requests tool call
+         │
+         ▼
+    ┌────────────┐
+    │ Check      │
+    │ Classification│
+    └────┬───────┘
+         │
+    ┌────┴────┐
+    │         │
+    ▼         ▼
+Programmatic  UserFacing
+    │              │
+    ▼              ▼
+Execute     ┌─────────────┐
+Immediately │ OSC 2337    │
+    │       │ Widget=     │
+    │       │ approval    │
+    │       └──────┬──────┘
+    │              │
+    │         ┌────┴────┐
+    │         │         │
+    │         ▼         ▼
+    │      Approved   Denied
+    │         │         │
+    │         ▼         ▼
+    └────────Execute   Skip/Error
+```
+
+## 9.9 Natural Language Detection
+
+The shell detects natural language input and routes to agents:
+
+```rust
+// crates/colony-agent/src/nl.rs
+
+/// Detects natural language input
+pub struct NaturalLanguageDetector;
+
+impl NaturalLanguageDetector {
+    /// Check if input should be routed to an agent
+    pub fn is_natural_language(input: &str) -> NLDetectionResult {
+        let trimmed = input.trim();
+
+        // Explicit prefixes
+        if trimmed.starts_with('#') {
+            return NLDetectionResult::Agent {
+                query: trimmed[1..].trim().to_string(),
+                reason: NLReason::HashPrefix,
+            };
+        }
+
+        if trimmed.starts_with('?') {
+            return NLDetectionResult::Agent {
+                query: trimmed[1..].trim().to_string(),
+                reason: NLReason::QuestionPrefix,
+            };
+        }
+
+        // Heuristic: starts with question word
+        let lower = trimmed.to_lowercase();
+        let question_words = ["what", "why", "how", "when", "where", "can", "could", "would", "should"];
+        if question_words.iter().any(|w| lower.starts_with(w)) && trimmed.ends_with('?') {
+            return NLDetectionResult::Ambiguous {
+                query: trimmed.to_string(),
+                confidence: 0.8,
+            };
+        }
+
+        // Try to parse as shell command
+        match colony_parser::parse_statement(trimmed) {
+            Ok(_) => NLDetectionResult::Shell,
+            Err(_) => NLDetectionResult::Ambiguous {
+                query: trimmed.to_string(),
+                confidence: 0.5,
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum NLDetectionResult {
+    /// Definitely a shell command
+    Shell,
+    /// Definitely for an agent
+    Agent { query: String, reason: NLReason },
+    /// Could be either, confidence indicates likelihood of NL
+    Ambiguous { query: String, confidence: f32 },
+}
+
+#[derive(Debug)]
+pub enum NLReason {
+    /// Input started with #
+    HashPrefix,
+    /// Input started with ?
+    QuestionPrefix,
+    /// Failed to parse as shell command
+    ParseFailed,
+    /// Question pattern detected
+    QuestionPattern,
+}
+```
+
+### 9.9.1 Prefix Conventions
+
+| Prefix | Meaning | Example |
+|--------|---------|---------|
+| `#` | Route to default agent | `# explain this error` |
+| `?` | Ask a question | `? what does SIGPIPE mean` |
+| `@agent` | Route to specific agent | `@reviewer check this file` |
+| (none) | Try shell first, fallback to agent on failure | `how do I find large files` |
+
+## 9.10 Claude SDK Integration
+
+Colony includes a native Rust implementation of the Claude Agent SDK:
+
+```rust
+// crates/colony-agent/src/sdk/mod.rs
+
+pub mod client;
+pub mod message;
+pub mod tool;
+pub mod stream;
+
+/// Claude API client with streaming support
+pub struct ClaudeClient {
+    api_key: String,
+    base_url: String,
+    model: String,
+}
+
+impl ClaudeClient {
+    /// Create client for Anthropic API
+    pub fn anthropic(api_key: &str) -> Self {
+        Self {
+            api_key: api_key.to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            model: "claude-sonnet-4-20250514".to_string(),
+        }
+    }
+
+    /// Create client for AWS Bedrock
+    pub fn bedrock(region: &str) -> Self {
+        Self {
+            api_key: String::new(), // Uses SigV4
+            base_url: format!("https://bedrock-runtime.{}.amazonaws.com", region),
+            model: "anthropic.claude-3-sonnet".to_string(),
+        }
+    }
+
+    /// Send a message and receive streaming response
+    pub async fn stream(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+    ) -> Result<impl Stream<Item = StreamEvent>, ApiError> {
+        // Implementation details...
+    }
+}
+
+/// Streaming event from Claude
+#[derive(Debug)]
+pub enum StreamEvent {
+    /// Text content being generated
+    ContentBlockStart { index: usize, content_type: String },
+    /// Delta text update
+    ContentBlockDelta { index: usize, delta: String },
+    /// Content block finished
+    ContentBlockStop { index: usize },
+    /// Tool use requested
+    ToolUse { id: String, name: String, input: serde_json::Value },
+    /// Message complete
+    MessageStop { stop_reason: StopReason },
+}
+
+#[derive(Debug)]
+pub enum StopReason {
+    EndTurn,
+    ToolUse,
+    MaxTokens,
+    StopSequence,
+}
+```
+
+### 9.10.1 Prompt Caching
+
+The SDK supports prompt caching for cost optimization:
+
+```rust
+impl ClaudeClient {
+    /// Enable prompt caching for system prompt and tools
+    pub fn with_caching(mut self, enabled: bool) -> Self {
+        self.cache_enabled = enabled;
+        self
+    }
+
+    /// Cached request marks system prompt for caching
+    pub async fn cached_stream(
+        &self,
+        system: &str,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+    ) -> Result<impl Stream<Item = StreamEvent>, ApiError> {
+        let request = ApiRequest {
+            system: vec![SystemBlock {
+                text: system.to_string(),
+                cache_control: Some(CacheControl { type_: "ephemeral" }),
+            }],
+            messages: messages.to_vec(),
+            tools: tools.iter().map(|t| ApiTool {
+                definition: t.clone(),
+                cache_control: Some(CacheControl { type_: "ephemeral" }),
+            }).collect(),
+            ..Default::default()
+        };
+
+        // Cache hit reduces cost by ~90%
+        self.send_streaming(request).await
+    }
+}
+```
+
 ---
 
 *Continue to Part 10: Coordination*
