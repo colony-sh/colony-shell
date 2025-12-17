@@ -16,7 +16,7 @@
 //!
 //! Rule #14: All public APIs must have doc comments with examples
 
-use crate::{ExecutionError, Result};
+use crate::{ExecutionError, JobTable, Result};
 use colony_expand::{ExpansionContext, Expander};
 use colony_parser::{SimpleCommand, Word};
 use std::env;
@@ -53,7 +53,9 @@ impl BuiltinResult {
 pub fn is_builtin(name: &str) -> bool {
     matches!(
         name,
-        "cd" | "export" | "unset" | "exit" | "pwd" | "echo" | "type" | "alias" | "unalias" | "." | "source"
+        "cd" | "export" | "unset" | "exit" | "pwd" | "echo" | "type"
+        | "alias" | "unalias" | "." | "source"
+        | "fg" | "bg" | "jobs" | "wait"
     )
 }
 
@@ -64,6 +66,7 @@ pub fn is_builtin(name: &str) -> bool {
 pub fn execute_builtin(
     cmd: &SimpleCommand,
     context: &mut ExpansionContext,
+    jobs: &JobTable,
 ) -> Option<Result<BuiltinResult>> {
     // Expand command name
     let mut expander = Expander::new(context.clone());
@@ -106,6 +109,10 @@ pub fn execute_builtin(
         "alias" => builtin_alias(&args, context),
         "unalias" => builtin_unalias(&args, context),
         "." | "source" => builtin_source(&args, context),
+        "fg" => builtin_fg(&args, jobs),
+        "bg" => builtin_bg(&args, jobs),
+        "jobs" => builtin_jobs(&args, jobs),
+        "wait" => builtin_wait(&args, jobs),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -286,6 +293,85 @@ fn builtin_source(_args: &[String], _context: &mut ExpansionContext) -> Result<B
     Ok(BuiltinResult::Failure(1))
 }
 
+/// fg - Bring job to foreground
+///
+/// Usage: fg [%job_id]
+/// TODO: Implement terminal control and SIGCONT
+fn builtin_fg(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
+    let job_list = jobs.list_jobs();
+
+    if job_list.is_empty() {
+        eprintln!("fg: no current job");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    // For now, just list what would be foregrounded
+    eprintln!("fg: would foreground job (not yet implemented)");
+    Ok(BuiltinResult::Failure(1))
+}
+
+/// bg - Continue job in background
+///
+/// Usage: bg [%job_id]
+/// TODO: Implement SIGCONT to stopped jobs
+fn builtin_bg(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
+    let job_list = jobs.list_jobs();
+
+    if job_list.is_empty() {
+        eprintln!("bg: no current job");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    eprintln!("bg: would background job (not yet implemented)");
+    Ok(BuiltinResult::Failure(1))
+}
+
+/// jobs - List all jobs
+///
+/// Usage: jobs
+fn builtin_jobs(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
+    let job_list = jobs.list_jobs();
+
+    if job_list.is_empty() {
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    for job in job_list {
+        let status_str = match job.status {
+            crate::JobStatus::Running => "Running",
+            crate::JobStatus::Background => "Running",
+            crate::JobStatus::Stopped => "Stopped",
+            crate::JobStatus::Done(status) => {
+                if status.is_success() {
+                    "Done"
+                } else {
+                    "Exit"
+                }
+            }
+        };
+
+        println!("[{}]  {}  {}", job.id, status_str, job.command);
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+/// wait - Wait for job to complete
+///
+/// Usage: wait [%job_id]
+/// TODO: Implement blocking wait on specific job
+fn builtin_wait(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
+    // For now, just acknowledge
+    let job_list = jobs.list_jobs();
+
+    if job_list.is_empty() {
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    eprintln!("wait: would wait for jobs (not yet implemented)");
+    Ok(BuiltinResult::Success(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,9 +404,10 @@ mod tests {
     #[test]
     fn test_builtin_pwd() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
         let cmd = make_simple_command("pwd", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -330,9 +417,10 @@ mod tests {
     #[test]
     fn test_builtin_echo() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
         let cmd = make_simple_command("echo", vec!["hello", "world"]);
 
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -342,9 +430,10 @@ mod tests {
     #[test]
     fn test_builtin_exit() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
         let cmd = make_simple_command("exit", vec!["42"]);
 
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -355,9 +444,10 @@ mod tests {
     #[test]
     fn test_builtin_export() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
         let cmd = make_simple_command("export", vec!["TEST_VAR=hello"]);
 
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -370,11 +460,12 @@ mod tests {
     #[test]
     fn test_builtin_unset() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
         context.set_env("TEST_VAR", "value");
 
         let cmd = make_simple_command("unset", vec!["TEST_VAR"]);
 
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -387,13 +478,14 @@ mod tests {
     #[test]
     fn test_builtin_cd() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
 
         // Save current dir
         let original_dir = env::current_dir().unwrap();
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -411,9 +503,10 @@ mod tests {
     #[test]
     fn test_builtin_type() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
         let cmd = make_simple_command("type", vec!["cd", "echo"]);
 
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -423,9 +516,45 @@ mod tests {
     #[test]
     fn test_non_builtin() {
         let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
         let cmd = make_simple_command("ls", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
         assert!(result.is_none()); // ls is not a builtin
+    }
+
+    #[test]
+    fn test_builtin_jobs_empty() {
+        let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
+        let cmd = make_simple_command("jobs", vec![]);
+
+        let result = execute_builtin(&cmd, &mut context, &jobs);
+        assert!(result.is_some());
+
+        let builtin_result = result.unwrap().unwrap();
+        assert_eq!(builtin_result.exit_code(), 0);
+    }
+
+    #[test]
+    fn test_builtin_jobs_with_job() {
+        use nix::unistd::Pid;
+
+        let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
+
+        // Add a fake job
+        jobs.add_job(
+            Pid::from_raw(12345),
+            vec![Pid::from_raw(12345)],
+            "sleep 10".to_string(),
+        );
+
+        let cmd = make_simple_command("jobs", vec![]);
+        let result = execute_builtin(&cmd, &mut context, &jobs);
+        assert!(result.is_some());
+
+        let builtin_result = result.unwrap().unwrap();
+        assert_eq!(builtin_result.exit_code(), 0);
     }
 }

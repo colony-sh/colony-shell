@@ -31,11 +31,20 @@ use colony_parser::{Pipeline, SimpleCommand};
 /// Main executor for shell commands
 pub struct Executor {
     context: ExpansionContext,
+    jobs: JobTable,
 }
 
 impl Executor {
     pub fn new(context: ExpansionContext) -> Self {
-        Self { context }
+        Self {
+            context,
+            jobs: JobTable::new(),
+        }
+    }
+
+    /// Get reference to job table
+    pub fn jobs(&self) -> &JobTable {
+        &self.jobs
     }
 
     /// Execute a simple command
@@ -43,7 +52,7 @@ impl Executor {
     /// Checks for builtins first, then falls back to external command execution.
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
         // Try builtin first
-        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context) {
+        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs) {
             let result = builtin_result?;
 
             // Handle exit builtin specially
