@@ -61,7 +61,10 @@ impl Executor {
     /// Checks for builtins first, then falls back to external command execution.
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
         // Try builtin first (now with reactive tuple space!)
+        tracing::debug!("Checking if command is builtin: {:?}", cmd.name);
+
         if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space) {
+            tracing::debug!("Command is builtin, executing");
             let result = builtin_result?;
 
             // Handle exit builtin specially
@@ -73,6 +76,7 @@ impl Executor {
             return Ok(ExitStatus::new(result.exit_code()));
         }
 
+        tracing::debug!("Not a builtin, executing as external command");
         // Not a builtin - execute as external command
         execute_command(cmd, &mut self.context).await
     }
