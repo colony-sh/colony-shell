@@ -123,7 +123,7 @@ CaseTerminator = {
   | ";&"
 }
 
-ForStatement = { "for" ~ ForKind ~ Block }
+ForStatement = { "for" ~ ForKind ~ ";"? ~ Block }
 
 ForKind = {
     Identifier ~ "," ~ Identifier ~ "in" ~ "enumerate" ~ "(" ~ Expression ~ ")"  // enumerate
@@ -132,7 +132,11 @@ ForKind = {
   | Identifier ~ "in" ~ Expression  // iterate
 }
 
-WordList = { Word+ }  // At least one word required
+// Word list for for loops - must not consume keywords like "do"
+WordList = { (!BlockStart ~ Word)+ }
+
+// Keywords that start a block (stop word list parsing)
+BlockStart = { "do" | "{" | "then" }
 
 WhileStatement = { "while" ~ Condition ~ Block }
 

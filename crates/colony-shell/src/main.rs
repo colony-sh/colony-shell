@@ -1,6 +1,7 @@
 //! Colony Shell - POSIX-compliant shell for AI-native terminal
 
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
+use colony_config::{discover_config, ColonyConfig, ConfigLocation, TrustManager, TrustStatus};
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
 use colony_parser::pest_api::parse_statement;
@@ -8,6 +9,219 @@ use colony_parser::Statement;
 use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
 use miette::Result;
+use std::io::{self, Write};
+
+/// Control flow signal for loops and functions
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ControlFlow {
+    /// Normal execution - continue
+    Normal,
+    /// Break out of loop
+    Break,
+    /// Continue to next iteration
+    Continue,
+    /// Return from function (not used yet)
+    Return,
+    /// Exit shell (handled separately)
+    Exit,
+}
+
+/// Build AgentConfig from ColonyConfig
+///
+/// Merges .colonyrc settings with defaults:
+/// - Custom personality/system prompt
+/// - Temperature, max_tokens overrides
+/// - Project goals and conventions injected into prompt
+fn build_agent_config(colony_config: &Option<ColonyConfig>) -> AgentConfig {
+    let mut system_prompt = String::from(
+        "You are Colony Shell's AI assistant. You help users with \
+         shell commands, system administration, and programming tasks.",
+    );
+
+    let mut use_caching = true;
+    let mut max_tokens = 4096;
+    let mut temperature = None;
+
+    // Apply .colonyrc customizations
+    if let Some(ref config) = colony_config {
+        // Agent personality
+        if let Some(ref agent_cfg) = config.agent {
+            // Custom personality overrides default
+            if let Some(ref personality) = agent_cfg.personality {
+                system_prompt = personality.clone();
+            }
+
+            // Apply overrides
+            if let Some(temp) = agent_cfg.temperature {
+                temperature = Some(temp);
+            }
+            if let Some(tokens) = agent_cfg.max_tokens {
+                max_tokens = tokens;
+            }
+        }
+
+        // Inject project metadata into prompt
+        if let Some(ref project) = config.project {
+            system_prompt.push_str("\n\n## Project Context\n");
+
+            if let Some(ref name) = project.name {
+                system_prompt.push_str(&format!("Project: {}\n", name));
+            }
+            if let Some(ref desc) = project.description {
+                system_prompt.push_str(&format!("Description: {}\n", desc));
+            }
+            if let Some(ref lang) = project.language {
+                system_prompt.push_str(&format!("Language: {}\n", lang));
+            }
+
+            if !project.goals.is_empty() {
+                system_prompt.push_str("\n### Project Goals\n");
+                for goal in &project.goals {
+                    system_prompt.push_str(&format!("- {}\n", goal));
+                }
+            }
+
+            if !project.conventions.is_empty() {
+                system_prompt.push_str("\n### Coding Conventions\n");
+                for conv in &project.conventions {
+                    system_prompt.push_str(&format!("- {}\n", conv));
+                }
+            }
+
+            if !project.docs.is_empty() {
+                system_prompt.push_str("\n### Documentation\n");
+                for doc in &project.docs {
+                    system_prompt.push_str(&format!("- {}\n", doc));
+                }
+            }
+        }
+    }
+
+    AgentConfig {
+        system_prompt,
+        use_caching,
+        max_tokens,
+        temperature,
+    }
+}
+
+/// Load .colonyrc with trust model (direnv-style)
+///
+/// Returns loaded config if trusted, None if not found or untrusted
+async fn load_colonyrc_with_trust() -> Option<ColonyConfig> {
+    // Discover config files
+    let location = match discover_config() {
+        Ok(Some(loc)) => loc,
+        Ok(None) => return None, // No config found
+        Err(e) => {
+            eprintln!("⚠️  Config discovery error: {}", e);
+            return None;
+        }
+    };
+
+    // Check trust status
+    match location.trust_status {
+        TrustStatus::Trusted { .. } => {
+            println!("📋 Loaded .colonyrc from: {}", location.path.display());
+            Some(location.config)
+        }
+
+        TrustStatus::Untrusted { ref path, ref hash } => {
+            println!();
+            println!("⚠️  Found .colonyrc but directory not trusted");
+            println!("   Path: {}", path.display());
+            println!("   Hash: {}...", &hash[..16]);
+            println!();
+            println!("   This config will modify agent behavior.");
+            print!("   Trust this directory? [y/N/show]: ");
+            io::stdout().flush().ok();
+
+            let mut response = String::new();
+            if io::stdin().read_line(&mut response).is_ok() {
+                match response.trim().to_lowercase().as_str() {
+                    "y" | "yes" => {
+                        // Trust and load
+                        let mut trust_mgr = TrustManager::new().ok()?;
+                        let content = std::fs::read_to_string(path).ok()?;
+
+                        if trust_mgr.trust(path, &content).is_ok() {
+                            println!("   ✓ Trusted and loaded .colonyrc");
+                            Some(location.config)
+                        } else {
+                            eprintln!("   ✗ Failed to save trust");
+                            None
+                        }
+                    }
+                    "show" => {
+                        // Show config content
+                        if let Ok(content) = std::fs::read_to_string(path) {
+                            println!("\n--- .colonyrc content ---");
+                            println!("{}", content);
+                            println!("--- end ---\n");
+                        }
+                        None // Don't load, user can re-run
+                    }
+                    _ => {
+                        println!("   Config not loaded");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+
+        TrustStatus::Changed {
+            ref path,
+            ref current_hash,
+            ref trusted_hash,
+        } => {
+            println!();
+            println!("⚠️  .colonyrc has changed since last trust");
+            println!("   Path: {}", path.display());
+            println!("   Old hash: {}...", &trusted_hash[..16]);
+            println!("   New hash: {}...", &current_hash[..16]);
+            println!();
+            print!("   Re-trust? [y/N/show]: ");
+            io::stdout().flush().ok();
+
+            let mut response = String::new();
+            if io::stdin().read_line(&mut response).is_ok() {
+                match response.trim().to_lowercase().as_str() {
+                    "y" | "yes" => {
+                        let mut trust_mgr = TrustManager::new().ok()?;
+                        let content = std::fs::read_to_string(path).ok()?;
+
+                        if trust_mgr.trust(path, &content).is_ok() {
+                            println!("   ✓ Re-trusted and loaded .colonyrc");
+                            Some(location.config)
+                        } else {
+                            eprintln!("   ✗ Failed to save trust");
+                            None
+                        }
+                    }
+                    "show" => {
+                        if let Ok(content) = std::fs::read_to_string(path) {
+                            println!("\n--- .colonyrc content ---");
+                            println!("{}", content);
+                            println!("--- end ---\n");
+                        }
+                        None
+                    }
+                    _ => {
+                        println!("   Config not loaded");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+
+        TrustStatus::NotFound => None,
+    }
+}
+
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
@@ -45,17 +259,14 @@ async fn main() -> Result<()> {
     println!("POSIX-compliant shell with AI agent integration");
     println!();
 
+    // Load .colonyrc configuration
+    let colony_config = load_colonyrc_with_trust().await;
+
+    // Build agent config from .colonyrc or defaults
+    let agent_config = build_agent_config(&colony_config);
+
     // Initialize agent with auto-detected provider
-    let agent = match Agent::with_config(AgentConfig {
-        system_prompt: "You are Colony Shell's AI assistant. You help users with \
-                        shell commands, system administration, and programming tasks."
-            .to_string(),
-        use_caching: true,
-        max_tokens: 4096,
-        temperature: None,
-    })
-    .await
-    {
+    let agent = match Agent::with_config(agent_config).await {
         Ok(agent) => {
             let (provider, model) = agent.current_provider();
             println!("🤖 Agent mode enabled");
@@ -242,6 +453,54 @@ async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()
     Ok(())
 }
 
+/// Execute a for loop with break/continue support
+async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
+    use colony_expand::Expander;
+
+    // Expand the word list
+    let mut expander = Expander::new(executor.context().clone());
+    let mut values = Vec::new();
+
+    for word in &for_stmt.words {
+        match expander.expand_word(word) {
+            Ok(fields) => {
+                // Fields are the expanded words - just use them directly
+                values.extend(fields);
+            }
+            Err(e) => {
+                eprintln!("expansion error: {}", e);
+                return 1;
+            }
+        }
+    }
+
+    // Iterate over values
+    let mut last_exit = 0;
+    for field in values {
+        // Set loop variable (Field has .text)
+        executor.context_mut().set_var(for_stmt.var.clone(), field.text);
+
+        // Execute body
+        for stmt in &for_stmt.body {
+            // Check for break/continue
+            if let Statement::SimpleCommand(cmd) = stmt {
+                if let Some(name) = cmd.name.as_literal() {
+                    match name {
+                        "break" => return last_exit, // Exit loop immediately
+                        "continue" => break,          // Skip to next iteration
+                        _ => {}
+                    }
+                }
+            }
+
+            // Execute statement
+            last_exit = execute_statement_for_code(stmt, executor).await;
+        }
+    }
+
+    last_exit
+}
+
 /// Helper: Execute any statement and return exit code
 fn execute_statement_for_code<'a>(
     stmt: &'a Statement,
@@ -315,8 +574,11 @@ fn execute_statement_for_code<'a>(
 
             last_exit_code
         }
-        Statement::If(_) | Statement::While(_) | Statement::Until(_) | Statement::For(_) | Statement::Case(_) => {
-            eprintln!("Control flow not yet supported");
+        Statement::For(for_stmt) => {
+            execute_for_loop(for_stmt, executor).await
+        }
+        Statement::If(_) | Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
+            eprintln!("This control flow not yet supported");
             1
         }
         Statement::BraceGroup(_) | Statement::Subshell(_) => {

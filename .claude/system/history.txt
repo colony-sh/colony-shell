@@ -576,3 +576,22 @@
 [2025-12-17 15:28] IMPROVEMENT: +15pp from 55% to 70%
 [2025-12-17 15:29] UNBLOCKED: All 4 list-dependent tests now passing
 [2025-12-17 15:30] ACHIEVEMENT: 70% POSIX compliance validated!
+[2025-12-17 16:40] ENHANCEMENT IDEA: Interactive backgrounding
+[2025-12-17 16:40] REQUEST: Press & during long-running command to background it
+[2025-12-17 16:40] CONTEXT: Like Ctrl-Z but goes to background immediately (no fg needed)
+[2025-12-17 16:40] RELATED: F008 (job control) - would be phase 3 enhancement
+[2025-12-17 16:40] TODO: Add to F008 notes as future enhancement
+[2025-12-17 16:40] CONTINUING: F020 (.colonyrc) implementation
+[2025-12-17 16:00] ATTEMPTED: For loop implementation for control flow tests
+[2025-12-17 16:01] IMPLEMENTED: execute_for_loop() function in main.rs
+[2025-12-17 16:02] IMPLEMENTED: break/continue detection via SimpleCommand name check
+[2025-12-17 16:03] GRAMMAR FIX: Added ";"? between ForKind and Block  
+[2025-12-17 16:04] GRAMMAR FIX: WordList stops at BlockStart keywords (do, then, {)
+[2025-12-17 16:05] BLOCKED: pest grammar doesn't parse POSIX for loops correctly!
+[2025-12-17 16:06] ROOT CAUSE: "done" keyword not recognized in Block context
+[2025-12-17 16:07] VALIDATED: Old deprecated parser handles "for i in a b c; do...done"
+[2025-12-17 16:08] VALIDATED: pest only handles C-style for (;;) loops
+[2025-12-17 16:09] DECISION: Defer POSIX for loops - requires grammar debugging
+[2025-12-17 16:10] ACHIEVEMENT: Test suite validates 70% POSIX compliance
+[2025-12-17 16:11] ACHIEVEMENT: Command lists (;, &&, ||) fully operational
+[2025-12-17 16:12] STATUS: F023 at 90% - infrastructure complete, for loops blocked on grammar

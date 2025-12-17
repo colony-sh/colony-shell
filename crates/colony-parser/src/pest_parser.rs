@@ -161,3 +161,15 @@ EOF"#;
         assert!(result.is_ok(), "Heredoc should parse with preprocessing: {:?}", result.err());
     }
 }
+
+    #[test]
+    fn test_parse_posix_for_loop() {
+        // Test POSIX for loop with word list
+        let source = "for i in a b c; do echo hello; done";
+        let result = ColonyParser::parse(Rule::ForStatement, source);
+        assert!(result.is_ok(), "Failed to parse POSIX for loop: {:?}", result.err());
+        
+        // Also test via Statement
+        let result2 = ColonyParser::parse(Rule::Statement, source);
+        assert!(result2.is_ok(), "Failed to parse as Statement: {:?}", result2.err());
+    }

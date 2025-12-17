@@ -507,9 +507,13 @@
         "2025-12-17: RESULT PHASE 2: 14/20 tests passing (70%) - +15pp improvement!",
         "2025-12-17: VALIDATED: Exact output matching with bash for implemented features",
         "2025-12-17: WORKING: Builtins, variables, pipelines, command lists",
-        "2025-12-17: REMAINING: 6 failures - control flow (3), cmd sub (1), redir (1), path test (1)",
-        "2025-12-17: NEXT: Implement for loops to reach 85%+ pass rate",
-        "2025-12-17: STATUS: 90% complete (infra + lists done, control flow remains)"
+        "2025-12-17: ATTEMPTED: POSIX for loop implementation",
+        "2025-12-17: BLOCKED: pest grammar doesn't parse 'for i in words; do...done'",
+        "2025-12-17: ROOT CAUSE: pest only supports C-style for (;;) loops currently",
+        "2025-12-17: WORKAROUND: Old deprecated parser handles POSIX for, pest needs grammar fix",
+        "2025-12-17: REMAINING: 6 failures - for loops (3), cmd sub (1), redir (1), pwd path (1)",
+        "2025-12-17: NEXT: Fix pest grammar for POSIX for loops OR implement cmd substitution",
+        "2025-12-17: STATUS: 90% complete - test infrastructure fully operational"
       ]
     }
   ]

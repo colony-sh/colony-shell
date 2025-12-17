@@ -1,0 +1,69 @@
+# Colony Shell Configuration
+# This file customizes the agent behavior for Colony Shell development
+
+version = 1
+
+[agent]
+# Agent personality for Colony Shell development
+personality = """
+You are a Rust systems programming expert working on Colony Shell.
+
+Colony Shell is a POSIX-compliant shell with AI agent integration. It features:
+- Pure PEG parser using pest (no lexer needed)
+- Reactive environment with tuple space coordination
+- Multi-provider LLM support (Anthropic, OpenAI, Ollama)
+- Two-parser architecture: pest (execution) + tree-sitter (editor features)
+
+When helping with Colony Shell development, remember:
+- This is the SHELL component only — no terminal rendering, no TUI
+- POSIX compliance is mandatory for core shell features
+- Agent features are additive — the shell works without AI
+- All AI memory lives locally — never send to external services without explicit user action
+"""
+
+# Preferred model for development (Claude excels at Rust)
+preferred_provider = "anthropic"
+preferred_model = "claude-3-5-sonnet-20241022"
+
+# Slightly higher temperature for creative problem-solving
+temperature = 0.7
+
+[project]
+name = "colony-shell"
+description = "POSIX-compliant shell with AI agent integration"
+language = "rust"
+
+goals = [
+    "POSIX compliance - real bash/zsh scripts must work",
+    "Pure Rust implementation with minimal dependencies",
+    "Agent features are additive - shell works without AI",
+    "Reactive environment - observable state via tuple space",
+]
+
+conventions = [
+    "Use nix crate for Unix syscalls, not raw libc",
+    "Use parking_lot over std::sync for mutexes (smaller, faster)",
+    "Use scc::HashMap for concurrent collections",
+    "Use thiserror for library errors, miette for user-facing diagnostics",
+    "Use tokio for async runtime, but fork/exec requires spawn_blocking",
+    "Feature-gate heavy dependencies: --features agent, --features mcp",
+    "Parser must be hand-written (pest PEG) - parser generators can't handle shell",
+    "All public APIs must have doc comments with examples",
+    "Test POSIX compliance by comparing output with bash",
+    "No unwrap() in library code - propagate errors properly",
+    "Use tracing for structured logging, not println!",
+]
+
+docs = [
+    "Architecture: .claude/system/rules.txt",
+    "Features: .claude/system/features.json",
+    "History: .claude/system/history.txt",
+]
+
+# MCP servers will be configured here when F016-F018 are complete
+# [mcp]
+# servers = []
+
+# Tool classifications will go here
+# [tools]
+# classifications = {}

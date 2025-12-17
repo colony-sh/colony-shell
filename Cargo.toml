@@ -6,6 +6,7 @@ members = [
     "crates/colony-exec",
     "crates/colony-protocol",
     "crates/colony-agent",
+    "crates/colony-config",
     "crates/colony-memory",
     "crates/colony-tuple",
     "crates/colony-mcp",
@@ -67,6 +68,7 @@ colony-expand = { path = "crates/colony-expand" }
 colony-exec = { path = "crates/colony-exec" }
 colony-protocol = { path = "crates/colony-protocol" }
 colony-agent = { path = "crates/colony-agent" }
+colony-config = { path = "crates/colony-config" }
 colony-memory = { path = "crates/colony-memory" }
 colony-tuple = { path = "crates/colony-tuple" }
 colony-mcp = { path = "crates/colony-mcp" }
