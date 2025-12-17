@@ -76,8 +76,10 @@ pub fn execute_builtin(
     tuple_space: &TupleSpace,
     channels: &mut ChannelManager,
 ) -> Option<Result<BuiltinResult>> {
-    // Expand command name
-    let mut expander = Expander::new(context.clone());
+    // Expand command name (with command substitution support)
+    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+        crate::execute_and_capture(stmt, ctx)
+    });
     let name_fields = match expander.expand_word(&cmd.name) {
         Ok(fields) => fields,
         Err(e) => return Some(Err(e.into())),

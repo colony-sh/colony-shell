@@ -9,6 +9,7 @@
 
 mod builtins;
 mod command;
+mod command_sub;
 mod error;
 mod jobs;
 mod path;
@@ -18,6 +19,7 @@ mod redirect;
 
 pub use builtins::{execute_builtin, is_builtin, BuiltinResult};
 pub use command::execute_command;
+pub use command_sub::execute_and_capture;
 pub use error::{ExecutionError, Result};
 pub use jobs::{init_job_control, Job, JobId, JobStatus, JobTable};
 pub use path::resolve_command;

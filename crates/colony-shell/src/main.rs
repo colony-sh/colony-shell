@@ -561,8 +561,10 @@ async fn execute_if_with_control(if_stmt: &colony_parser::IfStatement, executor:
 async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
     use colony_expand::Expander;
 
-    // Expand the word list
-    let mut expander = Expander::new(executor.context().clone());
+    // Expand the word list (with command substitution support)
+    let mut expander = Expander::with_executor(executor.context().clone(), |stmt, ctx| {
+        colony_exec::execute_and_capture(stmt, ctx)
+    });
     let mut values = Vec::new();
 
     for word in &for_stmt.words {
@@ -660,8 +662,10 @@ async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &m
 async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
     use colony_expand::Expander;
 
-    // Expand the word list
-    let mut expander = Expander::new(executor.context().clone());
+    // Expand the word list (with command substitution support)
+    let mut expander = Expander::with_executor(executor.context().clone(), |stmt, ctx| {
+        colony_exec::execute_and_capture(stmt, ctx)
+    });
     let mut values = Vec::new();
 
     for word in &for_stmt.words {

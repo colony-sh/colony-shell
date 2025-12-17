@@ -137,8 +137,10 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         }
     };
 
-    // Expand and resolve command
-    let mut expander = Expander::new(context.clone());
+    // Expand and resolve command (with command substitution support)
+    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+        crate::execute_and_capture(stmt, ctx)
+    });
 
     let name_fields = match expander.expand_word(&simple_cmd.name) {
         Ok(fields) if !fields.is_empty() => fields,

@@ -74,8 +74,10 @@ fn apply_file_redirect(
     context: &mut ExpansionContext,
     opened_fds: &mut Vec<RawFd>,
 ) -> Result<()> {
-    // Expand the filename
-    let mut expander = Expander::new(context.clone());
+    // Expand the filename (with command substitution support)
+    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+        crate::execute_and_capture(stmt, ctx)
+    });
     let fields = expander.expand_word(word)?;
 
     if fields.is_empty() {

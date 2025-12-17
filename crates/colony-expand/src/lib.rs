@@ -79,8 +79,9 @@ impl Field {
 
 /// Command executor callback
 ///
-/// Takes a statement AST and returns its stdout output
-pub type CommandExecutor = Box<dyn Fn(&colony_parser::Statement) -> std::result::Result<String, String>>;
+/// Takes a statement AST and expansion context, returns stdout output
+pub type CommandExecutor =
+    Box<dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>>;
 
 /// Main expansion orchestrator
 pub struct Expander {
@@ -101,7 +102,8 @@ impl Expander {
     /// Create expander with command executor for command substitution
     pub fn with_executor<F>(context: ExpansionContext, executor: F) -> Self
     where
-        F: Fn(&colony_parser::Statement) -> std::result::Result<String, String> + 'static,
+        F: Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>
+            + 'static,
     {
         Self {
             context,
@@ -177,7 +179,7 @@ impl Expander {
             WordPart::CommandSub(cmd) => {
                 // Execute command substitution if executor is available
                 if let Some(ref executor) = self.command_executor {
-                    match executor(cmd) {
+                    match executor(cmd, &mut self.context) {
                         Ok(output) => {
                             // POSIX: Remove trailing newlines from command substitution
                             let trimmed = output.trim_end_matches('\n');
