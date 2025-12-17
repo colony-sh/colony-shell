@@ -1055,6 +1055,634 @@ set completion.fuzzy on
 set completion.max 20
 ```
 
+## 13.7 Prompt System
+
+Colony uses a **reactive prompt architecture** where the shell generates prompt state and the terminal renders it. This separation enables rich, contextual prompts that update in response to environment changes without blocking shell execution.
+
+### 13.7.1 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Prompt Architecture                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────┐          ┌─────────────────────────────────┐  │
+│  │     Colony Shell        │          │       Colony Terminal           │  │
+│  │                         │          │                                 │  │
+│  │  ┌─────────────────┐   │  OSC     │   ┌─────────────────────────┐   │  │
+│  │  │  PromptState    │───┼─────────▶│   │   Prompt Renderer       │   │  │
+│  │  │  - cwd          │   │  2337    │   │   - Format/theme        │   │  │
+│  │  │  - git_info     │   │ Prompt=  │   │   - Layout              │   │  │
+│  │  │  - user/host    │   │          │   │   - Colors/icons        │   │  │
+│  │  │  - exit_status  │   │          │   └─────────────────────────┘   │  │
+│  │  │  - context[]    │   │          │                                 │  │
+│  │  └─────────────────┘   │          │           ▼                     │  │
+│  │          ▲              │          │   ┌─────────────────────────┐   │  │
+│  │          │              │          │   │  ~/src/colony (main) $  │   │  │
+│  │  ┌───────┴───────┐     │          │   └─────────────────────────┘   │  │
+│  │  │  Tuple Space  │     │          │                                 │  │
+│  │  │  ("prompt",   │     │          │                                 │  │
+│  │  │   field,      │     │          │                                 │  │
+│  │  │   value)      │     │          │                                 │  │
+│  │  └───────────────┘     │          │                                 │  │
+│  └─────────────────────────┘          └─────────────────────────────────┘  │
+│                                                                             │
+│  Reactive Flow: cd → tuple out → PromptState update → OSC emit → render    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 13.7.2 Prompt State
+
+```rust
+// crates/colony-shell/src/prompt.rs
+
+use std::path::PathBuf;
+use serde::{Serialize, Deserialize};
+
+/// Complete prompt state sent to terminal
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PromptState {
+    /// Current working directory
+    pub cwd: PathBuf,
+    /// Shortened display path (with ~ for home)
+    pub display_path: String,
+    /// Username
+    pub user: String,
+    /// Hostname
+    pub host: String,
+    /// Last command exit status
+    pub exit_status: i32,
+    /// Git repository information (if in repo)
+    pub git: Option<GitInfo>,
+    /// Active agent information
+    pub agent: Option<AgentInfo>,
+    /// Environment context markers
+    pub context: Vec<ContextMarker>,
+    /// Shell nesting level
+    pub shlvl: u32,
+    /// Whether shell is running in a job
+    pub in_job: bool,
+    /// Custom segments from extensions
+    pub custom: Vec<PromptSegment>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitInfo {
+    /// Current branch name
+    pub branch: String,
+    /// Detached HEAD commit (if detached)
+    pub commit: Option<String>,
+    /// Working tree status
+    pub status: GitStatus,
+    /// Number of commits ahead of upstream
+    pub ahead: u32,
+    /// Number of commits behind upstream
+    pub behind: u32,
+    /// Current operation (rebase, merge, etc.)
+    pub operation: Option<GitOperation>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitStatus {
+    pub staged: u32,
+    pub modified: u32,
+    pub untracked: u32,
+    pub conflicted: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GitOperation {
+    Rebase { current: u32, total: u32 },
+    Merge,
+    CherryPick,
+    Bisect,
+    Revert,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AgentInfo {
+    /// Agent name
+    pub name: String,
+    /// Current state
+    pub state: AgentState,
+    /// Brief status message
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum AgentState {
+    Idle,
+    Thinking,
+    Executing,
+    WaitingApproval,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContextMarker {
+    /// Marker type (env, project, mode)
+    pub kind: ContextKind,
+    /// Display label
+    pub label: String,
+    /// Optional color hint
+    pub color: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ContextKind {
+    /// Environment (dev, staging, prod)
+    Environment,
+    /// Project context loaded
+    Project,
+    /// Special mode (debug, trace)
+    Mode,
+    /// Virtual environment (python, nix)
+    VirtualEnv,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PromptSegment {
+    /// Segment identifier
+    pub id: String,
+    /// Display content
+    pub content: String,
+    /// Position hint
+    pub position: SegmentPosition,
+    /// Optional icon
+    pub icon: Option<String>,
+    /// Optional color
+    pub color: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum SegmentPosition {
+    Left,
+    Right,
+    BeforeCwd,
+    AfterCwd,
+}
+```
+
+### 13.7.3 Prompt Manager
+
+```rust
+// crates/colony-shell/src/prompt.rs
+
+use crate::tuple::TupleSpace;
+use std::sync::Arc;
+
+/// Manages prompt state and reactive updates
+pub struct PromptManager {
+    state: PromptState,
+    tuple_space: Arc<TupleSpace>,
+    config: PromptConfig,
+    git_cache: Option<(PathBuf, GitInfo, std::time::Instant)>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PromptConfig {
+    /// Enable git information
+    pub git_enabled: bool,
+    /// Git info cache TTL in milliseconds
+    pub git_cache_ms: u64,
+    /// Path display style
+    pub path_style: PathStyle,
+    /// Maximum path components to show
+    pub max_path_components: usize,
+    /// Enable agent status in prompt
+    pub show_agent: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PathStyle {
+    /// Full path
+    Full,
+    /// Replace home with ~
+    Tilde,
+    /// Shorten intermediate directories
+    Shortened,
+    /// Only basename
+    Basename,
+}
+
+impl Default for PromptConfig {
+    fn default() -> Self {
+        Self {
+            git_enabled: true,
+            git_cache_ms: 500,
+            path_style: PathStyle::Tilde,
+            max_path_components: 4,
+            show_agent: true,
+        }
+    }
+}
+
+impl PromptManager {
+    pub fn new(tuple_space: Arc<TupleSpace>, config: PromptConfig) -> Self {
+        let state = PromptState {
+            cwd: std::env::current_dir().unwrap_or_default(),
+            display_path: String::new(),
+            user: std::env::var("USER").unwrap_or_else(|_| "user".to_string()),
+            host: gethostname::gethostname().to_string_lossy().to_string(),
+            exit_status: 0,
+            git: None,
+            agent: None,
+            context: Vec::new(),
+            shlvl: std::env::var("SHLVL").ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1),
+            in_job: false,
+            custom: Vec::new(),
+        };
+
+        let mut manager = Self {
+            state,
+            tuple_space,
+            config,
+            git_cache: None,
+        };
+        manager.refresh_all();
+        manager
+    }
+
+    /// Subscribe to state changes via tuple space
+    pub fn subscribe(&self) {
+        // Spawn listener for directory changes
+        let ts = self.tuple_space.clone();
+        tokio::spawn(async move {
+            loop {
+                // Block waiting for dir_change tuple
+                if let Some(tuple) = ts.rd(&["dir_change".into(), Value::Wildcard]).await {
+                    // Trigger prompt refresh
+                    ts.out(Tuple::from(vec![
+                        "prompt_refresh".into(),
+                        "cwd".into(),
+                    ]));
+                }
+            }
+        });
+
+        // Spawn listener for env changes
+        let ts = self.tuple_space.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Some(_) = ts.rd(&["env_change".into(), Value::Wildcard, Value::Wildcard, Value::Wildcard]).await {
+                    ts.out(Tuple::from(vec![
+                        "prompt_refresh".into(),
+                        "env".into(),
+                    ]));
+                }
+            }
+        });
+    }
+
+    /// Refresh all prompt state
+    pub fn refresh_all(&mut self) {
+        self.refresh_cwd();
+        self.refresh_git();
+    }
+
+    /// Refresh current directory state
+    pub fn refresh_cwd(&mut self) {
+        if let Ok(cwd) = std::env::current_dir() {
+            self.state.cwd = cwd.clone();
+            self.state.display_path = self.format_path(&cwd);
+        }
+    }
+
+    /// Refresh git information
+    pub fn refresh_git(&mut self) {
+        if !self.config.git_enabled {
+            self.state.git = None;
+            return;
+        }
+
+        // Check cache
+        if let Some((ref cached_path, ref info, instant)) = self.git_cache {
+            if cached_path == &self.state.cwd
+                && instant.elapsed().as_millis() < self.config.git_cache_ms as u128
+            {
+                self.state.git = Some(info.clone());
+                return;
+            }
+        }
+
+        // Fetch git info (this is fast with libgit2)
+        self.state.git = self.get_git_info();
+
+        // Update cache
+        if let Some(ref info) = self.state.git {
+            self.git_cache = Some((
+                self.state.cwd.clone(),
+                info.clone(),
+                std::time::Instant::now(),
+            ));
+        }
+    }
+
+    fn get_git_info(&self) -> Option<GitInfo> {
+        let repo = git2::Repository::discover(&self.state.cwd).ok()?;
+
+        let head = repo.head().ok()?;
+        let branch = if head.is_branch() {
+            head.shorthand()?.to_string()
+        } else {
+            // Detached HEAD
+            head.target()?.to_string()[..7].to_string()
+        };
+
+        let mut status = GitStatus {
+            staged: 0,
+            modified: 0,
+            untracked: 0,
+            conflicted: 0,
+        };
+
+        if let Ok(statuses) = repo.statuses(None) {
+            for entry in statuses.iter() {
+                let s = entry.status();
+                if s.is_index_new() || s.is_index_modified() || s.is_index_deleted() {
+                    status.staged += 1;
+                }
+                if s.is_wt_modified() || s.is_wt_deleted() {
+                    status.modified += 1;
+                }
+                if s.is_wt_new() {
+                    status.untracked += 1;
+                }
+                if s.is_conflicted() {
+                    status.conflicted += 1;
+                }
+            }
+        }
+
+        // Check for ongoing operation
+        let operation = if repo.state() == git2::RepositoryState::Rebase
+            || repo.state() == git2::RepositoryState::RebaseInteractive
+        {
+            Some(GitOperation::Rebase { current: 0, total: 0 })
+        } else if repo.state() == git2::RepositoryState::Merge {
+            Some(GitOperation::Merge)
+        } else {
+            None
+        };
+
+        Some(GitInfo {
+            branch,
+            commit: None,
+            status,
+            ahead: 0,  // TODO: Calculate from tracking branch
+            behind: 0,
+            operation,
+        })
+    }
+
+    fn format_path(&self, path: &PathBuf) -> String {
+        let home = dirs::home_dir();
+
+        match self.config.path_style {
+            PathStyle::Full => path.display().to_string(),
+
+            PathStyle::Tilde => {
+                if let Some(ref home) = home {
+                    if let Ok(stripped) = path.strip_prefix(home) {
+                        return format!("~/{}", stripped.display());
+                    }
+                }
+                path.display().to_string()
+            }
+
+            PathStyle::Shortened => {
+                let components: Vec<_> = path.components().collect();
+                if components.len() <= self.config.max_path_components {
+                    return self.format_path_tilde(path, &home);
+                }
+
+                // Shorten intermediate components
+                let mut parts = Vec::new();
+                for (i, comp) in components.iter().enumerate() {
+                    if i == 0 || i >= components.len() - 2 {
+                        parts.push(comp.as_os_str().to_string_lossy().to_string());
+                    } else {
+                        // First char only
+                        let s = comp.as_os_str().to_string_lossy();
+                        parts.push(s.chars().next().unwrap_or('.').to_string());
+                    }
+                }
+                parts.join("/")
+            }
+
+            PathStyle::Basename => {
+                path.file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "/".to_string())
+            }
+        }
+    }
+
+    fn format_path_tilde(&self, path: &PathBuf, home: &Option<PathBuf>) -> String {
+        if let Some(ref home) = home {
+            if let Ok(stripped) = path.strip_prefix(home) {
+                return format!("~/{}", stripped.display());
+            }
+        }
+        path.display().to_string()
+    }
+
+    /// Update exit status after command execution
+    pub fn set_exit_status(&mut self, status: i32) {
+        self.state.exit_status = status;
+    }
+
+    /// Update agent state
+    pub fn set_agent(&mut self, agent: Option<AgentInfo>) {
+        self.state.agent = agent;
+    }
+
+    /// Add context marker
+    pub fn add_context(&mut self, marker: ContextMarker) {
+        self.state.context.push(marker);
+    }
+
+    /// Clear context markers
+    pub fn clear_context(&mut self) {
+        self.state.context.clear();
+    }
+
+    /// Get current state for emission
+    pub fn state(&self) -> &PromptState {
+        &self.state
+    }
+
+    /// Emit prompt state via OSC 2337
+    pub fn emit<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let payload = serde_json::to_string(&self.state)?;
+        crate::osc::emit(writer, "Prompt=state", &payload)
+    }
+}
+```
+
+### 13.7.4 OSC 2337 Prompt Commands
+
+| Command | Direction | Description |
+|---------|-----------|-------------|
+| `Prompt=state` | Shell→Terminal | Full prompt state |
+| `Prompt=update` | Shell→Terminal | Partial state update |
+| `Prompt=ready` | Shell→Terminal | Shell ready for input |
+| `Prompt=busy` | Shell→Terminal | Shell executing command |
+
+**Prompt=state payload:**
+```json
+{
+  "cwd": "/home/user/src/colony",
+  "display_path": "~/src/colony",
+  "user": "user",
+  "host": "hostname",
+  "exit_status": 0,
+  "git": {
+    "branch": "main",
+    "status": { "staged": 2, "modified": 1, "untracked": 0, "conflicted": 0 },
+    "ahead": 1,
+    "behind": 0,
+    "operation": null
+  },
+  "agent": {
+    "name": "assistant",
+    "state": "Idle",
+    "message": null
+  },
+  "context": [
+    { "kind": "Project", "label": "colony-shell", "color": "blue" }
+  ],
+  "shlvl": 1,
+  "in_job": false,
+  "custom": []
+}
+```
+
+**Prompt=update payload (partial):**
+```json
+{
+  "exit_status": 1,
+  "git": { "status": { "modified": 2 } }
+}
+```
+
+### 13.7.5 Terminal Rendering
+
+The terminal is responsible for rendering the prompt based on received state. This allows:
+- User-customizable themes without shell changes
+- Rich rendering (colors, icons, Unicode)
+- Responsive layouts (right-aligned segments, multi-line)
+
+Example rendering configurations (terminal-side):
+
+```toml
+# colony-terminal prompt theme
+[prompt]
+style = "powerline"  # or "minimal", "classic", "starship"
+
+[prompt.left]
+segments = ["context", "path", "git"]
+
+[prompt.right]
+segments = ["exit_status", "agent", "time"]
+
+[prompt.icons]
+git_branch = ""
+git_modified = "✱"
+git_staged = "●"
+folder = ""
+home = ""
+
+[prompt.colors]
+path = "blue"
+git_clean = "green"
+git_dirty = "yellow"
+error = "red"
+```
+
+### 13.7.6 Fallback Prompt
+
+When running in a non-Colony terminal, the shell emits a simple text prompt:
+
+```rust
+impl PromptManager {
+    /// Generate fallback text prompt for non-Colony terminals
+    pub fn fallback_prompt(&self) -> String {
+        let mut prompt = String::new();
+
+        // Exit status indicator
+        if self.state.exit_status != 0 {
+            prompt.push_str(&format!("[{}] ", self.state.exit_status));
+        }
+
+        // Path
+        prompt.push_str(&self.state.display_path);
+
+        // Git branch
+        if let Some(ref git) = self.state.git {
+            prompt.push_str(&format!(" ({})", git.branch));
+            if git.status.modified > 0 || git.status.staged > 0 {
+                prompt.push('*');
+            }
+        }
+
+        // Prompt character
+        prompt.push_str(" $ ");
+
+        prompt
+    }
+
+    /// Check if running in Colony terminal
+    pub fn is_colony_terminal(&self) -> bool {
+        std::env::var("COLONY_TERMINAL").is_ok()
+    }
+}
+```
+
+### 13.7.7 Reactive Updates via Tuple Space
+
+The prompt subscribes to shell state changes through the tuple space:
+
+```rust
+// Emit directory change (from cd builtin)
+tuple_space.out(Tuple::from(vec![
+    "dir_change".into(),
+    old_path.to_string_lossy().into(),
+    new_path.to_string_lossy().into(),
+]));
+
+// Emit environment change (from export/unset)
+tuple_space.out(Tuple::from(vec![
+    "env_change".into(),
+    var_name.into(),
+    old_value.unwrap_or_default().into(),
+    new_value.into(),
+]));
+
+// Emit command completion
+tuple_space.out(Tuple::from(vec![
+    "cmd_complete".into(),
+    exit_status.into(),
+    duration_ms.into(),
+]));
+```
+
+### 13.7.8 Configuration
+
+```colony
+# Prompt configuration
+set prompt.git on
+set prompt.git.cache_ms 500
+set prompt.path tilde        # full, tilde, shortened, basename
+set prompt.path.max 4
+set prompt.agent on
+
+# Context markers (loaded from .colonyrc)
+context add --type project --label "colony-shell"
+context add --type env --label "dev" --color green
+```
+
 ---
 
 *Continue to Part 14: Builtins Reference*

@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 # Colony Shell Spec Audit Tool
-# Compares specification against implementation using Claude
+# Compares specification against implementation using Claude via AWS Bedrock
 #
 # Usage:
 #   ./scripts/audit-spec.sh [part-number]     # Audit specific part
 #   ./scripts/audit-spec.sh all               # Audit all parts
 #   ./scripts/audit-spec.sh --generate-prompt # Generate prompt file only
 #
-# Requires: ANTHROPIC_API_KEY environment variable (or use with Claude Code)
+# Requirements:
+#   - AWS CLI installed (https://aws.amazon.com/cli/)
+#   - AWS credentials configured (via 'aws configure' or environment variables)
+#   - Access to AWS Bedrock with Claude models enabled
+#
+# Environment variables:
+#   AWS_REGION - AWS region for Bedrock (defaults to us-west-2)
+#   AWS_PROFILE - AWS profile to use (optional)
+#   BEDROCK_MODEL_ID - Model to use (defaults to anthropic.claude-3-5-sonnet-20241022-v2:0)
 
 set -euo pipefail
 
@@ -135,37 +143,70 @@ generate_audit_prompt() {
     echo "Compare the specification above against the implementation and provide an alignment report."
 }
 
-run_audit_with_api() {
+run_audit_with_bedrock() {
     local prompt_file="$1"
     local output_file="$2"
+    local aws_region="${AWS_REGION:-us-west-2}"
+    local model_id="${BEDROCK_MODEL_ID:-anthropic.claude-3-5-sonnet-20241022-v2:0}"
 
-    if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-        echo "Warning: ANTHROPIC_API_KEY not set. Generating prompt file only." >&2
-        echo "You can run this prompt through Claude Code or the API manually." >&2
+    # Check if AWS CLI is available
+    if ! command -v aws &> /dev/null; then
+        echo "Error: AWS CLI not found. Please install it: https://aws.amazon.com/cli/" >&2
+        echo "Generating prompt file only." >&2
         return 1
     fi
 
-    # Call Anthropic API
-    curl -s https://api.anthropic.com/v1/messages \
-        -H "Content-Type: application/json" \
-        -H "x-api-key: $ANTHROPIC_API_KEY" \
-        -H "anthropic-version: 2023-06-01" \
-        -d @- <<EOF > "$output_file"
-{
-    "model": "claude-sonnet-4-20250514",
-    "max_tokens": 8192,
-    "system": $(echo "$SYSTEM_PROMPT" | jq -Rs .),
-    "messages": [
-        {
-            "role": "user",
-            "content": $(cat "$prompt_file" | jq -Rs .)
-        }
-    ]
-}
-EOF
+    # Check if AWS credentials are configured
+    if ! aws sts get-caller-identity &> /dev/null; then
+        echo "Warning: AWS credentials not configured or invalid." >&2
+        echo "Run 'aws configure' or set AWS environment variables." >&2
+        echo "Generating prompt file only." >&2
+        return 1
+    fi
 
-    # Extract response text
-    jq -r '.content[0].text // .error.message // "Unknown error"' "$output_file"
+    echo "Using AWS Bedrock in region: $aws_region" >&2
+    echo "Model: $model_id" >&2
+
+    # Create temporary file for request body
+    local request_body_file
+    request_body_file=$(mktemp)
+    trap "rm -f '$request_body_file'" EXIT
+
+    # Prepare the request payload for Bedrock and write to temp file
+    jq -n \
+        --arg system "$SYSTEM_PROMPT" \
+        --arg content "$(cat "$prompt_file")" \
+        '{
+            anthropic_version: "bedrock-2023-05-31",
+            max_tokens: 8192,
+            system: $system,
+            messages: [
+                {
+                    role: "user",
+                    content: $content
+                }
+            ]
+        }' > "$request_body_file"
+
+    # Call AWS Bedrock API (fileb:// prefix for binary/base64 encoding)
+    local aws_output
+    aws_output=$(aws bedrock-runtime invoke-model --model-id "$model_id" --region "$aws_region" --body "fileb://$request_body_file" "$output_file" 2>&1)
+    local aws_exit=$?
+
+    # Filter out the contentType JSON output that AWS CLI prints
+    if [[ "$aws_output" != *"{"* ]]; then
+        echo "$aws_output" >&2
+    fi
+
+    if [[ $aws_exit -eq 0 && -f "$output_file" ]]; then
+        # Extract response text from Bedrock response format
+        jq -r '.content[0].text // .message // "Unknown error"' "$output_file"
+        return 0
+    else
+        echo "Error: Failed to invoke Bedrock model (exit code: $aws_exit)" >&2
+        [[ -n "$aws_output" ]] && echo "$aws_output" >&2
+        return 1
+    fi
 }
 
 audit_part() {
@@ -183,8 +224,9 @@ audit_part() {
     echo "Prompt saved to: $prompt_file"
     echo "Prompt size: $(wc -c < "$prompt_file") bytes"
 
-    if run_audit_with_api "$prompt_file" "$result_file"; then
+    if run_audit_with_bedrock "$prompt_file" "$result_file" > "$report_file"; then
         echo "Audit complete. Report saved to: $report_file"
+        echo "Raw JSON response saved to: $result_file"
     else
         echo ""
         echo "To run this audit manually:"
@@ -227,10 +269,22 @@ case "${1:-}" in
     "--help"|"-h"|"")
         echo "Colony Shell Spec Audit Tool"
         echo ""
+        echo "Uses Claude via AWS Bedrock to compare specification against implementation"
+        echo ""
         echo "Usage:"
         echo "  $0 <part>              Audit specific part (e.g., 5-execution)"
         echo "  $0 all                 Audit all spec parts"
         echo "  $0 --generate-prompt <part>  Output prompt to stdout"
+        echo ""
+        echo "Requirements:"
+        echo "  - AWS CLI installed"
+        echo "  - AWS credentials configured ('aws configure')"
+        echo "  - AWS Bedrock access with Claude models"
+        echo ""
+        echo "Environment:"
+        echo "  AWS_REGION - Bedrock region (default: us-west-2)"
+        echo "  AWS_PROFILE - AWS profile to use"
+        echo "  BEDROCK_MODEL_ID - Model ID (default: claude-3-5-sonnet-20241022-v2:0)"
         echo ""
         echo "Available parts:"
         for spec_file in "$SPEC_DIR"/*.md; do

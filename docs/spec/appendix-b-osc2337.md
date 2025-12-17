@@ -84,6 +84,17 @@ Output metadata for enhanced display:
 | `Meta=fold` | Shell→Terminal | Foldable section |
 | `Meta=highlight` | Shell→Terminal | Syntax highlighting hint |
 
+### B.2.6 Prompt Commands
+
+Commands for reactive prompt updates:
+
+| Command | Direction | Description |
+|---------|-----------|-------------|
+| `Prompt=state` | Shell→Terminal | Full prompt state object |
+| `Prompt=update` | Shell→Terminal | Partial state update |
+| `Prompt=ready` | Shell→Terminal | Shell ready for input |
+| `Prompt=busy` | Shell→Terminal | Shell executing command |
+
 ## B.3 Payload Specifications
 
 ### B.3.1 Agent=status
@@ -237,6 +248,90 @@ Response format:
   "label": "Stack trace (23 lines)",
   "collapsed": true,
   "start": true
+}
+```
+
+### B.3.11 Prompt=state
+
+Full prompt state sent after directory change, command completion, or agent state change:
+
+```json
+{
+  "cwd": "/home/user/src/colony",
+  "display_path": "~/src/colony",
+  "user": "user",
+  "host": "hostname",
+  "exit_status": 0,
+  "git": {
+    "branch": "main",
+    "commit": null,
+    "status": {
+      "staged": 2,
+      "modified": 1,
+      "untracked": 3,
+      "conflicted": 0
+    },
+    "ahead": 1,
+    "behind": 0,
+    "operation": null
+  },
+  "agent": {
+    "name": "assistant",
+    "state": "Idle",
+    "message": null
+  },
+  "context": [
+    {
+      "kind": "Project",
+      "label": "colony-shell",
+      "color": "blue"
+    },
+    {
+      "kind": "Environment",
+      "label": "dev",
+      "color": "green"
+    }
+  ],
+  "shlvl": 1,
+  "in_job": false,
+  "custom": []
+}
+```
+
+### B.3.12 Prompt=update
+
+Partial update for efficiency (only changed fields):
+
+```json
+{
+  "exit_status": 1,
+  "git": {
+    "status": {
+      "modified": 2
+    }
+  }
+}
+```
+
+### B.3.13 Prompt=ready
+
+Signals shell is ready for user input:
+
+```json
+{
+  "timestamp": 1702857600000,
+  "last_duration_ms": 1234
+}
+```
+
+### B.3.14 Prompt=busy
+
+Signals shell is executing a command:
+
+```json
+{
+  "command": "cargo build",
+  "started_at": 1702857600000
 }
 ```
 
