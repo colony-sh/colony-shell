@@ -1,6 +1,8 @@
 //! Colony Shell - POSIX-compliant shell for AI-native terminal
 
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
+use colony_exec::Executor;
+use colony_expand::ExpansionContext;
 use colony_parser::pest_api::parse_statement;
 use colony_tree_sitter::parse;
 use miette::Result;
@@ -44,10 +46,17 @@ async fn main() -> Result<()> {
         println!("⚠️  Agent mode disabled (set ANTHROPIC_API_KEY to enable)");
     }
 
-    println!("   Type 'exit' to quit\n");
+    println!("   Type 'exit' to quit");
+
+    // Initialize executor with reactive tuple space
+    let context = ExpansionContext::new();
+    let executor = Executor::new(context);
+
+    println!("🔄 Reactive environment enabled");
+    println!("   State changes emit tuples to tuple space\n");
 
     // Start REPL
-    run_repl(agent).await
+    run_repl(agent, executor).await
 }
 
 /// Rustyline helper with tree-sitter validator
@@ -126,7 +135,7 @@ impl Validator for ColonyHelper {
 
 impl Helper for ColonyHelper {}
 
-async fn run_repl(mut agent: Option<Agent>) -> Result<()> {
+async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()> {
     let helper = ColonyHelper::new();
     let mut rl = Editor::new()
         .map_err(|e| miette::miette!("failed to create readline: {}", e))?;
@@ -171,8 +180,8 @@ async fn run_repl(mut agent: Option<Agent>) -> Result<()> {
                     }
                 }
 
-                // Try parsing as shell command
-                match execute_shell_command(line) {
+                // Try parsing and executing shell command
+                match execute_shell_command(line, &mut executor).await {
                     Ok(()) => {}
                     Err(e) => {
                         eprintln!("Error: {}", e);
@@ -200,13 +209,71 @@ async fn run_repl(mut agent: Option<Agent>) -> Result<()> {
     Ok(())
 }
 
-fn execute_shell_command(line: &str) -> Result<()> {
+async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {
     // Parse with pest (pure PEG - no lexer needed!)
-    let _stmt = parse_statement(line)
+    let stmt = parse_statement(line)
         .map_err(|e| miette::miette!("parse error: {}", e))?;
 
-    // TODO: Execute the parsed command with colony-exec
-    println!("(Shell execution not yet implemented)");
+    // Execute the parsed command
+    use colony_parser::Statement;
+    match stmt {
+        Statement::SimpleCommand(cmd) => {
+            let status = executor.execute_simple_command(&cmd).await
+                .map_err(|e| miette::miette!("execution error: {}", e))?;
+
+            if !status.is_success() {
+                eprintln!("Command exited with code {}", status.code());
+            }
+        }
+        Statement::Pipeline(pipeline) => {
+            let status = executor.execute_pipeline(&pipeline).await
+                .map_err(|e| miette::miette!("execution error: {}", e))?;
+
+            if !status.is_success() {
+                eprintln!("Pipeline exited with code {}", status.code());
+            }
+        }
+        Statement::List(list) => {
+            // List with single element is just a simple command
+            if list.rest.is_empty() {
+                match *list.first {
+                    Statement::SimpleCommand(cmd) => {
+                        let status = executor.execute_simple_command(&cmd).await
+                            .map_err(|e| miette::miette!("execution error: {}", e))?;
+
+                        if !status.is_success() {
+                            eprintln!("Command exited with code {}", status.code());
+                        }
+                    }
+                    Statement::Pipeline(pipeline) => {
+                        let status = executor.execute_pipeline(&pipeline).await
+                            .map_err(|e| miette::miette!("execution error: {}", e))?;
+
+                        if !status.is_success() {
+                            eprintln!("Pipeline exited with code {}", status.code());
+                        }
+                    }
+                    _ => {
+                        println!("(This command type not yet supported)");
+                    }
+                }
+            } else {
+                println!("(Command lists with && || not yet supported)");
+            }
+        }
+        Statement::If(_) | Statement::While(_) | Statement::Until(_) | Statement::For(_) | Statement::Case(_) => {
+            println!("(Control flow not yet supported)");
+        }
+        Statement::BraceGroup(_) | Statement::Subshell(_) => {
+            println!("(Compound commands not yet supported)");
+        }
+        Statement::VarDecl(_) | Statement::FunctionDef(_) | Statement::ProcDef(_) | Statement::Return(_) => {
+            println!("(Declarations not yet supported)");
+        }
+        Statement::Empty => {
+            // Empty statement - do nothing
+        }
+    }
 
     Ok(())
 }
