@@ -25,7 +25,11 @@ pub use jobs::{init_job_control, Job, JobId, JobStatus, JobTable};
 pub use path::resolve_command;
 pub use pipeline::execute_pipeline;
 pub use process::{ExitStatus, ProcessHandle};
-pub use redirect::apply_redirects;
+pub use redirect::{
+    apply_redirects, apply_channel_redirects_in_child, prepare_channel_redirects,
+    process_channel_writes, ChannelPipe, is_channel_fd,
+    STDCONTEXT, STDLLM, STDTOOL, STDTRACE,
+};
 
 use colony_channels::ChannelManager;
 use colony_expand::ExpansionContext;
@@ -75,6 +79,8 @@ impl Executor {
     /// Execute a simple command
     ///
     /// Checks for builtins first, then falls back to external command execution.
+    ///
+    /// **F024 Phase 2:** Processes channel writes from child processes via tuple space.
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
         // Try builtin first (now with reactive tuple space!)
         tracing::debug!("Checking if command is builtin: {:?}", cmd.name);
@@ -93,8 +99,123 @@ impl Executor {
         }
 
         tracing::debug!("Not a builtin, executing as external command");
-        // Not a builtin - execute as external command
-        execute_command(cmd, &mut self.context).await
+
+        // Execute external command with channel redirect support
+        let status = self.execute_external_command_with_channels(cmd).await?;
+
+        // F024 Phase 2: Sync channel writes from tuple space to channels
+        self.sync_channels_from_tuple_space();
+
+        Ok(status)
+    }
+
+    /// Execute external command and process channel writes
+    async fn execute_external_command_with_channels(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
+        // Execute command (this returns ProcessHandle with channel_pipes)
+        let cmd_clone = cmd.clone();
+        let mut context_clone = self.context.clone();
+        let tuple_space_clone = self.tuple_space.clone();
+
+        tokio::task::spawn_blocking(move || {
+            // Execute command using existing execute_command_blocking from command.rs
+            // But we need to intercept the ProcessHandle...
+            // Actually, let me inline the logic here to capture channel_pipes
+
+            use crate::path::resolve_command;
+            use crate::process::spawn_process;
+            use colony_expand::Expander;
+
+            // Create expander with command substitution support
+            let mut expander = Expander::with_executor(context_clone.clone(), |stmt, ctx| {
+                crate::execute_and_capture(stmt, ctx)
+            });
+
+            // Expand command name
+            let name_fields = expander.expand_word(&cmd_clone.name)?;
+            if name_fields.is_empty() {
+                return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
+            }
+            let command_name = &name_fields[0].text;
+
+            // Expand arguments
+            let mut args = vec![command_name.clone()];
+            for arg_word in &cmd_clone.args {
+                let fields = expander.expand_word(arg_word)?;
+                for field in fields {
+                    args.push(field.text);
+                }
+            }
+
+            // Resolve command path
+            let path_env = context_clone.get_env("PATH");
+            let program_path = resolve_command(command_name, path_env)?;
+
+            // Build environment
+            let env: Vec<(String, String)> = std::env::vars().collect();
+
+            // Spawn process (F024: now returns channel_pipes)
+            let mut handle = spawn_process(&program_path, &args, &env, &cmd_clone.redirects, &mut context_clone)?;
+
+            // Extract channel pipes before wait consumes handle
+            let channel_pipes = handle.take_channel_pipes();
+
+            // Wait for child
+            let status = handle.wait()?;
+
+            // F024 Phase 2: Process channel writes if any
+            if !channel_pipes.is_empty() {
+                process_channel_writes(channel_pipes, &tuple_space_clone)?;
+            }
+
+            Ok(status)
+        })
+        .await
+        .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+    }
+
+    /// Sync channel writes from tuple space to channels
+    ///
+    /// Polls tuple space for ("channel_write", fd, content, timestamp) tuples
+    /// and flushes them to the appropriate channels.
+    fn sync_channels_from_tuple_space(&mut self) {
+        use colony_tuple::{Tuple, Value};
+
+        tracing::debug!("sync_channels_from_tuple_space: polling for channel_write tuples");
+
+        // Poll for all channel_write tuples
+        let pattern = Tuple::pattern(&[
+            Value::Str("channel_write".to_string()),
+            Value::Wildcard, // fd
+            Value::Wildcard, // content
+            Value::Wildcard, // timestamp
+        ]);
+
+        let mut count = 0;
+        while let Some(tuple) = self.tuple_space.inp(pattern.clone()) {
+            count += 1;
+            tracing::debug!("Found channel_write tuple #{}", count);
+
+            if let (Some(Value::Int(fd)), Some(Value::Str(content))) =
+                (tuple.fields.get(1), tuple.fields.get(2))
+            {
+                tracing::debug!("Syncing: fd={}, content_len={}", fd, content.len());
+
+                // Write to appropriate channel
+                if let Some(channel) = self.channels.get_mut(*fd as colony_channels::ChannelId) {
+                    use colony_channels::Channel;
+                    match channel.write(content.as_bytes()) {
+                        Ok(n) => tracing::debug!("Wrote {} bytes to channel {}", n, fd),
+                        Err(e) => tracing::warn!("Failed to write to channel {}: {}", fd, e),
+                    }
+                } else {
+                    tracing::warn!("Channel {} not found", fd);
+                }
+            } else {
+                tracing::warn!("Invalid channel_write tuple format");
+            }
+        }
+
+        tracing::debug!("sync_channels_from_tuple_space: processed {} tuples", count);
     }
 
     /// Execute a pipeline

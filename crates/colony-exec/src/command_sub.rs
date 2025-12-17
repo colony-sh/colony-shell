@@ -57,8 +57,12 @@ pub fn execute_and_capture(
             loop {
                 match read(read_fd.as_raw_fd(), &mut buffer) {
                     Ok(0) => break, // EOF
-                    Ok(n) => output.extend_from_slice(&buffer[..n]),
+                    Ok(n) => {
+                        eprintln!("DEBUG: Read {} bytes from child", n);
+                        output.extend_from_slice(&buffer[..n])
+                    },
                     Err(e) => {
+                        eprintln!("DEBUG: Read error: {}", e);
                         let _ = nix::sys::wait::waitpid(child, None);
                         return Err(format!("read() failed: {}", e));
                     }
@@ -72,6 +76,7 @@ pub fn execute_and_capture(
                 Ok(status) => {
                     // Convert output to string
                     let output_str = String::from_utf8_lossy(&output).to_string();
+                    eprintln!("DEBUG: Captured output: {:?}", output_str);
 
                     // Check if command failed (non-zero exit code)
                     use nix::sys::wait::WaitStatus;
@@ -101,6 +106,7 @@ pub fn execute_and_capture(
 /// Returns an exit code which the child should exit with.
 fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) -> i32 {
     use crate::JobTable;
+    use std::io::Write;
 
     // For command substitution, we only support simple commands and pipelines
     match stmt {
@@ -112,6 +118,9 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
 
             if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels)
             {
+                // Flush stdout after builtin (builtins use println! which is buffered)
+                let _ = std::io::stdout().flush();
+
                 match result {
                     Ok(builtin_result) => builtin_result.exit_code(),
                     Err(_) => 1,

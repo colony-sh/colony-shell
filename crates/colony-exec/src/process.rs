@@ -1,6 +1,6 @@
 //! Low-level process execution using nix
 
-use crate::redirect::apply_redirects;
+use crate::redirect::{apply_redirects, apply_channel_redirects_in_child, prepare_channel_redirects, ChannelPipe};
 use crate::{ExecutionError, Result};
 use colony_expand::ExpansionContext;
 use colony_parser::Redirect;
@@ -35,18 +35,38 @@ impl ExitStatus {
     }
 }
 
-/// Handle to a running process
+/// Handle to a running process (F024 Phase 2: includes channel pipes)
 #[derive(Debug)]
 pub struct ProcessHandle {
     pid: Pid,
+    /// Channel pipes for capturing writes to fd 3-6
+    pub channel_pipes: Vec<ChannelPipe>,
 }
 
 impl ProcessHandle {
     fn new(pid: Pid) -> Self {
-        Self { pid }
+        Self {
+            pid,
+            channel_pipes: Vec::new(),
+        }
+    }
+
+    fn with_channels(pid: Pid, channel_pipes: Vec<ChannelPipe>) -> Self {
+        Self { pid, channel_pipes }
+    }
+
+    /// Take channel pipes (F024 Phase 2)
+    ///
+    /// Removes and returns channel pipes, leaving an empty vector.
+    /// Must be called before wait() if you need the pipes.
+    pub fn take_channel_pipes(&mut self) -> Vec<ChannelPipe> {
+        std::mem::take(&mut self.channel_pipes)
     }
 
     /// Wait for the process to complete and return exit status
+    ///
+    /// **F024 Phase 2:** Call take_channel_pipes() first if you need them.
+    /// This consumes self to prevent use-after-wait bugs.
     pub fn wait(self) -> Result<ExitStatus> {
         match waitpid(self.pid, None) {
             Ok(WaitStatus::Exited(_pid, code)) => Ok(ExitStatus::new(code)),
@@ -72,6 +92,9 @@ impl ProcessHandle {
 /// if async execution is needed.
 ///
 /// Redirects are applied in the child process before exec.
+///
+/// **F024 Phase 2:** Detects channel redirects (fd 3-6) and creates pipes.
+/// Returns ProcessHandle with channel_pipes that parent should process after wait().
 pub fn spawn_process(
     program: &Path,
     args: &[String],
@@ -91,19 +114,50 @@ pub fn spawn_process(
         .map(|(k, v)| string_to_cstring(&format!("{}={}", k, v)))
         .collect::<Result<_>>()?;
 
+    // F024 Phase 2: Prepare channel redirects BEFORE fork
+    let channel_pipes = prepare_channel_redirects(redirects)?;
+    let has_channel_pipes = !channel_pipes.is_empty();
+
     // Fork
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => {
-            // Parent process - return handle to child
-            Ok(ProcessHandle::new(child))
+            // Parent process - explicitly close write ends, keep read ends
+            // CRITICAL: Must close write ends or reads will hang forever
+            let parent_pipes = if has_channel_pipes {
+                channel_pipes.into_iter().map(|pipe| {
+                    // Drop write end (close it in parent)
+                    drop(pipe.write_end);
+                    // Keep only read end for parent
+                    ChannelPipe::parent_only(pipe.channel_fd, pipe.read_end)
+                }).collect()
+            } else {
+                Vec::new()
+            };
+
+            // Return handle with channel pipes
+            Ok(ProcessHandle::with_channels(child, parent_pipes))
         }
         Ok(ForkResult::Child) => {
-            // Child process - apply redirects then exec
+            // Child process - F024 Phase 2: Apply channel redirects FIRST (before closing read ends)
 
-            // Apply all redirects BEFORE execve()
+            if has_channel_pipes {
+                // Apply channel redirects while we still have write ends
+                if let Err(e) = apply_channel_redirects_in_child(&channel_pipes) {
+                    eprintln!("colony-exec: channel redirect failed: {}", e);
+                    std::process::exit(126);
+                }
+
+                // Now close read ends (parent keeps these)
+                for pipe in channel_pipes {
+                    drop(pipe.read_end);
+                    // write_end stays open for exec'd process to use
+                }
+            }
+
+            // Apply regular redirects
             if let Err(e) = apply_redirects(redirects, context) {
                 eprintln!("colony-exec: redirect failed: {}", e);
-                std::process::exit(126); // Convention: 126 = command found but not executable
+                std::process::exit(126);
             }
 
             // This replaces the current process image

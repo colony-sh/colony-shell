@@ -744,6 +744,7 @@ dependencies = [
 name = "colony-exec"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "colony-channels",
  "colony-expand",
  "colony-parser",

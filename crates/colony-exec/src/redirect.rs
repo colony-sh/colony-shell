@@ -7,6 +7,10 @@
 //! - Here-documents: <<, <<-
 //! - Here-strings: <<<
 //!
+//! **F024 Phase 2:** Extended channels (fd 3-6)
+//! - Channel redirects: >&3, >&4, >&5, >&6
+//! - Creates pipes, captures output, writes to tuple space
+//!
 //! Redirects must be applied in the child process BEFORE execve(),
 //! as they modify the file descriptor table.
 
@@ -18,12 +22,128 @@ use nix::sys::stat::Mode;
 use nix::unistd::dup2;
 use std::os::unix::io::RawFd;
 
+/// Channel file descriptors (F024)
+pub const STDCONTEXT: RawFd = 3;
+pub const STDLLM: RawFd = 4;
+pub const STDTOOL: RawFd = 5;
+pub const STDTRACE: RawFd = 6;
+
+/// Check if fd is a channel fd (3-6)
+pub fn is_channel_fd(fd: RawFd) -> bool {
+    matches!(fd, STDCONTEXT | STDLLM | STDTOOL | STDTRACE)
+}
+
+/// Channel pipe - represents a pipe created for capturing channel writes
+#[derive(Debug)]
+pub struct ChannelPipe {
+    /// Target channel fd (3-6)
+    pub channel_fd: RawFd,
+    /// Read end (parent keeps this)
+    pub read_end: std::os::fd::OwnedFd,
+    /// Write end (child uses this, then closes)
+    /// None in parent (already closed/moved to child)
+    pub write_end: Option<std::os::fd::OwnedFd>,
+}
+
+impl ChannelPipe {
+    /// Create a new channel pipe with both ends
+    pub fn new(channel_fd: RawFd, read_end: std::os::fd::OwnedFd, write_end: std::os::fd::OwnedFd) -> Self {
+        Self {
+            channel_fd,
+            read_end,
+            write_end: Some(write_end),
+        }
+    }
+
+    /// Create a parent-side pipe (read end only)
+    pub fn parent_only(channel_fd: RawFd, read_end: std::os::fd::OwnedFd) -> Self {
+        Self {
+            channel_fd,
+            read_end,
+            write_end: None,
+        }
+    }
+}
+
+/// Prepare channel redirects BEFORE forking
+///
+/// Detects redirects to fd 3-6 and creates pipes for them.
+/// Returns vector of ChannelPipe structs.
+/// Parent keeps read_ends, child uses write_ends.
+///
+/// Examples:
+/// - `>&3` - redirect stdout to channel fd 3
+/// - `2>&4` - redirect stderr to channel fd 4
+/// - `3>&-` - close channel fd 3 (no pipe needed)
+pub fn prepare_channel_redirects(
+    redirects: &[Redirect],
+) -> Result<Vec<ChannelPipe>> {
+    let mut channel_pipes = Vec::new();
+    let mut prepared_fds = std::collections::HashSet::new();
+
+    for redirect in redirects {
+        // Check if redirecting TO a channel fd
+        let channel_fd = match &redirect.target {
+            RedirectTarget::Fd(target_fd) => {
+                if is_channel_fd(*target_fd) {
+                    Some(*target_fd)
+                } else {
+                    None
+                }
+            }
+            RedirectTarget::File(word) => {
+                // WORKAROUND: Parser bug - >&3 creates File("3") instead of Fd(3)
+                if matches!(redirect.kind, RedirectKind::DupFd) {
+                    if let Some(literal) = word.as_literal() {
+                        if let Ok(target_fd) = literal.parse::<RawFd>() {
+                            if is_channel_fd(target_fd) {
+                                Some(target_fd)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        if let Some(fd) = channel_fd {
+            // Avoid duplicate pipes for same fd
+            if prepared_fds.contains(&fd) {
+                continue;
+            }
+            prepared_fds.insert(fd);
+
+            tracing::debug!("Preparing channel pipe for fd {}", fd);
+
+            // Create pipe for this channel
+            let (read_end, write_end) = nix::unistd::pipe()
+                .map_err(|e| ExecutionError::RedirectError(format!("pipe for channel: {}", e)))?;
+
+            channel_pipes.push(ChannelPipe::new(fd, read_end, write_end));
+        }
+    }
+
+    Ok(channel_pipes)
+}
+
 /// Apply all redirects for a command in the current process
 ///
 /// IMPORTANT: This must be called in the child process AFTER fork() but
 /// BEFORE execve(). File descriptors are not inherited correctly otherwise.
 ///
-/// Returns the list of FDs that were opened (caller must close in parent)
+/// Returns the list of FDs that were opened (caller must close in parent).
+///
+/// **F024 Phase 2 Note:** This function is now only for regular (non-channel) redirects.
+/// Channel redirects (fd 3-6) are handled separately via prepare_channel_redirects()
+/// and apply_channel_redirects_in_child().
 pub fn apply_redirects(
     redirects: &[Redirect],
     context: &mut ExpansionContext,
@@ -33,11 +153,36 @@ pub fn apply_redirects(
     for redirect in redirects {
         let source_fd = get_source_fd(redirect);
 
+        tracing::debug!(
+            "apply_redirects: kind={:?}, source_fd={}, target={:?}",
+            redirect.kind,
+            source_fd,
+            redirect.target
+        );
+
         match &redirect.target {
             RedirectTarget::File(word) => {
+                // WORKAROUND: Parser bug - >&3 creates File("3") instead of Fd(3)
+                // Check if this is actually an fd redirect
+                if matches!(redirect.kind, RedirectKind::DupFd) {
+                    // Try to parse word as fd number
+                    if let Some(literal) = word.as_literal() {
+                        if let Ok(target_fd) = literal.parse::<RawFd>() {
+                            tracing::debug!("Workaround: File('{}') → Fd({})", literal, target_fd);
+                            // Treat as fd redirect (even for channel fds)
+                            apply_fd_redirect(source_fd, target_fd)?;
+                            continue;
+                        }
+                    }
+                }
+
+                tracing::debug!("Applying file redirect");
                 apply_file_redirect(redirect.kind, source_fd, word, context, &mut opened_fds)?;
             }
             RedirectTarget::Fd(target_fd) => {
+                tracing::debug!("Target is Fd({}), is_channel={}", target_fd, is_channel_fd(*target_fd));
+                // F024 Phase 2: Channel fds are set up by apply_channel_redirects_in_child()
+                // but we still need to dup source_fd to target_fd (e.g., dup stdout to fd 3)
                 apply_fd_redirect(source_fd, *target_fd)?;
             }
             RedirectTarget::Close => {
@@ -52,6 +197,100 @@ pub fn apply_redirects(
     }
 
     Ok(opened_fds)
+}
+
+/// Apply channel redirects in child process
+///
+/// Takes the write ends of channel pipes and dups them to the appropriate fds.
+/// Called in child after fork, before exec.
+pub fn apply_channel_redirects_in_child(channel_pipes: &[ChannelPipe]) -> Result<()> {
+    use std::os::fd::AsRawFd;
+
+    for pipe in channel_pipes {
+        // Dup the write end to the channel fd
+        if let Some(ref write_end) = pipe.write_end {
+            dup2(write_end.as_raw_fd(), pipe.channel_fd)
+                .map_err(|e| ExecutionError::RedirectError(format!("dup2 channel: {}", e)))?;
+        } else {
+            return Err(ExecutionError::RedirectError(
+                "Channel pipe missing write end in child".to_string()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Read from channel pipes and write to tuple space
+///
+/// Called in PARENT after child exits. Reads captured output from
+/// pipes and emits tuples: ("channel_write", fd, content, timestamp)
+///
+/// **F024 Phase 2:** This enables child processes to write to channels
+/// via tuple space IPC.
+pub fn process_channel_writes(
+    channel_pipes: Vec<ChannelPipe>,
+    tuple_space: &colony_tuple::TupleSpace,
+) -> Result<()> {
+    use colony_tuple::{Tuple, Value};
+    use nix::unistd::read;
+    use std::os::fd::AsRawFd;
+
+    tracing::debug!("process_channel_writes: {} pipes to process", channel_pipes.len());
+
+    for pipe in channel_pipes {
+        tracing::debug!("Reading from channel pipe fd={}", pipe.channel_fd);
+
+        // Read all data from pipe using nix::unistd::read
+        let mut buffer = Vec::new();
+        let mut chunk = [0u8; 4096];
+
+        loop {
+            match read(pipe.read_end.as_raw_fd(), &mut chunk) {
+                Ok(0) => {
+                    tracing::debug!("EOF on pipe fd={}", pipe.channel_fd);
+                    break; // EOF
+                }
+                Ok(n) => {
+                    tracing::debug!("Read {} bytes from pipe fd={}", n, pipe.channel_fd);
+                    buffer.extend_from_slice(&chunk[..n])
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to read from channel pipe: {}", e);
+                    break;
+                }
+            }
+        }
+
+        // Convert to string (lossy for non-UTF8)
+        let content = String::from_utf8_lossy(&buffer).to_string();
+
+        tracing::debug!("Captured {} bytes from fd={}: {:?}", buffer.len(), pipe.channel_fd, content);
+
+        if !content.is_empty() {
+            // Emit tuple: ("channel_write", fd, content, timestamp)
+            let timestamp = chrono::Utc::now().to_rfc3339();
+            tuple_space.out(Tuple::from(vec![
+                Value::Str("channel_write".to_string()),
+                Value::Int(pipe.channel_fd as i64),
+                Value::Str(content.clone()),
+                Value::Str(timestamp),
+            ]));
+
+            tracing::debug!(
+                "Channel write captured: fd={}, content={:?}",
+                pipe.channel_fd,
+                content
+            );
+        } else {
+            tracing::debug!("No content captured from fd={}", pipe.channel_fd);
+        }
+
+        // pipe.read_end automatically closed when dropped
+    }
+
+    tracing::debug!("process_channel_writes complete");
+    Ok(())
 }
 
 /// Get the source file descriptor for a redirect
