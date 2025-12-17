@@ -132,7 +132,14 @@ fn parse_with_heredocs(source: &str) -> Result<Program, ParseError> {
 
 /// Parse a single statement (for REPL or testing)
 pub fn parse_statement(source: &str) -> Result<crate::ast::Statement, ParseError> {
-    let pairs = ColonyParser::parse(Rule::Statement, source)
+    // Preprocess arithmetic if present
+    let (normalized, _arith_map) = if source.contains("$((") {
+        crate::arith_preprocess::preprocess_arithmetic(source)
+    } else {
+        (source.to_string(), Vec::new())
+    };
+
+    let pairs = ColonyParser::parse(Rule::Statement, &normalized)
         .map_err(|e| {
             let (line, column) = match e.line_col {
                 pest::error::LineColLocation::Pos((l, c)) => (l, c),
@@ -152,8 +159,15 @@ pub fn parse_statement(source: &str) -> Result<crate::ast::Statement, ParseError
     let inner = pair.into_inner().next()
         .ok_or(ParseError::EmptyInput)?;
 
-    AstBuilder::build_statement(inner)
-        .map_err(ParseError::Build)
+    let mut stmt = AstBuilder::build_statement(inner)
+        .map_err(ParseError::Build)?;
+
+    // Inject arithmetic expressions back into AST
+    if !_arith_map.is_empty() {
+        inject_arithmetic(&mut stmt, &_arith_map);
+    }
+
+    Ok(stmt)
 }
 
 /// Parse an expression (for evaluation)
@@ -176,6 +190,98 @@ pub fn parse_expression(source: &str) -> Result<crate::ast::Expression, ParseErr
 
     AstBuilder::build_expression(pair)
         .map_err(ParseError::Build)
+}
+
+/// Inject arithmetic expressions back into AST
+///
+/// Walks the AST and replaces ${__ARITH_N__} variable references
+/// with ArithRaw(expr) WordParts.
+fn inject_arithmetic(stmt: &mut crate::ast::Statement, arith_map: &[(String, String)]) {
+    use crate::ast::{Statement, WordPart};
+
+    // Helper to inject into a Word
+    fn inject_into_word(word: &mut crate::ast::Word, arith_map: &[(String, String)]) {
+        for part in &mut word.parts {
+            match part {
+                WordPart::Variable(var_ref) => {
+                    // Check if this is an arithmetic placeholder
+                    if var_ref.name.starts_with("__ARITH_") && var_ref.modifier.is_none() {
+                        // Find the expression
+                        for (placeholder, expr) in arith_map {
+                            if var_ref.name == *placeholder {
+                                // Replace with ArithRaw
+                                *part = WordPart::ArithRaw(expr.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+                WordPart::DoubleQuoted(parts) => {
+                    // Recursively inject into double-quoted parts
+                    for inner_part in parts {
+                        if let WordPart::Variable(var_ref) = inner_part {
+                            if var_ref.name.starts_with("__ARITH_") {
+                                for (placeholder, expr) in arith_map {
+                                    if var_ref.name == *placeholder {
+                                        *inner_part = WordPart::ArithRaw(expr.clone());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Walk the statement tree
+    match stmt {
+        Statement::SimpleCommand(cmd) => {
+            inject_into_word(&mut cmd.name, arith_map);
+            for arg in &mut cmd.args {
+                inject_into_word(arg, arith_map);
+            }
+        }
+        Statement::Pipeline(pipeline) => {
+            for element in &mut pipeline.elements {
+                inject_arithmetic(&mut element.command, arith_map);
+            }
+        }
+        Statement::List(list) => {
+            inject_arithmetic(&mut list.first, arith_map);
+            for (_, stmt) in &mut list.rest {
+                inject_arithmetic(stmt, arith_map);
+            }
+        }
+        Statement::If(if_stmt) => {
+            for stmt in &mut if_stmt.then_body {
+                inject_arithmetic(stmt, arith_map);
+            }
+            for elif in &mut if_stmt.elif_branches {
+                for stmt in &mut elif.body {
+                    inject_arithmetic(stmt, arith_map);
+                }
+            }
+            if let Some(else_body) = &mut if_stmt.else_body {
+                for stmt in else_body {
+                    inject_arithmetic(stmt, arith_map);
+                }
+            }
+        }
+        Statement::For(for_stmt) => {
+            for word in &mut for_stmt.words {
+                inject_into_word(word, arith_map);
+            }
+            for stmt in &mut for_stmt.body {
+                inject_arithmetic(stmt, arith_map);
+            }
+        }
+        _ => {
+            // Other statement types - skip for now
+        }
+    }
 }
 
 /// Errors during parsing

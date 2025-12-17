@@ -148,3 +148,4 @@ Next session: Implement compound commands (if/while/for) parsing.
 - When stuck, set status to "blocked" with clear description
 
 Your effectiveness depends on maintaining this system. Future you (and other agents) rely on accurate tracking to understand context quickly.
+- DO NOT STOP A TASK DUE TO COMPLEXITY! ALWAYS SEE IT THROUGH UNLESS THE USER STOPS YOU!

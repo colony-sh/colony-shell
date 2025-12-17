@@ -25,6 +25,7 @@ pub mod pest_parser;
 pub mod builder;
 pub mod pest_api;
 pub mod heredoc;
+pub mod arith_preprocess;
 
 pub use span::{Position, Span};
 pub use token::{Token, TokenKind, TokenValue, InterpolatedPart};

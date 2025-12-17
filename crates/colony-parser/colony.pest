@@ -595,9 +595,11 @@ DollarExpansion = {
 
 // Arithmetic expansion as raw string - parsed and evaluated during expansion
 // Must match $(( before $( to avoid ambiguity
-// Using @{} (atomic) to capture everything between $(( and ))
+// Simple approach: match $(( plus any non-whitespace chars
+// Whitespace inside $(( will terminate the Word, requiring quotes: "$(( 2 + 3 ))"
+// This matches bash behavior where unquoted arithmetic can't have spaces
 DollarArithRaw = @{
-    "$((" ~ (!")" ~ ANY)* ~ "))"
+    "$((" ~ (!WHITESPACE ~ ANY)*
 }
 
 // Command substitution as raw string - parsed during expansion not during initial parse

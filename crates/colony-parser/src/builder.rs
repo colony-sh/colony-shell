@@ -1329,9 +1329,39 @@ impl AstBuilder {
             Rule::DollarArithRaw => {
                 // $((expr)) - captured as raw string, will be evaluated during expansion
                 let text = inner.as_str();
-                // Extract content between $(( and ))
-                let content = &text[3..text.len()-2]; // Strip "$((" and "))"
-                Ok(WordPart::ArithRaw(content.to_string()))
+
+                // Extract content by counting parens to find matching ))
+                // Start after "$((", count parens until we find matching ))
+                if !text.starts_with("$((") {
+                    return Ok(WordPart::Literal(text.to_string()));
+                }
+
+                let chars: Vec<char> = text.chars().collect();
+                let mut paren_count = 0;  // Start at 0, looking for ))
+                let mut end_pos = 3;  // Start after "$("
+
+                while end_pos < chars.len() {
+                    match chars[end_pos] {
+                        '(' => paren_count += 1,
+                        ')' => {
+                            if paren_count == 0 {
+                                // Check if next char is also ) (closing ))
+                                if end_pos + 1 < chars.len() && chars[end_pos + 1] == ')' {
+                                    // Found matching ))
+                                    let content: String = chars[3..end_pos].iter().collect();
+                                    return Ok(WordPart::ArithRaw(content));
+                                }
+                            } else {
+                                paren_count -= 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                    end_pos += 1;
+                }
+
+                // No matching )) found - treat as literal
+                Ok(WordPart::Literal(text.to_string()))
             }
             Rule::DollarCommandSubRaw => {
                 // $(command) - captured as raw string, will be parsed during expansion
