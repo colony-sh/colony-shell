@@ -18,9 +18,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
-# Claude SDK - our Rust port
-# TODO: Update once published to crates.io as "claude-sdk = 1.0"
-claude-sdk = { path = "/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust" }
+# Claude SDK - Rust port of Claude Agent SDK
+# Published on crates.io: https://crates.io/crates/claude-sdk
+claude-sdk = "1.0"
 
 # For streaming and async traits
 futures = "0.3"

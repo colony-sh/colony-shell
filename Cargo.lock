@@ -659,6 +659,8 @@ dependencies = [
 [[package]]
 name = "claude-sdk"
 version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84aec0dd779a4d18f16f439f381875cb5e516cb357c884f04d8906002e1612e2"
 dependencies = [
  "async-stream",
  "aws-config",
