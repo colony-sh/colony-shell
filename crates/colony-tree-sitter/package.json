@@ -1,0 +1,19 @@
+{
+  "name": "tree-sitter-colony",
+  "version": "0.0.1",
+  "description": "Colony Shell grammar for tree-sitter",
+  "main": "grammar.js",
+  "scripts": {
+    "generate": "tree-sitter generate"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.colony",
+      "file-types": ["colony", "col"],
+      "highlights": ["queries/highlights.scm"]
+    }
+  ],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.20.0"
+  }
+}

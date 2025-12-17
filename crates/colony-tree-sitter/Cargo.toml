@@ -1,0 +1,15 @@
+[package]
+name = "colony-tree-sitter"
+version = "0.1.0"
+edition = "2021"
+description = "Tree-sitter parser for Colony Shell (pure Rust via rust-sitter)"
+license = "MIT"
+
+[dependencies]
+tree-sitter = { workspace = true }
+
+[dev-dependencies]
+# For testing
+
+[build-dependencies]
+cc = "1.0"

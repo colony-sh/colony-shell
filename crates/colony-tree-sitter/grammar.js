@@ -43,7 +43,7 @@ const PREC = {
 };
 
 module.exports = grammar({
-  name: 'bash',
+  name: 'colony',
 
   conflicts: $ => [
     [$._expression, $.command_name],
@@ -157,6 +157,10 @@ module.exports = grammar({
       $.list,
       $.compound_statement,
       $.function_definition,
+      // Colony: variable declarations
+      $.var_declaration,
+      $.const_declaration,
+      $.setvar_declaration,
     ),
 
     _statement_not_pipeline: $ => prec(1, choice(
@@ -386,6 +390,31 @@ module.exports = grammar({
       field('redirect', optional($._redirect)),
     )),
 
+    // Colony: Variable declarations
+    var_declaration: $ => seq(
+      'var',
+      field('name', $.word),
+      optional(seq(':', field('type', $.type_annotation))),
+      '=',
+      field('value', $._expression),
+    ),
+
+    const_declaration: $ => seq(
+      'const',
+      field('name', $.word),
+      optional(seq(':', field('type', $.type_annotation))),
+      '=',
+      field('value', $._expression),
+    ),
+
+    setvar_declaration: $ => seq(
+      'setvar',
+      field('name', $.word),
+      optional(seq(':', field('type', $.type_annotation))),
+      '=',
+      field('value', $._expression),
+    ),
+
     compound_statement: $ => choice(
       seq(
         '{',
@@ -413,7 +442,14 @@ module.exports = grammar({
     pipeline: $ => prec.right(seq(
       $._statement_not_pipeline,
       repeat1(seq(
-        choice('|', '|&'),
+        choice(
+          '|',
+          '|&',
+          // Colony: typed pipes
+          '->',   // Stream pipe (typed data)
+          '=>',   // Transform pipe (auto-convert)
+          '~>',   // Alter pipe (alternatives/errors)
+        ),
         $._statement_not_pipeline,
       )),
     )),
@@ -1098,6 +1134,59 @@ module.exports = grammar({
         choice($.string, $.expansion, $.command_substitution),
         optional($.extglob_pattern),
       ),
+    ),
+
+    // Colony: Type annotations
+    type_annotation: $ => choice(
+      $.simple_type,
+      $.optional_type,
+      $.union_type,
+      $.tuple_type,
+      $.generic_type,
+      $.function_type,
+    ),
+
+    simple_type: $ => choice(
+      'Null', 'Bool', 'Int', 'Float', 'Str', 'Bytes', 'Any', 'Never',
+      $.word,  // Custom types
+    ),
+
+    optional_type: $ => seq(
+      field('base', $.simple_type),
+      '?',
+    ),
+
+    union_type: $ => prec.left(seq(
+      $.simple_type,
+      repeat1(seq('|', $.simple_type)),
+    )),
+
+    tuple_type: $ => seq(
+      '(',
+      $.type_annotation,
+      repeat1(seq(',', $.type_annotation)),
+      ')',
+    ),
+
+    generic_type: $ => seq(
+      field('name', $.word),
+      '[',
+      optional(seq(
+        $.type_annotation,
+        repeat(seq(',', $.type_annotation)),
+      )),
+      ']',
+    ),
+
+    function_type: $ => seq(
+      '(',
+      optional(seq(
+        $.type_annotation,
+        repeat(seq(',', $.type_annotation)),
+      )),
+      ')',
+      '->',
+      $.type_annotation,
     ),
 
     comment: _ => token(prec(-10, /#.*/)),

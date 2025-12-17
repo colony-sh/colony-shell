@@ -739,6 +739,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-tree-sitter"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "tree-sitter",
+]
+
+[[package]]
 name = "colony-tuple"
 version = "0.1.0"
 dependencies = [
@@ -2624,6 +2632,16 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.20.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e747b1f9b7b931ed39a548c1fae149101497de3c1fc8d9e18c62c1a66c683d3d"
+dependencies = [
+ "cc",
+ "regex",
 ]
 
 [[package]]

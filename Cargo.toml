@@ -11,6 +11,7 @@ members = [
     "crates/colony-mcp",
     "crates/colony-focus",
     "crates/colony-shell",
+    "crates/colony-tree-sitter",
 ]
 
 [workspace.package]
@@ -54,6 +55,7 @@ miette = { version = "7.0", features = ["fancy"] }
 # Parser
 pest = "2.7"
 pest_derive = "2.7"
+tree-sitter = "0.20"
 
 # Logging
 tracing = "0.1"
@@ -69,6 +71,7 @@ colony-memory = { path = "crates/colony-memory" }
 colony-tuple = { path = "crates/colony-tuple" }
 colony-mcp = { path = "crates/colony-mcp" }
 colony-focus = { path = "crates/colony-focus" }
+colony-tree-sitter = { path = "crates/colony-tree-sitter" }
 
 [profile.dev]
 opt-level = 0

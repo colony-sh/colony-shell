@@ -261,3 +261,9 @@
 [2025-12-17 02:55] COMMIT: P3 complete - heredocs fully supported
 [2025-12-17 03:00] MILESTONE: F021 pest parser 100% COMPLETE!
 [2025-12-17 03:05] ACHIEVEMENT: Full POSIX compliance with pure PEG + minimal preprocessing
+[2025-12-16 23:27] COMPLETE: Set up colony-tree-sitter crate in crates/ directory
+[2025-12-16 23:27] COMPLETE: Standard tree-sitter approach (grammar.js → parser.c → Rust FFI)
+[2025-12-16 23:27] VALIDATED: 5 unit tests + 3 doc tests passing
+[2025-12-16 23:27] ARCHITECTURE: Bash base + typed pipes, ready for Colony features
+[2025-12-16 23:27] LOCATION: crates/colony-tree-sitter (proper workspace member)
+[2025-12-16 23:27] NEXT: Add Colony-specific grammar rules incrementally
