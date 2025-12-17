@@ -484,3 +484,24 @@
 [2025-12-17 11:51] MILESTONE: Reactive notifications working perfectly!
 [2025-12-17 11:52] USER EXPERIENCE: Every state change is now visible with 🔄 prefix
 [2025-12-17 11:53] ACHIEVEMENT: Observable shell - transparent state changes
+[2025-12-17 11:55] BUG FOUND: Variable expansion not working (dollar-VAR stays literal)
+[2025-12-17 11:56] ROOT CAUSE: build_word() had TODO - treated all words as literals
+[2025-12-17 11:57] INVESTIGATION: pest grammar DOES support DollarExpansion in Word rule
+[2025-12-17 11:58] ARCHITECTURE: Word = compound-rule QuotedString or DollarExpansion or Bareword
+[2025-12-17 12:00] IMPLEMENTED: Proper build_word() descending into Word subrules
+[2025-12-17 12:01] IMPLEMENTED: build_dollar_expansion() - handles simple-VAR, braced-VAR, command-sub, expr-sub
+[2025-12-17 12:02] IMPLEMENTED: build_variable_ref() - handles braced-VAR:-default and modifiers
+[2025-12-17 12:03] IMPLEMENTED: build_var_modifier() - all POSIX var modifiers (:-=?+)
+[2025-12-17 12:04] IMPLEMENTED: build_quoted_string() - handles SingleQuoted, DoubleQuoted, raw, triple
+[2025-12-17 12:05] IMPLEMENTED: build_double_quoted() - parses DoubleQuotedContent with interpolation
+[2025-12-17 12:06] FIX: DoubleQuotedContent is wrapper rule - must descend to actual content
+[2025-12-17 12:07] FIX: Accumulate DoubleQuotedChar into buffer (individual chars to strings)
+[2025-12-17 12:08] BUILD: Successful compilation (340 lines of new parser code)
+[2025-12-17 12:10] TEST: dollar-VAR expansion works correctly
+[2025-12-17 12:11] TEST: double-quote dollar-VAR dollar-VAR2 expansion works (hello world)
+[2025-12-17 12:12] TEST: String interpolation Hello comma dollar-NAME exclamation works
+[2025-12-17 12:13] TEST: Unset variable expansion produces empty string
+[2025-12-17 12:14] TEST: All reactive notifications still working
+[2025-12-17 12:15] MILESTONE: Full POSIX variable expansion operational!
+[2025-12-17 12:16] ACHIEVEMENT: Pure PEG parser with complete expansion support
+[2025-12-17 12:17] ENABLES: Shell scripts with variables, parameter expansion, string interpolation

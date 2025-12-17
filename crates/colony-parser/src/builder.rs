@@ -1215,15 +1215,239 @@ impl AstBuilder {
 
     fn build_word(pair: Pair<Rule>) -> Result<Word, BuildError> {
         let span = span_from_pair(&pair);
-        let text = pair.as_str();
 
-        // For now, treat as simple literal
-        // The Word rule is atomic (@), so we get the raw text
-        // TODO: When preprocessing is connected, this will handle:
-        // - DollarExpansion (variables, command sub, expression sub)
-        // - QuotedString (single, double, raw, triple)
-        // - Glob patterns
-        Ok(Word::literal(text, span))
+        // Word = ${ QuotedString | DollarExpansion | Bareword }
+        // Since it's a silent rule, descend to get the actual matched rule
+        let inner = pair.into_inner().next()
+            .ok_or(BuildError::EmptyWord)?;
+
+        let parts = match inner.as_rule() {
+            Rule::Bareword => {
+                // Bareword is atomic - just literal text
+                vec![WordPart::Literal(inner.as_str().to_string())]
+            }
+            Rule::DollarExpansion => {
+                // Build variable expansion
+                vec![Self::build_dollar_expansion(inner)?]
+            }
+            Rule::QuotedString => {
+                // Delegate to quote parsing
+                vec![Self::build_quoted_string(inner)?]
+            }
+            Rule::SingleQuoted => {
+                // SingleQuoted is atomic @{...} - strip quotes
+                let text = inner.as_str();
+                let content = text.trim_start_matches('\'').trim_end_matches('\'');
+                vec![WordPart::SingleQuoted(content.to_string())]
+            }
+            Rule::DoubleQuoted => {
+                // DoubleQuoted is compound ${ ... } - parse content
+                vec![Self::build_double_quoted(inner)?]
+            }
+            _ => {
+                // Fallback: treat as literal
+                vec![WordPart::Literal(inner.as_str().to_string())]
+            }
+        };
+
+        Ok(Word { parts, span })
+    }
+
+    fn build_dollar_expansion(pair: Pair<Rule>) -> Result<WordPart, BuildError> {
+        // DollarExpansion = ("$[" ~ Expression ~ "]")  // expression
+        //                 | ("$(" ~ CommandList ~ ")")  // command sub
+        //                 | ("${" ~ VariableRef ~ "}")  // parameter
+        //                 | ("$" ~ Identifier)          // simple var
+
+        let pair_text = pair.as_str().to_string();  // Capture before consuming
+        let inner = pair.into_inner().next()
+            .ok_or(BuildError::EmptyDollarExpansion)?;
+
+        match inner.as_rule() {
+            Rule::Identifier => {
+                // Simple $VAR
+                let name = inner.as_str().to_string();
+                Ok(WordPart::Variable(VariableRef {
+                    name,
+                    modifier: None,
+                    span: span_from_pair(&inner),
+                }))
+            }
+            Rule::VariableRef => {
+                // ${VAR} or ${VAR:-default}
+                Self::build_variable_ref(inner).map(WordPart::Variable)
+            }
+            Rule::CommandList => {
+                // $(command)
+                let stmt = Self::build_command_list(inner)?;
+                Ok(WordPart::CommandSub(Box::new(Statement::List(stmt))))
+            }
+            Rule::Expression => {
+                // $[expr] - for now, treat as literal placeholder
+                // TODO: Implement expression expansion
+                Ok(WordPart::Literal(format!("$[{}]", inner.as_str())))
+            }
+            _ => {
+                // Fallback
+                Ok(WordPart::Literal(pair_text))
+            }
+        }
+    }
+
+    fn build_variable_ref(pair: Pair<Rule>) -> Result<VariableRef, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        // VariableRef = Identifier ~ VarModifier?
+        let name = inner.next()
+            .ok_or(BuildError::MissingVariableName)?
+            .as_str()
+            .to_string();
+
+        let modifier = if let Some(mod_pair) = inner.next() {
+            Some(Self::build_var_modifier(mod_pair)?)
+        } else {
+            None
+        };
+
+        Ok(VariableRef {
+            name,
+            modifier,
+            span,
+        })
+    }
+
+    fn build_var_modifier(pair: Pair<Rule>) -> Result<VarModifier, BuildError> {
+        let text = pair.as_str();
+        let mut inner = pair.into_inner();
+
+        // VarModifier = (":-" ~ Word) | (":=" ~ Word) | (":?" ~ Word) | (":+" ~ Word) | ...
+        let word = inner.next()
+            .ok_or(BuildError::MissingModifierWord)?;
+        let word_value = Self::build_word(word)?;
+
+        match text {
+            s if s.starts_with(":-") => Ok(VarModifier::Default {
+                word: Box::new(word_value),
+                check_null: true,
+            }),
+            s if s.starts_with("-") => Ok(VarModifier::Default {
+                word: Box::new(word_value),
+                check_null: false,
+            }),
+            s if s.starts_with(":=") => Ok(VarModifier::Assign {
+                word: Box::new(word_value),
+                check_null: true,
+            }),
+            s if s.starts_with("=") => Ok(VarModifier::Assign {
+                word: Box::new(word_value),
+                check_null: false,
+            }),
+            s if s.starts_with(":?") => Ok(VarModifier::Error {
+                word: Box::new(word_value),
+                check_null: true,
+            }),
+            s if s.starts_with("?") => Ok(VarModifier::Error {
+                word: Box::new(word_value),
+                check_null: false,
+            }),
+            s if s.starts_with(":+") => Ok(VarModifier::Alternate {
+                word: Box::new(word_value),
+                check_null: true,
+            }),
+            s if s.starts_with("+") => Ok(VarModifier::Alternate {
+                word: Box::new(word_value),
+                check_null: false,
+            }),
+            _ => Err(BuildError::InvalidVarModifier(text.to_string())),
+        }
+    }
+
+    fn build_quoted_string(pair: Pair<Rule>) -> Result<WordPart, BuildError> {
+        let inner = pair.into_inner().next()
+            .ok_or(BuildError::EmptyQuotedString)?;
+
+        match inner.as_rule() {
+            Rule::SingleQuoted => {
+                let text = inner.as_str();
+                let content = text.trim_start_matches('\'').trim_end_matches('\'');
+                Ok(WordPart::SingleQuoted(content.to_string()))
+            }
+            Rule::DoubleQuoted => Self::build_double_quoted(inner),
+            Rule::RawString => {
+                // r'text' or r"text" - treat like single quoted
+                let text = inner.as_str();
+                let content = text[2..text.len()-1].to_string(); // Strip r' and '
+                Ok(WordPart::SingleQuoted(content))
+            }
+            Rule::TripleQuoted => {
+                // '''text''' or """text""" - treat like single quoted for now
+                let text = inner.as_str();
+                let content = text[3..text.len()-3].to_string(); // Strip ''' and '''
+                Ok(WordPart::SingleQuoted(content))
+            }
+            _ => Err(BuildError::UnexpectedQuotedString(format!("{:?}", inner.as_rule()))),
+        }
+    }
+
+    fn build_double_quoted(pair: Pair<Rule>) -> Result<WordPart, BuildError> {
+        // DoubleQuoted = ${ "\"" ~ DoubleQuotedContent* ~ "\"" }
+        let mut parts = Vec::new();
+        let mut literal_buffer = String::new();
+
+        // Helper to flush accumulated literals
+        let mut flush_literal = |buffer: &mut String, parts: &mut Vec<WordPart>| {
+            if !buffer.is_empty() {
+                parts.push(WordPart::Literal(buffer.clone()));
+                buffer.clear();
+            }
+        };
+
+        for content in pair.into_inner() {
+            // DoubleQuotedContent is a wrapper - descend into it
+            let actual_content = if content.as_rule() == Rule::DoubleQuotedContent {
+                content.into_inner().next().unwrap()
+            } else {
+                content
+            };
+
+            match actual_content.as_rule() {
+                Rule::DollarExpansion => {
+                    flush_literal(&mut literal_buffer, &mut parts);
+                    parts.push(Self::build_dollar_expansion(actual_content)?);
+                }
+                Rule::BacktickExpansion => {
+                    flush_literal(&mut literal_buffer, &mut parts);
+                    // `cmd` - old-style command substitution
+                    // TODO: Parse command inside backticks
+                    parts.push(WordPart::Literal(actual_content.as_str().to_string()));
+                }
+                Rule::EscapeSequence => {
+                    // \n, \t, \", etc.
+                    let text = actual_content.as_str();
+                    let expanded = match text {
+                        "\\n" => "\n",
+                        "\\t" => "\t",
+                        "\\r" => "\r",
+                        "\\\\" => "\\",
+                        "\\\"" => "\"",
+                        "\\$" => "$",
+                        _ => text, // Keep as-is
+                    };
+                    literal_buffer.push_str(expanded);
+                }
+                Rule::DoubleQuotedChar => {
+                    // Regular character inside double quotes - accumulate
+                    literal_buffer.push_str(actual_content.as_str());
+                }
+                _ => {}
+            }
+        }
+
+        // Flush any remaining literal text
+        flush_literal(&mut literal_buffer, &mut parts);
+
+        Ok(WordPart::DoubleQuoted(parts))
     }
 
     fn build_redirect(pair: Pair<Rule>) -> Result<Redirect, BuildError> {
@@ -1426,6 +1650,27 @@ pub enum BuildError {
 
     #[error("missing lambda body")]
     MissingLambdaBody,
+
+    #[error("empty word")]
+    EmptyWord,
+
+    #[error("empty dollar expansion")]
+    EmptyDollarExpansion,
+
+    #[error("empty quoted string")]
+    EmptyQuotedString,
+
+    #[error("missing variable name")]
+    MissingVariableName,
+
+    #[error("missing modifier word")]
+    MissingModifierWord,
+
+    #[error("invalid var modifier: {0}")]
+    InvalidVarModifier(String),
+
+    #[error("unexpected quoted string type: {0}")]
+    UnexpectedQuotedString(String),
 
     #[error("parse error: {0}")]
     Parse(String),
