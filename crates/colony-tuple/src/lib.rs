@@ -51,8 +51,10 @@
 //! - **Request/Response**: `out("request", id, data)` → `in("response", id, *)`
 
 mod persistent;
+mod ipc;
 
 pub use persistent::{PersistentTupleSpace, StorageError};
+pub use ipc::{IpcTupleSpace, IpcError, TupleNotification};
 
 use parking_lot::{Condvar, Mutex};
 use scc::HashMap;

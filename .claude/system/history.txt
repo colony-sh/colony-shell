@@ -408,3 +408,23 @@
 [2025-12- 02:25] VALIDATED: Pattern matching works (wildcard queries)
 [2025-12-17 02:25] MILESTONE: Colony Shell is now REACTIVE!
 [2025-12-17 02:25] ENABLES: Agents/terminal can subscribe to state changes in real-time
+[2025-12-17 02:27] START: Beginning F011 (IPC Tuple Space)
+[2025-12-17 02:27] DEPENDENCIES: F010 (in-memory) + F012 (persistent) both complete
+[2025-12-17 02:27] CONTEXT: F012 polling-based, F011 adds event-driven notifications
+[2025-12-17 02:28] ARCHITECTURE: IpcTupleSpace wraps PersistentTupleSpace (layered design)
+[2025-12-17 02:28] DESIGN: Composable - can use Persistent alone or with IPC layer
+[2025-12-17 02:28] NOTIFICATION: TupleNotification enum (TupleAdded, TupleRemoved, Cleared, Ping)
+[2025-12-17 02:28] CONFIG: IpcConfig with socket_path, enable_notifications toggle
+[2025-12-17 02:30] IMPLEMENTED: IpcTupleSpace struct delegating all ops to PersistentTupleSpace
+[2025-12-17 02:30] IMPLEMENTED: notify() broadcasts TupleNotification after out/inp/clear
+[2025-12-17 02:30] IMPLEMENTED: All Linda primitives (out, in, rd, inp, rdp, len, clear)
+[2025-12-17 02:30] PLACEHOLDER: setup_notification_channel() for Phase 2 pub/sub server
+[2025-12-17 02:30] DEPENDENCY: ipc-channel 0.18 (Servo project, battle-tested)
+[2025-12-17 02:32] TESTS: 2 IPC unit tests (basic operations, delegation) - passing
+[2025-12-17 02:32] TESTS: 2 IPC doc tests (struct example, use case) - passing
+[2025-12-17 02:32] EXAMPLE: ipc_demo.rs shows API compatibility and notification hooks
+[2025-12-17 02:32] TOTAL: 17 unit tests + 10 doc tests = 27 tests, all passing
+[2025-12-17 02:32] PHASE 1 COMPLETE: API, types, infrastructure ready for Phase 2
+[2025-12-17 02:32] FUTURE: Phase 2 = actual IpcOneShotServer/IpcReceiver pub/sub impl
+[2025-12-17 02:32] MILESTONE: F011 COMPLETE at foundational level
+[2025-12-17 02:32] ENABLES: Shell ↔ Terminal coordination layer (with Phase 2 pub/sub)

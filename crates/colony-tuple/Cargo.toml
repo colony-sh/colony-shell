@@ -16,6 +16,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror.workspace = true
 tracing.workspace = true
 uuid = { version = "1.10", features = ["v4"] }
+ipc-channel = "0.18"
 
 [dev-dependencies]
 tokio-test = "0.4"
