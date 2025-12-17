@@ -554,7 +554,13 @@
         "2025-12-17: MILESTONE: F023 90% COMPLETE!",
         "2025-12-17: REMAINING: pwd comparison (test harness), builtin redirects (architectural)",
         "2025-12-17: INSIGHT: pest compound_atomic is problematic for nested rules",
-        "2025-12-17: VALIDATION: User's multi-pass suggestion was correct approach!"
+        "2025-12-17: VALIDATION: User's multi-pass suggestion was correct approach!",
+        "2025-12-17: FEATURE: Implemented alias and unalias builtins (165 lines)",
+        "2025-12-17: STORAGE: aliases HashMap in ExpansionContext",
+        "2025-12-17: EXPANSION: Alias checked before builtins/external in execute_simple_command()",
+        "2025-12-17: TESTED: alias definition, listing, expansion, unalias ✅",
+        "2025-12-17: VALIDATED: 18/20 tests maintained (90% POSIX compliance)",
+        "2025-12-17: COMPLETE: F007 stub builtins (alias, unalias) now fully implemented"
       ]
     },
     {
