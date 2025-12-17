@@ -30,13 +30,15 @@ impl Variable {
 
 /// Context for expansion operations
 ///
-/// Provides access to shell state: variables, environment, current directory
+/// Provides access to shell state: variables, environment, current directory, aliases
 #[derive(Debug, Clone)]
 pub struct ExpansionContext {
     /// Shell variables
     variables: HashMap<String, Variable>,
     /// Environment variables (separate from shell variables in POSIX)
     environment: HashMap<String, String>,
+    /// Command aliases: alias name -> replacement
+    aliases: HashMap<String, String>,
     /// Current working directory
     cwd: PathBuf,
     /// Field separator (IFS variable controls field splitting)
@@ -53,6 +55,7 @@ impl ExpansionContext {
         Self {
             variables: HashMap::new(),
             environment: std::env::vars().collect(),
+            aliases: HashMap::new(),
             cwd,
             ifs: " \t\n".to_string(), // POSIX default IFS
             home,
@@ -142,6 +145,26 @@ impl ExpansionContext {
     /// Set IFS
     pub fn set_ifs(&mut self, ifs: String) {
         self.ifs = ifs;
+    }
+
+    /// Get an alias
+    pub fn get_alias(&self, name: &str) -> Option<&str> {
+        self.aliases.get(name).map(|s| s.as_str())
+    }
+
+    /// Set an alias
+    pub fn set_alias(&mut self, name: String, value: String) {
+        self.aliases.insert(name, value);
+    }
+
+    /// Remove an alias
+    pub fn unset_alias(&mut self, name: &str) {
+        self.aliases.remove(name);
+    }
+
+    /// Get all aliases (for listing)
+    pub fn aliases(&self) -> &HashMap<String, String> {
+        &self.aliases
     }
 }
 

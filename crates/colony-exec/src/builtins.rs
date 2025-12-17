@@ -325,20 +325,70 @@ fn builtin_type(args: &[String]) -> Result<BuiltinResult> {
 
 /// alias - Manage command aliases
 ///
-/// Usage: alias [name=value ...]
-/// TODO: Implement alias storage
-fn builtin_alias(_args: &[String], _context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    eprintln!("alias: not yet implemented");
-    Ok(BuiltinResult::Failure(1))
+/// Usage:
+/// - alias              - List all aliases
+/// - alias name         - Show specific alias
+/// - alias name='value' - Define alias
+///
+/// POSIX: Aliases substitute the command name before execution
+fn builtin_alias(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        // No args: list all aliases
+        let mut aliases: Vec<_> = context.aliases().iter().collect();
+        aliases.sort_by_key(|(name, _)| *name);
+
+        for (name, value) in aliases {
+            println!("alias {}='{}'", name, value);
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    // Process each argument
+    for arg in args {
+        if let Some(eq_pos) = arg.find('=') {
+            // Define alias: name=value
+            let (name, value) = arg.split_at(eq_pos);
+            let value = &value[1..]; // Skip the '='
+
+            // Remove surrounding quotes if present
+            let value = value.trim_matches('\'').trim_matches('"');
+
+            context.set_alias(name.to_string(), value.to_string());
+        } else {
+            // Show specific alias
+            if let Some(value) = context.get_alias(arg) {
+                println!("alias {}='{}'", arg, value);
+            } else {
+                eprintln!("alias: {}: not found", arg);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+
+    Ok(BuiltinResult::Success(0))
 }
 
 /// unalias - Remove command aliases
 ///
 /// Usage: unalias name [name...]
-/// TODO: Implement alias storage
-fn builtin_unalias(_args: &[String], _context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    eprintln!("unalias: not yet implemented");
-    Ok(BuiltinResult::Failure(1))
+///
+/// Removes the specified aliases from the alias table.
+fn builtin_unalias(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("unalias: usage: unalias name [name ...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    for name in args {
+        if context.get_alias(name).is_some() {
+            context.unset_alias(name);
+        } else {
+            eprintln!("unalias: {}: not found", name);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    }
+
+    Ok(BuiltinResult::Success(0))
 }
 
 /// source/. - Execute commands from file

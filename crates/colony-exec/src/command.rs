@@ -44,9 +44,45 @@ fn execute_command_blocking(
     if name_fields.is_empty() {
         return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
     }
-    let command_name = &name_fields[0].text;
+    let mut command_name = name_fields[0].text.clone();
 
-    // 2. Expand arguments
+    // 1b. Check for alias expansion
+    if let Some(alias_value) = context.get_alias(&command_name) {
+        // Split alias value into words (simple word splitting on whitespace)
+        let alias_words: Vec<&str> = alias_value.split_whitespace().collect();
+
+        if !alias_words.is_empty() {
+            // First word becomes the new command name
+            command_name = alias_words[0].to_string();
+
+            // Remaining words are prepended to args
+            // We'll build a new args list: [new_name, alias_args..., original_args...]
+            let mut args = vec![command_name.clone()]; // argv[0]
+
+            // Add alias arguments
+            for alias_arg in &alias_words[1..] {
+                args.push(alias_arg.to_string());
+            }
+
+            // Add original command arguments
+            for arg_word in &cmd.args {
+                let fields = expander.expand_word(arg_word)?;
+                for field in fields {
+                    args.push(field.text);
+                }
+            }
+
+            // Continue to path resolution with expanded alias
+            let path_env = context.get_env("PATH");
+            let program_path = resolve_command(&command_name, path_env)?;
+
+            let env: Vec<(String, String)> = std::env::vars().collect();
+            let handle = spawn_process(&program_path, &args, &env, &cmd.redirects, context)?;
+            return handle.wait();
+        }
+    }
+
+    // 2. No alias - expand arguments normally
     let mut args = vec![command_name.clone()]; // argv[0] is the program name
     for arg_word in &cmd.args {
         let fields = expander.expand_word(arg_word)?;
@@ -57,7 +93,7 @@ fn execute_command_blocking(
 
     // 3. Resolve command path
     let path_env = context.get_env("PATH");
-    let program_path = resolve_command(command_name, path_env)?;
+    let program_path = resolve_command(&command_name, path_env)?;
 
     // 4. Build environment
     // For now, just pass through current environment

@@ -78,11 +78,51 @@ impl Executor {
 
     /// Execute a simple command
     ///
-    /// Checks for builtins first, then falls back to external command execution.
+    /// Checks for aliases, then builtins, then external commands.
     ///
     /// **F024 Phase 2:** Processes channel writes from child processes via tuple space.
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
-        // Try builtin first (now with reactive tuple space!)
+        use colony_expand::Expander;
+
+        // 0. Expand command name to check for aliases
+        let mut expander = Expander::with_executor(self.context.clone(), |stmt, ctx| {
+            crate::execute_and_capture(stmt, ctx)
+        });
+
+        let name_fields = expander.expand_word(&cmd.name)?;
+        if name_fields.is_empty() {
+            return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
+        }
+        let command_name = &name_fields[0].text;
+
+        // 0b. Check for alias expansion
+        if let Some(alias_value) = self.context.get_alias(command_name) {
+            // Parse alias value and create new command
+            // Simple approach: split on whitespace and prepend to args
+            let alias_words: Vec<String> = alias_value.split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
+
+            if !alias_words.is_empty() {
+                // Create new command with alias expanded
+                let mut new_cmd = cmd.clone();
+                new_cmd.name = colony_parser::Word::literal(&alias_words[0], cmd.span.clone());
+
+                // Prepend alias args to original args
+                let mut new_args = vec![];
+                for alias_arg in &alias_words[1..] {
+                    new_args.push(colony_parser::Word::literal(alias_arg, cmd.span.clone()));
+                }
+                new_args.extend(cmd.args.clone());
+                new_cmd.args = new_args;
+
+                // Recursively execute the expanded command
+                // Box the future to avoid recursion size issues
+                return Box::pin(self.execute_simple_command(&new_cmd)).await;
+            }
+        }
+
+        // 1. Try builtin (now with reactive tuple space!)
         tracing::debug!("Checking if command is builtin: {:?}", cmd.name);
 
         if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space, &mut self.channels) {
@@ -100,7 +140,7 @@ impl Executor {
 
         tracing::debug!("Not a builtin, executing as external command");
 
-        // Execute external command with channel redirect support
+        // 2. Execute external command with channel redirect support
         let status = self.execute_external_command_with_channels(cmd).await?;
 
         // F024 Phase 2: Sync channel writes from tuple space to channels
