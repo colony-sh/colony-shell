@@ -2,8 +2,14 @@
 
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
 use colony_parser::pest_api::parse_statement;
+use colony_tree_sitter::parse;
 use miette::Result;
-use rustyline::{error::ReadlineError, DefaultEditor};
+use rustyline::completion::Completer;
+use rustyline::error::ReadlineError;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
+use rustyline::{Editor, Helper};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -44,9 +50,87 @@ async fn main() -> Result<()> {
     run_repl(agent).await
 }
 
+/// Rustyline helper with tree-sitter validator
+struct ColonyHelper;
+
+impl ColonyHelper {
+    fn new() -> Self {
+        Self
+    }
+}
+
+impl Completer for ColonyHelper {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        _line: &str,
+        _pos: usize,
+        _ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        Ok((0, vec![]))  // No completion for now
+    }
+}
+
+impl Hinter for ColonyHelper {
+    type Hint = String;
+
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
+        None  // No hints for now
+    }
+}
+
+impl Highlighter for ColonyHelper {
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> std::borrow::Cow<'l, str> {
+        // TODO: Emit OSC 2337 for syntax highlighting
+        // For now, just return the line as-is
+        std::borrow::Cow::Borrowed(line)
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize, _forced: bool) -> bool {
+        false  // Don't force character-level highlighting
+    }
+}
+
+impl Validator for ColonyHelper {
+    fn validate(&self, ctx: &mut ValidationContext) -> rustyline::Result<ValidationResult> {
+        let input = ctx.input();
+
+        // Parse with tree-sitter for syntax validation
+        let tree = parse(input);
+
+        match tree {
+            Some(tree) => {
+                let root = tree.root_node();
+                let has_error = root.has_error();
+
+                tracing::trace!(
+                    "tree-sitter validation: kind={}, has_error={}, byte_range={}..{}",
+                    root.kind(),
+                    has_error,
+                    root.start_byte(),
+                    root.end_byte()
+                );
+
+                if has_error {
+                    // Incomplete input - allow user to continue
+                    Ok(ValidationResult::Incomplete)
+                } else {
+                    Ok(ValidationResult::Valid(None))
+                }
+            }
+            None => Ok(ValidationResult::Incomplete),
+        }
+    }
+}
+
+impl Helper for ColonyHelper {}
+
 async fn run_repl(mut agent: Option<Agent>) -> Result<()> {
-    let mut rl = DefaultEditor::new()
+    let helper = ColonyHelper::new();
+    let mut rl = Editor::new()
         .map_err(|e| miette::miette!("failed to create readline: {}", e))?;
+    rl.set_helper(Some(helper));
 
     loop {
         let prompt = if agent.is_some() { "colony> " } else { "shell> " };
