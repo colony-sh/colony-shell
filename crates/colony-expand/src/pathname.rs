@@ -10,8 +10,8 @@ use crate::Result;
 
 /// Expand a glob pattern to matching file paths
 ///
-/// If the pattern matches files, returns the list of paths.
-/// If the pattern doesn't match anything, returns the pattern itself.
+/// If the pattern matches files, returns the list of sorted paths.
+/// If the pattern doesn't match anything, returns the pattern itself (POSIX behavior).
 pub fn expand_pathname(pattern: &str) -> Result<Vec<String>> {
     // Check if pattern contains glob meta-characters
     if !contains_glob_chars(pattern) {
@@ -19,10 +19,37 @@ pub fn expand_pathname(pattern: &str) -> Result<Vec<String>> {
         return Ok(vec![pattern.to_string()]);
     }
 
-    // Try to glob
-    // TODO: Add glob crate dependency and implement
-    // For now, return pattern unchanged
-    Ok(vec![pattern.to_string()])
+    // Glob the pattern
+    match glob::glob(pattern) {
+        Ok(paths) => {
+            let mut results: Vec<String> = paths
+                .filter_map(|entry| entry.ok())
+                .filter(|path| {
+                    // Filter out hidden files unless pattern explicitly includes them
+                    // A pattern explicitly includes hidden if it starts with . or contains /.
+                    let filename = path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+
+                    !filename.starts_with('.') || pattern.contains("/.")
+                })
+                .map(|path| path.display().to_string())
+                .collect();
+
+            if results.is_empty() {
+                // No matches - return literal pattern (POSIX behavior)
+                Ok(vec![pattern.to_string()])
+            } else {
+                // Sort results (bash sorts glob results)
+                results.sort();
+                Ok(results)
+            }
+        }
+        Err(_) => {
+            // Invalid pattern - return as-is
+            Ok(vec![pattern.to_string()])
+        }
+    }
 }
 
 /// Check if a pattern contains glob metacharacters

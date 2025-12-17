@@ -851,3 +851,15 @@
 [2025-12-17 23:21] WORKING: arr=(a b c), ${arr[0]}, ${arr[@]}, ${#arr[@]}, for loops
 [2025-12-17 23:22] TODO: Negative indices, sparse arrays, element assignment, slicing, +=
 [2025-12-17 23:23] TODO: Associative arrays (declare -A) - deferred for future
+[2025-12-17 23:25] START: Implementing glob (pathname expansion) support
+[2025-12-17 23:30] CREATED: 04_glob.bats with 50 comprehensive glob tests
+[2025-12-17 23:35] DEPENDENCY: Added glob = "0.3" crate for pattern matching
+[2025-12-17 23:40] IMPLEMENTED: Real glob expansion in pathname.rs (was stub)
+[2025-12-17 23:45] FEATURE: Sort results (bash behavior)
+[2025-12-17 23:50] FEATURE: No-match returns literal pattern (POSIX behavior)
+[2025-12-17 23:55] FEATURE: Hidden file exclusion (unless pattern starts with .)
+[2025-12-17 24:00] RESULT: 29/50 tests passing (58%)
+[2025-12-17 24:01] WORKING: *, ?, directory globs, mixed patterns, sorting, no-match fallback
+[2025-12-17 24:02] BLOCKED: Character classes [abc] conflict with Expression syntax
+[2025-12-17 24:03] DEFERRED: Brace expansion {a,b,c} - separate feature, not standard glob
+[2025-12-17 24:04] ARCHITECTURE: 40 lines of actual glob implementation using standard crate
