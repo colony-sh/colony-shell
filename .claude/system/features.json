@@ -144,10 +144,13 @@
       "id": "F008",
       "name": "Job control",
       "description": "Process groups, foreground/background jobs, signal handling (SIGCHLD, SIGINT, SIGTSTP, SIGCONT), job table, fg/bg/jobs/wait builtins.",
-      "status": "new",
+      "status": "in_progress",
       "priority": 3,
       "dependencies": ["F005"],
-      "notes": []
+      "notes": [
+        "2025-12-17: Starting F008 - F005 dependency satisfied",
+        "2025-12-17: Plan: JobTable with parking_lot::RwLock, signal-hook-tokio for SIGCHLD"
+      ]
     },
     {
       "id": "F009",

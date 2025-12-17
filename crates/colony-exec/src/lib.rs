@@ -10,6 +10,7 @@
 mod builtins;
 mod command;
 mod error;
+mod jobs;
 mod path;
 mod pipeline;
 mod process;
@@ -18,6 +19,7 @@ mod redirect;
 pub use builtins::{execute_builtin, is_builtin, BuiltinResult};
 pub use command::execute_command;
 pub use error::{ExecutionError, Result};
+pub use jobs::{init_job_control, Job, JobId, JobStatus, JobTable};
 pub use path::resolve_command;
 pub use pipeline::execute_pipeline;
 pub use process::{ExitStatus, ProcessHandle};

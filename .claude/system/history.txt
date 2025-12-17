@@ -306,3 +306,16 @@
 [2025-12-17 00:39] TESTS: 9 new tests - all passing
 [2025-12-17 00:39] TOTAL TESTS: 27 passing (18 + 9 builtins)
 [2025-12-17 00:39] MILESTONE: F007 100% COMPLETE - Essential builtins working
+[2025-12-17 01:08] START: Beginning F008 (Job Control)
+[2025-12-17 01:08] SCOPE: Process groups, fg/bg jobs, signals, job table, fg/bg/jobs/wait builtins
+[2025-12-17 01:08] DEPENDENCY: F005 (Pipeline execution) satisfied - complete
+[2025-12-17 01:08] PLAN: Job table with parking_lot::RwLock, signal-hook-tokio for SIGCHLD
+[2025-12-17 01:08] NOTE: This is a complex feature - will implement incrementally
+[2025-12-17 01:16] PROGRESS: F008 Phase 1 - Job control infrastructure
+[2025-12-17 01:16] CREATED: jobs.rs module with Job, JobStatus, JobTable
+[2025-12-17 01:16] IMPLEMENTED: JobTable with parking_lot::RwLock (Rule #7)
+[2025-12-17 01:16] IMPLEMENTED: Process group functions (create_process_group, give/take_terminal)
+[2025-12-17 01:16] IMPLEMENTED: Signal setup (init_job_control - ignore SIGINT/SIGTSTP/SIGTTOU)
+[2025-12-17 01:16] TESTS: 5 new job table tests - all passing
+[2025-12-17 01:16] TOTAL TESTS: 32 passing (27 + 5 jobs)
+[2025-12-17 01:16] NEXT: Phase 2 - Integrate with spawn_process, add fg/bg/jobs/wait builtins
