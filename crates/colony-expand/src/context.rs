@@ -110,8 +110,13 @@ impl ExpansionContext {
     }
 
     /// Set environment variable
-    pub fn set_env(&mut self, name: String, value: String) {
-        self.environment.insert(name, value);
+    pub fn set_env(&mut self, name: &str, value: &str) {
+        self.environment.insert(name.to_string(), value.to_string());
+    }
+
+    /// Remove environment variable
+    pub fn unset_env(&mut self, name: &str) {
+        self.environment.remove(name);
     }
 
     /// Get current working directory

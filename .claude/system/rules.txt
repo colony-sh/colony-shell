@@ -59,3 +59,12 @@
 39. NOT building completions — terminal handles display, shell provides candidates
 40. NOT implementing bash-isms unless POSIX-compatible (no [[ ]], no (( )) outside $)
 41. NOT supporting Windows (Unix-only via nix crate)
+
+## Reactive Environment (Future)
+
+42. Environment changes should be observable via tuple space (F010)
+43. When export/unset is called, emit tuple: ("env_change", var_name, old_value, new_value)
+44. Agents and terminal can subscribe to env changes for reactive prompts
+45. Use scc::HashMap for concurrent environment access (Rule #8)
+46. Directory changes (cd) should emit tuples for prompt updates
+47. Enables features: reactive , auto-updating agent context, environment watches

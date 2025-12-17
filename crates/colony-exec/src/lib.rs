@@ -7,6 +7,7 @@
 //! - Exit status capture
 //! - Signal handling (future: job control)
 
+mod builtins;
 mod command;
 mod error;
 mod path;
@@ -14,6 +15,7 @@ mod pipeline;
 mod process;
 mod redirect;
 
+pub use builtins::{execute_builtin, is_builtin, BuiltinResult};
 pub use command::execute_command;
 pub use error::{ExecutionError, Result};
 pub use path::resolve_command;
@@ -35,7 +37,23 @@ impl Executor {
     }
 
     /// Execute a simple command
+    ///
+    /// Checks for builtins first, then falls back to external command execution.
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
+        // Try builtin first
+        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context) {
+            let result = builtin_result?;
+
+            // Handle exit builtin specially
+            if result.is_exit() {
+                // TODO: Propagate exit request to shell
+                // For now, just return the exit code
+            }
+
+            return Ok(ExitStatus::new(result.exit_code()));
+        }
+
+        // Not a builtin - execute as external command
         execute_command(cmd, &mut self.context).await
     }
 

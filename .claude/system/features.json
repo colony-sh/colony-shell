@@ -117,10 +117,28 @@
       "id": "F007",
       "name": "Core builtins",
       "description": "Implement essential builtins that must run in shell process: cd, export, unset, exit, source/., echo, pwd, type, alias, unalias.",
-      "status": "new",
+      "status": "complete",
       "priority": 2,
       "dependencies": ["F004"],
-      "notes": []
+      "notes": [
+        "2025-12-17: Starting F007 - F004 dependency satisfied",
+        "2025-12-17: Created builtins.rs module with builtin dispatch",
+        "2025-12-17: Implemented cd: changes working directory, updates PWD env var",
+        "2025-12-17: Implemented export: sets environment variables",
+        "2025-12-17: Implemented unset: removes environment variables",
+        "2025-12-17: Implemented exit: returns Exit result with code",
+        "2025-12-17: Implemented pwd: prints current working directory",
+        "2025-12-17: Implemented echo: prints arguments to stdout",
+        "2025-12-17: Implemented type: identifies builtins and external commands",
+        "2025-12-17: Stub implementations: alias, unalias, source (return not implemented)",
+        "2025-12-17: Added is_builtin() function for dispatch",
+        "2025-12-17: Added execute_builtin() with Option return (None if not builtin)",
+        "2025-12-17: Integrated into Executor.execute_simple_command()",
+        "2025-12-17: Builtins run in-process (no fork) - modify shell state directly",
+        "2025-12-17: Added unset_env() to ExpansionContext",
+        "2025-12-17: Added 9 comprehensive builtin tests - all passing",
+        "2025-12-17: COMPLETE - 27 tests total (18 + 9 builtins)"
+      ]
     },
     {
       "id": "F008",

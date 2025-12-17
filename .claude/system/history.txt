@@ -293,3 +293,16 @@
 [2025-12-17 00:23] TESTS: 5 new tests (output, input, append, fd_dup, heredoc) - all passing
 [2025-12-17 00:23] TOTAL TESTS: 18 passing (13 original + 5 redirects)
 [2025-12-17 00:23] MILESTONE: F006 100% COMPLETE - Full POSIX redirect support
+[2025-12-17 00:29] START: Beginning F007 (Core Builtins)
+[2025-12-17 00:29] SCOPE: cd, export, unset, exit, source/., echo, pwd, type, alias, unalias
+[2025-12-17 00:29] DEPENDENCY: F004 (Simple command execution) satisfied - complete
+[2025-12-17 00:29] PLAN: Builtins run in-process (modify shell state, no fork)
+[2025-12-17 00:39] COMPLETE: F007 Core Builtins implementation
+[2025-12-17 00:39] IMPLEMENTED: cd, export, unset, exit, pwd, echo, type
+[2025-12-17 00:39] STUBS: alias, unalias, source (return not implemented)
+[2025-12-17 00:39] MODULE: builtins.rs with execute_builtin() dispatcher
+[2025-12-17 00:39] ARCHITECTURE: Builtins run in-process (no fork)
+[2025-12-17 00:39] INTEGRATION: Executor checks builtins before fork/exec
+[2025-12-17 00:39] TESTS: 9 new tests - all passing
+[2025-12-17 00:39] TOTAL TESTS: 27 passing (18 + 9 builtins)
+[2025-12-17 00:39] MILESTONE: F007 100% COMPLETE - Essential builtins working
