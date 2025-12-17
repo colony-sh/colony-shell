@@ -1264,6 +1264,7 @@ impl AstBuilder {
 
         Ok(Assignment {
             name,
+            subscript: None,
             op,
             value: AssignmentValue::Word(value),
             span,
@@ -1274,15 +1275,27 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // BashAssignment = Identifier ~ "=" ~ (ArrayLiteral | Word)
+        // BashAssignment = Identifier ~ ArraySubscript? ~ "=" ~ (ArrayLiteral | Word)
 
         let name = inner.next()
             .ok_or(BuildError::MissingAssignmentName)?
             .as_str()
             .to_string();
 
-        let value_pair = inner.next()
+        // Check if next is subscript or value
+        let next_pair = inner.next()
             .ok_or(BuildError::MissingAssignmentValue)?;
+
+        let (subscript, value_pair) = if next_pair.as_rule() == Rule::ArraySubscript {
+            // We have a subscript, next is the value
+            let subscript = Some(Self::build_array_subscript(next_pair)?);
+            let value_pair = inner.next()
+                .ok_or(BuildError::MissingAssignmentValue)?;
+            (subscript, value_pair)
+        } else {
+            // No subscript, this is the value
+            (None, next_pair)
+        };
 
         let value = match value_pair.as_rule() {
             Rule::ArrayLiteral => {
@@ -1308,6 +1321,7 @@ impl AstBuilder {
 
         Ok(Assignment {
             name,
+            subscript,
             op: AssignOp::Assign,
             value,
             span,

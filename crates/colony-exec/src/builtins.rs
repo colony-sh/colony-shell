@@ -239,9 +239,13 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
 /// **Reactive:** Emits ("env_change", var, old, null) tuple (Rule 43)
 fn builtin_unset(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
     for var_name in args {
-        // Capture old value for reactive tuple
-        let old_value = context.get_env(var_name).unwrap_or("").to_string();
+        // Capture old value for reactive tuple (check both shell vars and env)
+        let old_value = context.get_var_or_env(var_name).unwrap_or_default();
 
+        // Unset from shell variables (includes arrays)
+        context.unset_variable(var_name);
+
+        // Also unset from environment
         context.unset_env(var_name);
         env::remove_var(var_name);
 

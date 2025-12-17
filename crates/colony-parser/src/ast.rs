@@ -87,10 +87,11 @@ pub struct SimpleCommand {
     pub span: Span,
 }
 
-/// An assignment: name=value or name=(array values)
+/// An assignment: name=value or name=(array values) or name[index]=value
 #[derive(Clone, Debug)]
 pub struct Assignment {
     pub name: String,
+    pub subscript: Option<ArraySubscript>,
     pub op: AssignOp,
     pub value: AssignmentValue,
     pub span: Span,

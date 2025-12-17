@@ -84,21 +84,33 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
 
         return match subscript {
             colony_parser::ArraySubscript::Index(expr) => {
-                // TODO: Evaluate expression to get numeric index
-                // For now, parse as integer if possible
-                // This is a simplification - full implementation needs expression evaluator
-                if let colony_parser::Expression::Int(idx, _) = **expr {
-                    let index = if idx < 0 {
-                        // Negative index counts from end
-                        let len = array.len() as i64;
-                        (len + idx) as usize
-                    } else {
-                        idx as usize
-                    };
-                    Ok(array.get(index).cloned().unwrap_or_default())
-                } else {
-                    // Complex expression - not yet supported
-                    Ok(String::new())
+                // Evaluate expression to get numeric index
+                match **expr {
+                    colony_parser::Expression::Int(idx, _) => {
+                        let index = if idx < 0 {
+                            // Negative index counts from end
+                            let len = array.len() as i64;
+                            (len + idx) as usize
+                        } else {
+                            idx as usize
+                        };
+                        Ok(array.get(index).cloned().unwrap_or_default())
+                    }
+                    colony_parser::Expression::Unary { op: colony_parser::UnaryOp::Neg, ref operand, .. } => {
+                        // Handle -N as negative index
+                        if let colony_parser::Expression::Int(n, _) = **operand {
+                            let len = array.len() as i64;
+                            let index = (len - n) as usize;
+                            Ok(array.get(index).cloned().unwrap_or_default())
+                        } else {
+                            Ok(String::new())
+                        }
+                    }
+                    _ => {
+                        // Complex expression - not yet supported
+                        eprintln!("Complex array index expression not supported: {:?}", expr);
+                        Ok(String::new())
+                    }
                 }
             }
             colony_parser::ArraySubscript::All => {
