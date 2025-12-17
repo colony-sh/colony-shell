@@ -551,22 +551,26 @@ SimpleType = {
 // Words and Expansions (Preprocessing Required)
 // ============================================================================
 
-// Word in command context - barewords allowed, expansions handled
-// This is MORE PERMISSIVE than Identifier
+// Word in command context - can contain multiple parts
+// Example: "hello$world" or "$a:$b" or "pre${var}post"
 Word = ${
+    WordPart+
+}
+
+WordPart = _{
     QuotedString
   | DollarExpansion
   | Bareword
 }
 
-// Bareword - must not match reserved keywords
+// Bareword - must not match reserved keywords, stops at $ or quotes
 // Split into two rules: check !ReservedWord, then match chars
 Bareword = {
     !ReservedWord ~ BarewordChars
 }
 
 BarewordChars = @{
-    (!WHITESPACE ~ !SpecialChar ~ ANY)+
+    (!WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ ANY)+
 }
 
 SpecialChar = {

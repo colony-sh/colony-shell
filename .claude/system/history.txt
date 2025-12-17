@@ -633,3 +633,19 @@
 [2025-12-17 17:09] BLOCKER: Deeper grammar issue requires more investigation
 [2025-12-17 17:10] RECOMMENDATION: 70% is excellent - focus on other features
 [2025-12-17 17:11] VALUE: Test suite identifies priorities and prevents regressions
+[2025-12-17 17:30] BREAKTHROUGH: Fixed POSIX for loops!
+[2025-12-17 17:31] GRAMMAR FIX: Bareword excludes ReservedWord (!ReservedWord check)
+[2025-12-17 17:32] GRAMMAR FIX: Bareword stops at $ and quotes (!"$" ~ !"\"" ~ !"'")
+[2025-12-17 17:33] GRAMMAR FIX: Word = WordPart+ (allows $i:$j multi-part words!)
+[2025-12-17 17:34] BUILDER FIX: build_for_statement - "in" is not a separate node
+[2025-12-17 17:35] BUILDER FIX: build_word handles multiple WordPart children
+[2025-12-17 17:36] BUILDER FIX: Break/Continue converted to SimpleCommand
+[2025-12-17 17:37] EXECUTOR: execute_for_loop with word expansion and iteration
+[2025-12-17 17:38] EXECUTOR: break/continue detection via command name check
+[2025-12-17 17:39] TEST: for i in a b c; do echo $i; done → a b c ✅
+[2025-12-17 17:40] TEST: break in for loop → prints only "a" ✅
+[2025-12-17 17:41] TEST: $i:$j expansion → foo:bar ✅
+[2025-12-17 17:42] TEST: Nested loops with break → a:x b:x ✅
+[2025-12-17 17:43] RESULT: 16/20 tests passing (80%)!
+[2025-12-17 17:44] IMPROVEMENT: +10pp from 70% to 80%!
+[2025-12-17 17:45] MILESTONE: 80% POSIX compliance achieved!

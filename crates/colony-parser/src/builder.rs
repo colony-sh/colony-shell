@@ -454,42 +454,41 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // ForStatement = "for" ~ ForKind ~ Block
-        let for_kind = inner.next().ok_or(BuildError::MissingForKind)?;
-        let body = Self::build_block(
-            inner.next().ok_or(BuildError::MissingBody)?
-        )?;
+        // ForStatement = "for" ~ ForKind ~ ";"? ~ Block
+        let children: Vec<_> = inner.collect();
+        let mut iter = children.into_iter();
+        let for_kind = iter.next().ok_or(BuildError::MissingForKind)?;
+
+        // Skip optional semicolon
+        let next_item = iter.next().ok_or(BuildError::MissingBody)?;
+        let block = if next_item.as_str() == ";" {
+            iter.next().ok_or(BuildError::MissingBody)?
+        } else {
+            next_item
+        };
+
+        let body = Self::build_block(block)?;
 
         // Parse ForKind to extract var and words
-        let mut kind_inner = for_kind.into_inner();
+        let kind_children: Vec<_> = for_kind.into_inner().collect();
+        let mut kind_iter = kind_children.into_iter();
 
-        // For now, handle simple case: Identifier ~ "in" ~ WordList
-        let var = kind_inner.next()
+        // Identifier ~ "in" ~ WordList
+        // Note: "in" is a literal keyword in grammar, not emitted as node
+        let var = kind_iter.next()
             .ok_or(BuildError::MissingForVariable)?
             .as_str()
             .to_string();
 
-        // Skip "in" keyword
-        let _ = kind_inner.next();
-
-        // Parse words - WordList = { (!BlockStart ~ Word)+ }
-        let words_pair = kind_inner.next()
-            .ok_or(BuildError::MissingForWords)?;
-
-        // Debug: print what rule we got
-        eprintln!("DEBUG: words_pair rule = {:?}, text = '{}'", words_pair.as_rule(), words_pair.as_str());
+        // Get WordList directly (no "in" node to skip!)
+        let words_pair = kind_iter.next().ok_or(BuildError::MissingForWords)?;
 
         let mut words = Vec::new();
-        for (i, word_pair) in words_pair.into_inner().enumerate() {
-            eprintln!("DEBUG: word_pair[{}] rule = {:?}, text = '{}'", i, word_pair.as_rule(), word_pair.as_str());
-            // WordList contains Word children directly
-            // (the !BlockStart is just a lookahead, doesn't create nodes)
+        for word_pair in words_pair.into_inner() {
             if word_pair.as_rule() == Rule::Word {
                 words.push(Self::build_word(word_pair)?);
             }
         }
-
-        eprintln!("DEBUG: extracted {} words", words.len());
 
         if words.is_empty() {
             return Err(BuildError::MissingForWords);
@@ -1250,39 +1249,51 @@ impl AstBuilder {
     fn build_word(pair: Pair<Rule>) -> Result<Word, BuildError> {
         let span = span_from_pair(&pair);
 
-        // Word = ${ QuotedString | DollarExpansion | Bareword }
-        // Since it's a silent rule, descend to get the actual matched rule
-        let inner = pair.into_inner().next()
-            .ok_or(BuildError::EmptyWord)?;
+        // Word = ${ WordPart+ }
+        // Word now contains MULTIPLE children (each a QuotedString, DollarExpansion, or Bareword)
+        // Build all parts into WordPart vector
+        let mut parts = Vec::new();
 
-        let parts = match inner.as_rule() {
-            Rule::Bareword => {
-                // Bareword is atomic - just literal text
-                vec![WordPart::Literal(inner.as_str().to_string())]
-            }
-            Rule::DollarExpansion => {
-                // Build variable expansion
-                vec![Self::build_dollar_expansion(inner)?]
-            }
-            Rule::QuotedString => {
-                // Delegate to quote parsing
-                vec![Self::build_quoted_string(inner)?]
-            }
-            Rule::SingleQuoted => {
-                // SingleQuoted is atomic @{...} - strip quotes
-                let text = inner.as_str();
-                let content = text.trim_start_matches('\'').trim_end_matches('\'');
-                vec![WordPart::SingleQuoted(content.to_string())]
-            }
-            Rule::DoubleQuoted => {
-                // DoubleQuoted is compound ${ ... } - parse content
-                vec![Self::build_double_quoted(inner)?]
-            }
-            _ => {
-                // Fallback: treat as literal
-                vec![WordPart::Literal(inner.as_str().to_string())]
-            }
-        };
+        for part_pair in pair.into_inner() {
+            let rule = part_pair.as_rule();
+            let text = part_pair.as_str().to_string();  // Capture before consuming
+
+            let word_part = match rule {
+                Rule::Bareword => {
+                    // Bareword children: !ReservedWord check + BarewordChars
+                    // Get the BarewordChars (atomic text)
+                    if let Some(chars) = part_pair.into_inner().next() {
+                        WordPart::Literal(chars.as_str().to_string())
+                    } else {
+                        // No BarewordChars - just use the whole text
+                        WordPart::Literal(text)
+                    }
+                }
+                Rule::DollarExpansion => {
+                    Self::build_dollar_expansion(part_pair)?
+                }
+                Rule::QuotedString => {
+                    Self::build_quoted_string(part_pair)?
+                }
+                Rule::SingleQuoted => {
+                    let content = text.trim_start_matches('\'').trim_end_matches('\'').to_string();
+                    WordPart::SingleQuoted(content)
+                }
+                Rule::DoubleQuoted => {
+                    Self::build_double_quoted(part_pair)?
+                }
+                _ => {
+                    // Fallback: treat as literal
+                    WordPart::Literal(text)
+                }
+            };
+
+            parts.push(word_part);
+        }
+
+        if parts.is_empty() {
+            return Err(BuildError::EmptyWord);
+        }
 
         Ok(Word { parts, span })
     }
