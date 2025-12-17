@@ -788,8 +788,23 @@ fn execute_statement_with_control<'a>(
             eprintln!("Compound commands not yet supported");
             (1, ControlFlow::Normal)
         }
-        Statement::VarDecl(_) | Statement::FunctionDef(_) | Statement::ProcDef(_) | Statement::Return(_) => {
-            eprintln!("Declarations not yet supported");
+        Statement::FunctionDef(func_def) => {
+            // Store function definition
+            executor.context_mut().define_function(func_def.name.clone(), func_def.clone());
+            (0, ControlFlow::Normal)
+        }
+        Statement::Return(ret_stmt) => {
+            // Return statement - propagate as control flow
+            let exit_code = if let Some(ref _expr) = ret_stmt.value {
+                // TODO: Evaluate expression
+                0
+            } else {
+                0
+            };
+            (exit_code, ControlFlow::Return)
+        }
+        Statement::VarDecl(_) | Statement::ProcDef(_) => {
+            eprintln!("This declaration not yet supported");
             (1, ControlFlow::Normal)
         }
         Statement::Empty => (0, ControlFlow::Normal),
@@ -896,8 +911,17 @@ fn _old_execute_statement_for_code<'a>(
             eprintln!("Compound commands not yet supported");
             1
         }
-        Statement::VarDecl(_) | Statement::FunctionDef(_) | Statement::ProcDef(_) | Statement::Return(_) => {
-            eprintln!("Declarations not yet supported");
+        Statement::FunctionDef(func_def) => {
+            // Store function definition
+            executor.context_mut().define_function(func_def.name.clone(), func_def.clone());
+            0
+        }
+        Statement::Return(_ret_stmt) => {
+            // Return statement outside function - just return 0
+            0
+        }
+        Statement::VarDecl(_) | Statement::ProcDef(_) => {
+            eprintln!("This declaration not yet supported");
             1
         }
         Statement::Empty => 0,

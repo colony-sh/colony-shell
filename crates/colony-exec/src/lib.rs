@@ -77,6 +77,36 @@ impl Executor {
         &self.tuple_space
     }
 
+    /// Execute a function with arguments
+    ///
+    /// Sets positional parameters, executes function body, handles return.
+    pub async fn execute_function(
+        &mut self,
+        func_def: &colony_parser::FunctionDef,
+        args: Vec<String>,
+    ) -> Result<ExitStatus> {
+        // Save current positional parameters
+        let saved_params = self.context.get_all_positional_params().to_vec();
+
+        // Set new positional parameters from function arguments
+        self.context.set_positional_params(args);
+
+        // Execute function body
+        let mut last_exit = 0;
+        for stmt in &func_def.body {
+            // Execute each statement in the function body
+            let exit_code = self.execute_statement_recursive(stmt).await?;
+            last_exit = exit_code;
+
+            // TODO: Check for ControlFlow::Return to exit early
+        }
+
+        // Restore positional parameters
+        self.context.set_positional_params(saved_params);
+
+        Ok(ExitStatus::new(last_exit))
+    }
+
     /// Execute a simple command
     ///
     /// Checks for aliases, then builtins, then external commands.
@@ -145,6 +175,21 @@ impl Executor {
                 // Box the future to avoid recursion size issues
                 return Box::pin(self.execute_simple_command(&new_cmd)).await;
             }
+        }
+
+        // 0c. Check for function call
+        if let Some(func_def) = self.context.get_function(command_name).cloned() {
+            // Expand arguments
+            let mut args = Vec::new();
+            for arg_word in &cmd.args {
+                let fields = expander.expand_word(arg_word)?;
+                for field in fields {
+                    args.push(field.text);
+                }
+            }
+
+            // Execute function with arguments as positional parameters
+            return self.execute_function(&func_def, args).await;
         }
 
         // 1. Try builtin (now with reactive tuple space!)
@@ -304,5 +349,63 @@ impl Executor {
     /// Get reference to expansion context
     pub fn context(&self) -> &ExpansionContext {
         &self.context
+    }
+
+    /// Execute a statement recursively (for function bodies)
+    ///
+    /// Simplified executor that handles common statement types.
+    /// Returns exit code.
+    fn execute_statement_recursive<'a>(
+        &'a mut self,
+        stmt: &'a colony_parser::Statement,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i32>> + 'a>> {
+        Box::pin(async move {
+            use colony_parser::Statement;
+
+            match stmt {
+                Statement::SimpleCommand(cmd) => {
+                    let status = Box::pin(self.execute_simple_command(cmd)).await?;
+                    Ok(status.code())
+                }
+                Statement::Pipeline(pipeline) => {
+                    let status = self.execute_pipeline(pipeline).await?;
+                    Ok(status.code())
+                }
+                Statement::List(list) => {
+                    // Execute first
+                    let mut last_exit = self.execute_statement_recursive(&list.first).await?;
+
+                    // Execute rest based on operators
+                    for (op, stmt) in &list.rest {
+                        use colony_parser::ListOp;
+                        let should_exec = match op {
+                            ListOp::Semi => true,
+                            ListOp::And => last_exit == 0,
+                            ListOp::Or => last_exit != 0,
+                            ListOp::Background => false,
+                        };
+
+                        if should_exec {
+                            last_exit = self.execute_statement_recursive(stmt).await?;
+                        }
+                    }
+
+                    Ok(last_exit)
+                }
+                Statement::Return(_) => {
+                    // Return statement - for now just return 0
+                    // TODO: Implement proper return value and early exit
+                    Ok(0)
+                }
+                Statement::Empty => {
+                    // Empty statement - no-op
+                    Ok(0)
+                }
+                _ => {
+                    eprintln!("Statement type in function body not yet supported");
+                    Ok(1)
+                }
+            }
+        })
     }
 }

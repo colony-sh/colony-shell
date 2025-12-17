@@ -30,7 +30,7 @@ impl Variable {
 
 /// Context for expansion operations
 ///
-/// Provides access to shell state: variables, environment, current directory, aliases
+/// Provides access to shell state: variables, environment, current directory, aliases, functions
 #[derive(Debug, Clone)]
 pub struct ExpansionContext {
     /// Shell variables
@@ -39,6 +39,10 @@ pub struct ExpansionContext {
     environment: HashMap<String, String>,
     /// Command aliases: alias name -> replacement
     aliases: HashMap<String, String>,
+    /// Shell functions: function name -> definition
+    functions: HashMap<String, colony_parser::FunctionDef>,
+    /// Positional parameters: $1, $2, etc. (for function/script args)
+    positional_params: Vec<String>,
     /// Current working directory
     cwd: PathBuf,
     /// Field separator (IFS variable controls field splitting)
@@ -56,6 +60,8 @@ impl ExpansionContext {
             variables: HashMap::new(),
             environment: std::env::vars().collect(),
             aliases: HashMap::new(),
+            functions: HashMap::new(),
+            positional_params: Vec::new(),
             cwd,
             ifs: " \t\n".to_string(), // POSIX default IFS
             home,
@@ -80,7 +86,16 @@ impl ExpansionContext {
             "HOME" => return self.home.as_ref().map(|p| p.display().to_string()),
             "PWD" => return Some(self.cwd.display().to_string()),
             "IFS" => return Some(self.ifs.clone()),
+            // Positional parameter count
+            "#" => return Some(self.positional_params.len().to_string()),
+            // All positional parameters (space-separated)
+            "@" | "*" => return Some(self.positional_params.join(" ")),
             _ => {}
+        }
+
+        // Check for numeric positional parameters: $1, $2, etc.
+        if let Ok(index) = name.parse::<usize>() {
+            return self.get_positional_param(index).map(|s| s.to_string());
         }
 
         // Check shell variables first
@@ -165,6 +180,51 @@ impl ExpansionContext {
     /// Get all aliases (for listing)
     pub fn aliases(&self) -> &HashMap<String, String> {
         &self.aliases
+    }
+
+    /// Define a function
+    pub fn define_function(&mut self, name: String, def: colony_parser::FunctionDef) {
+        self.functions.insert(name, def);
+    }
+
+    /// Get a function definition
+    pub fn get_function(&self, name: &str) -> Option<&colony_parser::FunctionDef> {
+        self.functions.get(name)
+    }
+
+    /// Remove a function
+    pub fn unset_function(&mut self, name: &str) {
+        self.functions.remove(name);
+    }
+
+    /// Check if a name is a defined function
+    pub fn is_function(&self, name: &str) -> bool {
+        self.functions.contains_key(name)
+    }
+
+    /// Set positional parameters ($1, $2, ...)
+    pub fn set_positional_params(&mut self, params: Vec<String>) {
+        self.positional_params = params;
+    }
+
+    /// Get positional parameter by index (1-based: $1 is index 0)
+    pub fn get_positional_param(&self, index: usize) -> Option<&str> {
+        if index == 0 {
+            // $0 is shell name, not a parameter
+            None
+        } else {
+            self.positional_params.get(index - 1).map(|s| s.as_str())
+        }
+    }
+
+    /// Get all positional parameters
+    pub fn get_all_positional_params(&self) -> &[String] {
+        &self.positional_params
+    }
+
+    /// Get positional parameter count
+    pub fn positional_param_count(&self) -> usize {
+        self.positional_params.len()
     }
 }
 

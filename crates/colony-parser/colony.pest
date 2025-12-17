@@ -601,7 +601,21 @@ DollarExpansion = {
   | DollarCommandSubRaw                  // $(cmd)   captured as string
   | ("$[" ~ Expression ~ "]")            // $[expr]  - parsed inline (Colony)
   | ("${" ~ VariableRef ~ "}")           // ${var}   - parsed inline
+  | ("$" ~ PositionalParam)              // $1, $@, $#, etc. - positional parameters
   | ("$" ~ Identifier)                   // $var     - parsed inline
+}
+
+// Positional parameters and special variables
+PositionalParam = @{
+    ASCII_DIGIT+                         // $1, $2, $10, etc.
+  | "@"                                  // $@ - all parameters
+  | "*"                                  // $* - all parameters as single word
+  | "#"                                  // $# - parameter count
+  | "?"                                  // $? - last exit status
+  | "$"                                  // $$ - process ID
+  | "!"                                  // $! - last background job PID
+  | "0"                                  // $0 - shell name
+  | "-"                                  // $- - shell flags
 }
 
 // Arithmetic expansion as raw string - parsed and evaluated during expansion

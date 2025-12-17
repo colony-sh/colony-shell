@@ -1377,6 +1377,17 @@ impl AstBuilder {
             .ok_or(BuildError::EmptyDollarExpansion)?;
 
         match inner.as_rule() {
+            Rule::PositionalParam => {
+                // $1, $@, $#, etc. - positional parameters
+                let name = inner.as_str().to_string();
+                Ok(WordPart::Variable(VariableRef {
+                    name,
+                    prefix: None,
+                    subscript: None,
+                    modifier: None,
+                    span: span_from_pair(&inner),
+                }))
+            }
             Rule::Identifier => {
                 // Simple $VAR
                 let name = inner.as_str().to_string();
