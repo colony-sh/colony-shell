@@ -1,14 +1,27 @@
-//! Claude ADK integration and natural language detection
+//! Multi-provider LLM integration and natural language detection
 //!
-//! This crate provides the agent layer for Colony Shell, integrating with
-//! Claude via our native Rust SDK port. Handles tool classification,
-//! programmatic tool execution, and streaming responses to the terminal.
+//! This crate provides the agent layer for Colony Shell with support for:
+//! - Anthropic (Claude models via our Rust SDK)
+//! - OpenAI (GPT models)
+//! - Ollama (local models - free fallback)
+//!
+//! Features:
+//! - Auto-detection: Tries providers in order based on API keys
+//! - Model router: Switch providers at runtime
+//! - Tool classification: PROGRAMMATIC vs USER_FACING
+//! - Streaming responses via OSC 2337
 
+pub mod provider;
+pub mod providers;
+pub mod router;
 pub mod tool;
 pub mod agent;
 pub mod detector;
 
 pub use agent::{Agent, AgentConfig};
+pub use provider::{ModelProvider, CompletionRequest, StreamEvent};
+pub use providers::{AnthropicProvider, OpenAIProvider, OllamaProvider};
+pub use router::{ModelRouter, RouterConfig, ProviderType};
 pub use tool::{ToolRegistry, ToolClassification, RegisteredTool};
 pub use detector::NaturalLanguageDetector;
 

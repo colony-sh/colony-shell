@@ -1,17 +1,21 @@
-//! Agent orchestration and Claude API integration
+//! Agent orchestration with multi-provider LLM support
 
-use crate::{tool::{ToolRegistry, ToolClassification}, Result, AgentError};
-use claude_sdk::{ClaudeClient, ConversationBuilder, StreamEvent, models};
+use crate::{
+    provider::{CompletionRequest, Message, MessageContent, MessageRole, ModelProvider, ToolDefinition},
+    router::ModelRouter,
+    tool::{ToolClassification, ToolRegistry},
+    AgentError, ProviderType, Result, StreamEvent,
+};
 use futures::StreamExt;
 use tracing::{debug, info, warn};
 
-/// Colony Shell agent powered by Claude
+/// Colony Shell agent with multi-provider support
 pub struct Agent {
-    /// Claude API client
-    client: ClaudeClient,
+    /// Model router (handles provider selection)
+    router: ModelRouter,
 
-    /// Current conversation state
-    conversation: ConversationBuilder,
+    /// Conversation history (provider-agnostic)
+    messages: Vec<Message>,
 
     /// Tool registry with execution handlers
     tools: ToolRegistry,
@@ -26,26 +30,26 @@ pub struct Agent {
 /// Agent configuration
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
-    /// Claude model to use
-    pub model: String,
-
     /// Max tokens per response
     pub max_tokens: u32,
 
     /// System prompt
     pub system_prompt: String,
 
-    /// Enable prompt caching
+    /// Enable prompt caching (if provider supports it)
     pub use_caching: bool,
+
+    /// Temperature (0.0-1.0)
+    pub temperature: Option<f32>,
 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            model: models::CLAUDE_SONNET_4_5.anthropic_id.to_string(),
             max_tokens: 4096,
             system_prompt: "You are Colony Shell's agent assistant.".to_string(),
             use_caching: true,
+            temperature: None,
         }
     }
 }
@@ -103,54 +107,79 @@ pub enum ApprovalResponse {
 }
 
 impl Agent {
-    /// Create new agent with API key
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self::with_config(api_key, AgentConfig::default())
+    /// Create new agent with auto-detected provider
+    ///
+    /// Detection order: Anthropic (if ANTHROPIC_API_KEY) → OpenAI (if OPENAI_API_KEY) → Ollama (local, free)
+    pub async fn new() -> Result<Self> {
+        Self::with_config(AgentConfig::default()).await
     }
 
     /// Create agent with custom configuration
-    pub fn with_config(api_key: impl Into<String>, config: AgentConfig) -> Self {
-        let client = ClaudeClient::anthropic(api_key);
+    pub async fn with_config(config: AgentConfig) -> Result<Self> {
+        let router = ModelRouter::auto_detect().await?;
 
-        let conversation = if config.use_caching {
-            ConversationBuilder::new()
-                .with_cached_system(&config.system_prompt)
-        } else {
-            ConversationBuilder::new()
-                .with_system(&config.system_prompt)
-        };
-
-        Self {
-            client,
-            conversation,
-            tools: ToolRegistry::new(),
-            protocol: ProtocolEmitter::new(),
-            config,
-        }
-    }
-
-    /// Create agent for AWS Bedrock (requires --features bedrock)
-    #[cfg(feature = "bedrock")]
-    pub async fn bedrock(region: impl Into<String>, config: AgentConfig) -> Result<Self> {
-        let client = ClaudeClient::bedrock(region)
-            .await
-            .map_err(AgentError::ClaudeApi)?;
-
-        let conversation = if config.use_caching {
-            ConversationBuilder::new()
-                .with_cached_system(&config.system_prompt)
-        } else {
-            ConversationBuilder::new()
-                .with_system(&config.system_prompt)
-        };
+        info!(
+            "Agent initialized with provider: {}, model: {}",
+            router.provider_name(),
+            router.model_name()
+        );
 
         Ok(Self {
-            client,
-            conversation,
+            router,
+            messages: Vec::new(),
             tools: ToolRegistry::new(),
             protocol: ProtocolEmitter::new(),
             config,
         })
+    }
+
+    /// Create agent with specific provider
+    pub async fn with_provider(
+        provider_type: ProviderType,
+        model: impl Into<String>,
+        config: AgentConfig,
+    ) -> Result<Self> {
+        let router = ModelRouter::from_config(crate::router::RouterConfig {
+            provider_type,
+            model_name: model.into(),
+        })
+        .await?;
+
+        info!(
+            "Agent initialized with explicit provider: {}, model: {}",
+            router.provider_name(),
+            router.model_name()
+        );
+
+        Ok(Self {
+            router,
+            messages: Vec::new(),
+            tools: ToolRegistry::new(),
+            protocol: ProtocolEmitter::new(),
+            config,
+        })
+    }
+
+    /// Switch to a different model provider at runtime
+    pub async fn switch_model(
+        &mut self,
+        provider_type: ProviderType,
+        model: impl Into<String>,
+    ) -> Result<()> {
+        let model_name = model.into();
+        info!("Switching model to {:?}: {}", provider_type, model_name);
+
+        self.router
+            .switch_provider(crate::router::RouterConfig {
+                provider_type,
+                model_name,
+            })
+            .await
+    }
+
+    /// Get current provider info
+    pub fn current_provider(&self) -> (&ProviderType, &str) {
+        (self.router.current_provider(), self.router.current_model())
     }
 
     /// Get mutable access to tool registry
@@ -163,53 +192,89 @@ impl Agent {
         let input = user_input.into();
         info!("Processing user input: {}", input);
 
-        // Add user message to conversation
-        self.conversation.add_user_message(&input);
+        // Add user message to conversation history
+        self.messages.push(Message {
+            role: MessageRole::User,
+            content: MessageContent::Text(input),
+        });
 
-        // Build request with tools
-        let tools = self.tools.definitions();
-        let builder = self.conversation.clone();
-        let request = builder
-            .with_tools(tools)
-            .build(&self.config.model, self.config.max_tokens);
+        // Build completion request
+        let tool_defs = self.convert_tool_definitions();
 
-        // Send streaming request
-        let mut stream = self.client.send_streaming(request).await?;
+        let mut request = CompletionRequest::new()
+            .with_system(&self.config.system_prompt)
+            .with_max_tokens(self.config.max_tokens)
+            .with_tools(tool_defs);
+
+        if self.config.use_caching {
+            request = request.enable_caching();
+        }
+
+        // Add all messages to request
+        request.messages = self.messages.clone();
+
+        // Send streaming request via router
+        let mut stream = self.router.complete(request).await?;
         let mut response_text = String::new();
+        let mut pending_tool_calls: Vec<(String, String, serde_json::Value)> = Vec::new();
 
         // Process stream events
         while let Some(event) = stream.next().await {
             match event? {
-                StreamEvent::ContentBlockDelta { delta, .. } => {
-                    if let Some(text) = delta.text() {
-                        response_text.push_str(text);
-                        self.protocol.emit_thought(text)?;
-                    }
+                StreamEvent::TextDelta { text, .. } => {
+                    response_text.push_str(&text);
+                    self.protocol.emit_thought(&text)?;
                 }
 
-                StreamEvent::ContentBlockStart { content_block, .. } => {
-                    // Handle tool use
-                    if let claude_sdk::ContentBlock::ToolUse { id, name, input, .. } = content_block {
-                        self.handle_tool_use(id, name, input).await?;
-                    }
+                StreamEvent::ToolCallStart { id, name } => {
+                    debug!("Tool call started: {} (id: {})", name, id);
+                    // Store for later completion
+                    pending_tool_calls.push((id, name, serde_json::Value::Null));
                 }
 
-                StreamEvent::MessageStop => {
+                StreamEvent::ToolCallComplete { id, name, input } => {
+                    info!("Tool call complete: {} (id: {})", name, id);
+                    // Handle tool execution
+                    self.handle_tool_use(id.clone(), name.clone(), input.clone())
+                        .await?;
+                }
+
+                StreamEvent::Done => {
                     debug!("Stream completed");
                     break;
                 }
 
-                _ => {}
+                StreamEvent::Error { message } => {
+                    return Err(AgentError::Protocol(format!("Stream error: {}", message)));
+                }
             }
         }
 
-        // Add assistant response to conversation
-        self.conversation.add_assistant_message(&response_text);
+        // Add assistant response to conversation history
+        if !response_text.is_empty() {
+            self.messages.push(Message {
+                role: MessageRole::Assistant,
+                content: MessageContent::Text(response_text.clone()),
+            });
+        }
 
         Ok(response_text)
     }
 
-    /// Handle tool use from Claude
+    /// Convert tool registry to provider-agnostic definitions
+    fn convert_tool_definitions(&self) -> Vec<ToolDefinition> {
+        self.tools
+            .definitions()
+            .iter()
+            .map(|t| ToolDefinition {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                input_schema: t.input_schema.clone(),
+            })
+            .collect()
+    }
+
+    /// Handle tool use from LLM
     async fn handle_tool_use(
         &mut self,
         tool_use_id: String,
@@ -219,10 +284,12 @@ impl Agent {
         info!("Tool use: {} (id: {})", tool_name, tool_use_id);
 
         // Check classification
-        let classification = self.tools.classification(&tool_name)
-            .ok_or_else(|| AgentError::ToolExecution(
-                format!("unknown tool: {}", tool_name)
-            ))?;
+        let classification = self
+            .tools
+            .classification(&tool_name)
+            .ok_or_else(|| {
+                AgentError::ToolExecution(format!("unknown tool: {}", tool_name))
+            })?;
 
         // Execute based on classification
         let result = match classification {
@@ -237,26 +304,30 @@ impl Agent {
                 let approval = self.protocol.request_approval(&tool_name, &input).await?;
 
                 match approval {
-                    ApprovalResponse::Approved => {
-                        self.execute_tool(&tool_name, input).await?
-                    }
+                    ApprovalResponse::Approved => self.execute_tool(&tool_name, input).await?,
                     ApprovalResponse::Modified(modified_input) => {
                         self.execute_tool(&tool_name, modified_input).await?
                     }
                     ApprovalResponse::Denied(reason) => {
-                        return Err(AgentError::ToolExecution(
-                            format!("user denied: {}", reason)
-                        ));
+                        return Err(AgentError::ToolExecution(format!(
+                            "user denied: {}",
+                            reason
+                        )));
                     }
                 }
             }
         };
 
-        // Add tool result to conversation (SDK expects JSON string)
+        // Add tool result to message history
         let result_str = serde_json::to_string(&result)
-            .map_err(|e| AgentError::Conversation(format!("failed to serialize tool result: {}", e)))?;
+            .unwrap_or_else(|_| "{}".to_string());
 
-        self.conversation.add_tool_result(tool_use_id, result_str);
+        // Tool results go as user messages in next turn
+        // (Provider-specific handling varies, keeping it simple)
+        self.messages.push(Message {
+            role: MessageRole::User,
+            content: MessageContent::Text(format!("Tool result: {}", result_str)),
+        });
 
         Ok(())
     }

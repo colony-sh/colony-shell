@@ -13,7 +13,7 @@ use crate::provider::{
 };
 use crate::{AgentError, Result};
 use async_trait::async_trait;
-use futures::stream::{self, StreamExt};
+use futures::stream;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};

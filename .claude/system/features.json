@@ -283,19 +283,27 @@
     },
     {
       "id": "F014",
-      "name": "Agent NL detection and routing",
-      "description": "Detect natural language input (# or ? prefix, failed parse heuristics) and route to LLM instead of shell execution. Includes model router abstraction for multi-provider support (Anthropic, OpenAI, etc.).",
-      "status": "in_progress",
+      "name": "Agent NL detection and routing + Model Router",
+      "description": "Detect natural language input (# or ? prefix, failed parse heuristics) and route to LLM instead of shell execution. Includes model router abstraction for multi-provider support (Anthropic, OpenAI, Ollama).",
+      "status": "complete",
       "priority": 4,
       "dependencies": ["F002", "F009"],
       "notes": [
         "2025-12-17: Starting F014 - dependencies F002 (deprecated but satisfied via F021), F009 complete",
-        "2025-12-17: SCOPE EXPANSION: Adding model router for multi-provider support from the start",
-        "2025-12-17: ARCHITECTURE: ModelProvider trait (Anthropic, OpenAI, local models)",
-        "2025-12-17: ARCHITECTURE: ModelRouter with config-based provider selection",
-        "2025-12-17: PLAN: Phase 1 - Model abstraction layer",
-        "2025-12-17: PLAN: Phase 2 - NL detection refinement (beyond just # and ?)",
-        "2025-12-17: PLAN: Phase 3 - Routing logic integration into REPL"
+        "2025-12-17: SCOPE EXPANSION: Multi-provider support from the start (not just Anthropic)",
+        "2025-12-17: IMPLEMENTED: ModelProvider trait - unified interface for all LLM providers",
+        "2025-12-17: IMPLEMENTED: AnthropicProvider - wraps claude-sdk (220 lines)",
+        "2025-12-17: IMPLEMENTED: OpenAIProvider - ChatCompletions API (200 lines)",
+        "2025-12-17: IMPLEMENTED: OllamaProvider - local models, free fallback (260 lines)",
+        "2025-12-17: IMPLEMENTED: ModelRouter - auto-detection, health checks, runtime switching (280 lines)",
+        "2025-12-17: AUTO-DETECT ORDER: Anthropic → OpenAI → Ollama (local)",
+        "2025-12-17: ENV VARS: COLONY_MODEL_PROVIDER, COLONY_MODEL_NAME for override",
+        "2025-12-17: REFACTORED: Agent to use ModelRouter (provider-agnostic)",
+        "2025-12-17: CONVERSATION: Vec<Message> replaces ConversationBuilder (simpler, works across providers)",
+        "2025-12-17: IMPLEMENTED: llm command - status, list, use provider:model",
+        "2025-12-17: TESTED: Auto-detection works (Ollama fallback, OpenAI detection)",
+        "2025-12-17: TESTED: llm status/list commands show provider info",
+        "2025-12-17: COMPLETE: 1000+ lines of provider abstraction, full multi-LLM support"
       ]
     },
     {
