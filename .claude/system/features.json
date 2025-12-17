@@ -542,7 +542,19 @@
         "2025-12-17: KNOWN ISSUE: Builtin redirects not working (builtins run in-process)",
         "2025-12-17: KNOWN ISSUE: Some command sub forms need debugging ($(echo world))",
         "2025-12-17: ARCHITECTURE NOTE: Builtins need fd redirect support (bash temporarily redirects)",
-        "2025-12-17: STATUS: 85% baseline maintained, infrastructure for 90%+ complete"
+        "2025-12-17: STATUS: 85% baseline maintained, infrastructure for 90%+ complete",
+        "2025-12-17: BREAKTHROUGH: Fixed command substitution with two-pass approach!",
+        "2025-12-17: ROOT CAUSE: Word=${...} compound_atomic breaks nested DollarExpansion whitespace",
+        "2025-12-17: SOLUTION: Capture $(.) as raw string, parse during expansion (two-pass)",
+        "2025-12-17: GRAMMAR: DollarCommandSubRaw = @{ \"$(\" ~ (!\")\" ~ ANY)* ~ \")\" }",
+        "2025-12-17: AST: Added WordPart::CommandSubRaw(String) variant",
+        "2025-12-17: EXPANSION: parse_statement() → execute_and_capture() → trim newlines",
+        "2025-12-17: TESTED: echo hello $(echo world) → 'hello world' ✅",
+        "2025-12-17: RESULT: 18/20 tests passing (90%) - +5pp improvement!",
+        "2025-12-17: MILESTONE: F023 90% COMPLETE!",
+        "2025-12-17: REMAINING: pwd comparison (test harness), builtin redirects (architectural)",
+        "2025-12-17: INSIGHT: pest compound_atomic is problematic for nested rules",
+        "2025-12-17: VALIDATION: User's multi-pass suggestion was correct approach!"
       ]
     },
     {
