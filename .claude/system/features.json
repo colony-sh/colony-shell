@@ -284,11 +284,19 @@
     {
       "id": "F014",
       "name": "Agent NL detection and routing",
-      "description": "Detect natural language input (# or ? prefix, failed parse heuristics) and route to LLM instead of shell execution.",
-      "status": "new",
+      "description": "Detect natural language input (# or ? prefix, failed parse heuristics) and route to LLM instead of shell execution. Includes model router abstraction for multi-provider support (Anthropic, OpenAI, etc.).",
+      "status": "in_progress",
       "priority": 4,
       "dependencies": ["F002", "F009"],
-      "notes": []
+      "notes": [
+        "2025-12-17: Starting F014 - dependencies F002 (deprecated but satisfied via F021), F009 complete",
+        "2025-12-17: SCOPE EXPANSION: Adding model router for multi-provider support from the start",
+        "2025-12-17: ARCHITECTURE: ModelProvider trait (Anthropic, OpenAI, local models)",
+        "2025-12-17: ARCHITECTURE: ModelRouter with config-based provider selection",
+        "2025-12-17: PLAN: Phase 1 - Model abstraction layer",
+        "2025-12-17: PLAN: Phase 2 - NL detection refinement (beyond just # and ?)",
+        "2025-12-17: PLAN: Phase 3 - Routing logic integration into REPL"
+      ]
     },
     {
       "id": "F015",
@@ -465,9 +473,29 @@
         "2025-12-16: FUTURE: Additional features (lambda, match, proc/func/agent) have conflicts",
         "2025-12-16: DECISION: Defer advanced features - current state sufficient for editor use"
       ]
+    },
+    {
+      "id": "F023",
+      "name": "Comprehensive Test Suite (Real Bash Scripts)",
+      "description": "Collection of real-world bash scripts sourced from the web for POSIX compatibility testing. Includes original scripts (as-is compatibility tests) and Colony-enhanced variants (demonstrating modern features). Validates parser, expansion, and execution against real-world use cases.",
+      "status": "in_progress",
+      "priority": 2,
+      "dependencies": ["F021", "F003", "F007"],
+      "notes": [
+        "2025-12-17: Starting F023 - all execution features complete, parser operational",
+        "2025-12-17: RATIONALE: Unit tests validate individual features, real scripts validate integration",
+        "2025-12-17: GOAL: Surface edge cases, validate POSIX compliance, demonstrate Colony features",
+        "2025-12-17: PIVOT: Use BATS framework instead of custom test runner",
+        "2025-12-17: ACHIEVEMENT: Integrated bats-core, created 20 builtin tests",
+        "2025-12-17: IMPLEMENTED: -c flag for inline command execution",
+        "2025-12-17: RESULT: 11/20 tests passing (55%) - +50pp improvement!",
+        "2025-12-17: VALIDATED: Exact output matching with bash for implemented features",
+        "2025-12-17: WORKING: echo, pwd, cd, type, exit, pipelines, variable expansion",
+        "2025-12-17: BLOCKED: 9 failures due to unimplemented features (expected)",
+        "2025-12-17: FAILING: Command lists (;, &&, ||), control flow (for/break/continue)",
+        "2025-12-17: FAILING: Command substitution $(), redirections >, <",
+        "2025-12-17: STATUS: 70% complete (infra + -c done, awaiting list/control flow)"
+      ]
     }
-  ]
-}
-
   ]
 }

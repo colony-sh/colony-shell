@@ -22,6 +22,24 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
+    // Parse command-line arguments
+    let args: Vec<String> = std::env::args().collect();
+
+    // Check for -c flag (execute command and exit)
+    if args.len() >= 3 && args[1] == "-c" {
+        // Execute inline command
+        let command = &args[2];
+
+        // Initialize executor (no agent needed for -c mode)
+        let context = ExpansionContext::new();
+        let mut executor = Executor::new(context);
+
+        // Execute the command and exit with its status
+        let exit_code = execute_command_with_status(command, &mut executor).await;
+        std::process::exit(exit_code);
+    }
+
+    // No -c flag: start interactive REPL
     println!("Colony Shell v{}", env!("CARGO_PKG_VERSION"));
     println!("POSIX-compliant shell with AI agent integration");
     println!();
@@ -211,6 +229,103 @@ async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()
     }
 
     Ok(())
+}
+
+/// Execute a shell command and return its exit code (for -c mode)
+async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32 {
+    // Parse with pest
+    let stmt = match parse_statement(line) {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            eprintln!("parse error: {}", e);
+            return 2; // Parse error exit code
+        }
+    };
+
+    // Execute and return exit code
+    use colony_parser::Statement;
+    match stmt {
+        Statement::SimpleCommand(cmd) => {
+            match executor.execute_simple_command(&cmd).await {
+                Ok(status) => status.code(),
+                Err(e) => {
+                    eprintln!("execution error: {}", e);
+                    1
+                }
+            }
+        }
+        Statement::Pipeline(pipeline) => {
+            match executor.execute_pipeline(&pipeline).await {
+                Ok(status) => status.code(),
+                Err(e) => {
+                    eprintln!("execution error: {}", e);
+                    1
+                }
+            }
+        }
+        Statement::List(list) => {
+            // List with single element
+            if list.rest.is_empty() {
+                match *list.first {
+                    Statement::SimpleCommand(cmd) => {
+                        match executor.execute_simple_command(&cmd).await {
+                            Ok(status) => status.code(),
+                            Err(e) => {
+                                eprintln!("execution error: {}", e);
+                                1
+                            }
+                        }
+                    }
+                    Statement::Pipeline(ref pipeline) => {
+                        // Check if it's a single-element pipeline with a simple command
+                        if pipeline.elements.len() == 1 {
+                            if let Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
+                                match executor.execute_simple_command(cmd).await {
+                                    Ok(status) => status.code(),
+                                    Err(e) => {
+                                        eprintln!("execution error: {}", e);
+                                        1
+                                    }
+                                }
+                            } else {
+                                eprintln!("Pipeline element not a simple command");
+                                1
+                            }
+                        } else {
+                            // Real pipeline with multiple commands
+                            match executor.execute_pipeline(&pipeline).await {
+                                Ok(status) => status.code(),
+                                Err(e) => {
+                                    eprintln!("execution error: {}", e);
+                                    1
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        eprintln!("This command type not yet supported");
+                        1
+                    }
+                }
+            } else {
+                eprintln!("Command lists with && || not yet supported");
+                1
+            }
+        }
+        Statement::If(_) | Statement::While(_) | Statement::Until(_) | Statement::For(_) | Statement::Case(_) => {
+            eprintln!("Control flow not yet supported");
+            1
+        }
+        Statement::BraceGroup(_) | Statement::Subshell(_) => {
+            eprintln!("Compound commands not yet supported");
+            1
+        }
+        Statement::VarDecl(_) | Statement::FunctionDef(_) | Statement::ProcDef(_) | Statement::Return(_) => {
+            eprintln!("Declarations not yet supported");
+            1
+        }
+        Statement::Empty => 0,
+    }
 }
 
 async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {

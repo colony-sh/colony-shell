@@ -21,8 +21,12 @@ tracing.workspace = true
 # TODO: Update once published to crates.io as "claude-sdk = 1.0"
 claude-sdk = { path = "/Users/mcfearsome/src/github.com/mcfearsome/claude-agent-sdk-rust" }
 
-# For streaming
+# For streaming and async traits
 futures = "0.3"
+async-trait = "0.1"
+
+# HTTP client for OpenAI and Ollama
+reqwest = { version = "0.12", features = ["json", "stream"] }
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

@@ -505,3 +505,23 @@
 [2025-12-17 12:15] MILESTONE: Full POSIX variable expansion operational!
 [2025-12-17 12:16] ACHIEVEMENT: Pure PEG parser with complete expansion support
 [2025-12-17 12:17] ENABLES: Shell scripts with variables, parameter expansion, string interpolation
+[2025-12-17 14:00] SESSION START: Beginning comprehensive test suite (real bash scripts)
+[2025-12-17 14:01] DECISION: Create F023 (Comprehensive Test Suite) for real bash scripts
+[2025-12-17 14:02] PLAN: tests/scripts/ directory with bash-compat/ and colony-variants/
+[2025-12-17 14:30] START: F014 (Agent NL detection and routing)
+[2025-12-17 14:30] DEPENDENCIES: F002 deprecated but satisfied via F021, F009 complete
+[2025-12-17 14:31] USER REQUIREMENT: Support multiple model providers (not just Anthropic)
+[2025-12-17 14:32] SCOPE EXPANSION: Building model router abstraction from the start
+[2025-12-17 14:33] ARCHITECTURE GOAL: Provider-agnostic - Anthropic, OpenAI, local models
+[2025-12-17 14:34] PHASE 1: Model router with ModelProvider trait
+[2025-12-17 14:35] PHASE 2: Enhanced NL detection (beyond just # and ? prefixes)
+[2025-12-17 14:36] PHASE 3: Integration into REPL with model selection
+[2025-12-17 15:00] IMPLEMENTED: -c flag for inline command execution
+[2025-12-17 15:01] TEST: colony -c "echo hello" works perfectly
+[2025-12-17 15:02] TEST: Exit codes propagate correctly (exit 42 returns 42)
+[2025-12-17 15:03] MILESTONE: BATS test suite operational!
+[2025-12-17 15:04] RESULT: 11/20 tests passing (55%)
+[2025-12-17 15:05] IMPROVEMENT: +50 percentage points from -c flag alone!
+[2025-12-17 15:06] VALIDATED: Exact output matching with bash for implemented features
+[2025-12-17 15:07] BLOCKED: 9 failures due to unimplemented features (lists, control flow, cmd sub)
+[2025-12-17 15:08] EXPECTED: Failures are for features marked as TODO
