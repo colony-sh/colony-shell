@@ -35,11 +35,18 @@ use pest::Parser;
 use crate::pest_parser::{ColonyParser, Rule};
 use crate::builder::AstBuilder;
 use crate::ast::Program;
+use crate::heredoc::preprocess_heredocs;
 
 /// Parse Colony shell source code into AST
 ///
 /// This is the main entry point for parsing. It operates directly on
-/// source text using the pest PEG grammar.
+/// source text using the pest PEG grammar, with minimal preprocessing
+/// for heredocs.
+///
+/// # Heredoc Handling
+///
+/// Heredocs (`<<EOF`) require preprocessing because their content appears
+/// after the command line. This function automatically detects and handles them.
 ///
 /// # Example
 /// ```ignore
@@ -60,7 +67,18 @@ use crate::ast::Program;
 /// Returns `ParseError` if:
 /// - Syntax is invalid (pest parsing fails)
 /// - AST building fails (malformed parse tree)
+/// - Heredoc preprocessing fails
 pub fn parse(source: &str) -> Result<Program, ParseError> {
+    // Check if source contains heredocs
+    if source.contains("<<") {
+        parse_with_heredocs(source)
+    } else {
+        parse_direct(source)
+    }
+}
+
+/// Parse source directly with pest (no heredocs)
+fn parse_direct(source: &str) -> Result<Program, ParseError> {
     // Parse source directly with pest
     let pairs = ColonyParser::parse(Rule::Program, source)
         .map_err(|e| {
@@ -78,6 +96,36 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     // Build AST from parse tree
     let program = AstBuilder::build_program(pairs)
         .map_err(ParseError::Build)?;
+
+    Ok(program)
+}
+
+/// Parse source with heredoc preprocessing
+fn parse_with_heredocs(source: &str) -> Result<Program, ParseError> {
+    // Preprocess heredocs
+    let (normalized, _heredoc_contents) = preprocess_heredocs(source)
+        .map_err(|e| ParseError::HeredocPreprocessing(e))?;
+
+    // Parse normalized source
+    let pairs = ColonyParser::parse(Rule::Program, &normalized)
+        .map_err(|e| {
+            let (line, column) = match e.line_col {
+                pest::error::LineColLocation::Pos((l, c)) => (l, c),
+                pest::error::LineColLocation::Span((l, c), _) => (l, c),
+            };
+            ParseError::Syntax {
+                message: e.to_string(),
+                line,
+                column,
+            }
+        })?;
+
+    // Build AST
+    let program = AstBuilder::build_program(pairs)
+        .map_err(ParseError::Build)?;
+
+    // TODO: Inject heredoc content into AST's Redirect nodes
+    // For now, heredoc Redirects will have placeholder content
 
     Ok(program)
 }
@@ -142,6 +190,9 @@ pub enum ParseError {
 
     #[error("AST build error: {0}")]
     Build(#[from] crate::builder::BuildError),
+
+    #[error("heredoc preprocessing error: {0}")]
+    HeredocPreprocessing(String),
 
     #[error("empty input")]
     EmptyInput,
@@ -249,5 +300,45 @@ mod tests {
         let source = "echo $(ls)";
         let result = parse(source);
         assert!(result.is_ok(), "Should parse $(cmd)");
+    }
+
+    #[test]
+    fn test_heredoc_basic() {
+        let source = r#"cat <<EOF
+line 1
+line 2
+EOF"#;
+
+        let result = parse(source);
+        assert!(result.is_ok(), "Should parse basic heredoc: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_heredoc_strip_tabs() {
+        let source = "cat <<-EOF\n\tindented content\nEOF";
+
+        let result = parse(source);
+        assert!(result.is_ok(), "Should parse <<- heredoc: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_heredoc_quoted_delimiter() {
+        let source = r#"cat <<'EOF'
+$var should not expand
+EOF"#;
+
+        let result = parse(source);
+        assert!(result.is_ok(), "Should parse quoted delimiter: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_heredoc_in_pipeline() {
+        let source = r#"cat <<EOF | grep pattern
+search this content
+and this too
+EOF"#;
+
+        let result = parse(source);
+        assert!(result.is_ok(), "Should parse heredoc in pipeline: {:?}", result.err());
     }
 }

@@ -147,14 +147,17 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Heredocs require preprocessing - content appears after command line
-    fn test_heredoc() {
+    fn test_heredoc_with_preprocessing() {
+        // Test via public API which handles preprocessing
+        use crate::pest_api::parse;
+
         let source = r#"cat <<EOF
 This is content
 More content
 EOF"#;
-        let result = ColonyParser::parse(Rule::SimpleCommand, source);
-        // This will likely fail - heredocs are the one thing needing preprocessing
-        assert!(result.is_ok(), "Heredoc parsing: {:?}", result.err());
+
+        let result = parse(source);
+        // Should work now with heredoc preprocessing!
+        assert!(result.is_ok(), "Heredoc should parse with preprocessing: {:?}", result.err());
     }
 }
