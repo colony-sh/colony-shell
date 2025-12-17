@@ -1,0 +1,16 @@
+[package]
+name = "colony-channels"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
