@@ -77,14 +77,36 @@ impl Field {
     }
 }
 
+/// Command executor callback
+///
+/// Takes a statement AST and returns its stdout output
+pub type CommandExecutor = Box<dyn Fn(&colony_parser::Statement) -> std::result::Result<String, String>>;
+
 /// Main expansion orchestrator
 pub struct Expander {
     context: ExpansionContext,
+    /// Optional command executor for command substitution
+    /// If None, command substitution returns empty string
+    command_executor: Option<CommandExecutor>,
 }
 
 impl Expander {
     pub fn new(context: ExpansionContext) -> Self {
-        Self { context }
+        Self {
+            context,
+            command_executor: None,
+        }
+    }
+
+    /// Create expander with command executor for command substitution
+    pub fn with_executor<F>(context: ExpansionContext, executor: F) -> Self
+    where
+        F: Fn(&colony_parser::Statement) -> std::result::Result<String, String> + 'static,
+    {
+        Self {
+            context,
+            command_executor: Some(Box::new(executor)),
+        }
     }
 
     /// Expand a word into zero or more fields
@@ -152,10 +174,24 @@ impl Expander {
                 out.push_unquoted(&expanded);
             }
 
-            WordPart::CommandSub(_cmd) => {
-                // TODO: Execute command and capture output
-                // This requires integration with executor
-                out.push_unquoted("");
+            WordPart::CommandSub(cmd) => {
+                // Execute command substitution if executor is available
+                if let Some(ref executor) = self.command_executor {
+                    match executor(cmd) {
+                        Ok(output) => {
+                            // POSIX: Remove trailing newlines from command substitution
+                            let trimmed = output.trim_end_matches('\n');
+                            out.push_unquoted(trimmed);
+                        }
+                        Err(e) => {
+                            // Command failed - return error
+                            return Err(ExpansionError::CommandFailed(e));
+                        }
+                    }
+                } else {
+                    // No executor available - return empty string (stub behavior)
+                    out.push_unquoted("");
+                }
             }
         }
 

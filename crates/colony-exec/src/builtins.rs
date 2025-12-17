@@ -17,6 +17,7 @@
 //! Rule #14: All public APIs must have doc comments with examples
 
 use crate::{ExecutionError, JobTable, Result};
+use colony_channels::ChannelManager;
 use colony_expand::{ExpansionContext, Expander};
 use colony_parser::{SimpleCommand, Word};
 use colony_tuple::{Tuple, TupleSpace, Value};
@@ -58,6 +59,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "alias" | "unalias" | "." | "source"
         | "fg" | "bg" | "jobs" | "wait"
         | "[" | "test"  // POSIX test command
+        | "context"     // Extended channel system (F024)
     )
 }
 
@@ -72,6 +74,7 @@ pub fn execute_builtin(
     context: &mut ExpansionContext,
     jobs: &JobTable,
     tuple_space: &TupleSpace,
+    channels: &mut ChannelManager,
 ) -> Option<Result<BuiltinResult>> {
     // Expand command name
     let mut expander = Expander::new(context.clone());
@@ -119,6 +122,7 @@ pub fn execute_builtin(
         "jobs" => builtin_jobs(&args, jobs),
         "wait" => builtin_wait(&args, jobs),
         "[" | "test" => builtin_test(&args),
+        "context" => builtin_context(&args, channels),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -537,6 +541,99 @@ fn builtin_test(args: &[String]) -> Result<BuiltinResult> {
     Ok(BuiltinResult::Failure(2))
 }
 
+/// context - Manage context channel (fd 3)
+///
+/// Usage:
+/// - context add <text>     - Append text to context channel
+/// - context show           - Display all context entries
+/// - context show --last N  - Show last N entries
+/// - context clear          - Clear context channel
+///
+/// **F024:** Extended channels system - writes to stdcontext (fd 3)
+fn builtin_context(args: &[String], channels: &mut ChannelManager) -> Result<BuiltinResult> {
+    use colony_channels::Channel;
+
+    if args.is_empty() {
+        eprintln!("context: missing subcommand");
+        eprintln!("Usage: context <add|show|clear> [args...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let subcommand = &args[0];
+
+    match subcommand.as_str() {
+        "add" => {
+            if args.len() < 2 {
+                eprintln!("context add: missing text");
+                return Ok(BuiltinResult::Failure(1));
+            }
+
+            // Join all remaining args as the text to add
+            let text = args[1..].join(" ");
+
+            // Get mutable reference to context channel
+            if let Some(ctx_channel) = channels.context() {
+                // Use ContextChannel's add_text method
+                ctx_channel.add_text(&text);
+                println!("Added to context: {}", text);
+                Ok(BuiltinResult::Success(0))
+            } else {
+                eprintln!("context: channel not available");
+                Ok(BuiltinResult::Failure(1))
+            }
+        }
+
+        "show" => {
+            // Check for --last N option
+            let count_limit = if args.len() >= 3 && args[1] == "--last" {
+                args[2].parse::<usize>().ok()
+            } else {
+                None
+            };
+
+            // Get context channel
+            if let Some(ctx_channel) = channels.context() {
+                let entries = if let Some(limit) = count_limit {
+                    ctx_channel.last(limit)
+                } else {
+                    ctx_channel.lines()
+                };
+
+                if entries.is_empty() {
+                    println!("(context is empty)");
+                } else {
+                    for entry in entries {
+                        println!("{}", entry);
+                    }
+                }
+
+                Ok(BuiltinResult::Success(0))
+            } else {
+                eprintln!("context: channel not available");
+                Ok(BuiltinResult::Failure(1))
+            }
+        }
+
+        "clear" => {
+            if let Some(ctx_channel) = channels.context() {
+                // Call clear through Channel trait
+                ctx_channel.clear();
+                println!("Context cleared");
+                Ok(BuiltinResult::Success(0))
+            } else {
+                eprintln!("context: channel not available");
+                Ok(BuiltinResult::Failure(1))
+            }
+        }
+
+        _ => {
+            eprintln!("context: unknown subcommand: {}", subcommand);
+            eprintln!("Usage: context <add|show|clear> [args...]");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,9 +668,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         let cmd = make_simple_command("pwd", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -585,9 +683,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         let cmd = make_simple_command("echo", vec!["hello", "world"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -599,9 +698,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         let cmd = make_simple_command("exit", vec!["42"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -614,9 +714,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         let cmd = make_simple_command("export", vec!["TEST_VAR=hello"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -631,11 +732,12 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         context.set_env("TEST_VAR", "value");
 
         let cmd = make_simple_command("unset", vec!["TEST_VAR"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -650,13 +752,14 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
 
         // Save current dir
         let original_dir = env::current_dir().unwrap();
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -676,9 +779,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         let cmd = make_simple_command("type", vec!["cd", "echo"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -690,9 +794,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         let cmd = make_simple_command("ls", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_none()); // ls is not a builtin
     }
 
@@ -701,9 +806,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
         let cmd = make_simple_command("jobs", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -717,6 +823,7 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
 
         // Add a fake job
         jobs.add_job(
@@ -726,7 +833,7 @@ mod tests {
         );
 
         let cmd = make_simple_command("jobs", vec![]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -738,10 +845,11 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
 
         // Export a variable
         let cmd = make_simple_command("export", vec!["REACTIVE_TEST=initial"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         // Check tuple was emitted
@@ -767,13 +875,14 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
 
         // Save original dir
         let original_dir = env::current_dir().unwrap();
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         // Check tuple was emitted
@@ -801,12 +910,13 @@ mod tests {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
 
         // Set then unset
         context.set_env("TO_DELETE", "old_value");
 
         let cmd = make_simple_command("unset", vec!["TO_DELETE"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
         // Check tuple was emitted with Null

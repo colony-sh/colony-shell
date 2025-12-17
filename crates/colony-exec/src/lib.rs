@@ -77,7 +77,7 @@ impl Executor {
         // Try builtin first (now with reactive tuple space!)
         tracing::debug!("Checking if command is builtin: {:?}", cmd.name);
 
-        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space) {
+        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space, &mut self.channels) {
             tracing::debug!("Command is builtin, executing");
             let result = builtin_result?;
 
