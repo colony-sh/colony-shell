@@ -27,11 +27,14 @@ pub use redirect::apply_redirects;
 
 use colony_expand::ExpansionContext;
 use colony_parser::{Pipeline, SimpleCommand};
+use colony_tuple::TupleSpace;
 
 /// Main executor for shell commands
 pub struct Executor {
     context: ExpansionContext,
     jobs: JobTable,
+    /// Tuple space for reactive environment (Rules 42-47)
+    tuple_space: TupleSpace,
 }
 
 impl Executor {
@@ -39,6 +42,7 @@ impl Executor {
         Self {
             context,
             jobs: JobTable::new(),
+            tuple_space: TupleSpace::new(),
         }
     }
 
@@ -47,12 +51,17 @@ impl Executor {
         &self.jobs
     }
 
+    /// Get reference to tuple space
+    pub fn tuple_space(&self) -> &TupleSpace {
+        &self.tuple_space
+    }
+
     /// Execute a simple command
     ///
     /// Checks for builtins first, then falls back to external command execution.
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
-        // Try builtin first
-        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs) {
+        // Try builtin first (now with reactive tuple space!)
+        if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space) {
             let result = builtin_result?;
 
             // Handle exit builtin specially

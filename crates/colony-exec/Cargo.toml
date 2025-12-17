@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 colony-parser.workspace = true
 colony-expand.workspace = true
+colony-tuple = { path = "../colony-tuple" }
 nix = { workspace = true, features = ["fs"] }
 signal-hook.workspace = true
 tokio.workspace = true

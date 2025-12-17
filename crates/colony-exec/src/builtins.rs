@@ -19,6 +19,7 @@
 use crate::{ExecutionError, JobTable, Result};
 use colony_expand::{ExpansionContext, Expander};
 use colony_parser::{SimpleCommand, Word};
+use colony_tuple::{Tuple, TupleSpace, Value};
 use std::env;
 use std::path::PathBuf;
 
@@ -63,10 +64,13 @@ pub fn is_builtin(name: &str) -> bool {
 ///
 /// Returns None if the command is not a builtin.
 /// Returns Some(BuiltinResult) if it is a builtin.
+///
+/// Builtins with state changes emit tuples to the tuple space for reactive updates.
 pub fn execute_builtin(
     cmd: &SimpleCommand,
     context: &mut ExpansionContext,
     jobs: &JobTable,
+    tuple_space: &TupleSpace,
 ) -> Option<Result<BuiltinResult>> {
     // Expand command name
     let mut expander = Expander::new(context.clone());
@@ -99,9 +103,9 @@ pub fn execute_builtin(
 
     // Dispatch to specific builtin
     let result = match name.as_str() {
-        "cd" => builtin_cd(&args, context),
-        "export" => builtin_export(&args, context),
-        "unset" => builtin_unset(&args, context),
+        "cd" => builtin_cd(&args, context, tuple_space),
+        "export" => builtin_export(&args, context, tuple_space),
+        "unset" => builtin_unset(&args, context, tuple_space),
         "exit" => builtin_exit(&args),
         "pwd" => builtin_pwd(&args),
         "echo" => builtin_echo(&args),
@@ -124,7 +128,15 @@ pub fn execute_builtin(
 /// Usage: cd [dir]
 /// - No args: cd to HOME
 /// - One arg: cd to specified directory
-fn builtin_cd(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+///
+/// **Reactive:** Emits ("dir_change", old_dir, new_dir) tuple (Rule 46)
+fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+    // Capture old directory for reactive tuple
+    let old_dir = env::current_dir()
+        .ok()
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| "/".to_string());
+
     let target = if args.is_empty() {
         // cd with no args goes to HOME
         context
@@ -145,12 +157,21 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext) -> Result<Builtin
         ))
     })?;
 
+    // Get new directory
+    let new_dir = env::current_dir()
+        .ok()
+        .and_then(|p| p.to_str().map(String::from))
+        .unwrap_or_else(|| target.to_string());
+
     // Update PWD environment variable
-    if let Ok(pwd) = env::current_dir() {
-        if let Some(pwd_str) = pwd.to_str() {
-            context.set_env("PWD", pwd_str);
-        }
-    }
+    context.set_env("PWD", &new_dir);
+
+    // REACTIVE: Emit dir_change tuple (Rule 46)
+    tuple_space.out(Tuple::from(vec![
+        Value::Str("dir_change".to_string()),
+        Value::Str(old_dir),
+        Value::Str(new_dir.clone()),
+    ]));
 
     Ok(BuiltinResult::Success(0))
 }
@@ -158,7 +179,9 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext) -> Result<Builtin
 /// export - Set environment variables
 ///
 /// Usage: export VAR=value [VAR2=value2 ...]
-fn builtin_export(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+///
+/// **Reactive:** Emits ("env_change", var, old, new) tuple (Rule 43)
+fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
     if args.is_empty() {
         // No args: print all exported variables
         for (key, value) in env::vars() {
@@ -173,8 +196,19 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext) -> Result<Bui
             let (name, value) = arg.split_at(eq_pos);
             let value = &value[1..]; // Skip the '='
 
+            // Capture old value for reactive tuple
+            let old_value = context.get_env(name).unwrap_or("").to_string();
+
             context.set_env(name, value);
             env::set_var(name, value);
+
+            // REACTIVE: Emit env_change tuple (Rule 43)
+            tuple_space.out(Tuple::from(vec![
+                Value::Str("env_change".to_string()),
+                Value::Str(name.to_string()),
+                Value::Str(old_value),
+                Value::Str(value.to_string()),
+            ]));
         } else {
             // Just export existing variable
             if let Some(value) = context.get_env(arg) {
@@ -189,10 +223,23 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext) -> Result<Bui
 /// unset - Remove environment variables
 ///
 /// Usage: unset VAR [VAR2 ...]
-fn builtin_unset(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+///
+/// **Reactive:** Emits ("env_change", var, old, null) tuple (Rule 43)
+fn builtin_unset(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
     for var_name in args {
+        // Capture old value for reactive tuple
+        let old_value = context.get_env(var_name).unwrap_or("").to_string();
+
         context.unset_env(var_name);
         env::remove_var(var_name);
+
+        // REACTIVE: Emit env_change tuple with Null for deleted (Rule 43)
+        tuple_space.out(Tuple::from(vec![
+            Value::Str("env_change".to_string()),
+            Value::Str(var_name.to_string()),
+            Value::Str(old_value),
+            Value::Null,
+        ]));
     }
 
     Ok(BuiltinResult::Success(0))
@@ -405,9 +452,10 @@ mod tests {
     fn test_builtin_pwd() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         let cmd = make_simple_command("pwd", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -418,9 +466,10 @@ mod tests {
     fn test_builtin_echo() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         let cmd = make_simple_command("echo", vec!["hello", "world"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -431,9 +480,10 @@ mod tests {
     fn test_builtin_exit() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         let cmd = make_simple_command("exit", vec!["42"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -445,9 +495,10 @@ mod tests {
     fn test_builtin_export() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         let cmd = make_simple_command("export", vec!["TEST_VAR=hello"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -461,11 +512,12 @@ mod tests {
     fn test_builtin_unset() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         context.set_env("TEST_VAR", "value");
 
         let cmd = make_simple_command("unset", vec!["TEST_VAR"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -479,13 +531,14 @@ mod tests {
     fn test_builtin_cd() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
 
         // Save current dir
         let original_dir = env::current_dir().unwrap();
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -504,9 +557,10 @@ mod tests {
     fn test_builtin_type() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         let cmd = make_simple_command("type", vec!["cd", "echo"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -517,9 +571,10 @@ mod tests {
     fn test_non_builtin() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         let cmd = make_simple_command("ls", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_none()); // ls is not a builtin
     }
 
@@ -527,9 +582,10 @@ mod tests {
     fn test_builtin_jobs_empty() {
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
         let cmd = make_simple_command("jobs", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -542,6 +598,7 @@ mod tests {
 
         let mut context = ExpansionContext::new();
         let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
 
         // Add a fake job
         jobs.add_job(
@@ -551,10 +608,98 @@ mod tests {
         );
 
         let cmd = make_simple_command("jobs", vec![]);
-        let result = execute_builtin(&cmd, &mut context, &jobs);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
         assert_eq!(builtin_result.exit_code(), 0);
+    }
+
+    #[test]
+    fn test_reactive_export() {
+        let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
+
+        // Export a variable
+        let cmd = make_simple_command("export", vec!["REACTIVE_TEST=initial"]);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        assert!(result.is_some());
+
+        // Check tuple was emitted
+        let pattern = Tuple::pattern(&[
+            Value::Str("env_change".to_string()),
+            Value::Str("REACTIVE_TEST".to_string()),
+            Value::Wildcard,
+            Value::Wildcard,
+        ]);
+
+        let tuple = tuple_space.inp(pattern);
+        assert!(tuple.is_some());
+
+        let t = tuple.unwrap();
+        assert_eq!(t.fields[0], Value::Str("env_change".to_string()));
+        assert_eq!(t.fields[1], Value::Str("REACTIVE_TEST".to_string()));
+        assert_eq!(t.fields[2], Value::Str("".to_string())); // old value (was empty)
+        assert_eq!(t.fields[3], Value::Str("initial".to_string())); // new value
+    }
+
+    #[test]
+    fn test_reactive_cd() {
+        let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
+
+        // Save original dir
+        let original_dir = env::current_dir().unwrap();
+
+        // cd to /tmp
+        let cmd = make_simple_command("cd", vec!["/tmp"]);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        assert!(result.is_some());
+
+        // Check tuple was emitted
+        let pattern = Tuple::pattern(&[
+            Value::Str("dir_change".to_string()),
+            Value::Wildcard,
+            Value::Wildcard,
+        ]);
+
+        let tuple = tuple_space.inp(pattern);
+        assert!(tuple.is_some());
+
+        let t = tuple.unwrap();
+        assert_eq!(t.fields[0], Value::Str("dir_change".to_string()));
+        // fields[1] is old dir, fields[2] is new dir (should be /tmp or /private/tmp)
+        // Just verify it's a string value
+        assert!(matches!(t.fields[2], Value::Str(_)));
+
+        // Restore
+        env::set_current_dir(original_dir).ok();
+    }
+
+    #[test]
+    fn test_reactive_unset() {
+        let mut context = ExpansionContext::new();
+        let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
+
+        // Set then unset
+        context.set_env("TO_DELETE", "old_value");
+
+        let cmd = make_simple_command("unset", vec!["TO_DELETE"]);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space);
+        assert!(result.is_some());
+
+        // Check tuple was emitted with Null
+        let pattern = Tuple::pattern(&[
+            Value::Str("env_change".to_string()),
+            Value::Str("TO_DELETE".to_string()),
+            Value::Wildcard,
+            Value::Null,
+        ]);
+
+        let tuple = tuple_space.inp(pattern);
+        assert!(tuple.is_some());
     }
 }
