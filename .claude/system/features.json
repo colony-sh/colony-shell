@@ -746,7 +746,10 @@
         "2025-12-17: BUG FIX: parse() used instead of parse_statement() for -c mode",
         "2025-12-17: RESULT: 16/44 tests passing (40% baseline)",
         "2025-12-17: WORKING: Declaration, indexing, ${arr[@]}, ${#arr[@]}, iteration",
-        "2025-12-17: DEFERRED: Negative indices, sparse arrays, element assignment, slicing"
+        "2025-12-17: DEFERRED: Negative indices, sparse arrays, element assignment, slicing",
+        "2025-12-17: GLOB: Added pathname expansion - 29/50 tests passing (58%)",
+        "2025-12-17: GLOB: *, ?, directory matching, hidden file exclusion working",
+        "2025-12-17: GLOB BLOCKED: [abc] character classes conflict with Expression syntax"
       ]
     }
   ]
