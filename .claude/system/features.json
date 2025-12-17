@@ -525,6 +525,123 @@
         "2025-12-17: NEXT: Fix pest grammar for POSIX for loops OR implement cmd substitution",
         "2025-12-17: STATUS: 90% complete - test infrastructure fully operational"
       ]
+    },
+    {
+      "id": "F024",
+      "name": "Extended Channels System (fd 3-6)",
+      "description": "Implement stdcontext (fd 3), stdllm (fd 4), stdtool (fd 5), stdtrace (fd 6) channels. Each channel maintains structured history with builtins for management. Enables context tracking, conversation history, tool logging, and execution tracing.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F009"],
+      "notes": []
+    },
+    {
+      "id": "F025",
+      "name": "Buffer Management",
+      "description": "Styled text buffers with ANSI parsing, scrollback management, search, and persistence. Each channel has associated buffer. Supports CharStyle, LineStyle, Color, and buffer operations (scroll, search, clear, export).",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F024"],
+      "notes": []
+    },
+    {
+      "id": "F026",
+      "name": "Pane Management & Layout System",
+      "description": "Pane manager with layout presets (default, dev, debug, agent), split operations (horizontal/vertical), focus management (Ctrl+w navigation), zoom, resize. LayoutNode tree with Horizontal/Vertical/Tabbed nodes. Keyboard shortcuts for pane operations.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F025"],
+      "notes": []
+    },
+    {
+      "id": "F027",
+      "name": "Reactive Prompt Architecture",
+      "description": "PromptManager that subscribes to tuple space for reactive updates (dir_change, env_change). Emit PromptState via OSC 2337 Prompt=state. Git info caching (500ms default). Prompt=ready/Prompt=busy signals. Fallback text prompt when COLONY_TERMINAL not set.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F010", "F009"],
+      "notes": []
+    },
+    {
+      "id": "F028",
+      "name": "File Tree State & Watching",
+      "description": "Shell-side file tree state management. TreeState with FileNode structure, FileSystemWatcher via notify crate, GitStatusCache for git indicators. Agent context includes tree state. Enables agent awareness of file selection and project structure.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": [],
+      "notes": []
+    },
+    {
+      "id": "F029",
+      "name": "File Tree Protocol (Shell ↔ Terminal)",
+      "description": "TreeProtocol for syncing file tree state between shell and terminal. TreeStateUpdate messages (Snapshot, NodeAdded, NodeRemoved, NodeModified). TreeUserAction messages (Navigate, Expand, Open, Delete, Rename, Create). Hybrid: OSC for small updates, side channel for bulk data.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F028", "F009"],
+      "notes": []
+    },
+    {
+      "id": "F030",
+      "name": "Special Files System (AGENT.md, CONTEXT.md, etc.)",
+      "description": "Parse and load special files: AGENT.md (agent definitions), CONTEXT.md (seed context), TOOLS.md (tool configs), PROMPT.md (templates), .colony/config.toml. SpecialFilesLoader auto-loads on directory change. AgentMdParser for Markdown agent definitions.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F020"],
+      "notes": []
+    },
+    {
+      "id": "F031",
+      "name": "Context Management System",
+      "description": "Runtime context composition with ContextManager. Token budgeting, optimization strategies (summarize, structure, prune). Context commands: add, remove, show, search, export, optimize, prune, pin, snapshot, restore. Handles Project, File, Conversation, Knowledge, Team contexts.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F024", "F030"],
+      "notes": []
+    },
+    {
+      "id": "F032",
+      "name": "Reflection Engine",
+      "description": "Observe command history, agent interactions, detect patterns (workflow friction, error-prone areas, learning curves), generate insights (daily digest, weekly growth). reflect command with privacy controls. Local-first with opt-in cloud insights.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F024"],
+      "notes": []
+    },
+    {
+      "id": "F033",
+      "name": "Typed Pipelines (-> => ~>)",
+      "description": "Extend POSIX pipe (|) with typed operators: -> (typed pipe with static checking), => (transform pipe mapping values), ~> (alter pipe with side effects). Requires type system integration for pipeline type checking.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F034", "F005"],
+      "notes": []
+    },
+    {
+      "id": "F034",
+      "name": "Type System & Inference",
+      "description": "Type annotations, type inference engine, pipeline type checking. Supports primitive types, collections, functions, unions. Type checking for variable declarations, function signatures, and pipeline composition. Error messages with type mismatch details.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F021"],
+      "notes": []
+    },
+    {
+      "id": "F035",
+      "name": "Interactive Features (Live Preview & Help)",
+      "description": "Live command preview (show effect before execution), inline help system, command suggestions, interactive widgets for complex commands. Integrates with terminal for rich UI feedback.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F009"],
+      "notes": []
+    },
+    {
+      "id": "F036",
+      "name": "Completion System",
+      "description": "Context-aware completion engine. Suggest commands from PATH, variables from environment, files from cwd, MCP tools, custom completions from .colonyrc. Integration with reflection engine to prioritize commands user is learning.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F028"],
+      "notes": []
     }
   ]
 }
