@@ -20,6 +20,9 @@
 
 use tree_sitter::{Language, Parser, Tree};
 
+// Re-export tree-sitter types for users
+pub use tree_sitter::{Node, Tree as TreeSitterTree};
+
 extern "C" {
     fn tree_sitter_colony() -> Language;
 }

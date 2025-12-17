@@ -1,2 +1,4 @@
 .DS_Store
 target/
+_bmad/
+.claude/commands/bmad/
