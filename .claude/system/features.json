@@ -532,7 +532,17 @@
         "2025-12-17: VALIDATED: Exact bash output matching on all passing tests",
         "2025-12-17: WORKING: Builtins, variables, pipes, lists, for loops, if statements, [ test",
         "2025-12-17: REMAINING: 3 failures - cmd sub (1), redir (1), pwd test (1)",
-        "2025-12-17: STATUS: COMPLETE - 85% POSIX compliance validated!"
+        "2025-12-17: STATUS: COMPLETE - 85% POSIX compliance validated!",
+        "2025-12-17: PROGRESS: Command substitution infrastructure implemented (296 lines)",
+        "2025-12-17: ARCHITECTURE: execute_and_capture() with fork/pipe/dup2 coordination",
+        "2025-12-17: PATTERN: Dependency injection via CommandExecutor callback (avoids circular deps)",
+        "2025-12-17: INTEGRATED: command.rs, pipeline.rs, redirect.rs, builtins.rs, main.rs",
+        "2025-12-17: TESTED: execute_and_capture tests passing, $(pwd) works manually",
+        "2025-12-17: VALIDATED: External command redirects working (/bin/echo > file) ✅",
+        "2025-12-17: KNOWN ISSUE: Builtin redirects not working (builtins run in-process)",
+        "2025-12-17: KNOWN ISSUE: Some command sub forms need debugging ($(echo world))",
+        "2025-12-17: ARCHITECTURE NOTE: Builtins need fd redirect support (bash temporarily redirects)",
+        "2025-12-17: STATUS: 85% baseline maintained, infrastructure for 90%+ complete"
       ]
     },
     {

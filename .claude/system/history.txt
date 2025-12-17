@@ -697,3 +697,40 @@
 [2025-12-17 19:13] NEXT: Phase 2 will integrate PersistentTupleSpace for child access
 [2025-12-17 19:14] NEXT: Implement redirect handling for >&3, >&4, >&5, >&6
 [2025-12-17 19:15] COMMIT: F024 Phase 1 complete - 165 lines changed
+[2025-12-17 19:20] START: Session Start Protocol - F023 continuation
+[2025-12-17 19:21] REVIEW: Git shows F024 work in progress (parallel session), F023 at 85%
+[2025-12-17 19:22] REVIEW: features.json shows F023 in_progress, F024 in_progress (parallel)
+[2025-12-17 19:23] REVIEW: Last work was [ test builtin and if statements (85% achieved)
+[2025-12-17 19:24] DECISION: Continue F023 (Option A) - work on command substitution and redirects
+[2025-12-17 19:25] PLAN: Implement $(cmd) executor integration, test redirects, fix PWD test
+[2025-12-17 19:30] START: Command substitution implementation
+[2025-12-17 19:31] DESIGN: Dependency injection pattern to avoid circular deps (expand ← exec)
+[2025-12-17 19:32] ARCHITECTURE: CommandExecutor callback in Expander
+[2025-12-17 19:33] CREATED: command_sub.rs module (296 lines)
+[2025-12-17 19:34] IMPLEMENTED: execute_and_capture() - fork/pipe/dup2/read/waitpid
+[2025-12-17 19:35] IMPLEMENTED: execute_statement_in_child() - runs statement in forked process
+[2025-12-17 19:36] IMPLEMENTED: execute_command_in_child_blocking() - no tokio in child
+[2025-12-17 19:37] FIX: Removed tokio runtime creation in child (avoids "runtime within runtime" panic)
+[2025-12-17 19:38] FIX: WaitStatus handling for exit code extraction
+[2025-12-17 19:39] FIX: CommandList iteration (first + rest, not .statements)
+[2025-12-17 19:40] UPDATED: Expander with CommandExecutor callback type
+[2025-12-17 19:41] UPDATED: Expander::with_executor() factory method
+[2025-12-17 19:42] UPDATED: expand_part WordPart::CommandSub handler
+[2025-12-17 19:43] INTEGRATED: command.rs - Expander::with_executor in execute_command_blocking
+[2025-12-17 19:44] INTEGRATED: pipeline.rs - command substitution in pipeline element expansion
+[2025-12-17 19:45] INTEGRATED: redirect.rs - command sub in redirect filename expansion
+[2025-12-17 19:46] INTEGRATED: builtins.rs - command sub in builtin argument expansion
+[2025-12-17 19:47] INTEGRATED: main.rs - command sub in for loop word expansion (2 locations)
+[2025-12-17 19:50] TESTED: execute_and_capture unit tests - all passing ✅
+[2025-12-17 19:51] TESTED: Manual $(pwd) - returns directory path ✅
+[2025-12-17 19:52] TESTED: External redirects (/bin/echo > file && cat file) - working ✅
+[2025-12-17 19:55] FINDING: $(pwd) works, $(echo world) has issues - needs debugging
+[2025-12-17 19:56] FINDING: Builtin redirects don't work (builtins run in-process, no fork)
+[2025-12-17 19:57] ARCHITECTURE: Builtins need fd redirect support (bash's approach: temp redirect in shell)
+[2025-12-17 20:00] COMMIT: Command substitution infrastructure (dbd30f2) - 328 lines changed
+[2025-12-17 20:01] MILESTONE: Command substitution foundation complete
+[2025-12-17 20:02] ACHIEVEMENT: Avoided circular dependency via dependency injection
+[2025-12-17 20:03] ACHIEVEMENT: Redirections confirmed working for external commands
+[2025-12-17 20:04] STATUS: F023 at 85% baseline, infrastructure ready for debugging/polish
+[2025-12-17 20:05] NEXT: Debug $(echo world) parsing/expansion issue
+[2025-12-17 20:06] NEXT: Implement builtin redirect support (architectural enhancement)
