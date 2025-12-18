@@ -24,7 +24,7 @@ mod context;
 
 pub use context::{ExpansionContext, Variable};
 pub use tilde::expand_tilde;
-pub use parameter::expand_parameter;
+pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
 pub use arithmetic::expand_arithmetic;
 pub use field_split::split_fields;
 pub use pathname::expand_pathname;
@@ -123,6 +123,10 @@ impl Expander {
     /// 6. Pathname expansion
     /// 7. Quote removal
     pub fn expand_word(&mut self, word: &Word) -> Result<Vec<Field>> {
+        if let Some(fields) = self.try_expand_array_at_word(word)? {
+            return Ok(fields);
+        }
+        
         // Phase 1-4: Word-level expansions produce an intermediate string
         let mut intermediate = IntermediateWord::new();
 
@@ -147,12 +151,43 @@ impl Expander {
         // Phase 7: Quote removal (already handled by tracking quoted state)
         Ok(expanded_fields)
     }
+    
+    fn try_expand_array_at_word(&self, word: &Word) -> Result<Option<Vec<Field>>> {
+        use colony_parser::ArraySubscript;
+        
+        if word.parts.len() != 1 {
+            return Ok(None);
+        }
+        
+        if let WordPart::DoubleQuoted(inner_parts) = &word.parts[0] {
+            if inner_parts.len() != 1 {
+                return Ok(None);
+            }
+            if let WordPart::Variable(var_ref) = &inner_parts[0] {
+                if matches!(var_ref.subscript, Some(ArraySubscript::All)) {
+                    if let Some(Variable::Array(arr)) = self.context.get_variable(&var_ref.name) {
+                        let fields: Vec<Field> = arr.iter().map(|s| Field::quoted(s.clone())).collect();
+                        return Ok(Some(fields));
+                    }
+                }
+            }
+        }
+        
+        Ok(None)
+    }
 
-    /// Expand a single word part into the intermediate representation
     fn expand_part(&mut self, part: &WordPart, out: &mut IntermediateWord) -> Result<()> {
+        self.expand_part_with_quoted(part, out, false)
+    }
+
+    fn expand_part_with_quoted(&mut self, part: &WordPart, out: &mut IntermediateWord, in_double_quote: bool) -> Result<()> {
         match part {
             WordPart::Literal(s) => {
-                out.push_unquoted(s);
+                if in_double_quote {
+                    out.push_quoted(s);
+                } else {
+                    out.push_unquoted(s);
+                }
             }
 
             WordPart::SingleQuoted(s) => {
@@ -162,38 +197,50 @@ impl Expander {
             WordPart::DoubleQuoted(parts) => {
                 out.begin_quoted();
                 for inner_part in parts {
-                    self.expand_part(inner_part, out)?;
+                    self.expand_part_with_quoted(inner_part, out, true)?;
                 }
                 out.end_quoted();
             }
 
             WordPart::Tilde(user) => {
                 let expanded = expand_tilde(user.as_deref(), &self.context)?;
-                out.push_unquoted(&expanded);
+                if in_double_quote {
+                    out.push_quoted(&expanded);
+                } else {
+                    out.push_unquoted(&expanded);
+                }
             }
 
             WordPart::Variable(var_ref) => {
                 let expanded = expand_parameter(var_ref, &self.context)?;
-                out.push_unquoted(&expanded);
+                if in_double_quote {
+                    out.push_quoted(&expanded);
+                } else {
+                    out.push_unquoted(&expanded);
+                }
             }
 
             WordPart::ArithRaw(expr_str) => {
-                // Evaluate arithmetic expression
                 let result = expand_arithmetic(expr_str, &self.context)?;
-                out.push_unquoted(&result);
+                if in_double_quote {
+                    out.push_quoted(&result);
+                } else {
+                    out.push_unquoted(&result);
+                }
             }
 
             WordPart::CommandSubRaw(cmd_str) => {
-                // Parse the command string, then execute
                 if let Some(ref executor) = self.command_executor {
-                    // Parse the command string into a statement
                     match colony_parser::pest_api::parse_statement(cmd_str) {
                         Ok(stmt) => {
                             match executor(&stmt, &mut self.context) {
                                 Ok(output) => {
-                                    // POSIX: Remove trailing newlines from command substitution
                                     let trimmed = output.trim_end_matches('\n');
-                                    out.push_unquoted(trimmed);
+                                    if in_double_quote {
+                                        out.push_quoted(trimmed);
+                                    } else {
+                                        out.push_unquoted(trimmed);
+                                    }
                                 }
                                 Err(e) => {
                                     return Err(ExpansionError::CommandFailed(e));
@@ -210,21 +257,21 @@ impl Expander {
             }
 
             WordPart::CommandSub(cmd) => {
-                // Execute command substitution if executor is available
                 if let Some(ref executor) = self.command_executor {
                     match executor(cmd, &mut self.context) {
                         Ok(output) => {
-                            // POSIX: Remove trailing newlines from command substitution
                             let trimmed = output.trim_end_matches('\n');
-                            out.push_unquoted(trimmed);
+                            if in_double_quote {
+                                out.push_quoted(trimmed);
+                            } else {
+                                out.push_unquoted(trimmed);
+                            }
                         }
                         Err(e) => {
-                            // Command failed - return error
                             return Err(ExpansionError::CommandFailed(e));
                         }
                     }
                 } else {
-                    // No executor available - return empty string (stub behavior)
                     out.push_unquoted("");
                 }
             }

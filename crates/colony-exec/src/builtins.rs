@@ -18,7 +18,7 @@
 
 use crate::{ExecutionError, JobTable, Result};
 use colony_channels::ChannelManager;
-use colony_expand::{ExpansionContext, Expander};
+use colony_expand::{ExpansionContext, Expander, Variable};
 use colony_parser::{SimpleCommand, Word};
 use colony_tuple::{Tuple, TupleSpace, Value};
 use std::env;
@@ -51,16 +51,16 @@ impl BuiltinResult {
     }
 }
 
-/// Check if a command name is a builtin
 pub fn is_builtin(name: &str) -> bool {
     matches!(
         name,
         "cd" | "export" | "unset" | "exit" | "pwd" | "echo" | "type"
         | "alias" | "unalias" | "." | "source"
         | "fg" | "bg" | "jobs" | "wait"
-        | "[" | "test"  // POSIX test command
-        | ":"           // POSIX null utility (no-op, returns 0)
-        | "context"     // Extended channel system (F024)
+        | "[" | "test"
+        | ":"
+        | "context"
+        | "declare"
     )
 }
 
@@ -129,6 +129,7 @@ pub fn execute_builtin(
         "[" | "test" => builtin_test(&args),
         ":" => builtin_noop(&args),
         "context" => builtin_context(&args, channels),
+        "declare" => builtin_declare(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -701,6 +702,69 @@ fn builtin_context(args: &[String], channels: &mut ChannelManager) -> Result<Bui
             Ok(BuiltinResult::Failure(1))
         }
     }
+}
+
+fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    use std::collections::HashMap;
+    
+    let mut is_assoc = false;
+    let mut reassembled_args: Vec<String> = Vec::new();
+    let mut in_parens = false;
+    let mut current_arg = String::new();
+    
+    for arg in args {
+        if arg == "-A" {
+            is_assoc = true;
+            continue;
+        } else if arg.starts_with('-') {
+            continue;
+        }
+        
+        if in_parens {
+            current_arg.push(' ');
+            current_arg.push_str(arg);
+            if arg.ends_with(')') {
+                in_parens = false;
+                reassembled_args.push(current_arg.clone());
+                current_arg.clear();
+            }
+        } else if arg.contains("=(") && !arg.ends_with(')') {
+            in_parens = true;
+            current_arg = arg.clone();
+        } else {
+            reassembled_args.push(arg.clone());
+        }
+    }
+    
+    for var_spec in reassembled_args {
+        if let Some(eq_pos) = var_spec.find('=') {
+            let name = &var_spec[..eq_pos];
+            let value_part = &var_spec[eq_pos + 1..];
+            
+            if is_assoc && value_part.starts_with('(') && value_part.ends_with(')') {
+                let inner = &value_part[1..value_part.len()-1];
+                let mut map = HashMap::new();
+                for item in inner.split_whitespace() {
+                    if item.starts_with('[') {
+                        if let Some(end) = item.find("]=") {
+                            let key = &item[1..end];
+                            let val = &item[end+2..];
+                            map.insert(key.to_string(), val.to_string());
+                        }
+                    }
+                }
+                context.set_variable(name.to_string(), Variable::AssocArray(map));
+            } else if is_assoc {
+                context.set_variable(name.to_string(), Variable::AssocArray(HashMap::new()));
+            } else {
+                context.set_var(name.to_string(), value_part.to_string());
+            }
+        } else if is_assoc {
+            context.set_variable(var_spec.clone(), Variable::AssocArray(HashMap::new()));
+        }
+    }
+    
+    Ok(BuiltinResult::Success(0))
 }
 
 #[cfg(test)]

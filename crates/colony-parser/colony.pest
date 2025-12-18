@@ -57,12 +57,40 @@ PipelineElement = {
 }
 
 SimpleCommand = {
-    BashAssignment* ~ Word ~ Word* ~ Redirect*
+    BashAssignment* ~ CommandWord ~ ArgumentWord* ~ Redirect*
 }
 
-// Bash-style assignment: name=value or name=(array values) or name[index]=value
+// Command name - cannot be a reserved word
+CommandWord = ${
+    !ReservedKeyword ~ WordPart+
+}
+
+// Argument - CAN be a reserved word (echo done should work)
+// Also accepts assignment syntax for declare/local builtins
+ArgumentWord = {
+    BashAssignment | Word
+}
+
+// Bash-style assignment: name=value or name=(array values) or name[index]=value or name+=(array values)
 BashAssignment = {
-    Identifier ~ ArraySubscript? ~ "=" ~ (ArrayLiteral | Word)
+    Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)
+}
+
+// Associative array literal: ([key1]=val1 [key2]=val2)
+AssocArrayLiteral = {
+    "(" ~ AssocArrayEntry+ ~ ")"
+}
+
+AssocArrayEntry = {
+    "[" ~ AssocArrayKey ~ "]" ~ "=" ~ AssocArrayValue
+}
+
+AssocArrayKey = @{
+    (!"]" ~ ANY)+
+}
+
+AssocArrayValue = @{
+    (!WHITESPACE ~ !")" ~ ANY)*
 }
 
 PipeOp = {
@@ -145,7 +173,7 @@ ForKind = {
 WordList = { (!BlockStart ~ Word)+ }
 
 // Keywords that start a block (stop word list parsing)
-BlockStart = { "do" | "{" | "then" }
+BlockStart = { ("do" | "then") ~ !(ASCII_ALPHANUMERIC | "_") | "{" }
 
 WhileStatement = { "while" ~ Condition ~ Block }
 
@@ -579,10 +607,9 @@ ArrayLiteral = {
     "(" ~ Word* ~ ")"
 }
 
-// Bareword - must not match reserved keywords, stops at $ or quotes
-// Split into two rules: check !ReservedWord, then match chars
+// Bareword - plain text without quotes or expansions
 Bareword = {
-    !ReservedWord ~ BarewordChars
+    BarewordChars
 }
 
 BarewordChars = @{
@@ -644,9 +671,9 @@ VarPrefix = {
   | "!"   // Indices (for arrays)
 }
 
-// Array subscript: [index], [@], [*]
+// Array subscript: [index], [@], [*], [$var]
 ArraySubscript = {
-    "[" ~ (ArraySpecial | Expression) ~ "]"
+    "[" ~ (ArraySpecial | DollarExpansion | Expression) ~ "]"
 }
 
 // Special array subscripts
@@ -656,7 +683,8 @@ ArraySpecial = {
 }
 
 VarModifier = {
-    (":-" ~ Word)                        // default
+    (":" ~ SliceOffset ~ (":" ~ SliceLength)?)  // slice ${arr[@]:offset:length} - MUST be first to avoid conflicts with :- etc
+  | (":-" ~ Word)                        // default
   | (":=" ~ Word)                        // assign
   | (":?" ~ Word)                        // error
   | (":+" ~ Word)                        // alternate
@@ -672,8 +700,14 @@ VarModifier = {
   | ","                                  // lowercase first
   | "#"                                  // length (scalar or array)
   | "!"                                  // array indices
-  | ("[" ~ Slice ~ "]")                  // slice
+  | ("[" ~ Slice ~ "]")                  // slice (old syntax)
 }
+
+// Slice offset (simple integer or expression)
+SliceOffset = @{ "-"? ~ ASCII_DIGIT+ }
+
+// Slice length (simple integer)
+SliceLength = @{ ASCII_DIGIT+ }
 
 Slice = {
     Expression ~ (":" ~ Expression)?
@@ -762,10 +796,14 @@ Identifier = @{
     !ReservedWord ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
 }
 
-ReservedWord = {
+ReservedWord = ${
+    ReservedKeyword ~ &WordBoundary
+}
+
+ReservedKeyword = @{
     "if" | "then" | "else" | "elif" | "fi"
   | "case" | "esac" | "in"
-  | "for" | "while" | "until" | "do" | "done"
+  | "for" | "while" | "until" | "done" | "do"
   | "function" | "proc" | "func" | "agent"
   | "var" | "const" | "setvar"
   | "try" | "catch" | "finally"
@@ -773,6 +811,8 @@ ReservedWord = {
   | "and" | "or" | "not"
   | "true" | "false" | "null"
 }
+
+WordBoundary = { !ASCII_ALPHANUMERIC ~ !"_" | EOI }
 
 Comment = {
     BlockComment

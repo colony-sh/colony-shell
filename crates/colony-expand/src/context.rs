@@ -6,10 +6,9 @@ use std::path::PathBuf;
 /// Shell variable value
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Variable {
-    /// String value
     String(String),
-    /// Array value (for future bash-isms, not POSIX)
     Array(Vec<String>),
+    AssocArray(HashMap<String, String>),
 }
 
 impl Variable {
@@ -17,6 +16,7 @@ impl Variable {
         match self {
             Variable::String(s) => s,
             Variable::Array(arr) => arr.first().map(|s| s.as_str()).unwrap_or(""),
+            Variable::AssocArray(map) => map.values().next().map(|s| s.as_str()).unwrap_or(""),
         }
     }
 
@@ -24,6 +24,7 @@ impl Variable {
         match self {
             Variable::String(s) => !s.is_empty(),
             Variable::Array(arr) => !arr.is_empty(),
+            Variable::AssocArray(map) => !map.is_empty(),
         }
     }
 }

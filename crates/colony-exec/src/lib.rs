@@ -123,76 +123,95 @@ impl Executor {
 
         for assignment in &cmd.env_assignments {
             if let Some(ref subscript) = assignment.subscript {
-                // Array element assignment: arr[0]=value
                 match &assignment.value {
                     AssignmentValue::Word(word) => {
-                        // Expand the value
                         let fields = expander.expand_word(word)?;
                         let value = fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" ");
-
-                        // Get or create array
-                        let arr = match self.context.get_variable(&assignment.name) {
-                            Some(Variable::Array(existing)) => existing.clone(),
-                            Some(Variable::String(_)) => {
-                                // Convert scalar to array
-                                Vec::new()
-                            }
-                            None => Vec::new(),
-                        };
-
-                        // Evaluate subscript to get index
-                        let index = match subscript {
+                        
+                        let key = match subscript {
                             colony_parser::ArraySubscript::Index(expr) => {
-                                // For now, only handle integer literals
-                                if let colony_parser::Expression::Int(idx, _) = **expr {
-                                    idx as usize
-                                } else if let colony_parser::Expression::Unary { op: colony_parser::UnaryOp::Neg, ref operand, .. } = **expr {
-                                    if let colony_parser::Expression::Int(n, _) = **operand {
-                                        let len = arr.len() as i64;
-                                        (len - n) as usize
-                                    } else {
-                                        0
+                                match &**expr {
+                                    colony_parser::Expression::Variable { name, .. } => {
+                                        if let Some(Variable::AssocArray(_)) = self.context.get_variable(&assignment.name) {
+                                            name.clone()
+                                        } else {
+                                            self.context.get_var_or_env(name).unwrap_or_else(|| name.clone())
+                                        }
                                     }
-                                } else {
-                                    0
+                                    colony_parser::Expression::Str(s, _) => s.clone(),
+                                    colony_parser::Expression::Int(n, _) => n.to_string(),
+                                    _ => String::new()
                                 }
                             }
-                            _ => 0, // @ and * don't make sense for assignment
+                            _ => String::new()
                         };
-
-                        // Extend array if needed (sparse array support)
-                        let mut new_arr = arr;
-                        if index >= new_arr.len() {
-                            new_arr.resize(index + 1, String::new());
+                        
+                        if let Some(Variable::AssocArray(existing)) = self.context.get_variable(&assignment.name) {
+                            let mut map = existing.clone();
+                            map.insert(key, value);
+                            self.context.set_variable(assignment.name.clone(), Variable::AssocArray(map));
+                        } else {
+                            let arr = match self.context.get_variable(&assignment.name) {
+                                Some(Variable::Array(existing)) => existing.clone(),
+                                _ => Vec::new(),
+                            };
+                            
+                            let index = key.parse::<usize>().unwrap_or(0);
+                            let mut new_arr = arr;
+                            if index >= new_arr.len() {
+                                new_arr.resize(index + 1, String::new());
+                            }
+                            new_arr[index] = value;
+                            self.context.set_variable(assignment.name.clone(), Variable::Array(new_arr));
                         }
-                        new_arr[index] = value;
-
-                        self.context.set_variable(assignment.name.clone(), Variable::Array(new_arr));
                     }
                     AssignmentValue::Array(_) => {
-                        // arr[0]=(array) doesn't make sense - ignore
                         eprintln!("Warning: Cannot assign array to array element");
+                    }
+                    AssignmentValue::AssocArray(_) => {
+                        eprintln!("Warning: Cannot assign assoc array to array element");
                     }
                 }
             } else {
-                // Regular assignment (no subscript)
                 match &assignment.value {
                     AssignmentValue::Word(word) => {
-                        // Expand the word
                         let fields = expander.expand_word(word)?;
                         let value = fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" ");
-                        self.context.set_var(assignment.name.clone(), value);
+                        if assignment.op == colony_parser::AssignOp::Append {
+                            let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
+                            self.context.set_var(assignment.name.clone(), existing + &value);
+                        } else {
+                            self.context.set_var(assignment.name.clone(), value);
+                        }
                     }
                     AssignmentValue::Array(words) => {
-                        // Expand each word and store as array
-                        let mut array_values = Vec::new();
+                        let mut new_values = Vec::new();
                         for word in words {
                             let fields = expander.expand_word(word)?;
                             for field in fields {
-                                array_values.push(field.text.clone());
+                                new_values.push(field.text.clone());
                             }
                         }
-                        self.context.set_variable(assignment.name.clone(), Variable::Array(array_values));
+                        if assignment.op == colony_parser::AssignOp::Append {
+                            let mut existing = match self.context.get_variable(&assignment.name) {
+                                Some(Variable::Array(arr)) => arr.clone(),
+                                Some(Variable::String(s)) => vec![s.clone()],
+                                Some(Variable::AssocArray(_)) => Vec::new(),
+                                None => Vec::new(),
+                            };
+                            existing.extend(new_values);
+                            self.context.set_variable(assignment.name.clone(), Variable::Array(existing));
+                        } else {
+                            self.context.set_variable(assignment.name.clone(), Variable::Array(new_values));
+                        }
+                    }
+                    AssignmentValue::AssocArray(entries) => {
+                        use std::collections::HashMap;
+                        let mut map = HashMap::new();
+                        for (key, val) in entries {
+                            map.insert(key.clone(), val.clone());
+                        }
+                        self.context.set_variable(assignment.name.clone(), Variable::AssocArray(map));
                     }
                 }
             }

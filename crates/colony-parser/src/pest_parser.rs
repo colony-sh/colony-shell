@@ -45,10 +45,23 @@ mod tests {
 
     #[test]
     fn test_parse_for_loop() {
-        // Test C-style for loop first (simpler)
         let source = "for (;;) { echo hello }";
         let result = ColonyParser::parse(Rule::ForStatement, source);
-        assert!(result.is_ok(), "Failed to parse for loop: {:?}", result.err());
+        assert!(result.is_ok(), "Failed to parse C-style for loop: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_posix_for_loop() {
+        let source = "for x in a b c; do echo $x; done";
+        let result = ColonyParser::parse(Rule::ForStatement, source);
+        assert!(result.is_ok(), "Failed to parse POSIX for loop: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_posix_for_as_statement() {
+        let source = "for x in a b c; do echo $x; done";
+        let result = ColonyParser::parse(Rule::Statement, source);
+        assert!(result.is_ok(), "Failed to parse POSIX for as Statement: {:?}", result.err());
     }
 
     #[test]

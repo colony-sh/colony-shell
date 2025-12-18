@@ -175,11 +175,24 @@ impl AstBuilder {
                     env_assignments.push(Self::build_bash_assignment(part)?);
                 }
                 Rule::Assignment => {
-                    // Legacy support - treat as bash assignment
                     env_assignments.push(Self::build_assignment(part)?);
                 }
-                Rule::Word => {
+                Rule::Word | Rule::CommandWord => {
                     words.push(Self::build_word(part)?);
+                }
+                Rule::ArgumentWord => {
+                    for inner in part.into_inner() {
+                        match inner.as_rule() {
+                            Rule::BashAssignment => {
+                                let assignment_text = inner.as_str();
+                                words.push(Word::literal(assignment_text, span_from_pair(&inner)));
+                            }
+                            Rule::Word => {
+                                words.push(Self::build_word(inner)?);
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 Rule::Redirect => {
                     redirects.push(Self::build_redirect(part)?);
@@ -1273,9 +1286,10 @@ impl AstBuilder {
 
     fn build_bash_assignment(pair: Pair<Rule>) -> Result<Assignment, BuildError> {
         let span = span_from_pair(&pair);
+        let full_text = pair.as_str();  // Capture for += detection
         let mut inner = pair.into_inner();
 
-        // BashAssignment = Identifier ~ ArraySubscript? ~ "=" ~ (ArrayLiteral | Word)
+        // BashAssignment = Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (ArrayLiteral | Word)
 
         let name = inner.next()
             .ok_or(BuildError::MissingAssignmentName)?
@@ -1297,9 +1311,31 @@ impl AstBuilder {
             (None, next_pair)
         };
 
+        // Detect += operator by checking the full text
+        let op = if full_text.contains("+=") {
+            AssignOp::Append
+        } else {
+            AssignOp::Assign
+        };
+
         let value = match value_pair.as_rule() {
+            Rule::AssocArrayLiteral => {
+                let mut entries = Vec::new();
+                for entry_pair in value_pair.into_inner() {
+                    if entry_pair.as_rule() == Rule::AssocArrayEntry {
+                        let mut entry_inner = entry_pair.into_inner();
+                        let key = entry_inner.next()
+                            .map(|p| p.as_str().to_string())
+                            .unwrap_or_default();
+                        let val = entry_inner.next()
+                            .map(|p| p.as_str().to_string())
+                            .unwrap_or_default();
+                        entries.push((key, val));
+                    }
+                }
+                AssignmentValue::AssocArray(entries)
+            }
             Rule::ArrayLiteral => {
-                // Build array from words
                 let mut array_words = Vec::new();
                 for word_pair in value_pair.into_inner() {
                     if word_pair.as_rule() == Rule::Word {
@@ -1313,7 +1349,7 @@ impl AstBuilder {
             }
             _ => {
                 return Err(BuildError::UnexpectedRule {
-                    expected: "ArrayLiteral or Word",
+                    expected: "AssocArrayLiteral, ArrayLiteral or Word",
                     found: format!("{:?}", value_pair.as_rule()),
                 });
             }
@@ -1322,7 +1358,7 @@ impl AstBuilder {
         Ok(Assignment {
             name,
             subscript,
-            op: AssignOp::Assign,
+            op,
             value,
             span,
         })
@@ -1531,7 +1567,6 @@ impl AstBuilder {
     }
 
     fn build_array_subscript(pair: Pair<Rule>) -> Result<ArraySubscript, BuildError> {
-        // ArraySubscript = "[" ~ (ArraySpecial | Expression) ~ "]"
         let inner = pair.into_inner().next()
             .ok_or(BuildError::EmptyExpression)?;
 
@@ -1547,6 +1582,22 @@ impl AstBuilder {
                 let expr = Self::build_expression(inner)?;
                 Ok(ArraySubscript::Index(Box::new(expr)))
             }
+            Rule::DollarExpansion => {
+                let text = inner.as_str();
+                if text.starts_with('$') && !text.starts_with("$(") && !text.starts_with("${") {
+                    let var_name = &text[1..];
+                    let span = Span::DUMMY;
+                    let expr = Expression::Variable { name: var_name.to_string(), span };
+                    Ok(ArraySubscript::Index(Box::new(expr)))
+                } else if text.starts_with("${") && text.ends_with("}") {
+                    let var_name = &text[2..text.len()-1];
+                    let span = Span::DUMMY;
+                    let expr = Expression::Variable { name: var_name.to_string(), span };
+                    Ok(ArraySubscript::Index(Box::new(expr)))
+                } else {
+                    Err(BuildError::InvalidArraySubscript(text.to_string()))
+                }
+            }
             _ => Err(BuildError::InvalidArraySubscript(inner.as_str().to_string())),
         }
     }
@@ -1555,7 +1606,6 @@ impl AstBuilder {
         let text = pair.as_str();
         let mut inner = pair.into_inner();
 
-        // Handle modifiers that don't require a Word argument
         if text == "#" {
             return Ok(VarModifier::Length);
         }
@@ -1563,10 +1613,29 @@ impl AstBuilder {
             return Ok(VarModifier::Indices);
         }
 
-        // VarModifier = (":-" ~ Word) | (":=" ~ Word) | (":?" ~ Word) | (":+" ~ Word) | ...
-        let word = inner.next()
-            .ok_or(BuildError::MissingModifierWord)?;
-        let word_value = Self::build_word(word)?;
+        if text.starts_with(":") && !text.starts_with(":-") && !text.starts_with(":=") 
+            && !text.starts_with(":?") && !text.starts_with(":+") {
+            let slice_text = &text[1..];
+            let parts: Vec<&str> = slice_text.split(':').collect();
+            let offset: i64 = parts.get(0).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let length: Option<usize> = parts.get(1).and_then(|s| s.parse().ok());
+            return Ok(VarModifier::Slice { offset, length });
+        }
+
+        let first = inner.next();
+        if first.is_none() {
+            return Err(BuildError::InvalidVarModifier(text.to_string()));
+        }
+        let first = first.unwrap();
+        
+        if first.as_rule() == Rule::SliceOffset {
+            let offset: i64 = first.as_str().parse().unwrap_or(0);
+            let length: Option<usize> = inner.next()
+                .and_then(|p| if p.as_rule() == Rule::SliceLength { p.as_str().parse().ok() } else { None });
+            return Ok(VarModifier::Slice { offset, length });
+        }
+        
+        let word_value = Self::build_word(first)?;
 
         match text {
             s if s.starts_with(":-") => Ok(VarModifier::Default {
@@ -2355,5 +2424,50 @@ mod tests {
     fn parse_and_build_expr(source: &str) -> Result<Expression, BuildError> {
         let pairs = ColonyParser::parse(Rule::Expression, source).unwrap();
         AstBuilder::build_expression(pairs.into_iter().next().unwrap())
+    }
+
+    #[test]
+    fn test_array_slice_parsing() {
+        use pest::Parser;
+        
+        let source = "arr[@]:2";
+        let pairs = ColonyParser::parse(Rule::VariableRef, source);
+        
+        match pairs {
+            Ok(pairs) => {
+                for pair in pairs {
+                    eprintln!("Top: {:?} = {:?}", pair.as_rule(), pair.as_str());
+                    for inner in pair.clone().into_inner() {
+                        eprintln!("  -> {:?} = {:?}", inner.as_rule(), inner.as_str());
+                        for inner2 in inner.into_inner() {
+                            eprintln!("    -> {:?} = {:?}", inner2.as_rule(), inner2.as_str());
+                        }
+                    }
+                    let var_ref = AstBuilder::build_variable_ref(pair).unwrap();
+                    eprintln!("VariableRef: subscript={:?}, modifier={:?}", var_ref.subscript, var_ref.modifier);
+                }
+            }
+            Err(e) => eprintln!("Parse error: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_reserved_word_done() {
+        use pest::Parser;
+        
+        eprintln!("Testing ReservedWord 'done':");
+        let result = ColonyParser::parse(Rule::ReservedWord, "done");
+        eprintln!("  ReservedWord match: {:?}", result.is_ok());
+        
+        eprintln!("Testing Bareword 'done':");
+        let result = ColonyParser::parse(Rule::Bareword, "done");
+        eprintln!("  Bareword match: {:?}", result.is_ok());
+        if let Err(e) = &result {
+            eprintln!("  Error: {}", e);
+        }
+        
+        eprintln!("Testing Bareword 'donex':");
+        let result = ColonyParser::parse(Rule::Bareword, "donex");
+        eprintln!("  Bareword match: {:?}", result.is_ok());
     }
 }

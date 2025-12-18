@@ -100,10 +100,9 @@ pub struct Assignment {
 /// Value in an assignment
 #[derive(Clone, Debug)]
 pub enum AssignmentValue {
-    /// Single word: name=value
     Word(Word),
-    /// Array literal: name=(word1 word2 word3)
     Array(Vec<Word>),
+    AssocArray(Vec<(String, String)>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -311,7 +310,7 @@ pub enum VarModifier {
     /// ${var:-word} or ${var-word}
     Default {
         word: Box<Word>,
-        check_null: bool, // : prefix
+        check_null: bool,
     },
     /// ${var:=word} or ${var=word}
     Assign {
@@ -332,6 +331,11 @@ pub enum VarModifier {
     Length,
     /// ${!arr[@]} - array indices
     Indices,
+    /// ${arr[@]:offset} or ${arr[@]:offset:length}
+    Slice {
+        offset: i64,
+        length: Option<usize>,
+    },
 }
 
 /// if/elif/else/fi

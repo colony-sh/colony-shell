@@ -245,7 +245,7 @@ teardown() {
 # ============================================================================
 
 @test "array: undefined element is empty" {
-    run "$COLONY" -c 'arr=(a b c); echo >${arr[10]}<'
+    run "$COLONY" -c 'arr=(a b c); echo ">${arr[10]}<"'
     [ "$status" -eq 0 ]
     [ "$output" = "><" ]
 }
