@@ -4,9 +4,33 @@
 //! - * matches any string
 //! - ? matches any single character
 //! - [...] matches any character in brackets
-//! - [!...] matches any character NOT in brackets
+//! - [!...] or [^...] matches any character NOT in brackets
 
 use crate::Result;
+
+/// Normalize glob pattern for the glob crate
+/// 
+/// The Rust glob crate uses [!...] for negation, but POSIX and bash also support [^...]
+/// This function converts [^...] to [!...] for compatibility.
+fn normalize_pattern(pattern: &str) -> String {
+    let mut result = String::with_capacity(pattern.len());
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+    
+    while i < chars.len() {
+        if chars[i] == '[' && i + 1 < chars.len() && chars[i + 1] == '^' {
+            // Convert [^ to [!
+            result.push('[');
+            result.push('!');
+            i += 2;
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    
+    result
+}
 
 /// Expand a glob pattern to matching file paths
 ///
@@ -19,8 +43,11 @@ pub fn expand_pathname(pattern: &str) -> Result<Vec<String>> {
         return Ok(vec![pattern.to_string()]);
     }
 
+    // Normalize [^...] to [!...] for glob crate compatibility
+    let normalized = normalize_pattern(pattern);
+
     // Glob the pattern
-    match glob::glob(pattern) {
+    match glob::glob(&normalized) {
         Ok(paths) => {
             let mut results: Vec<String> = paths
                 .filter_map(|entry| entry.ok())
@@ -82,9 +109,16 @@ mod tests {
     }
 
     #[test]
-    fn test_glob_not_yet_implemented() {
-        // For now, glob patterns return unchanged
-        let result = expand_pathname("*.txt").unwrap();
-        assert_eq!(result, vec!["*.txt"]);
+    fn test_glob_no_match_returns_pattern() {
+        let result = expand_pathname("*.nonexistent_xyz").unwrap();
+        assert_eq!(result, vec!["*.nonexistent_xyz"]);
+    }
+    
+    #[test]
+    fn test_normalize_caret_negation() {
+        assert_eq!(normalize_pattern("file[^abc].txt"), "file[!abc].txt");
+        assert_eq!(normalize_pattern("[^0-9]"), "[!0-9]");
+        assert_eq!(normalize_pattern("[abc]"), "[abc]");
+        assert_eq!(normalize_pattern("plain.txt"), "plain.txt");
     }
 }

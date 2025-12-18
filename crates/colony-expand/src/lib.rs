@@ -21,6 +21,7 @@ mod field_split;
 mod pathname;
 mod quote;
 mod context;
+mod brace;
 
 pub use context::{ExpansionContext, Variable};
 pub use tilde::expand_tilde;
@@ -28,6 +29,7 @@ pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
 pub use arithmetic::expand_arithmetic;
 pub use field_split::split_fields;
 pub use pathname::expand_pathname;
+pub use brace::expand_braces;
 
 use colony_parser::{Word, WordPart};
 use thiserror::Error;
@@ -112,32 +114,23 @@ impl Expander {
         }
     }
 
-    /// Expand a word into zero or more fields
-    ///
-    /// This executes all expansion phases in POSIX order:
-    /// 1. Tilde expansion
-    /// 2. Parameter expansion
-    /// 3. Command substitution
-    /// 4. Arithmetic expansion
-    /// 5. Field splitting
-    /// 6. Pathname expansion
-    /// 7. Quote removal
     pub fn expand_word(&mut self, word: &Word) -> Result<Vec<Field>> {
         if let Some(fields) = self.try_expand_array_at_word(word)? {
             return Ok(fields);
         }
         
-        // Phase 1-4: Word-level expansions produce an intermediate string
+        if let Some(brace_results) = self.try_expand_brace_word(word)? {
+            return Ok(brace_results);
+        }
+        
         let mut intermediate = IntermediateWord::new();
 
         for part in &word.parts {
             self.expand_part(part, &mut intermediate)?;
         }
 
-        // Phase 5: Field splitting - one intermediate word → multiple fields
         let fields = split_fields(&intermediate, &self.context);
 
-        // Phase 6: Pathname expansion - each unquoted field may glob to multiple paths
         let mut expanded_fields = Vec::new();
         for field in fields {
             if field.quoted {
@@ -148,7 +141,6 @@ impl Expander {
             }
         }
 
-        // Phase 7: Quote removal (already handled by tracking quoted state)
         Ok(expanded_fields)
     }
     
@@ -174,6 +166,85 @@ impl Expander {
         }
         
         Ok(None)
+    }
+    
+    fn try_expand_brace_word(&mut self, word: &Word) -> Result<Option<Vec<Field>>> {
+        let mut brace_parts: Vec<Vec<String>> = Vec::new();
+        let mut literal_parts: Vec<String> = Vec::new();
+        let mut current_literal = String::new();
+        
+        for part in &word.parts {
+            match part {
+                WordPart::BraceExpansion(content) => {
+                    if !current_literal.is_empty() {
+                        literal_parts.push(current_literal.clone());
+                        current_literal.clear();
+                    } else if literal_parts.is_empty() || brace_parts.len() >= literal_parts.len() {
+                        literal_parts.push(String::new());
+                    }
+                    
+                    let inner = content.trim_start_matches('{').trim_end_matches('}');
+                    let expansions = brace::expand_braces(inner);
+                    brace_parts.push(expansions);
+                }
+                WordPart::Literal(s) | WordPart::SingleQuoted(s) => {
+                    current_literal.push_str(s);
+                }
+                _ => {
+                    return Ok(None);
+                }
+            }
+        }
+        
+        if brace_parts.is_empty() {
+            return Ok(None);
+        }
+        
+        if !current_literal.is_empty() {
+            literal_parts.push(current_literal);
+        }
+        
+        fn cartesian_product(lists: &[Vec<String>]) -> Vec<Vec<String>> {
+            if lists.is_empty() {
+                return vec![vec![]];
+            }
+            
+            let first = &lists[0];
+            let rest = cartesian_product(&lists[1..]);
+            
+            let mut result = Vec::new();
+            for item in first {
+                for r in &rest {
+                    let mut combo = vec![item.clone()];
+                    combo.extend(r.iter().cloned());
+                    result.push(combo);
+                }
+            }
+            result
+        }
+        
+        let combinations = cartesian_product(&brace_parts);
+        
+        let mut results = Vec::new();
+        for combo in combinations {
+            let mut expanded = String::new();
+            for (i, brace_val) in combo.iter().enumerate() {
+                if i < literal_parts.len() {
+                    expanded.push_str(&literal_parts[i]);
+                }
+                expanded.push_str(brace_val);
+            }
+            if literal_parts.len() > combo.len() {
+                expanded.push_str(&literal_parts[combo.len()]);
+            }
+            
+            let paths = expand_pathname(&expanded)?;
+            for path in paths {
+                results.push(Field::unquoted(path));
+            }
+        }
+        
+        Ok(Some(results))
     }
 
     fn expand_part(&mut self, part: &WordPart, out: &mut IntermediateWord) -> Result<()> {
@@ -273,6 +344,14 @@ impl Expander {
                     }
                 } else {
                     out.push_unquoted("");
+                }
+            }
+            
+            WordPart::BraceExpansion(content) => {
+                if in_double_quote {
+                    out.push_quoted(content);
+                } else {
+                    out.push_unquoted(content);
                 }
             }
         }

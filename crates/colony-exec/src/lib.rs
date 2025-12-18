@@ -472,14 +472,138 @@ impl Executor {
                     Ok(0)
                 }
                 Statement::Empty => {
-                    // Empty statement - no-op
                     Ok(0)
                 }
+                Statement::For(for_stmt) => {
+                    self.execute_for_loop_internal(for_stmt).await
+                }
+                Statement::If(if_stmt) => {
+                    self.execute_if_internal(if_stmt).await
+                }
+                Statement::While(while_stmt) => {
+                    self.execute_while_internal(while_stmt).await
+                }
+                Statement::Until(until_stmt) => {
+                    self.execute_until_internal(until_stmt).await
+                }
+                Statement::BraceGroup(brace) => {
+                    let mut last = 0;
+                    for stmt in &brace.body {
+                        last = self.execute_statement_recursive(stmt).await?;
+                    }
+                    Ok(last)
+                }
+                Statement::Subshell(subshell) => {
+                    let mut last = 0;
+                    for stmt in &subshell.body {
+                        last = self.execute_statement_recursive(stmt).await?;
+                    }
+                    Ok(last)
+                }
                 _ => {
-                    eprintln!("Statement type in function body not yet supported");
+                    eprintln!("Statement type not yet supported: {:?}", std::mem::discriminant(stmt));
                     Ok(1)
                 }
             }
         })
+    }
+    
+    async fn execute_for_loop_internal(&mut self, for_stmt: &colony_parser::ForStatement) -> Result<i32> {
+        use colony_expand::Expander;
+        
+        let mut expander = Expander::with_executor(self.context.clone(), |stmt, ctx| {
+            crate::execute_and_capture(stmt, ctx)
+        });
+        
+        let mut words_expanded = Vec::new();
+        for word in &for_stmt.words {
+            let fields = expander.expand_word(word)?;
+            for field in fields {
+                words_expanded.push(field.text);
+            }
+        }
+        
+        let mut last_exit = 0;
+        for value in words_expanded {
+            self.context.set_var(for_stmt.var.clone(), value);
+            
+            for stmt in &for_stmt.body {
+                last_exit = self.execute_statement_recursive(stmt).await?;
+            }
+        }
+        
+        Ok(last_exit)
+    }
+    
+    async fn execute_if_internal(&mut self, if_stmt: &colony_parser::IfStatement) -> Result<i32> {
+        let cond_exit = self.execute_condition_internal(&if_stmt.condition).await?;
+        
+        if cond_exit == 0 {
+            let mut last = 0;
+            for stmt in &if_stmt.then_body {
+                last = self.execute_statement_recursive(stmt).await?;
+            }
+            return Ok(last);
+        }
+        
+        for elif in &if_stmt.elif_branches {
+            let cond_exit = self.execute_condition_internal(&elif.condition).await?;
+            if cond_exit == 0 {
+                let mut last = 0;
+                for stmt in &elif.body {
+                    last = self.execute_statement_recursive(stmt).await?;
+                }
+                return Ok(last);
+            }
+        }
+        
+        if let Some(ref else_body) = if_stmt.else_body {
+            let mut last = 0;
+            for stmt in else_body {
+                last = self.execute_statement_recursive(stmt).await?;
+            }
+            return Ok(last);
+        }
+        
+        Ok(0)
+    }
+    
+    async fn execute_condition_internal(&mut self, condition: &colony_parser::Condition) -> Result<i32> {
+        match condition {
+            colony_parser::Condition::Command(cmd) => {
+                self.execute_statement_recursive(cmd).await
+            }
+            colony_parser::Condition::Expression(_) => {
+                Ok(1)
+            }
+        }
+    }
+    
+    async fn execute_while_internal(&mut self, while_stmt: &colony_parser::WhileStatement) -> Result<i32> {
+        let mut last_exit = 0;
+        loop {
+            let cond_exit = self.execute_condition_internal(&while_stmt.condition).await?;
+            if cond_exit != 0 {
+                break;
+            }
+            for stmt in &while_stmt.body {
+                last_exit = self.execute_statement_recursive(stmt).await?;
+            }
+        }
+        Ok(last_exit)
+    }
+    
+    async fn execute_until_internal(&mut self, until_stmt: &colony_parser::UntilStatement) -> Result<i32> {
+        let mut last_exit = 0;
+        loop {
+            let cond_exit = self.execute_condition_internal(&until_stmt.condition).await?;
+            if cond_exit == 0 {
+                break;
+            }
+            for stmt in &until_stmt.body {
+                last_exit = self.execute_statement_recursive(stmt).await?;
+            }
+        }
+        Ok(last_exit)
     }
 }

@@ -193,24 +193,68 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
     std::process::exit(127);
 }
 
-/// Execute a single pipeline element (no pipes needed)
 fn execute_single_pipeline_element(
     element: &PipelineElement,
     context: &ExpansionContext,
 ) -> Result<ExitStatus> {
-    // For now, just handle simple commands
-    let simple_cmd = match &*element.command {
-        Statement::SimpleCommand(cmd) => cmd,
-        _ => return Err(ExecutionError::CommandNotFound("<complex>".to_string())),
-    };
-
-    // Use the existing command execution logic
-    let mut context_mut = context.clone();
-    let result = tokio::runtime::Handle::current().block_on(async {
-        crate::command::execute_command(simple_cmd, &mut context_mut).await
-    });
-
-    result
+    match &*element.command {
+        Statement::SimpleCommand(cmd) => {
+            let mut context_mut = context.clone();
+            tokio::runtime::Handle::current().block_on(async {
+                crate::command::execute_command(cmd, &mut context_mut).await
+            })
+        }
+        Statement::For(for_stmt) => {
+            let mut context_mut = context.clone();
+            tokio::runtime::Handle::current().block_on(async {
+                let mut executor = crate::Executor::new(context_mut);
+                let code = executor.execute_for_loop_internal(for_stmt).await
+                    .unwrap_or(1);
+                Ok(ExitStatus::new(code))
+            })
+        }
+        Statement::If(if_stmt) => {
+            let mut context_mut = context.clone();
+            tokio::runtime::Handle::current().block_on(async {
+                let mut executor = crate::Executor::new(context_mut);
+                let code = executor.execute_if_internal(if_stmt).await
+                    .unwrap_or(1);
+                Ok(ExitStatus::new(code))
+            })
+        }
+        Statement::While(while_stmt) => {
+            let mut context_mut = context.clone();
+            tokio::runtime::Handle::current().block_on(async {
+                let mut executor = crate::Executor::new(context_mut);
+                let code = executor.execute_while_internal(while_stmt).await
+                    .unwrap_or(1);
+                Ok(ExitStatus::new(code))
+            })
+        }
+        Statement::BraceGroup(brace) => {
+            let mut context_mut = context.clone();
+            tokio::runtime::Handle::current().block_on(async {
+                let mut executor = crate::Executor::new(context_mut);
+                let mut last = 0;
+                for stmt in &brace.body {
+                    last = executor.execute_statement_recursive(stmt).await.unwrap_or(1);
+                }
+                Ok(ExitStatus::new(last))
+            })
+        }
+        Statement::Subshell(subshell) => {
+            let mut context_mut = context.clone();
+            tokio::runtime::Handle::current().block_on(async {
+                let mut executor = crate::Executor::new(context_mut);
+                let mut last = 0;
+                for stmt in &subshell.body {
+                    last = executor.execute_statement_recursive(stmt).await.unwrap_or(1);
+                }
+                Ok(ExitStatus::new(last))
+            })
+        }
+        _ => Err(ExecutionError::CommandNotFound("<complex>".to_string())),
+    }
 }
 
 #[cfg(test)]

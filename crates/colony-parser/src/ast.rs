@@ -272,6 +272,8 @@ pub enum WordPart {
     ArithRaw(String),
     /// Tilde expansion: ~ or ~user
     Tilde(Option<String>),
+    /// Brace expansion: {a,b,c} or {1..5} - raw string, expanded at expansion time
+    BraceExpansion(String),
 }
 
 /// Variable reference with optional prefix, subscript and modifier

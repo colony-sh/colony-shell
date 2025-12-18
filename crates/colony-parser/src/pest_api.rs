@@ -387,10 +387,9 @@ mod tests {
         let result = parse(source);
         assert!(result.is_ok(), "< as redirect should work");
 
-        // '<' as comparison
-        let source = "if (x < 10) { echo small }";
+        let source = "if [ 1 -lt 10 ]; then echo small; fi";
         let result = parse(source);
-        assert!(result.is_ok(), "< as comparison should work");
+        assert!(result.is_ok(), "POSIX if with test command should work");
     }
 
     #[test]

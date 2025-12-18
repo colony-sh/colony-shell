@@ -51,7 +51,7 @@ mod tests {
         let mut context = ExpansionContext::new();
         // Set a known HOME
         let home = PathBuf::from("/home/testuser");
-        context.set_env("HOME".to_string(), home.display().to_string());
+        context.set_env("HOME", &home.display().to_string());
 
         let result = expand_tilde(None, &context).unwrap();
         assert!(result.contains("home") || result.contains("Users"));

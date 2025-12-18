@@ -16,6 +16,7 @@
 //! cargo run --example reactive_prompt
 //! ```
 
+use colony_channels::ChannelManager;
 use colony_exec::{execute_builtin, is_builtin, Executor};
 use colony_expand::ExpansionContext;
 use colony_parser::{SimpleCommand, Span, Word};
@@ -102,7 +103,8 @@ fn main() {
 
     let mut ctx = ExpansionContext::new();
     let jobs = colony_exec::JobTable::new();
-    if let Some(result) = execute_builtin(&export_cmd, &mut ctx, &jobs, executor.tuple_space()) {
+    let mut channels = ChannelManager::new();
+    if let Some(result) = execute_builtin(&export_cmd, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
         result.ok();
     }
 
@@ -118,7 +120,7 @@ fn main() {
         span: Span::DUMMY,
     };
 
-    if let Some(result) = execute_builtin(&cd_cmd, &mut ctx, &jobs, executor.tuple_space()) {
+    if let Some(result) = execute_builtin(&cd_cmd, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
         result.ok();
     }
 
@@ -134,7 +136,7 @@ fn main() {
         span: Span::DUMMY,
     };
 
-    if let Some(result) = execute_builtin(&export_cmd2, &mut ctx, &jobs, executor.tuple_space()) {
+    if let Some(result) = execute_builtin(&export_cmd2, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
         result.ok();
     }
 
@@ -150,7 +152,7 @@ fn main() {
         span: Span::DUMMY,
     };
 
-    if let Some(result) = execute_builtin(&unset_cmd, &mut ctx, &jobs, executor.tuple_space()) {
+    if let Some(result) = execute_builtin(&unset_cmd, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
         result.ok();
     }
 

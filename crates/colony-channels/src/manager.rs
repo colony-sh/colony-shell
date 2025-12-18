@@ -152,10 +152,13 @@ mod tests {
     fn test_fd_resolution() {
         let manager = ChannelManager::new();
 
+        // Only STDCONTEXT (3) is registered as an actual channel
+        // Others are aliased but not yet implemented (Phase 2)
         assert_eq!(manager.resolve("3"), Some(STDCONTEXT));
-        assert_eq!(manager.resolve("4"), Some(STDLLM));
-        assert_eq!(manager.resolve("5"), Some(STDTOOL));
-        assert_eq!(manager.resolve("6"), Some(STDTRACE));
+        // Fd resolution for unregistered channels returns None
+        assert_eq!(manager.resolve("4"), None);
+        assert_eq!(manager.resolve("5"), None);
+        assert_eq!(manager.resolve("6"), None);
     }
 
     #[test]

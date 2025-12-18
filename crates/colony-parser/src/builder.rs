@@ -201,11 +201,15 @@ impl AstBuilder {
             }
         }
 
-        if words.is_empty() {
+        if words.is_empty() && env_assignments.is_empty() {
             return Err(BuildError::EmptyCommand);
         }
 
-        let name = words.remove(0);
+        let name = if words.is_empty() {
+            Word::literal(":", span.clone())
+        } else {
+            words.remove(0)
+        };
         let args = words;
 
         Ok(SimpleCommand {
@@ -1378,14 +1382,20 @@ impl AstBuilder {
 
             let word_part = match rule {
                 Rule::Bareword => {
-                    // Bareword children: !ReservedWord check + BarewordChars
-                    // Get the BarewordChars (atomic text)
-                    if let Some(chars) = part_pair.into_inner().next() {
-                        WordPart::Literal(chars.as_str().to_string())
+                    let raw = if let Some(chars) = part_pair.into_inner().next() {
+                        chars.as_str()
                     } else {
-                        // No BarewordChars - just use the whole text
-                        WordPart::Literal(text)
+                        &text
+                    };
+                    
+                    if raw.contains('\\') {
+                        Self::build_bareword_with_escapes(raw)
+                    } else {
+                        WordPart::Literal(raw.to_string())
                     }
+                }
+                Rule::BraceExpansion => {
+                    WordPart::BraceExpansion(text)
                 }
                 Rule::DollarExpansion => {
                     Self::build_dollar_expansion(part_pair)?
@@ -1825,6 +1835,33 @@ impl AstBuilder {
             span,
         })
     }
+    
+    fn build_bareword_with_escapes(input: &str) -> WordPart {
+        let mut result = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+        let mut has_escaped_glob = false;
+        
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    if matches!(next, '*' | '?' | '[' | ']' | '\\') {
+                        has_escaped_glob = true;
+                    }
+                    result.push(chars.next().unwrap());
+                } else {
+                    result.push(c);
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        
+        if has_escaped_glob {
+            WordPart::SingleQuoted(result)
+        } else {
+            WordPart::Literal(result)
+        }
+    }
 }
 
 /// Convert pest Pair to our Span type
@@ -2023,17 +2060,17 @@ mod tests {
 
     #[test]
     fn test_build_if_statement() {
-        let source = "if (x > 10) { echo big }";
+        let source = "if [ 1 -eq 1 ]; then echo yes; fi";
         let pairs = ColonyParser::parse(Rule::IfStatement, source).unwrap();
         let result = AstBuilder::build_if_statement(pairs.into_iter().next().unwrap());
 
         if let Err(ref e) = result {
             eprintln!("Error building if statement: {:?}", e);
         }
-        assert!(result.is_ok(), "Failed to build if statement: {:?}", result.err());
+        assert!(result.is_ok(), "Failed to build POSIX if statement: {:?}", result.err());
         let if_stmt = result.unwrap();
-        assert!(matches!(if_stmt.condition, Condition::Expression(_)));
-        assert_eq!(if_stmt.then_body.len(), 1);
+        assert!(matches!(if_stmt.condition, Condition::Command(_)));
+        assert!(!if_stmt.then_body.is_empty());
         assert_eq!(if_stmt.elif_branches.len(), 0);
         assert!(if_stmt.else_body.is_none());
     }

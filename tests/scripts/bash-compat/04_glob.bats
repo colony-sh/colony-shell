@@ -235,15 +235,14 @@ teardown() {
 # ============================================================================
 
 @test "glob: * in for loop" {
-    run "$COLONY" -c "cd $TEST_TEMP && for f in *.txt; do echo \$f; done | head -1"
+    run "$COLONY" -c "cd $TEST_TEMP && for f in *.txt; do echo \$f; done"
     [ "$status" -eq 0 ]
     [[ "$output" =~ ".txt" ]]
 }
 
 @test "glob: * with command arguments" {
-    run "$COLONY" -c "cd $TEST_TEMP && ls *.txt 2>/dev/null | wc -l"
+    run "$COLONY" -c "cd $TEST_TEMP && ls *.txt | wc -l"
     [ "$status" -eq 0 ]
-    # Should list 2 txt files
     [ "$output" -ge 2 ]
 }
 
@@ -299,48 +298,40 @@ teardown() {
 # ============================================================================
 
 @test "compare glob * with bash" {
-    cd "$TEST_TEMP"
-
-    run bash -c "echo *.txt"
+    run bash -c "cd $TEST_TEMP && echo *.txt"
     local bash_output="$output"
 
-    run "$COLONY" -c "echo *.txt"
+    run "$COLONY" -c "cd $TEST_TEMP && echo *.txt"
     local colony_output="$output"
 
     [ "$colony_output" = "$bash_output" ]
 }
 
 @test "compare glob ? with bash" {
-    cd "$TEST_TEMP"
-
-    run bash -c "echo file?.txt"
+    run bash -c "cd $TEST_TEMP && echo file?.txt"
     local bash_output="$output"
 
-    run "$COLONY" -c "echo file?.txt"
+    run "$COLONY" -c "cd $TEST_TEMP && echo file?.txt"
     local colony_output="$output"
 
     [ "$colony_output" = "$bash_output" ]
 }
 
 @test "compare glob [...] with bash" {
-    cd "$TEST_TEMP"
-
-    run bash -c "echo file[12].txt"
+    run bash -c "cd $TEST_TEMP && echo file[12].txt"
     local bash_output="$output"
 
-    run "$COLONY" -c "echo file[12].txt"
+    run "$COLONY" -c "cd $TEST_TEMP && echo file[12].txt"
     local colony_output="$output"
 
     [ "$colony_output" = "$bash_output" ]
 }
 
 @test "compare glob no-match with bash" {
-    cd "$TEST_TEMP"
-
-    run bash -c "echo *.xyz"
+    run bash -c "cd $TEST_TEMP && echo *.xyz"
     local bash_output="$output"
 
-    run "$COLONY" -c "echo *.xyz"
+    run "$COLONY" -c "cd $TEST_TEMP && echo *.xyz"
     local colony_output="$output"
 
     [ "$colony_output" = "$bash_output" ]
