@@ -144,6 +144,25 @@ impl Expander {
         Ok(expanded_fields)
     }
     
+    pub fn expand_word_no_glob(&mut self, word: &Word) -> Result<Vec<Field>> {
+        if let Some(fields) = self.try_expand_array_at_word(word)? {
+            return Ok(fields);
+        }
+        
+        if let Some(brace_results) = self.try_expand_brace_word(word)? {
+            return Ok(brace_results);
+        }
+        
+        let mut intermediate = IntermediateWord::new();
+
+        for part in &word.parts {
+            self.expand_part(part, &mut intermediate)?;
+        }
+
+        let fields = split_fields(&intermediate, &self.context);
+        Ok(fields)
+    }
+    
     fn try_expand_array_at_word(&self, word: &Word) -> Result<Option<Vec<Field>>> {
         use colony_parser::ArraySubscript;
         

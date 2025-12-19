@@ -152,8 +152,10 @@ impl AstBuilder {
                 Ok(Statement::Empty)
             }
             Rule::Comment => {
-                // Comments are typically ignored in the AST
                 Ok(Statement::Empty)
+            }
+            Rule::AndOrList => {
+                Self::build_andor_list(pair)
             }
             _ => {
                 Err(BuildError::UnexpectedRule {

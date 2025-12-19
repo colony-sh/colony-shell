@@ -149,7 +149,7 @@ CaseStatement = {
     ~ NL* ~ "esac"
 }
 
-CaseValue = { Expression | Word }
+CaseValue = { Word }
 
 CaseArm = {
     NL* ~ CasePattern+ ~ ")" ~ CaseArmBody ~ CaseTerminator ~ NL*
@@ -170,7 +170,7 @@ CaseArmStatement = {
     | ReturnStatement
     | BreakStatement
     | ContinueStatement
-    | Pipeline
+    | AndOrList
     | BashAssignment
     | Assignment
     | SimpleCommand

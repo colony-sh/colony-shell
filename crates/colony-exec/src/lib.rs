@@ -727,11 +727,12 @@ impl Executor {
                 execute_next = false;
             } else if !found_first_match {
                 for pattern_word in &arm.patterns {
-                    let pattern_fields = expander.expand_word(pattern_word)?;
-                    if pattern_fields.is_empty() {
-                        continue;
-                    }
-                    let pattern = &pattern_fields[0].text;
+                    let pattern_fields = expander.expand_word_no_glob(pattern_word)?;
+                    let pattern = if pattern_fields.is_empty() {
+                        ""
+                    } else {
+                        &pattern_fields[0].text
+                    };
                     
                     if Self::pattern_matches(&value_str, pattern) {
                         should_execute = true;
