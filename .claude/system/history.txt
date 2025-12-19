@@ -1106,3 +1106,11 @@
 [2025-12-19 19:00] ANALYSIS: Nested comsub broken, parameter expansion integration broken
 [2025-12-19 19:05] RESULT: Clear diagnostic - backtick = 0%, nesting = broken, param exp = broken
 [2025-12-19 19:10] TOTAL: 361 tests across 9 suites (254 → 361 +107 tests, +29%)
+[2025-12-19 19:20] START: Creating redirection test suite
+[2025-12-19 19:25] ANALYSIS: Redirections are foundational - complement heredocs
+[2025-12-19 19:30] CREATED: 10_redir.bats with 49 comprehensive tests
+[2025-12-19 19:35] CATEGORIES: Basic I/O, stderr, fd operations, noclobber, pipelines
+[2025-12-19 19:40] BASELINE: 26/49 tests passing (53%)
+[2025-12-19 19:45] ANALYSIS: Basic redirects work, advanced fd ops broken
+[2025-12-19 19:50] GAPS: FD duplication, closing, noclobber, null redirects
+[2025-12-19 19:55] RESULT: 410 tests across 10 suites (361 → 410, +14%)
