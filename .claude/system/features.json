@@ -751,6 +751,35 @@
         "2025-12-18: RESULT: 35/35 tests passing (100%)",
         "2025-12-18: MILESTONE: F037 100% COMPLETE!"
       ]
+    },
+    {
+      "id": "F038",
+      "name": "POSIX Case Statement Support",
+      "description": "Full POSIX case/esac statement implementation with pattern matching (wildcards, ranges, multiple patterns), all terminators (;;, ;&, ;;&), variable expansion in values and patterns, and command lists in case arms.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": ["F021", "F037"],
+      "notes": [
+        "2025-12-18: Starting F038 - case statement implementation",
+        "2025-12-18: CREATED: 06_case.bats with 43 comprehensive tests",
+        "2025-12-18: GRAMMAR: CaseStatement, CaseArm, CasePattern, CaseTerminator rules",
+        "2025-12-18: AST: CaseStatement, CaseArm, CaseTerminator enums in ast.rs",
+        "2025-12-18: BUILDER: build_case_statement, build_case_arm, build_case_terminator",
+        "2025-12-18: EXECUTOR: execute_case_internal with glob pattern matching",
+        "2025-12-18: PATTERN MATCHING: Uses glob crate for wildcards (*, ?, [...])",
+        "2025-12-18: TERMINATORS: ;; (break), ;& (fallthrough), ;;& (continue)",
+        "2025-12-18: RESULT PHASE 1: 35/43 tests passing (81%)",
+        "2025-12-19: FIX: execute_case_internal logic for ;;& continue terminator",
+        "2025-12-19: RESULT: 36/43 tests passing (84%, +3pp)",
+        "2025-12-19: FIX: REPL integration - execute_shell_command delegates to execute_statement_for_code",
+        "2025-12-19: FIX: Added COLONY variable to 06_case.bats",
+        "2025-12-19: RESULT: 41/43 tests passing (95.3%, +11pp)",
+        "2025-12-19: FIX: Empty pattern matching - treat empty fields as empty string not skip",
+        "2025-12-19: FIX: Grammar - CaseArmStatement accepts AndOrList for && || support",
+        "2025-12-19: FIX: Builder - added AndOrList case to build_statement()",
+        "2025-12-19: RESULT FINAL: 43/43 tests passing (100%)",
+        "2025-12-19: MILESTONE: F038 100% COMPLETE - Full POSIX case statement support!"
+      ]
     }
   ]
 }

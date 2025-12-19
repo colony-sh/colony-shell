@@ -1013,3 +1013,22 @@
 [2025-12-19 20:05] TODO: Variable expansion in case values
 [2025-12-19 20:10] TODO: Command lists (&&, ||) in case arm bodies (grammar fix needed)
 [2025-12-19 20:15] TODO: Special characters and spaces in patterns
+[2025-12-19 21:00] START: Resume F038 case statement work (was 84%, target 100%)
+[2025-12-19 21:05] DISCOVERY: All 43 tests failing - case statements work manually but not in tests
+[2025-12-19 21:10] ROOT CAUSE 1: execute_shell_command() printed "(Control flow not yet supported)" message
+[2025-12-19 21:15] FIX: Simplified execute_shell_command() to delegate to execute_statement_for_code()
+[2025-12-19 21:20] ROOT CAUSE 2: tests/scripts/bash-compat/06_case.bats missing COLONY="${COLONY_BIN}" line
+[2025-12-19 21:25] FIX: Added COLONY variable definition to 06_case.bats  
+[2025-12-19 21:30] RESULT: 41/43 tests passing (95.3% coverage, +11pp improvement)
+[2025-12-19 21:35] ANALYSIS: Two remaining failures identified
+[2025-12-19 21:40] ISSUE 1: Test 26 - Empty variable doesn't expand to "" for pattern matching
+[2025-12-19 21:45] ISSUE 2: Test 28 - Grammar doesn't allow && || command lists in case arms
+[2025-12-19 21:50] MILESTONE: F038 Case Statement 95% COMPLETE
+[2025-12-19 21:55] FIX 1: Empty pattern matching - changed continue to empty string handling
+[2025-12-19 22:00] TEST: Test 26 now passing - empty variables match "" pattern correctly
+[2025-12-19 22:05] FIX 2: Grammar update - CaseArmStatement now accepts AndOrList instead of Pipeline
+[2025-12-19 22:10] FIX 3: Builder update - added AndOrList case to build_statement()
+[2025-12-19 22:15] TEST: Test 28 now passing - && and || work in case arms
+[2025-12-19 22:20] RESULT: 43/43 tests passing (100% coverage)
+[2025-12-19 22:25] MILESTONE: F038 Case Statement COMPLETE - 100% test coverage
+[2025-12-19 22:30] COMMIT: All case statement fixes committed
