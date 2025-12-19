@@ -323,9 +323,9 @@ mod tests {
         let source = r#"
             echo "Starting"
             var count = 10
-            if (count > 5) {
+            if [ "$count" -gt 5 ]; then
                 echo "big"
-            }
+            fi
         "#;
 
         let result = parse(source);

@@ -9,7 +9,7 @@
 // Program Structure
 // ============================================================================
 
-Program = { SOI ~ Statement* ~ EOI }
+Program = { SOI ~ NL* ~ (Statement ~ (NL | ";")*)* ~ EOI }
 
 Statement = {
     VarDecl
@@ -51,7 +51,8 @@ AndOrOp = { "&&" | "||" }
 Pipeline = { "!"? ~ PipelineElement ~ (PipeOp ~ PipelineElement)* }
 
 PipelineElement = {
-    CompoundCommand
+    FunctionDef
+  | CompoundCommand
   | SimpleCommand
   | Subshell
 }
@@ -62,8 +63,9 @@ SimpleCommand = {
 }
 
 // Command name - cannot be a reserved word
+// Uses ReservedWord (with boundary) not ReservedKeyword so "inner" works
 CommandWord = ${
-    !ReservedKeyword ~ WordPart+
+    !ReservedWord ~ WordPart+
 }
 
 // Argument - CAN be a reserved word (echo done should work)
@@ -123,7 +125,7 @@ CompoundCommand = {
   | MatchStatement
 }
 
-BraceGroup = { "{" ~ Statement* ~ "}" }
+BraceGroup = { "{" ~ NL* ~ (Statement ~ (NL | ";")*)* ~ "}" }
 
 Subshell = { "(" ~ CommandList ~ ")" }
 
@@ -235,10 +237,12 @@ CatchBlock = {
 Condition = { Expression | CommandList }
 
 Block = {
-    "{" ~ Statement* ~ "}"
-  | "do" ~ Statement* ~ "done"
-  | "then" ~ Statement* ~ ("elif" | "else" | "fi")  // if/elif/else blocks
+    "{" ~ NL* ~ (Statement ~ (NL | ";")*)* ~ "}"
+  | "do" ~ NL* ~ (Statement ~ (NL | ";")*)* ~ "done"
+  | "then" ~ NL* ~ (Statement ~ (NL | ";")*)* ~ ("elif" | "else" | "fi")
 }
+
+NL = _{ "\n" }
 
 // ============================================================================
 // Declarations
@@ -270,7 +274,7 @@ AssignOp = {
 }
 
 FunctionDef = {
-    ("function" ~ Identifier ~ "(" ~ ")" ~ Block)
+    ("function" ~ Identifier ~ ("(" ~ ")")? ~ Block)
   | (Identifier ~ "(" ~ ")" ~ Block)
 }
 
@@ -601,7 +605,13 @@ WordPart = _{
     QuotedString
   | DollarExpansion
   | BraceExpansion
+  | UnquotedEscape
   | Bareword
+}
+
+// Escape sequences in unquoted context: \$ becomes $ for expansion, \x becomes x for other chars
+UnquotedEscape = @{
+    "\\" ~ ANY
 }
 
 // Brace expansion: {a,b,c} or {1..5} - expanded at expansion time, not parsed structurally
@@ -659,10 +669,8 @@ PositionalParam = @{
 // Arithmetic expansion as raw string - parsed and evaluated during expansion
 // Must match $(( before $( to avoid ambiguity
 // Simple approach: match $(( plus any non-whitespace chars
-// Whitespace inside $(( will terminate the Word, requiring quotes: "$(( 2 + 3 ))"
-// This matches bash behavior where unquoted arithmetic can't have spaces
 DollarArithRaw = @{
-    "$((" ~ (!WHITESPACE ~ ANY)*
+    "$((" ~ (!"))" ~ ANY)* ~ "))"
 }
 
 // Command substitution as raw string - parsed during expansion not during initial parse
@@ -815,12 +823,10 @@ ReservedKeyword = @{
     "if" | "then" | "else" | "elif" | "fi"
   | "case" | "esac" | "in"
   | "for" | "while" | "until" | "done" | "do"
-  | "function" | "proc" | "func" | "agent"
+  | "function"
   | "var" | "const" | "setvar"
   | "try" | "catch" | "finally"
   | "match" | "return" | "break" | "continue"
-  | "and" | "or" | "not"
-  | "true" | "false" | "null"
 }
 
 WordBoundary = { !ASCII_ALPHANUMERIC ~ !"_" | EOI }
@@ -838,7 +844,6 @@ BlockComment = @{ "/#" ~ (!"#/" ~ ANY)* ~ "#/" }
 // Whitespace (pest built-in handling)
 // ============================================================================
 
-WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+WHITESPACE = _{ " " | "\t" | "\r" }
 
-// pest uses WHITESPACE rule automatically between tokens
-// Use _ prefix for silent rules that don't create parse nodes
+NEWLINE = _{ "\n" }

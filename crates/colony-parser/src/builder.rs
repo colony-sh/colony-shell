@@ -131,7 +131,6 @@ impl AstBuilder {
                 }))
             }
             Rule::ContinueStatement => {
-                // Convert to SimpleCommand for execution handling
                 let span = span_from_pair(&pair);
                 Ok(Statement::SimpleCommand(SimpleCommand {
                     name: Word::literal("continue", span.clone()),
@@ -141,8 +140,10 @@ impl AstBuilder {
                     span,
                 }))
             }
-            // Assignments are env assignments before commands, not standalone statements
-            // Rule::Assignment handled in SimpleCommand
+            Rule::ReturnStatement => {
+                Self::build_return_statement(pair)
+                    .map(Statement::Return)
+            }
             Rule::EmptyStatement => {
                 Ok(Statement::Empty)
             }
@@ -184,8 +185,36 @@ impl AstBuilder {
                     for inner in part.into_inner() {
                         match inner.as_rule() {
                             Rule::BashAssignment => {
-                                let assignment_text = inner.as_str();
-                                words.push(Word::literal(assignment_text, span_from_pair(&inner)));
+                                let arg_span = span_from_pair(&inner);
+                                let mut parts = Vec::new();
+                                let mut op = "=";
+                                
+                                for sub in inner.into_inner() {
+                                    match sub.as_rule() {
+                                        Rule::Identifier => {
+                                            parts.push(WordPart::Literal(sub.as_str().to_string()));
+                                        }
+                                        Rule::ArraySubscript => {
+                                            parts.push(WordPart::Literal(sub.as_str().to_string()));
+                                        }
+                                        Rule::AssocArrayLiteral | Rule::ArrayLiteral => {
+                                            parts.push(WordPart::Literal(format!("{}{}", op, sub.as_str())));
+                                        }
+                                        Rule::Word => {
+                                            parts.push(WordPart::Literal(op.to_string()));
+                                            let word = Self::build_word(sub)?;
+                                            parts.extend(word.parts);
+                                        }
+                                        _ => {
+                                            let txt = sub.as_str();
+                                            if txt == "+=" || txt == "=" {
+                                                op = txt;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                words.push(Word { parts, span: arg_span });
                             }
                             Rule::Word => {
                                 words.push(Self::build_word(inner)?);
@@ -480,6 +509,10 @@ impl AstBuilder {
             if part.as_rule() == Rule::Statement {
                 // Descend into Statement to get the actual command type
                 if let Some(inner_stmt) = part.into_inner().next() {
+                    // Skip empty statements (just semicolons/newlines) - they shouldn't affect exit code
+                    if inner_stmt.as_rule() == Rule::EmptyStatement {
+                        continue;
+                    }
                     statements.push(Self::build_statement(inner_stmt)?);
                 }
             } else if !matches!(part.as_str(), "{" | "}" | "do" | "done") {
@@ -660,17 +693,28 @@ impl AstBuilder {
         })
     }
 
+    fn build_return_statement(pair: Pair<Rule>) -> Result<ReturnStatement, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        let value = if let Some(expr_pair) = inner.next() {
+            Some(Self::build_expression(expr_pair)?)
+        } else {
+            None
+        };
+
+        Ok(ReturnStatement { value, span })
+    }
+
     fn build_subshell(pair: Pair<Rule>) -> Result<Subshell, BuildError> {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // Subshell = "(" ~ CommandList ~ ")"
         let cmd_list = inner.next()
             .ok_or(BuildError::MissingBody)?;
 
         let body_stmt = Self::build_statement(cmd_list)?;
 
-        // Convert to vec of statements
         let body = match body_stmt {
             Statement::List(list) => {
                 let mut stmts = vec![*list.first];
@@ -1392,6 +1436,14 @@ impl AstBuilder {
                         Self::build_bareword_with_escapes(raw)
                     } else {
                         WordPart::Literal(raw.to_string())
+                    }
+                }
+                Rule::UnquotedEscape => {
+                    if text.len() >= 2 {
+                        let escaped_char = text.chars().nth(1).unwrap();
+                        WordPart::Literal(escaped_char.to_string())
+                    } else {
+                        WordPart::Literal(text)
                     }
                 }
                 Rule::BraceExpansion => {

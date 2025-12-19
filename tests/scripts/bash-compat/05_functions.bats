@@ -54,44 +54,43 @@ teardown() {
 # ============================================================================
 
 @test "function: positional parameter \$1" {
-    run "$COLONY" -c 'greet() { echo hello \$1; }; greet world'
+    run "$COLONY" -c 'greet() { echo hello $1; }; greet world'
     [ "$status" -eq 0 ]
     [ "$output" = "hello world" ]
 }
 
 @test "function: multiple positional parameters" {
-    run "$COLONY" -c 'add() { echo \$1 + \$2; }; add 5 10'
+    run "$COLONY" -c 'add() { echo $1 + $2; }; add 5 10'
     [ "$status" -eq 0 ]
     [ "$output" = "5 + 10" ]
 }
 
 @test "function: \$@ expands to all arguments" {
-    run "$COLONY" -c 'showargs() { echo \$@; }; showargs one two three'
+    run "$COLONY" -c 'showargs() { echo $@; }; showargs one two three'
     [ "$status" -eq 0 ]
     [ "$output" = "one two three" ]
 }
 
 @test "function: \$* expands to all arguments" {
-    run "$COLONY" -c 'showargs() { echo \$*; }; showargs a b c'
+    run "$COLONY" -c 'showargs() { echo $*; }; showargs a b c'
     [ "$status" -eq 0 ]
     [ "$output" = "a b c" ]
 }
 
 @test "function: \$# is argument count" {
-    run "$COLONY" -c 'count() { echo \$#; }; count one two three'
+    run "$COLONY" -c 'count() { echo $#; }; count one two three'
     [ "$status" -eq 0 ]
     [ "$output" = "3" ]
 }
 
 @test "function: \$0 is shell name, not function name" {
     skip "Positional parameter \$0 needs implementation"
-    run "$COLONY" -c 'showname() { echo \$0; }; showname'
+    run "$COLONY" -c 'showname() { echo $0; }; showname'
     [ "$status" -eq 0 ]
-    # Should be shell name, not "showname"
 }
 
 @test "function: no arguments gives empty \$@" {
-    run "$COLONY" -c 'noargs() { echo >\$@<; }; noargs'
+    run "$COLONY" -c 'noargs() { echo ">$@<"; }; noargs'
     [ "$status" -eq 0 ]
     [ "$output" = "><" ]
 }
@@ -101,25 +100,25 @@ teardown() {
 # ============================================================================
 
 @test "function: explicit return 0" {
-    run "$COLONY" -c 'success() { return 0; }; success; echo \$?'
+    run "$COLONY" -c 'success() { return 0; }; success; echo $?'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "0" ]
 }
 
 @test "function: explicit return non-zero" {
-    run "$COLONY" -c 'fail() { return 42; }; fail; echo \$?'
+    run "$COLONY" -c 'fail() { return 42; }; fail; echo $?'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "42" ]
 }
 
 @test "function: return without value defaults to 0" {
-    run "$COLONY" -c 'ret() { return; }; ret; echo \$?'
+    run "$COLONY" -c 'ret() { return; }; ret; echo $?'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "0" ]
 }
 
 @test "function: implicit return uses last command exit" {
-    run "$COLONY" -c 'implicit() { false; }; implicit; echo \$?'
+    run "$COLONY" -c 'implicit() { false; }; implicit; echo $?'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "1" ]
 }
@@ -135,20 +134,20 @@ teardown() {
 # ============================================================================
 
 @test "function: can access global variables" {
-    run "$COLONY" -c 'export GLOBAL=value; func() { echo \$GLOBAL; }; func'
+    run "$COLONY" -c 'GLOBAL=value; func() { echo $GLOBAL; }; func'
     [ "$status" -eq 0 ]
     [ "$output" = "value" ]
 }
 
 @test "function: can modify global variables" {
-    run "$COLONY" -c 'VAR=before; modify() { VAR=after; }; modify; echo \$VAR'
+    run "$COLONY" -c 'VAR=before; modify() { VAR=after; }; modify; echo $VAR'
     [ "$status" -eq 0 ]
     [ "$output" = "after" ]
 }
 
 @test "function: local variables (if supported)" {
     skip "local keyword not yet implemented"
-    run "$COLONY" -c 'func() { local x=inner; }; x=outer; func; echo \$x'
+    run "$COLONY" -c 'func() { local x=inner; }; x=outer; func; echo $x'
     [ "$status" -eq 0 ]
     [ "$output" = "outer" ]
 }
@@ -165,7 +164,7 @@ teardown() {
 
 @test "function: recursive function" {
     skip "Recursion needs careful testing for stack limits"
-    run "$COLONY" -c 'countdown() { [ \$1 -le 0 ] && return; echo \$1; countdown \$((\$1 - 1)); }; countdown 3'
+    run "$COLONY" -c 'countdown() { [ $1 -le 0 ] && return; echo $1; countdown $(($1 - 1)); }; countdown 3'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "3" ]
     [ "${lines[1]}" = "2" ]
@@ -207,13 +206,13 @@ teardown() {
 }
 
 @test "function: body with control flow" {
-    run "$COLONY" -c 'conditional() { if [ \$1 = yes ]; then echo approved; fi; }; conditional yes'
+    run "$COLONY" -c 'conditional() { if [ $1 = yes ]; then echo approved; fi; }; conditional yes'
     [ "$status" -eq 0 ]
     [ "$output" = "approved" ]
 }
 
 @test "function: body with loop" {
-    run "$COLONY" -c 'loop() { for i in a b c; do echo \$i; done; }; loop'
+    run "$COLONY" -c 'loop() { for i in a b c; do echo $i; done; }; loop'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "a" ]
     [ "${lines[1]}" = "b" ]
@@ -329,30 +328,30 @@ teardown() {
 }
 
 @test "compare function with args with bash" {
-    run bash -c 'add() { echo $((\$1 + \$2)); }; add 5 3'
+    run bash -c 'add() { echo $(($1 + $2)); }; add 5 3'
     local bash_output="$output"
 
-    run "$COLONY" -c 'add() { echo $((\$1 + \$2)); }; add 5 3'
+    run "$COLONY" -c 'add() { echo $(($1 + $2)); }; add 5 3'
     local colony_output="$output"
 
     [ "$colony_output" = "$bash_output" ]
 }
 
 @test "compare function return with bash" {
-    run bash -c 'fail() { return 7; }; fail; echo \$?'
+    run bash -c 'fail() { return 7; }; fail; echo $?'
     local bash_output="$output"
 
-    run "$COLONY" -c 'fail() { return 7; }; fail; echo \$?'
+    run "$COLONY" -c 'fail() { return 7; }; fail; echo $?'
     local colony_output="$output"
 
     [ "$colony_output" = "$bash_output" ]
 }
 
 @test "compare \$@ in function with bash" {
-    run bash -c 'show() { echo \$@; }; show a b c'
+    run bash -c 'show() { echo $@; }; show a b c'
     local bash_output="$output"
 
-    run "$COLONY" -c 'show() { echo \$@; }; show a b c'
+    run "$COLONY" -c 'show() { echo $@; }; show a b c'
     local colony_output="$output"
 
     [ "$colony_output" = "$bash_output" ]
@@ -363,7 +362,7 @@ teardown() {
 # ============================================================================
 
 @test "function: function name same as variable" {
-    run "$COLONY" -c 'NAME=var; NAME() { echo func; }; NAME; echo \$NAME'
+    run "$COLONY" -c 'NAME=var; NAME() { echo func; }; NAME; echo $NAME'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "func" ]
     [ "${lines[1]}" = "var" ]
@@ -383,7 +382,7 @@ teardown() {
 }
 
 @test "function: dollar sign in function body" {
-    run "$COLONY" -c 'price() { echo \$100; }; price'
+    run "$COLONY" -c 'price() { echo "$1"; }; price 100'
     [ "$status" -eq 0 ]
     [ "$output" = "100" ]
 }

@@ -459,6 +459,7 @@ async fn execute_list_with_control(list: &colony_parser::CommandList, executor: 
 
     // Execute first statement
     let (mut last_exit_code, mut control) = execute_statement_with_control(&*list.first, executor).await;
+    executor.context_mut().set_last_exit_status(last_exit_code);
 
     // If we got break/continue, propagate it immediately
     if control != ControlFlow::Normal {
@@ -480,6 +481,7 @@ async fn execute_list_with_control(list: &colony_parser::CommandList, executor: 
         if should_execute {
             let (code, flow) = execute_statement_with_control(stmt, executor).await;
             last_exit_code = code;
+            executor.context_mut().set_last_exit_status(last_exit_code);
             control = flow;
 
             // Propagate break/continue
@@ -734,40 +736,14 @@ fn execute_statement_with_control<'a>(
             }
         }
         Statement::Pipeline(pipeline) => {
-            // Check for simple command in single-element pipeline
             if pipeline.elements.len() == 1 {
-                if let Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
-                    if let Some(literal) = cmd.name.as_literal() {
-                        match literal {
-                            "break" => return (0, ControlFlow::Break),
-                            "continue" => return (0, ControlFlow::Continue),
-                            _ => {}
-                        }
-                    }
-
-                    match executor.execute_simple_command(cmd).await {
-                        Ok(status) => (status.code(), ControlFlow::Normal),
-                        Err(e) => {
-                            eprintln!("execution error: {}", e);
-                            (1, ControlFlow::Normal)
-                        }
-                    }
-                } else {
-                    match executor.execute_pipeline(&pipeline).await {
-                        Ok(status) => (status.code(), ControlFlow::Normal),
-                        Err(e) => {
-                            eprintln!("execution error: {}", e);
-                            (1, ControlFlow::Normal)
-                        }
-                    }
-                }
-            } else {
-                match executor.execute_pipeline(&pipeline).await {
-                    Ok(status) => (status.code(), ControlFlow::Normal),
-                    Err(e) => {
-                        eprintln!("execution error: {}", e);
-                        (1, ControlFlow::Normal)
-                    }
+                return execute_statement_with_control(&pipeline.elements[0].command, executor).await;
+            }
+            match executor.execute_pipeline(&pipeline).await {
+                Ok(status) => (status.code(), ControlFlow::Normal),
+                Err(e) => {
+                    eprintln!("execution error: {}", e);
+                    (1, ControlFlow::Normal)
                 }
             }
         }
@@ -819,6 +795,7 @@ fn execute_statement_for_code<'a>(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>> {
     Box::pin(async move {
         let (code, _) = execute_statement_with_control(stmt, executor).await;
+        executor.context_mut().set_last_exit_status(code);
         code
     })
 }

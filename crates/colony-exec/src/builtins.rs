@@ -61,6 +61,7 @@ pub fn is_builtin(name: &str) -> bool {
         | ":"
         | "context"
         | "declare"
+        | "true" | "false"
     )
 }
 
@@ -130,6 +131,8 @@ pub fn execute_builtin(
         ":" => builtin_noop(&args),
         "context" => builtin_context(&args, channels),
         "declare" => builtin_declare(&args, context),
+        "true" => builtin_true(),
+        "false" => builtin_false(),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -609,6 +612,24 @@ fn builtin_test(args: &[String]) -> Result<BuiltinResult> {
 /// Used for variable assignments and as a no-op command.
 fn builtin_noop(_args: &[String]) -> Result<BuiltinResult> {
     Ok(BuiltinResult::Success(0))
+}
+
+/// true - Return success
+///
+/// Usage: true
+/// Always returns exit code 0 (success).
+/// Used in conditionals and implicit return value testing.
+fn builtin_true() -> Result<BuiltinResult> {
+    Ok(BuiltinResult::Success(0))
+}
+
+/// false - Return failure
+///
+/// Usage: false
+/// Always returns exit code 1 (failure).
+/// Used in conditionals and implicit return value testing.
+fn builtin_false() -> Result<BuiltinResult> {
+    Ok(BuiltinResult::Failure(1))
 }
 
 /// context - Manage context channel (fd 3)

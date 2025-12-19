@@ -34,22 +34,15 @@ impl Variable {
 /// Provides access to shell state: variables, environment, current directory, aliases, functions
 #[derive(Debug, Clone)]
 pub struct ExpansionContext {
-    /// Shell variables
     variables: HashMap<String, Variable>,
-    /// Environment variables (separate from shell variables in POSIX)
     environment: HashMap<String, String>,
-    /// Command aliases: alias name -> replacement
     aliases: HashMap<String, String>,
-    /// Shell functions: function name -> definition
     functions: HashMap<String, colony_parser::FunctionDef>,
-    /// Positional parameters: $1, $2, etc. (for function/script args)
     positional_params: Vec<String>,
-    /// Current working directory
     cwd: PathBuf,
-    /// Field separator (IFS variable controls field splitting)
     ifs: String,
-    /// Home directory
     home: Option<PathBuf>,
+    last_exit_status: i32,
 }
 
 impl ExpansionContext {
@@ -63,6 +56,7 @@ impl ExpansionContext {
             aliases: HashMap::new(),
             functions: HashMap::new(),
             positional_params: Vec::new(),
+            last_exit_status: 0,
             cwd,
             ifs: " \t\n".to_string(), // POSIX default IFS
             home,
@@ -82,15 +76,13 @@ impl ExpansionContext {
 
     /// Get variable or environment variable as string
     pub fn get_var_or_env(&self, name: &str) -> Option<String> {
-        // Special variables
         match name {
             "HOME" => return self.home.as_ref().map(|p| p.display().to_string()),
             "PWD" => return Some(self.cwd.display().to_string()),
             "IFS" => return Some(self.ifs.clone()),
-            // Positional parameter count
             "#" => return Some(self.positional_params.len().to_string()),
-            // All positional parameters (space-separated)
             "@" | "*" => return Some(self.positional_params.join(" ")),
+            "?" => return Some(self.last_exit_status.to_string()),
             _ => {}
         }
 
@@ -226,6 +218,14 @@ impl ExpansionContext {
     /// Get positional parameter count
     pub fn positional_param_count(&self) -> usize {
         self.positional_params.len()
+    }
+
+    pub fn set_last_exit_status(&mut self, status: i32) {
+        self.last_exit_status = status;
+    }
+
+    pub fn last_exit_status(&self) -> i32 {
+        self.last_exit_status
     }
 }
 

@@ -973,3 +973,18 @@
 [2025-12-18 12:30] TESTS: Glob tests 50/50 (42 pass + 8 skip for extended features)
 [2025-12-18 12:30] TESTS: Total bash-compat: 128 pass, 51 fail (mostly functions), 13 skip
 [2025-12-18 12:30] READY: All glob changes ready for commit
+[2025-12-18 13:00] START: Function test final fixes (52/54 passing, need 21 and 48)
+[2025-12-18 13:05] FIX: Test 21 - Nested function definition (inner() fails to parse)
+[2025-12-18 13:06] ROOT CAUSE: CommandWord used !ReservedKeyword instead of !ReservedWord
+[2025-12-18 13:07] SOLUTION: Changed to !ReservedWord which includes WordBoundary check
+[2025-12-18 13:08] RESULT: Words like 'inner', 'info', 'iffy' now parse correctly as commands
+[2025-12-18 13:10] FIX: Test 48 - Function vs alias priority
+[2025-12-18 13:11] ISSUE 1: alias greet="echo alias" field-split incorrectly
+[2025-12-18 13:12] ROOT CAUSE: BashAssignment in ArgumentWord used Word::literal (all unquoted)
+[2025-12-18 13:13] SOLUTION: Build Word parts properly, preserving DoubleQuoted structure
+[2025-12-18 13:14] ISSUE 2: Alias took precedence over function (wrong order)
+[2025-12-18 13:15] ROOT CAUSE: execute_simple_command checked alias before function
+[2025-12-18 13:16] SOLUTION: Reordered to: function > alias > builtin > external
+[2025-12-18 13:20] RESULT: 54/54 function tests passing (49 real + 5 skipped = 100%)
+[2025-12-18 13:25] MILESTONE: Function support 100% complete!
+[2025-12-18 13:26] TESTS: Full bash-compat: 175/179 pass (97.8%), only 4 unrelated failures

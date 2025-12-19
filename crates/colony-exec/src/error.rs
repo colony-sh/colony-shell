@@ -36,6 +36,9 @@ pub enum ExecutionError {
 
     #[error("Invalid redirect: {0}")]
     InvalidRedirect(String),
+
+    #[error("Return with exit code {0}")]
+    Return(i32),
 }
 
 pub type Result<T> = std::result::Result<T, ExecutionError>;

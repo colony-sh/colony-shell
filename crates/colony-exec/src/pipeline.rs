@@ -124,11 +124,338 @@ fn setup_pipeline_fds(index: usize, num_commands: usize, pipes: &[(RawFd, RawFd)
     }
 }
 
-/// Execute a pipeline element in a child process
+/// Execute a statement in a child process (blocking, no async)
 ///
-/// This function never returns - it either execs or exits
+/// This is used to execute function bodies in pipeline elements.
+/// Since we're after fork(), we can't use async/tokio.
+fn execute_statement_in_child_blocking(
+    stmt: &Statement,
+    context: &ExpansionContext,
+) -> Result<i32> {
+    match stmt {
+        Statement::SimpleCommand(cmd) => {
+            execute_simple_command_in_child_blocking(cmd, context)
+        }
+        Statement::Pipeline(pipeline) => {
+            let mut last_code = 0;
+            for element in &pipeline.elements {
+                last_code = execute_statement_in_child_blocking(&element.command, context)?;
+            }
+            Ok(last_code)
+        }
+        Statement::List(list) => {
+            use colony_parser::ListOp;
+            let mut last_code = execute_statement_in_child_blocking(&list.first, context)?;
+            
+            for (op, stmt) in &list.rest {
+                let should_exec = match op {
+                    ListOp::Semi => true,
+                    ListOp::And => last_code == 0,
+                    ListOp::Or => last_code != 0,
+                    ListOp::Background => false,
+                };
+                
+                if should_exec {
+                    last_code = execute_statement_in_child_blocking(stmt, context)?;
+                }
+            }
+            Ok(last_code)
+        }
+        Statement::Return(ret_stmt) => {
+            let code = if let Some(ref expr) = ret_stmt.value {
+                use colony_parser::Expression;
+                match expr {
+                    Expression::Int(n, _) => *n as i32,
+                    _ => 0
+                }
+            } else {
+                context.last_exit_status()
+            };
+            Err(crate::ExecutionError::Return(code))
+        }
+        Statement::For(for_stmt) => {
+            execute_for_in_child_blocking(for_stmt, context)
+        }
+        Statement::If(if_stmt) => {
+            execute_if_in_child_blocking(if_stmt, context)
+        }
+        Statement::While(while_stmt) => {
+            execute_while_in_child_blocking(while_stmt, context)
+        }
+        Statement::BraceGroup(brace) => {
+            let mut last = 0;
+            for stmt in &brace.body {
+                match execute_statement_in_child_blocking(stmt, context) {
+                    Ok(code) => last = code,
+                    Err(crate::ExecutionError::Return(code)) => return Err(crate::ExecutionError::Return(code)),
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(last)
+        }
+        Statement::Subshell(subshell) => {
+            let mut last = 0;
+            for stmt in &subshell.body {
+                match execute_statement_in_child_blocking(stmt, context) {
+                    Ok(code) => last = code,
+                    Err(crate::ExecutionError::Return(code)) => return Err(crate::ExecutionError::Return(code)),
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(last)
+        }
+        Statement::FunctionDef(func_def) => {
+            let mut ctx = context.clone();
+            ctx.define_function(func_def.name.clone(), func_def.clone());
+            Ok(0)
+        }
+        Statement::Empty => Ok(0),
+        _ => {
+            eprintln!("colony: unsupported statement type in function body");
+            Ok(1)
+        }
+    }
+}
+
+fn execute_simple_command_in_child_blocking(
+    cmd: &colony_parser::SimpleCommand,
+    context: &ExpansionContext,
+) -> Result<i32> {
+    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+        crate::execute_and_capture(stmt, ctx)
+    });
+    
+    let name_fields = match expander.expand_word(&cmd.name) {
+        Ok(fields) if !fields.is_empty() => fields,
+        _ => return Err(crate::ExecutionError::CommandNotFound("<empty>".to_string())),
+    };
+    let command_name = &name_fields[0].text;
+    
+    if let Some(func_def) = context.get_function(command_name) {
+        let mut args = Vec::new();
+        for arg_word in &cmd.args {
+            if let Ok(fields) = expander.expand_word(arg_word) {
+                for field in fields {
+                    args.push(field.text);
+                }
+            }
+        }
+        
+        let mut ctx = context.clone();
+        ctx.set_positional_params(args);
+        
+        let mut last_exit = 0;
+        for stmt in &func_def.body {
+            match execute_statement_in_child_blocking(stmt, &ctx) {
+                Ok(code) => {
+                    last_exit = code;
+                    ctx.set_last_exit_status(code);
+                }
+                Err(crate::ExecutionError::Return(code)) => {
+                    return Ok(code);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        return Ok(last_exit);
+    }
+    
+    if crate::builtins::is_builtin(command_name) {
+        let mut ctx = context.clone();
+        let jobs = crate::JobTable::new();
+        let tuple_space = colony_tuple::TupleSpace::new();
+        let mut channels = colony_channels::ChannelManager::new();
+        
+        if let Some(result) = crate::builtins::execute_builtin(
+            cmd, 
+            &mut ctx, 
+            &jobs, 
+            &tuple_space, 
+            &mut channels
+        ) {
+            match result {
+                Ok(builtin_result) => return Ok(builtin_result.exit_code()),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    
+    let mut args = vec![command_name.clone()];
+    for arg_word in &cmd.args {
+        if let Ok(fields) = expander.expand_word(arg_word) {
+            for field in fields {
+                args.push(field.text);
+            }
+        }
+    }
+    
+    let path_env = context.get_env("PATH");
+    let program_path = match resolve_command(command_name, path_env) {
+        Ok(path) => path,
+        Err(e) => return Err(e),
+    };
+    
+    match unsafe { fork() }.map_err(crate::ExecutionError::ForkError)? {
+        ForkResult::Child => {
+            let _ = crate::apply_redirects(&cmd.redirects, &mut context.clone());
+            let env: Vec<(String, String)> = std::env::vars().collect();
+            let c_program = CString::new(program_path.as_os_str().as_bytes()).unwrap();
+            let c_args: Vec<CString> = args
+                .iter()
+                .map(|s| CString::new(s.as_bytes()).unwrap())
+                .collect();
+            let c_env: Vec<CString> = env
+                .iter()
+                .map(|(k, v)| CString::new(format!("{}={}", k, v).as_bytes()).unwrap())
+                .collect();
+            
+            let _ = execve(&c_program, &c_args, &c_env);
+            std::process::exit(127);
+        }
+        ForkResult::Parent { child } => {
+            match waitpid(child, None) {
+                Ok(WaitStatus::Exited(_, code)) => Ok(code),
+                Ok(WaitStatus::Signaled(_, sig, _)) => Ok(128 + sig as i32),
+                _ => Ok(1),
+            }
+        }
+    }
+}
+
+fn execute_for_in_child_blocking(
+    for_stmt: &colony_parser::ForStatement,
+    context: &ExpansionContext,
+) -> Result<i32> {
+    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+        crate::execute_and_capture(stmt, ctx)
+    });
+    
+    let mut words_expanded = Vec::new();
+    for word in &for_stmt.words {
+        if let Ok(fields) = expander.expand_word(word) {
+            for field in fields {
+                words_expanded.push(field.text);
+            }
+        }
+    }
+    
+    let mut ctx = context.clone();
+    let mut last_exit = 0;
+    
+    for value in words_expanded {
+        ctx.set_var(for_stmt.var.clone(), value);
+        
+        for stmt in &for_stmt.body {
+            match execute_statement_in_child_blocking(stmt, &ctx) {
+                Ok(code) => {
+                    last_exit = code;
+                    ctx.set_last_exit_status(code);
+                }
+                Err(crate::ExecutionError::Return(code)) => {
+                    return Err(crate::ExecutionError::Return(code));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    
+    Ok(last_exit)
+}
+
+fn execute_if_in_child_blocking(
+    if_stmt: &colony_parser::IfStatement,
+    context: &ExpansionContext,
+) -> Result<i32> {
+    let cond_exit = execute_condition_in_child_blocking(&if_stmt.condition, context)?;
+    
+    if cond_exit == 0 {
+        let mut last = 0;
+        for stmt in &if_stmt.then_body {
+            match execute_statement_in_child_blocking(stmt, context) {
+                Ok(code) => last = code,
+                Err(crate::ExecutionError::Return(code)) => return Err(crate::ExecutionError::Return(code)),
+                Err(e) => return Err(e),
+            }
+        }
+        return Ok(last);
+    }
+    
+    for elif in &if_stmt.elif_branches {
+        let cond_exit = execute_condition_in_child_blocking(&elif.condition, context)?;
+        if cond_exit == 0 {
+            let mut last = 0;
+            for stmt in &elif.body {
+                match execute_statement_in_child_blocking(stmt, context) {
+                    Ok(code) => last = code,
+                    Err(crate::ExecutionError::Return(code)) => return Err(crate::ExecutionError::Return(code)),
+                    Err(e) => return Err(e),
+                }
+            }
+            return Ok(last);
+        }
+    }
+    
+    // Execute else body
+    if let Some(ref else_body) = if_stmt.else_body {
+        let mut last = 0;
+        for stmt in else_body {
+            match execute_statement_in_child_blocking(stmt, context) {
+                Ok(code) => last = code,
+                Err(crate::ExecutionError::Return(code)) => return Err(crate::ExecutionError::Return(code)),
+                Err(e) => return Err(e),
+            }
+        }
+        return Ok(last);
+    }
+    
+    Ok(0)
+}
+
+fn execute_while_in_child_blocking(
+    while_stmt: &colony_parser::WhileStatement,
+    context: &ExpansionContext,
+) -> Result<i32> {
+    let mut ctx = context.clone();
+    let mut last_exit = 0;
+    
+    loop {
+        let cond_exit = execute_condition_in_child_blocking(&while_stmt.condition, &ctx)?;
+        if cond_exit != 0 {
+            break;
+        }
+        
+        for stmt in &while_stmt.body {
+            match execute_statement_in_child_blocking(stmt, &ctx) {
+                Ok(code) => {
+                    last_exit = code;
+                    ctx.set_last_exit_status(code);
+                }
+                Err(crate::ExecutionError::Return(code)) => {
+                    return Err(crate::ExecutionError::Return(code));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    
+    Ok(last_exit)
+}
+
+fn execute_condition_in_child_blocking(
+    condition: &colony_parser::Condition,
+    context: &ExpansionContext,
+) -> Result<i32> {
+    match condition {
+        colony_parser::Condition::Command(cmd) => {
+            execute_statement_in_child_blocking(cmd, context)
+        }
+        colony_parser::Condition::Expression(_) => {
+            Ok(1)
+        }
+    }
+}
+
 fn execute_pipeline_element_in_child(element: &PipelineElement, context: &ExpansionContext) -> ! {
-    // Extract the simple command
     let simple_cmd = match &*element.command {
         Statement::SimpleCommand(cmd) => cmd,
         _ => {
@@ -137,7 +464,6 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         }
     };
 
-    // Expand and resolve command (with command substitution support)
     let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
         crate::execute_and_capture(stmt, ctx)
     });
@@ -151,7 +477,54 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
     };
     let command_name = &name_fields[0].text;
 
-    // Expand arguments
+    if let Some(func_def) = context.get_function(command_name) {
+        let mut args = Vec::new();
+        for arg_word in &simple_cmd.args {
+            if let Ok(fields) = expander.expand_word(arg_word) {
+                for field in fields {
+                    args.push(field.text);
+                }
+            }
+        }
+        
+        let mut context = context.clone();
+        context.set_positional_params(args);
+        
+        let mut last_exit = 0;
+        for stmt in &func_def.body {
+            match execute_statement_in_child_blocking(stmt, &context) {
+                Ok(code) => {
+                    last_exit = code;
+                    context.set_last_exit_status(code);
+                }
+                Err(_) => {
+                    std::process::exit(1);
+                }
+            }
+        }
+        std::process::exit(last_exit);
+    }
+
+    if crate::builtins::is_builtin(command_name) {
+        let mut context = context.clone();
+        let jobs = crate::JobTable::new();
+        let tuple_space = colony_tuple::TupleSpace::new();
+        let mut channels = colony_channels::ChannelManager::new();
+        
+        if let Some(result) = crate::builtins::execute_builtin(
+            simple_cmd, 
+            &mut context, 
+            &jobs, 
+            &tuple_space, 
+            &mut channels
+        ) {
+            match result {
+                Ok(builtin_result) => std::process::exit(builtin_result.exit_code()),
+                Err(_) => std::process::exit(1),
+            }
+        }
+    }
+
     let mut args = vec![command_name.clone()];
     for arg_word in &simple_cmd.args {
         if let Ok(fields) = expander.expand_word(arg_word) {
@@ -161,7 +534,6 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         }
     }
 
-    // Resolve command path
     let path_env = context.get_env("PATH");
     let program_path = match resolve_command(command_name, path_env) {
         Ok(path) => path,
@@ -171,10 +543,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         }
     };
 
-    // Build environment
     let env: Vec<(String, String)> = std::env::vars().collect();
-
-    // Convert to CStrings
     let c_program = CString::new(program_path.as_os_str().as_bytes()).unwrap();
     let c_args: Vec<CString> = args
         .iter()
@@ -185,10 +554,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         .map(|(k, v)| CString::new(format!("{}={}", k, v).as_bytes()).unwrap())
         .collect();
 
-    // Exec
     let _ = execve(&c_program, &c_args, &c_env);
-
-    // If we get here, exec failed
     eprintln!("colony-exec: exec failed");
     std::process::exit(127);
 }

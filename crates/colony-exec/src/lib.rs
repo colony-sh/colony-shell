@@ -77,33 +77,34 @@ impl Executor {
         &self.tuple_space
     }
 
-    /// Execute a function with arguments
-    ///
-    /// Sets positional parameters, executes function body, handles return.
     pub async fn execute_function(
         &mut self,
         func_def: &colony_parser::FunctionDef,
         args: Vec<String>,
     ) -> Result<ExitStatus> {
-        // Save current positional parameters
         let saved_params = self.context.get_all_positional_params().to_vec();
-
-        // Set new positional parameters from function arguments
         self.context.set_positional_params(args);
 
-        // Execute function body
         let mut last_exit = 0;
         for stmt in &func_def.body {
-            // Execute each statement in the function body
-            let exit_code = self.execute_statement_recursive(stmt).await?;
-            last_exit = exit_code;
-
-            // TODO: Check for ControlFlow::Return to exit early
+            match self.execute_statement_recursive(stmt).await {
+                Ok(code) => {
+                    last_exit = code;
+                    self.context.set_last_exit_status(code);
+                }
+                Err(ExecutionError::Return(code)) => {
+                    last_exit = code;
+                    self.context.set_last_exit_status(code);
+                    break;
+                }
+                Err(e) => {
+                    self.context.set_positional_params(saved_params);
+                    return Err(e);
+                }
+            }
         }
 
-        // Restore positional parameters
         self.context.set_positional_params(saved_params);
-
         Ok(ExitStatus::new(last_exit))
     }
 
@@ -116,10 +117,90 @@ impl Executor {
         use colony_expand::{Expander, Variable};
         use colony_parser::AssignmentValue;
 
+        // Check if this is a command that treats assignments as arguments
+        // (alias, declare, export, local, readonly, typeset)
+        let assignments_are_args = {
+            // First word of command name (before expansion)
+            let first_part = cmd.name.as_literal().unwrap_or("");
+            matches!(first_part, "alias" | "declare" | "export" | "local" | "readonly" | "typeset")
+        };
+
         // 0. Process assignments (arr=(a b c) or VAR=value)
+        // BUT if this is an assignment-accepting builtin, skip processing and pass as args
         let mut expander = Expander::with_executor(self.context.clone(), |stmt, ctx| {
             crate::execute_and_capture(stmt, ctx)
         });
+
+        // Convert env_assignments to argument words for builtins that expect them
+        let cmd = if assignments_are_args && !cmd.env_assignments.is_empty() {
+            let mut new_cmd = cmd.clone();
+            let mut extra_args = Vec::new();
+            
+            for assignment in &cmd.env_assignments {
+                // Reconstruct the assignment as a string argument
+                let mut arg_str = assignment.name.clone();
+                if let Some(ref subscript) = assignment.subscript {
+                    match subscript {
+                        colony_parser::ArraySubscript::Index(expr) => {
+                            arg_str.push('[');
+                            // Simple handling for common cases
+                            match &**expr {
+                                colony_parser::Expression::Int(n, _) => arg_str.push_str(&n.to_string()),
+                                colony_parser::Expression::Str(s, _) => arg_str.push_str(s),
+                                _ => {}
+                            }
+                            arg_str.push(']');
+                        }
+                        colony_parser::ArraySubscript::All => arg_str.push_str("[@]"),
+                        colony_parser::ArraySubscript::Star => arg_str.push_str("[*]"),
+                    }
+                }
+                arg_str.push_str(if assignment.op == colony_parser::AssignOp::Append { "+=" } else { "=" });
+                
+                match &assignment.value {
+                    AssignmentValue::Word(word) => {
+                        if let Some(lit) = word.as_literal() {
+                            arg_str.push_str(lit);
+                        } else {
+                            // Expand the word to get the value
+                            if let Ok(fields) = expander.expand_word(word) {
+                                arg_str.push_str(&fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" "));
+                            }
+                        }
+                    }
+                    AssignmentValue::Array(words) => {
+                        arg_str.push('(');
+                        let mut word_strs = Vec::new();
+                        for w in words {
+                            if let Some(lit) = w.as_literal() {
+                                word_strs.push(lit.to_string());
+                            }
+                        }
+                        arg_str.push_str(&word_strs.join(" "));
+                        arg_str.push(')');
+                    }
+                    AssignmentValue::AssocArray(entries) => {
+                        arg_str.push('(');
+                        let entry_strs: Vec<String> = entries.iter()
+                            .map(|(k, v)| format!("[{}]={}", k, v))
+                            .collect();
+                        arg_str.push_str(&entry_strs.join(" "));
+                        arg_str.push(')');
+                    }
+                }
+                
+                extra_args.push(colony_parser::Word::literal(&arg_str, assignment.span.clone()));
+            }
+            
+            // Prepend the assignment args to the existing args
+            extra_args.extend(new_cmd.args);
+            new_cmd.args = extra_args;
+            new_cmd.env_assignments = vec![]; // Clear - we've converted them to args
+            std::borrow::Cow::Owned(new_cmd)
+        } else {
+            std::borrow::Cow::Borrowed(cmd)
+        };
+        let cmd = cmd.as_ref();
 
         for assignment in &cmd.env_assignments {
             if let Some(ref subscript) = assignment.subscript {
@@ -217,43 +298,13 @@ impl Executor {
             }
         }
 
-        // 1. Expand command name to check for aliases
         let name_fields = expander.expand_word(&cmd.name)?;
         if name_fields.is_empty() {
             return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
         }
         let command_name = &name_fields[0].text;
 
-        // 0b. Check for alias expansion
-        if let Some(alias_value) = self.context.get_alias(command_name) {
-            // Parse alias value and create new command
-            // Simple approach: split on whitespace and prepend to args
-            let alias_words: Vec<String> = alias_value.split_whitespace()
-                .map(|s| s.to_string())
-                .collect();
-
-            if !alias_words.is_empty() {
-                // Create new command with alias expanded
-                let mut new_cmd = cmd.clone();
-                new_cmd.name = colony_parser::Word::literal(&alias_words[0], cmd.span.clone());
-
-                // Prepend alias args to original args
-                let mut new_args = vec![];
-                for alias_arg in &alias_words[1..] {
-                    new_args.push(colony_parser::Word::literal(alias_arg, cmd.span.clone()));
-                }
-                new_args.extend(cmd.args.clone());
-                new_cmd.args = new_args;
-
-                // Recursively execute the expanded command
-                // Box the future to avoid recursion size issues
-                return Box::pin(self.execute_simple_command(&new_cmd)).await;
-            }
-        }
-
-        // 0c. Check for function call
         if let Some(func_def) = self.context.get_function(command_name).cloned() {
-            // Expand arguments
             let mut args = Vec::new();
             for arg_word in &cmd.args {
                 let fields = expander.expand_word(arg_word)?;
@@ -262,8 +313,28 @@ impl Executor {
                 }
             }
 
-            // Execute function with arguments as positional parameters
+            let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?;
             return self.execute_function(&func_def, args).await;
+        }
+
+        if let Some(alias_value) = self.context.get_alias(command_name) {
+            let alias_words: Vec<String> = alias_value.split_whitespace()
+                .map(|s| s.to_string())
+                .collect();
+
+            if !alias_words.is_empty() {
+                let mut new_cmd = cmd.clone();
+                new_cmd.name = colony_parser::Word::literal(&alias_words[0], cmd.span.clone());
+
+                let mut new_args = vec![];
+                for alias_arg in &alias_words[1..] {
+                    new_args.push(colony_parser::Word::literal(alias_arg, cmd.span.clone()));
+                }
+                new_args.extend(cmd.args.clone());
+                new_cmd.args = new_args;
+
+                return Box::pin(self.execute_simple_command(&new_cmd)).await;
+            }
         }
 
         // 1. Try builtin (now with reactive tuple space!)
@@ -439,15 +510,23 @@ impl Executor {
             match stmt {
                 Statement::SimpleCommand(cmd) => {
                     let status = Box::pin(self.execute_simple_command(cmd)).await?;
-                    Ok(status.code())
+                    let code = status.code();
+                    self.context.set_last_exit_status(code);
+                    Ok(code)
                 }
                 Statement::Pipeline(pipeline) => {
+                    if pipeline.elements.len() == 1 {
+                        return self.execute_statement_recursive(&pipeline.elements[0].command).await;
+                    }
                     let status = self.execute_pipeline(pipeline).await?;
-                    Ok(status.code())
+                    let code = status.code();
+                    self.context.set_last_exit_status(code);
+                    Ok(code)
                 }
                 Statement::List(list) => {
                     // Execute first
                     let mut last_exit = self.execute_statement_recursive(&list.first).await?;
+                    self.context.set_last_exit_status(last_exit);
 
                     // Execute rest based on operators
                     for (op, stmt) in &list.rest {
@@ -461,15 +540,23 @@ impl Executor {
 
                         if should_exec {
                             last_exit = self.execute_statement_recursive(stmt).await?;
+                            self.context.set_last_exit_status(last_exit);
                         }
                     }
 
                     Ok(last_exit)
                 }
-                Statement::Return(_) => {
-                    // Return statement - for now just return 0
-                    // TODO: Implement proper return value and early exit
-                    Ok(0)
+                Statement::Return(ret_stmt) => {
+                    let code = if let Some(ref expr) = ret_stmt.value {
+                        use colony_parser::Expression;
+                        match expr {
+                            Expression::Int(n, _) => *n as i32,
+                            _ => 0
+                        }
+                    } else {
+                        self.context.last_exit_status()
+                    };
+                    Err(ExecutionError::Return(code))
                 }
                 Statement::Empty => {
                     Ok(0)
@@ -500,8 +587,12 @@ impl Executor {
                     }
                     Ok(last)
                 }
-                _ => {
-                    eprintln!("Statement type not yet supported: {:?}", std::mem::discriminant(stmt));
+                Statement::FunctionDef(func_def) => {
+                    self.context.define_function(func_def.name.clone(), func_def.clone());
+                    Ok(0)
+                }
+                other => {
+                    eprintln!("Statement type not yet supported in function: {:?}", other);
                     Ok(1)
                 }
             }

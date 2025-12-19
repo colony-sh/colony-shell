@@ -16,8 +16,63 @@ use crate::{ExpansionContext, ExpansionError, Result};
 ///
 /// Returns the result as a string (for substitution into command)
 pub fn expand_arithmetic(expr: &str, context: &ExpansionContext) -> Result<String> {
-    let result = eval_arithmetic(expr.trim(), context)?;
+    let expanded = pre_expand_variables(expr.trim(), context);
+    let result = eval_arithmetic(&expanded, context)?;
     Ok(result.to_string())
+}
+
+fn pre_expand_variables(expr: &str, context: &ExpansionContext) -> String {
+    let mut result = String::new();
+    let chars: Vec<char> = expr.chars().collect();
+    let mut i = 0;
+    
+    while i < chars.len() {
+        if chars[i] == '$' {
+            i += 1;
+            if i < chars.len() {
+                if chars[i] == '{' {
+                    i += 1;
+                    let start = i;
+                    while i < chars.len() && chars[i] != '}' {
+                        i += 1;
+                    }
+                    let var_name: String = chars[start..i].iter().collect();
+                    let value = context.get_var_or_env(&var_name).unwrap_or_default();
+                    result.push_str(&value);
+                    if i < chars.len() {
+                        i += 1;
+                    }
+                } else if chars[i].is_ascii_digit() {
+                    let start = i;
+                    while i < chars.len() && chars[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                    let param_str: String = chars[start..i].iter().collect();
+                    if let Ok(param_num) = param_str.parse::<usize>() {
+                        let value = context.get_positional_param(param_num).unwrap_or_default();
+                        result.push_str(&value);
+                    }
+                } else if chars[i].is_ascii_alphabetic() || chars[i] == '_' {
+                    let start = i;
+                    while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                        i += 1;
+                    }
+                    let var_name: String = chars[start..i].iter().collect();
+                    let value = context.get_var_or_env(&var_name).unwrap_or_default();
+                    result.push_str(&value);
+                } else {
+                    result.push('$');
+                }
+            } else {
+                result.push('$');
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    
+    result
 }
 
 /// Parse and evaluate arithmetic expression
