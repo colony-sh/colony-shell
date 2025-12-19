@@ -1032,3 +1032,15 @@
 [2025-12-19 22:20] RESULT: 43/43 tests passing (100% coverage)
 [2025-12-19 22:25] MILESTONE: F038 Case Statement COMPLETE - 100% test coverage
 [2025-12-19 22:30] COMMIT: All case statement fixes committed
+[2025-12-19 22:35] START: F039 Heredoc Support Implementation
+[2025-12-19 22:40] CREATED: 07_heredoc.bats with 32 comprehensive tests from bash repo
+[2025-12-19 22:45] DISCOVERY: All 32 tests failing (0% pass rate)
+[2025-12-19 22:50] ROOT CAUSE: Heredoc preprocessing works but content never injected into AST
+[2025-12-19 22:55] ANALYSIS: preprocess_heredocs() extracts content to HashMap<usize, HeredocContent>
+[2025-12-19 23:00] ANALYSIS: Parser creates RedirectKind::HereDoc correctly
+[2025-12-19 23:05] BUG: Builder creates RedirectTarget::File(word) instead of RedirectTarget::HereDoc{content}
+[2025-12-19 23:10] BUG: Executor rejects File targets with HereDoc kind → "HereDoc should use apply_heredoc"
+[2025-12-19 23:15] ARCHITECTURE: Heredoc content extraction works, AST injection missing
+[2025-12-19 23:20] IDENTIFIED: TODO at pest_api.rs:127 marks this known gap
+[2025-12-19 23:25] BLOCKED: Need to wire heredoc_contents HashMap through builder
+[2025-12-19 23:30] SESSION END: Documented issue for next session
