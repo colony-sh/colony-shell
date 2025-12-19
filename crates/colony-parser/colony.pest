@@ -76,7 +76,12 @@ ArgumentWord = {
 
 // Bash-style assignment: name=value or name=(array values) or name[index]=value or name+=(array values)
 BashAssignment = {
-    Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)?
+    AssignmentName ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)?
+}
+
+// Assignment name - can be any identifier including reserved words (bash allows var=x)
+AssignmentName = @{
+    (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
 }
 
 // Associative array literal: ([key1]=val1 [key2]=val2)
@@ -658,7 +663,7 @@ Bareword = {
 }
 
 BarewordChars = @{
-    (!WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ ANY)+
+    (!WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"=" ~ ANY)+
 }
 
 SpecialChar = {
@@ -674,7 +679,12 @@ DollarExpansion = {
   | ("$[" ~ Expression ~ "]")            // $[expr]  - parsed inline (Colony)
   | ("${" ~ VariableRef ~ "}")           // ${var}   - parsed inline
   | ("$" ~ PositionalParam)              // $1, $@, $#, etc. - positional parameters
-  | ("$" ~ Identifier)                   // $var     - parsed inline
+  | ("$" ~ VariableName)                 // $var     - parsed inline (allows reserved words)
+}
+
+// Variable name - can be any identifier including reserved words (bash allows $var)
+VariableName = @{
+    (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
 }
 
 // Positional parameters and special variables

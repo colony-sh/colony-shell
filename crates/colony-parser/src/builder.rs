@@ -903,7 +903,7 @@ impl AstBuilder {
                 let span = span_from_pair(&pair);
                 Ok(Expression::Null(span))
             }
-            Rule::Identifier => {
+            Rule::Identifier | Rule::VariableName => {
                 let span = span_from_pair(&pair);
                 let name = pair.as_str().to_string();
                 Ok(Expression::Variable { name, span })
@@ -1619,8 +1619,8 @@ impl AstBuilder {
                     span: span_from_pair(&inner),
                 }))
             }
-            Rule::Identifier => {
-                // Simple $VAR
+            Rule::Identifier | Rule::VariableName => {
+                // Simple $VAR (allows reserved words as variable names)
                 let name = inner.as_str().to_string();
                 Ok(WordPart::Variable(VariableRef {
                     name,

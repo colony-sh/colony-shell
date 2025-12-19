@@ -107,6 +107,9 @@ impl ExpansionContext {
 
     /// Set a shell variable from string
     pub fn set_var(&mut self, name: String, value: String) {
+        if name == "IFS" {
+            self.ifs = value.clone();
+        }
         self.variables.insert(name, Variable::String(value));
     }
 
