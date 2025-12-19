@@ -81,6 +81,10 @@ impl AstBuilder {
                 Self::build_until_statement(pair)
                     .map(Statement::Until)
             }
+            Rule::CaseStatement => {
+                Self::build_case_statement(pair)
+                    .map(Statement::Case)
+            }
             Rule::VarDecl => {
                 Self::build_var_decl(pair)
                     .map(Statement::VarDecl)
@@ -614,6 +618,111 @@ impl AstBuilder {
             body,
             span,
         })
+    }
+
+    fn build_case_statement(pair: Pair<Rule>) -> Result<CaseStatement, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        // CaseStatement = "case" ~ CaseValue ~ "in" ~ CaseArm* ~ "esac"
+        
+        // Parse the value to match against
+        let value_pair = inner.next().ok_or(BuildError::MissingCaseValue)?;
+        let value = match value_pair.as_rule() {
+            Rule::CaseValue => {
+                let inner_value = value_pair.into_inner().next()
+                    .ok_or(BuildError::MissingCaseValue)?;
+                match inner_value.as_rule() {
+                    Rule::Word => Self::build_word(inner_value)?,
+                    Rule::Expression => {
+                        let expr_str = inner_value.as_str();
+                        Word::literal(expr_str, span_from_pair(&inner_value))
+                    }
+                    _ => return Err(BuildError::UnexpectedRule {
+                        expected: "Word or Expression inside CaseValue",
+                        found: format!("{:?}", inner_value.as_rule()),
+                    }),
+                }
+            }
+            Rule::Word => Self::build_word(value_pair)?,
+            Rule::Expression => {
+                let expr_str = value_pair.as_str();
+                Word::literal(expr_str, span_from_pair(&value_pair))
+            }
+            _ => return Err(BuildError::UnexpectedRule {
+                expected: "CaseValue (Word or Expression)",
+                found: format!("{:?}", value_pair.as_rule()),
+            }),
+        };
+
+        // Parse all case arms
+        let mut arms = Vec::new();
+        for arm_pair in inner {
+            if arm_pair.as_rule() == Rule::CaseArm {
+                arms.push(Self::build_case_arm(arm_pair)?);
+            }
+        }
+
+        Ok(CaseStatement {
+            value,
+            arms,
+            span,
+        })
+    }
+
+    fn build_case_arm(pair: Pair<Rule>) -> Result<CaseArm, BuildError> {
+        let mut inner = pair.into_inner();
+
+        let mut patterns = Vec::new();
+        let mut body = Vec::new();
+        let mut terminator = CaseTerminator::Break;
+
+        for part in inner {
+            match part.as_rule() {
+                Rule::CasePattern => {
+                    let mut pattern_inner = part.into_inner();
+                    if let Some(pattern_content) = pattern_inner.next() {
+                        let pattern = match pattern_content.as_rule() {
+                            Rule::Word => Self::build_word(pattern_content)?,
+                            Rule::Expression => {
+                                let expr_str = pattern_content.as_str();
+                                Word::literal(expr_str, span_from_pair(&pattern_content))
+                            }
+                            _ => continue,
+                        };
+                        patterns.push(pattern);
+                    }
+                }
+                Rule::CaseArmBody => {
+                    for stmt_pair in part.into_inner() {
+                        if stmt_pair.as_rule() == Rule::CaseArmStatement {
+                            if let Some(inner_stmt) = stmt_pair.into_inner().next() {
+                                body.push(Self::build_statement(inner_stmt)?);
+                            }
+                        }
+                    }
+                }
+                Rule::CaseTerminator => {
+                    terminator = Self::build_case_terminator(part)?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(CaseArm {
+            patterns,
+            body,
+            terminator,
+        })
+    }
+
+    fn build_case_terminator(pair: Pair<Rule>) -> Result<CaseTerminator, BuildError> {
+        match pair.as_str() {
+            ";;" => Ok(CaseTerminator::Break),
+            ";&" => Ok(CaseTerminator::Fallthrough),
+            ";;&" => Ok(CaseTerminator::Continue),
+            other => Err(BuildError::InvalidCaseTerminator(other.to_string())),
+        }
     }
 
     fn build_var_decl(pair: Pair<Rule>) -> Result<VarDecl, BuildError> {
@@ -2077,6 +2186,15 @@ pub enum BuildError {
 
     #[error("unexpected quoted string type: {0}")]
     UnexpectedQuotedString(String),
+
+    #[error("missing case value")]
+    MissingCaseValue,
+
+    #[error("missing case pattern")]
+    MissingCasePattern,
+
+    #[error("invalid case terminator: {0}")]
+    InvalidCaseTerminator(String),
 
     #[error("parse error: {0}")]
     Parse(String),

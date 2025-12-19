@@ -500,7 +500,7 @@ impl Executor {
     ///
     /// Simplified executor that handles common statement types.
     /// Returns exit code.
-    fn execute_statement_recursive<'a>(
+    pub fn execute_statement_recursive<'a>(
         &'a mut self,
         stmt: &'a colony_parser::Statement,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i32>> + 'a>> {
@@ -572,6 +572,9 @@ impl Executor {
                 }
                 Statement::Until(until_stmt) => {
                     self.execute_until_internal(until_stmt).await
+                }
+                Statement::Case(case_stmt) => {
+                    self.execute_case_internal(case_stmt).await
                 }
                 Statement::BraceGroup(brace) => {
                     let mut last = 0;
@@ -696,5 +699,85 @@ impl Executor {
             }
         }
         Ok(last_exit)
+    }
+
+    async fn execute_case_internal(&mut self, case_stmt: &colony_parser::CaseStatement) -> Result<i32> {
+        use colony_expand::Expander;
+        
+        let mut expander = Expander::with_executor(self.context.clone(), |stmt, ctx| {
+            crate::execute_and_capture(stmt, ctx)
+        });
+
+        let value_fields = expander.expand_word(&case_stmt.value)?;
+        let value_str = if value_fields.is_empty() {
+            String::new()
+        } else {
+            value_fields[0].text.clone()
+        };
+
+        let mut last_exit = 0;
+        let mut matched = false;
+        let mut continue_testing = false;
+
+        for arm in &case_stmt.arms {
+            if !matched && !continue_testing {
+                for pattern_word in &arm.patterns {
+                    let pattern_fields = expander.expand_word(pattern_word)?;
+                    if pattern_fields.is_empty() {
+                        continue;
+                    }
+                    let pattern = &pattern_fields[0].text;
+                    
+                    if Self::pattern_matches(&value_str, pattern) {
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+
+            if matched || continue_testing {
+                continue_testing = false;
+                
+                for stmt in &arm.body {
+                    match self.execute_statement_recursive(stmt).await {
+                        Ok(code) => {
+                            last_exit = code;
+                            self.context.set_last_exit_status(code);
+                        }
+                        Err(ExecutionError::Break) => {
+                            return Ok(last_exit);
+                        }
+                        Err(ExecutionError::Continue) => {
+                            return Ok(last_exit);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+
+                match arm.terminator {
+                    colony_parser::CaseTerminator::Break => {
+                        break;
+                    }
+                    colony_parser::CaseTerminator::Fallthrough => {
+                        matched = true;
+                    }
+                    colony_parser::CaseTerminator::Continue => {
+                        matched = false;
+                        continue_testing = true;
+                    }
+                }
+            }
+        }
+
+        Ok(last_exit)
+    }
+
+    fn pattern_matches(value: &str, pattern: &str) -> bool {
+        use glob::Pattern;
+        
+        match Pattern::new(pattern) {
+            Ok(glob_pattern) => glob_pattern.matches(value),
+            Err(_) => value == pattern,
+        }
     }
 }

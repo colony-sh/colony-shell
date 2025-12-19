@@ -751,6 +751,7 @@ dependencies = [
  "colony-expand",
  "colony-parser",
  "colony-tuple",
+ "glob",
  "nix",
  "parking_lot",
  "signal-hook",

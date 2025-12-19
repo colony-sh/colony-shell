@@ -144,15 +144,39 @@ IfThenBody = { Statement* ~ &("elif" | "else" | "fi") }
 IfElseBody = { Statement* ~ &"fi" }
 
 CaseStatement = {
-    "case" ~ CaseValue ~ "in"
+    "case" ~ CaseValue ~ "in" ~ NL*
     ~ CaseArm*
-    ~ "esac"
+    ~ NL* ~ "esac"
 }
 
 CaseValue = { Expression | Word }
 
 CaseArm = {
-    CasePattern+ ~ ")" ~ Statement* ~ CaseTerminator
+    NL* ~ CasePattern+ ~ ")" ~ CaseArmBody ~ CaseTerminator ~ NL*
+}
+
+CaseArmBody = { CaseArmStatement* }
+
+CaseArmStatement = {
+    !(CaseTerminator | "esac") ~ (
+      VarDecl
+    | FunctionDef
+    | TryStatement
+    | IfStatement
+    | ForStatement
+    | WhileStatement
+    | UntilStatement
+    | MatchStatement
+    | ReturnStatement
+    | BreakStatement
+    | ContinueStatement
+    | Pipeline
+    | BashAssignment
+    | Assignment
+    | SimpleCommand
+    | Comment
+    | EmptyStatement
+    )
 }
 
 CasePattern = { "|"? ~ (Word | Expression) }

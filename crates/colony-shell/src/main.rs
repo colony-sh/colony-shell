@@ -2,7 +2,7 @@
 
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
 use colony_config::{discover_config, ColonyConfig, ConfigLocation, TrustManager, TrustStatus};
-use colony_exec::Executor;
+use colony_exec::{Executor, ExecutionError};
 use colony_expand::ExpansionContext;
 use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
@@ -757,8 +757,15 @@ fn execute_statement_with_control<'a>(
             execute_if_with_control(if_stmt, executor).await
         }
         Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
-            eprintln!("This control flow not yet supported");
-            (1, ControlFlow::Normal)
+            match executor.execute_statement_recursive(stmt).await {
+                Ok(code) => (code, ControlFlow::Normal),
+                Err(ExecutionError::Break) => (0, ControlFlow::Break),
+                Err(ExecutionError::Continue) => (0, ControlFlow::Continue),
+                Err(e) => {
+                    eprintln!("{}", e);
+                    (1, ControlFlow::Normal)
+                }
+            }
         }
         Statement::BraceGroup(_) | Statement::Subshell(_) => {
             eprintln!("Compound commands not yet supported");

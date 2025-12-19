@@ -39,6 +39,12 @@ pub enum ExecutionError {
 
     #[error("Return with exit code {0}")]
     Return(i32),
+
+    #[error("Break")]
+    Break,
+
+    #[error("Continue")]
+    Continue,
 }
 
 pub type Result<T> = std::result::Result<T, ExecutionError>;
