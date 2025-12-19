@@ -935,85 +935,14 @@ async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32
 }
 
 async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {
-    // Parse with pest (pure PEG - no lexer needed!)
     let stmt = parse_statement(line)
         .map_err(|e| miette::miette!("parse error: {}", e))?;
 
-    // Execute the parsed command
-    use colony_parser::Statement;
-    match stmt {
-        Statement::SimpleCommand(cmd) => {
-            let status = executor.execute_simple_command(&cmd).await
-                .map_err(|e| miette::miette!("execution error: {}", e))?;
-
-            if !status.is_success() {
-                eprintln!("Command exited with code {}", status.code());
-            }
-        }
-        Statement::Pipeline(pipeline) => {
-            let status = executor.execute_pipeline(&pipeline).await
-                .map_err(|e| miette::miette!("execution error: {}", e))?;
-
-            if !status.is_success() {
-                eprintln!("Pipeline exited with code {}", status.code());
-            }
-        }
-        Statement::List(list) => {
-            // List with single element
-            if list.rest.is_empty() {
-                match *list.first {
-                    Statement::SimpleCommand(cmd) => {
-                        let status = executor.execute_simple_command(&cmd).await
-                            .map_err(|e| miette::miette!("execution error: {}", e))?;
-
-                        if !status.is_success() {
-                            eprintln!("Command exited with code {}", status.code());
-                        }
-                    }
-                    Statement::Pipeline(ref pipeline) => {
-                        // Check if it's a single-element pipeline with a simple command
-                        if pipeline.elements.len() == 1 {
-                            if let Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
-                                // Execute as simple command to check for builtins
-                                let status = executor.execute_simple_command(cmd).await
-                                    .map_err(|e| miette::miette!("execution error: {}", e))?;
-
-                                if !status.is_success() {
-                                    eprintln!("Command exited with code {}", status.code());
-                                }
-                            } else {
-                                println!("(Pipeline element not a simple command)");
-                            }
-                        } else {
-                            // Real pipeline with multiple commands
-                            let status = executor.execute_pipeline(&pipeline).await
-                                .map_err(|e| miette::miette!("execution error: {}", e))?;
-
-                            if !status.is_success() {
-                                eprintln!("Pipeline exited with code {}", status.code());
-                            }
-                        }
-                    }
-                    _ => {
-                        println!("(This command type not yet supported)");
-                    }
-                }
-            } else {
-                println!("(Command lists with && || not yet supported)");
-            }
-        }
-        Statement::If(_) | Statement::While(_) | Statement::Until(_) | Statement::For(_) | Statement::Case(_) => {
-            println!("(Control flow not yet supported)");
-        }
-        Statement::BraceGroup(_) | Statement::Subshell(_) => {
-            println!("(Compound commands not yet supported)");
-        }
-        Statement::VarDecl(_) | Statement::FunctionDef(_) | Statement::ProcDef(_) | Statement::Return(_) => {
-            println!("(Declarations not yet supported)");
-        }
-        Statement::Empty => {
-            // Empty statement - do nothing
-        }
+    let exit_code = execute_statement_for_code(&stmt, executor).await;
+    executor.context_mut().set_last_exit_status(exit_code);
+    
+    if exit_code != 0 {
+        eprintln!("Command exited with code {}", exit_code);
     }
 
     Ok(())

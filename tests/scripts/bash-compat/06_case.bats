@@ -2,6 +2,8 @@
 # Test Colony shell case statements for POSIX compliance
 # Compare behavior against bash
 
+COLONY="${COLONY_BIN}"
+
 # ============================================================================
 # Basic Case Statements
 # ============================================================================
