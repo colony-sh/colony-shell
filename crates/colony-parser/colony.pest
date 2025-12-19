@@ -76,7 +76,7 @@ ArgumentWord = {
 
 // Bash-style assignment: name=value or name=(array values) or name[index]=value or name+=(array values)
 BashAssignment = {
-    Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)
+    Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)?
 }
 
 // Associative array literal: ([key1]=val1 [key2]=val2)
@@ -697,11 +697,8 @@ DollarArithRaw = @{
     "$((" ~ (!"))" ~ ANY)* ~ "))"
 }
 
-// Command substitution as raw string - parsed during expansion not during initial parse
-// Must NOT match $(( - that's arithmetic
-// Lookahead: "$(" but not followed by "("
 DollarCommandSubRaw = @{
-    "$(" ~ !"(" ~ (!")" ~ ANY)* ~ ")"
+    "$(" ~ !"(" ~ (!")" ~ (NEWLINE | ANY))* ~ ")"
 }
 
 VariableRef = {

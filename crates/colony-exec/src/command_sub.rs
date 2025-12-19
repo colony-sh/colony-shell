@@ -105,9 +105,11 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
     use crate::JobTable;
     use std::io::Write;
 
-
-    // For command substitution, we only support simple commands and pipelines
     match stmt {
+        Statement::Empty => {
+            0
+        }
+
         Statement::SimpleCommand(cmd) => {
 
             // Check if it's a builtin
@@ -172,7 +174,6 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
         }
 
         other => {
-            eprintln!("command substitution: unsupported statement type");
             1
         }
     }

@@ -189,9 +189,9 @@ pub fn apply_redirects(
                 close_fd(source_fd)?;
             }
             RedirectTarget::HereDoc {
-                content, expand, ..
+                content, expand, strip_tabs, ..
             } => {
-                apply_heredoc(source_fd, content, *expand, context)?;
+                apply_heredoc(source_fd, content, *expand, *strip_tabs, context)?;
             }
         }
     }
@@ -390,20 +390,73 @@ fn close_fd(fd: RawFd) -> Result<()> {
     Ok(())
 }
 
-/// Apply a heredoc or herestring (<<, <<-, <<<)
+fn expand_heredoc_content(content: &str, context: &mut ExpansionContext) -> String {
+    let mut result = String::new();
+    let mut chars = content.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        if ch == '$' {
+            if let Some(&next_ch) = chars.peek() {
+                if next_ch == '{' {
+                    chars.next();
+                    let mut var_name = String::new();
+                    while let Some(&ch) = chars.peek() {
+                        if ch == '}' {
+                            chars.next();
+                            break;
+                        }
+                        var_name.push(chars.next().unwrap());
+                    }
+                    if let Some(value) = context.get_var_or_env(&var_name) {
+                        result.push_str(&value);
+                    }
+                } else if next_ch.is_alphanumeric() || next_ch == '_' {
+                    let mut var_name = String::new();
+                    while let Some(&ch) = chars.peek() {
+                        if ch.is_alphanumeric() || ch == '_' {
+                            var_name.push(chars.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+                    if let Some(value) = context.get_var_or_env(&var_name) {
+                        result.push_str(&value);
+                    }
+                } else {
+                    result.push(ch);
+                }
+            } else {
+                result.push(ch);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    
+    result
+}
+
 fn apply_heredoc(
     source_fd: RawFd,
     content: &str,
     expand: bool,
+    strip_tabs: bool,
     context: &mut ExpansionContext,
 ) -> Result<()> {
-    // Expand content if needed
-    let final_content = if expand {
-        // TODO: Expand variables in heredoc content
-        // For now, just use literal content
-        content.to_string()
+    let expanded_content = if expand {
+        expand_heredoc_content(content, context)
     } else {
         content.to_string()
+    };
+    
+    let final_content = if strip_tabs {
+        expanded_content
+            .lines()
+            .map(|line| line.trim_start_matches('\t'))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        expanded_content
     };
 
     // Create a pipe
@@ -602,12 +655,13 @@ mod tests {
         let heredoc_content = "hello\nworld\n";
 
         let redirects = vec![Redirect {
-            fd: None, // Default to stdin
+            fd: None,
             kind: RedirectKind::HereDoc(HereDocKind::Normal),
             target: RedirectTarget::HereDoc {
                 delimiter: "EOF".to_string(),
                 content: heredoc_content.to_string(),
                 expand: true,
+                strip_tabs: false,
             },
             span: Span::DUMMY,
         }];

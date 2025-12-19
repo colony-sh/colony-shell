@@ -31,13 +31,10 @@ struct HeredocMarker {
     no_expansion: bool,
 }
 
-/// Extracted heredoc content
-#[derive(Debug, Clone)]
 pub struct HeredocContent {
-    /// The raw content between command line and delimiter
     pub content: String,
-    /// Whether to expand variables in content
     pub expand: bool,
+    pub strip_tabs: bool,
 }
 
 /// Preprocess source to normalize heredocs for pest parsing
@@ -194,7 +191,7 @@ fn extract_and_normalize(
                 pos += 1;
             }
 
-            let line = &source[line_start..pos];
+            let mut line = &source[line_start..pos];
 
             // Check if this line is the delimiter (possibly with leading whitespace if <<-)
             let trimmed_line = if marker.strip_tabs {
@@ -211,18 +208,51 @@ fn extract_and_normalize(
                 break;
             }
 
+            // POSIX: backslash-newline joins lines (unquoted delimiters only)
+            let mut line_content = line.to_string();
+            if !marker.no_expansion {
+                while line_content.ends_with('\\') && pos < bytes.len() {
+                    line_content.pop();
+                    
+                    if pos < bytes.len() && bytes[pos] == b'\n' {
+                        pos += 1;
+                    }
+                    
+                    // Lookahead: check if next line is delimiter
+                    let next_line_start = pos;
+                    while pos < bytes.len() && bytes[pos] != b'\n' {
+                        pos += 1;
+                    }
+                    
+                    let next_line = &source[next_line_start..pos];
+                    let trimmed_next = if marker.strip_tabs {
+                        next_line.trim_start_matches('\t')
+                    } else {
+                        next_line
+                    };
+                    
+                    if trimmed_next.trim() == marker.delimiter {
+                        // Backtrack: delimiter found, stop continuation
+                        pos = next_line_start;
+                        break;
+                    }
+                    
+                    line_content.push_str(next_line);
+                }
+            }
+
             // Not delimiter, add to content
-            content.push_str(line);
-            if pos < bytes.len() {
+            content.push_str(&line_content);
+            if pos < bytes.len() && bytes[pos] == b'\n' {
                 content.push('\n');
                 pos += 1; // Skip newline
             }
         }
 
-        // Store content
         contents.insert(idx, HeredocContent {
             content,
             expand: !marker.no_expansion,
+            strip_tabs: marker.strip_tabs,
         });
 
         // Update last_pos to skip the heredoc content in normalized output

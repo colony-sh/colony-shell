@@ -100,13 +100,10 @@ fn parse_direct(source: &str) -> Result<Program, ParseError> {
     Ok(program)
 }
 
-/// Parse source with heredoc preprocessing
 fn parse_with_heredocs(source: &str) -> Result<Program, ParseError> {
-    // Preprocess heredocs
-    let (normalized, _heredoc_contents) = preprocess_heredocs(source)
+    let (normalized, heredoc_contents) = preprocess_heredocs(source)
         .map_err(|e| ParseError::HeredocPreprocessing(e))?;
 
-    // Parse normalized source
     let pairs = ColonyParser::parse(Rule::Program, &normalized)
         .map_err(|e| {
             let (line, column) = match e.line_col {
@@ -120,23 +117,29 @@ fn parse_with_heredocs(source: &str) -> Result<Program, ParseError> {
             }
         })?;
 
-    // Build AST
-    let program = AstBuilder::build_program(pairs)
+    let mut program = AstBuilder::build_program(pairs)
         .map_err(ParseError::Build)?;
 
-    // TODO: Inject heredoc content into AST's Redirect nodes
-    // For now, heredoc Redirects will have placeholder content
+    let mut heredoc_index = 0;
+    for stmt in &mut program.statements {
+        inject_heredoc_contents(stmt, &heredoc_contents, &mut heredoc_index);
+    }
 
     Ok(program)
 }
 
-/// Parse a single statement (for REPL or testing)
 pub fn parse_statement(source: &str) -> Result<crate::ast::Statement, ParseError> {
-    // Preprocess arithmetic if present
-    let (normalized, _arith_map) = if source.contains("$((") {
+    let (normalized_arith, _arith_map) = if source.contains("$((") {
         crate::arith_preprocess::preprocess_arithmetic(source)
     } else {
         (source.to_string(), Vec::new())
+    };
+
+    let (normalized, heredoc_contents) = if normalized_arith.contains("<<") {
+        preprocess_heredocs(&normalized_arith)
+            .map_err(|e| ParseError::HeredocPreprocessing(e))?
+    } else {
+        (normalized_arith, std::collections::HashMap::new())
     };
 
     let pairs = ColonyParser::parse(Rule::Statement, &normalized)
@@ -155,16 +158,19 @@ pub fn parse_statement(source: &str) -> Result<crate::ast::Statement, ParseError
     let pair = pairs.into_iter().next()
         .ok_or(ParseError::EmptyInput)?;
 
-    // Statement is a wrapper, descend into it
     let inner = pair.into_inner().next()
         .ok_or(ParseError::EmptyInput)?;
 
     let mut stmt = AstBuilder::build_statement(inner)
         .map_err(ParseError::Build)?;
 
-    // Inject arithmetic expressions back into AST
     if !_arith_map.is_empty() {
         inject_arithmetic(&mut stmt, &_arith_map);
+    }
+
+    if !heredoc_contents.is_empty() {
+        let mut heredoc_index = 0;
+        inject_heredoc_contents(&mut stmt, &heredoc_contents, &mut heredoc_index);
     }
 
     Ok(stmt)
@@ -281,6 +287,129 @@ fn inject_arithmetic(stmt: &mut crate::ast::Statement, arith_map: &[(String, Str
         _ => {
             // Other statement types - skip for now
         }
+    }
+}
+
+fn inject_heredoc_contents(
+    stmt: &mut crate::ast::Statement,
+    heredoc_contents: &std::collections::HashMap<usize, crate::heredoc::HeredocContent>,
+    heredoc_index: &mut usize,
+) {
+    use crate::ast::{HereDocKind, RedirectKind, RedirectTarget, Statement};
+    
+    fn inject_into_redirects(
+        redirects: &mut Vec<crate::ast::Redirect>,
+        heredoc_contents: &std::collections::HashMap<usize, crate::heredoc::HeredocContent>,
+        heredoc_index: &mut usize,
+    ) {
+        use crate::ast::WordPart;
+        
+        for redirect in redirects {
+            match (&redirect.kind, &redirect.target) {
+                (RedirectKind::HereDoc(HereDocKind::Normal), RedirectTarget::File(word))
+                | (RedirectKind::HereDoc(HereDocKind::StripTabs), RedirectTarget::File(word)) => {
+                    let delimiter_key = if word.parts.len() == 1 {
+                        match &word.parts[0] {
+                            WordPart::Literal(s) => Some(s.as_str()),
+                            WordPart::SingleQuoted(s) => Some(s.as_str()),
+                            WordPart::DoubleQuoted(parts) if parts.len() == 1 => {
+                                if let WordPart::Literal(s) = &parts[0] {
+                                    Some(s.as_str())
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    
+                    if let Some(delimiter_key) = delimiter_key {
+                        if let Some(content) = heredoc_contents.get(heredoc_index) {
+                            redirect.target = RedirectTarget::HereDoc {
+                                delimiter: delimiter_key.to_string(),
+                                content: content.content.clone(),
+                                expand: content.expand,
+                                strip_tabs: content.strip_tabs,
+                            };
+                            *heredoc_index += 1;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    match stmt {
+        Statement::SimpleCommand(cmd) => {
+            inject_into_redirects(&mut cmd.redirects, heredoc_contents, heredoc_index);
+        }
+        Statement::Pipeline(pipeline) => {
+            for element in &mut pipeline.elements {
+                inject_heredoc_contents(&mut element.command, heredoc_contents, heredoc_index);
+            }
+        }
+        Statement::List(list) => {
+            inject_heredoc_contents(&mut list.first, heredoc_contents, heredoc_index);
+            for (_, stmt) in &mut list.rest {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+        }
+        Statement::If(if_stmt) => {
+            for stmt in &mut if_stmt.then_body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+            for elif in &mut if_stmt.elif_branches {
+                for stmt in &mut elif.body {
+                    inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+                }
+            }
+            if let Some(else_body) = &mut if_stmt.else_body {
+                for stmt in else_body {
+                    inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+                }
+            }
+        }
+        Statement::For(for_stmt) => {
+            for stmt in &mut for_stmt.body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+        }
+        Statement::While(while_stmt) => {
+            for stmt in &mut while_stmt.body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+        }
+        Statement::Until(until_stmt) => {
+            for stmt in &mut until_stmt.body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+        }
+        Statement::Case(case_stmt) => {
+            for arm in &mut case_stmt.arms {
+                for stmt in &mut arm.body {
+                    inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+                }
+            }
+        }
+        Statement::Subshell(subshell) => {
+            for stmt in &mut subshell.body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+        }
+        Statement::BraceGroup(group) => {
+            for stmt in &mut group.body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+        }
+        Statement::FunctionDef(func) => {
+            for stmt in &mut func.body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+        }
+        _ => {}
     }
 }
 

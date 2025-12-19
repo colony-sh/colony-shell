@@ -554,6 +554,9 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         .map(|(k, v)| CString::new(format!("{}={}", k, v).as_bytes()).unwrap())
         .collect();
 
+    let mut ctx = context.clone();
+    let _ = crate::apply_redirects(&simple_cmd.redirects, &mut ctx);
+
     let _ = execve(&c_program, &c_args, &c_env);
     eprintln!("colony-exec: exec failed");
     std::process::exit(127);

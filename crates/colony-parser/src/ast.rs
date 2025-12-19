@@ -214,11 +214,11 @@ pub enum RedirectTarget {
     Fd(i32),
     /// Close fd
     Close,
-    /// Here-document content
     HereDoc {
         delimiter: String,
         content: String,
         expand: bool,
+        strip_tabs: bool,
     },
 }
 

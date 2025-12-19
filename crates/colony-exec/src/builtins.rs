@@ -62,6 +62,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "context"
         | "declare"
         | "true" | "false"
+        | "read"
     )
 }
 
@@ -133,6 +134,7 @@ pub fn execute_builtin(
         "declare" => builtin_declare(&args, context),
         "true" => builtin_true(),
         "false" => builtin_false(),
+        "read" => builtin_read(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -786,6 +788,39 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
     }
     
     Ok(BuiltinResult::Success(0))
+}
+
+fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    use std::io::{self, BufRead};
+    
+    if args.is_empty() {
+        return Ok(BuiltinResult::Success(1));
+    }
+    
+    let var_name = &args[0];
+    
+    let stdin = io::stdin();
+    let mut line = String::new();
+    
+    match stdin.lock().read_line(&mut line) {
+        Ok(0) => {
+            Ok(BuiltinResult::Success(1))
+        }
+        Ok(_) => {
+            if line.ends_with('\n') {
+                line.pop();
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+            }
+            
+            context.set_var(var_name.clone(), line);
+            Ok(BuiltinResult::Success(0))
+        }
+        Err(e) => {
+            Err(ExecutionError::IoError(e))
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1448,26 +1448,29 @@ impl AstBuilder {
         let full_text = pair.as_str();  // Capture for += detection
         let mut inner = pair.into_inner();
 
-        // BashAssignment = Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (ArrayLiteral | Word)
+        // BashAssignment = Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)?
 
         let name = inner.next()
             .ok_or(BuildError::MissingAssignmentName)?
             .as_str()
             .to_string();
 
-        // Check if next is subscript or value
-        let next_pair = inner.next()
-            .ok_or(BuildError::MissingAssignmentValue)?;
+        // Check if next is subscript or value (both are optional)
+        let next_pair = inner.next();
 
-        let (subscript, value_pair) = if next_pair.as_rule() == Rule::ArraySubscript {
-            // We have a subscript, next is the value
-            let subscript = Some(Self::build_array_subscript(next_pair)?);
-            let value_pair = inner.next()
-                .ok_or(BuildError::MissingAssignmentValue)?;
-            (subscript, value_pair)
+        let (subscript, value_pair_opt) = if let Some(next) = next_pair {
+            if next.as_rule() == Rule::ArraySubscript {
+                // We have a subscript, next might be the value
+                let subscript = Some(Self::build_array_subscript(next)?);
+                let value_pair = inner.next();
+                (subscript, value_pair)
+            } else {
+                // No subscript, this is the value
+                (None, Some(next))
+            }
         } else {
-            // No subscript, this is the value
-            (None, next_pair)
+            // No subscript and no value (e.g., empty=)
+            (None, None)
         };
 
         // Detect += operator by checking the full text
@@ -1477,41 +1480,46 @@ impl AstBuilder {
             AssignOp::Assign
         };
 
-        let value = match value_pair.as_rule() {
-            Rule::AssocArrayLiteral => {
-                let mut entries = Vec::new();
-                for entry_pair in value_pair.into_inner() {
-                    if entry_pair.as_rule() == Rule::AssocArrayEntry {
-                        let mut entry_inner = entry_pair.into_inner();
-                        let key = entry_inner.next()
-                            .map(|p| p.as_str().to_string())
-                            .unwrap_or_default();
-                        let val = entry_inner.next()
-                            .map(|p| p.as_str().to_string())
-                            .unwrap_or_default();
-                        entries.push((key, val));
+        let value = if let Some(value_pair) = value_pair_opt {
+            match value_pair.as_rule() {
+                Rule::AssocArrayLiteral => {
+                    let mut entries = Vec::new();
+                    for entry_pair in value_pair.into_inner() {
+                        if entry_pair.as_rule() == Rule::AssocArrayEntry {
+                            let mut entry_inner = entry_pair.into_inner();
+                            let key = entry_inner.next()
+                                .map(|p| p.as_str().to_string())
+                                .unwrap_or_default();
+                            let val = entry_inner.next()
+                                .map(|p| p.as_str().to_string())
+                                .unwrap_or_default();
+                            entries.push((key, val));
+                        }
                     }
+                    AssignmentValue::AssocArray(entries)
                 }
-                AssignmentValue::AssocArray(entries)
-            }
-            Rule::ArrayLiteral => {
-                let mut array_words = Vec::new();
-                for word_pair in value_pair.into_inner() {
-                    if word_pair.as_rule() == Rule::Word {
-                        array_words.push(Self::build_word(word_pair)?);
+                Rule::ArrayLiteral => {
+                    let mut array_words = Vec::new();
+                    for word_pair in value_pair.into_inner() {
+                        if word_pair.as_rule() == Rule::Word {
+                            array_words.push(Self::build_word(word_pair)?);
+                        }
                     }
+                    AssignmentValue::Array(array_words)
                 }
-                AssignmentValue::Array(array_words)
+                Rule::Word => {
+                    AssignmentValue::Word(Self::build_word(value_pair)?)
+                }
+                _ => {
+                    return Err(BuildError::UnexpectedRule {
+                        expected: "AssocArrayLiteral, ArrayLiteral or Word",
+                        found: format!("{:?}", value_pair.as_rule()),
+                    });
+                }
             }
-            Rule::Word => {
-                AssignmentValue::Word(Self::build_word(value_pair)?)
-            }
-            _ => {
-                return Err(BuildError::UnexpectedRule {
-                    expected: "AssocArrayLiteral, ArrayLiteral or Word",
-                    found: format!("{:?}", value_pair.as_rule()),
-                });
-            }
+        } else {
+            // Empty assignment (e.g., empty=)
+            AssignmentValue::Word(Word { parts: vec![], span: span.clone() })
         };
 
         Ok(Assignment {
@@ -1664,11 +1672,8 @@ impl AstBuilder {
                 Ok(WordPart::Literal(text.to_string()))
             }
             Rule::DollarCommandSubRaw => {
-                // $(command) - captured as raw string, will be parsed during expansion
                 let text = inner.as_str();
-                // Extract content between $( and )
-                let content = &text[2..text.len()-1]; // Strip "$(" and ")"
-                // Store as CommandSubRaw with unparsed string
+                let content = &text[2..text.len()-1];
                 Ok(WordPart::CommandSubRaw(content.to_string()))
             }
             Rule::CommandList => {
