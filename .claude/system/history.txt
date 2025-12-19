@@ -1097,3 +1097,12 @@
 [2025-12-19 18:10] PASSING: Basic quotes, empty quotes, concatenation, most escaping
 [2025-12-19 18:15] FAILING: Backquote command sub, some backslash cases, parameter expansion
 [2025-12-19 18:20] RESULT: New test area established - 254 total tests across 8 suites
+[2025-12-19 18:30] START: Creating command substitution test suite
+[2025-12-19 18:35] DECISION: Comprehensive approach - test both backtick and $() syntax
+[2025-12-19 18:40] CREATED: 09_comsub.bats with 54 comprehensive tests
+[2025-12-19 18:45] CATEGORIES: Basic, quoting, nesting, empty, param expansion, arithmetic, control flow
+[2025-12-19 18:50] BASELINE: 18/54 tests passing (33%)
+[2025-12-19 18:55] ANALYSIS: Dollar-paren basic cases work, backtick NOT implemented
+[2025-12-19 19:00] ANALYSIS: Nested comsub broken, parameter expansion integration broken
+[2025-12-19 19:05] RESULT: Clear diagnostic - backtick = 0%, nesting = broken, param exp = broken
+[2025-12-19 19:10] TOTAL: 361 tests across 9 suites (254 → 361 +107 tests, +29%)
