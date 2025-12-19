@@ -1005,3 +1005,11 @@
 [2025-12-19 19:20] WORKING: Basic patterns, wildcards, fallthrough, continue, nested case
 [2025-12-19 19:25] TODO: Fix default * pattern, variable expansion, special chars, command lists
 [2025-12-19 19:30] COMPLETE: F038 case statement implementation ready for commit
+[2025-12-19 19:40] FIX: Rewrote execute_case_internal logic
+[2025-12-19 19:45] FIXED: Test 22 - ;;& continue terminator now working correctly
+[2025-12-19 19:50] IMPROVEMENT: 36/43 tests passing (84%, +3pp from 81%)
+[2025-12-19 19:55] REMAINING ISSUES: 7 tests still failing
+[2025-12-19 20:00] TODO: Unquoted * pattern needs special handling (glob expansion issue)
+[2025-12-19 20:05] TODO: Variable expansion in case values
+[2025-12-19 20:10] TODO: Command lists (&&, ||) in case arm bodies (grammar fix needed)
+[2025-12-19 20:15] TODO: Special characters and spaces in patterns

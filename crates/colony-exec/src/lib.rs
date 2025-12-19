@@ -716,11 +716,16 @@ impl Executor {
         };
 
         let mut last_exit = 0;
-        let mut matched = false;
-        let mut continue_testing = false;
+        let mut execute_next = false;
+        let mut found_first_match = false;
 
         for arm in &case_stmt.arms {
-            if !matched && !continue_testing {
+            let mut should_execute = false;
+
+            if execute_next {
+                should_execute = true;
+                execute_next = false;
+            } else if !found_first_match {
                 for pattern_word in &arm.patterns {
                     let pattern_fields = expander.expand_word(pattern_word)?;
                     if pattern_fields.is_empty() {
@@ -729,15 +734,13 @@ impl Executor {
                     let pattern = &pattern_fields[0].text;
                     
                     if Self::pattern_matches(&value_str, pattern) {
-                        matched = true;
+                        should_execute = true;
                         break;
                     }
                 }
             }
 
-            if matched || continue_testing {
-                continue_testing = false;
-                
+            if should_execute {
                 for stmt in &arm.body {
                     match self.execute_statement_recursive(stmt).await {
                         Ok(code) => {
@@ -759,11 +762,10 @@ impl Executor {
                         break;
                     }
                     colony_parser::CaseTerminator::Fallthrough => {
-                        matched = true;
+                        execute_next = true;
+                        found_first_match = true;
                     }
                     colony_parser::CaseTerminator::Continue => {
-                        matched = false;
-                        continue_testing = true;
                     }
                 }
             }
