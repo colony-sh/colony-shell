@@ -12,6 +12,7 @@ mod builtins;
 mod command;
 mod command_sub;
 mod error;
+pub mod history;
 mod jobs;
 mod path;
 mod pipeline;
@@ -206,8 +207,8 @@ impl Executor {
             if let Some(ref subscript) = assignment.subscript {
                 match &assignment.value {
                     AssignmentValue::Word(word) => {
-                        let fields = expander.expand_word(word)?;
-                        let value = fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" ");
+                        // POSIX: No field splitting on assignment RHS
+                        let value = expander.expand_word_for_assignment(word)?;
                         
                         let key = match subscript {
                             colony_parser::ArraySubscript::Index(expr) => {
@@ -256,8 +257,8 @@ impl Executor {
             } else {
                 match &assignment.value {
                     AssignmentValue::Word(word) => {
-                        let fields = expander.expand_word(word)?;
-                        let value = fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" ");
+                        // POSIX: No field splitting on assignment RHS
+                        let value = expander.expand_word_for_assignment(word)?;
                         if assignment.op == colony_parser::AssignOp::Append {
                             let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
                             self.context.set_var(assignment.name.clone(), existing + &value);

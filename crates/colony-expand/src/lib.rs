@@ -163,6 +163,18 @@ impl Expander {
         Ok(fields)
     }
     
+    /// Expand a word for variable assignment RHS
+    /// POSIX: No field splitting or pathname expansion on assignment RHS
+    pub fn expand_word_for_assignment(&mut self, word: &Word) -> Result<String> {
+        let mut intermediate = IntermediateWord::new();
+
+        for part in &word.parts {
+            self.expand_part(part, &mut intermediate)?;
+        }
+
+        Ok(intermediate.as_single_string())
+    }
+    
     fn try_expand_array_at_word(&self, word: &Word) -> Result<Option<Vec<Field>>> {
         use colony_parser::ArraySubscript;
         
@@ -438,5 +450,9 @@ impl IntermediateWord {
 
     pub fn segments(&self) -> &[Segment] {
         &self.segments
+    }
+
+    fn as_single_string(&self) -> String {
+        self.segments.iter().map(|s| s.text.as_str()).collect()
     }
 }
