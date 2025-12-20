@@ -75,17 +75,49 @@ pub fn preprocess_heredocs(source: &str) -> Result<(String, HashMap<usize, Hered
 }
 
 /// Find all heredoc markers (<<DELIM and <<-DELIM) in source
+/// Skips heredocs that appear inside $() since they'll be handled when the comsub is parsed
 fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
     let mut markers = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0;
+    let mut current_line_end = None;
+    let mut paren_depth = 0;
+    let mut in_comsub = false;
 
     while i < bytes.len() {
-        // Look for << or <<-
+        if i + 1 < bytes.len() && bytes[i] == b'$' && bytes[i + 1] == b'(' {
+            i += 2;
+            paren_depth += 1;
+            in_comsub = true;
+            continue;
+        }
+        
+        if in_comsub && bytes[i] == b'(' {
+            paren_depth += 1;
+            i += 1;
+            continue;
+        }
+        
+        if in_comsub && bytes[i] == b')' {
+            paren_depth -= 1;
+            if paren_depth == 0 {
+                in_comsub = false;
+            }
+            i += 1;
+            continue;
+        }
+        
+        if in_comsub {
+            if bytes[i] == b'\n' {
+                current_line_end = None;
+            }
+            i += 1;
+            continue;
+        }
+        
         if i + 1 < bytes.len() && bytes[i] == b'<' && bytes[i + 1] == b'<' {
-            i += 2; // Skip <<
+            i += 2;
 
-            // Check for <<-
             let strip_tabs = if i < bytes.len() && bytes[i] == b'-' {
                 i += 1;
                 true
@@ -93,17 +125,14 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
                 false
             };
 
-            // Skip whitespace
             while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
                 i += 1;
             }
 
-            // Extract delimiter
             let delim_start = i;
             let mut delimiter = String::new();
             let mut no_expansion = false;
 
-            // Check for quoted delimiter
             if i < bytes.len() && (bytes[i] == b'\'' || bytes[i] == b'"') {
                 let quote = bytes[i];
                 no_expansion = true;
@@ -115,10 +144,9 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
                 }
 
                 if i < bytes.len() {
-                    i += 1; // Skip closing quote
+                    i += 1;
                 }
             } else {
-                // Unquoted delimiter
                 while i < bytes.len()
                     && bytes[i] != b' '
                     && bytes[i] != b'\t'
@@ -126,6 +154,7 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
                     && bytes[i] != b'|'
                     && bytes[i] != b'&'
                     && bytes[i] != b';'
+                    && bytes[i] != b'<'
                 {
                     delimiter.push(bytes[i] as char);
                     i += 1;
@@ -136,25 +165,29 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
                 return Err("Empty heredoc delimiter".to_string());
             }
 
-            // Find end of command line
             let start_pos = delim_start - (if strip_tabs { 3 } else { 2 });
-            while i < bytes.len() && bytes[i] != b'\n' {
-                i += 1;
+            
+            if current_line_end.is_none() {
+                let mut end = i;
+                while end < bytes.len() && bytes[end] != b'\n' {
+                    end += 1;
+                }
+                if end < bytes.len() {
+                    end += 1;
+                }
+                current_line_end = Some(end);
             }
-
-            if i < bytes.len() {
-                i += 1; // Skip newline
-            }
-
-            let end_pos = i;
 
             markers.push(HeredocMarker {
                 start_pos,
-                end_pos,
+                end_pos: current_line_end.unwrap(),
                 delimiter,
                 strip_tabs,
                 no_expansion,
             });
+        } else if bytes[i] == b'\n' {
+            current_line_end = None;
+            i += 1;
         } else {
             i += 1;
         }
@@ -170,92 +203,121 @@ fn extract_and_normalize(
 ) -> Result<(String, HashMap<usize, HeredocContent>), String> {
     let mut normalized = String::new();
     let mut contents = HashMap::new();
-    let mut last_pos = 0;
     let bytes = source.as_bytes();
 
+    // Group markers by their command line (same end_pos means same line)
+    // This handles multiple heredocs on a single line correctly
+    let mut marker_groups: Vec<Vec<(usize, HeredocMarker)>> = Vec::new();
+    let mut current_group: Vec<(usize, HeredocMarker)> = Vec::new();
+    let mut current_end_pos = 0;
+
     for (idx, marker) in markers.into_iter().enumerate() {
-        // Copy source up to the command line end
-        normalized.push_str(&source[last_pos..marker.end_pos]);
+        if current_group.is_empty() || marker.end_pos == current_end_pos {
+            current_end_pos = marker.end_pos;
+            current_group.push((idx, marker));
+        } else {
+            marker_groups.push(std::mem::take(&mut current_group));
+            current_end_pos = marker.end_pos;
+            current_group.push((idx, marker));
+        }
+    }
+    if !current_group.is_empty() {
+        marker_groups.push(current_group);
+    }
 
-        // Extract heredoc content starting from end_pos
-        let content_start = marker.end_pos;
-        let mut content = String::new();
-        let mut pos = content_start;
+    let mut last_pos = 0;
 
-        // Read lines until we find the delimiter
-        while pos < bytes.len() {
-            let line_start = pos;
-
-            // Read to end of line
-            while pos < bytes.len() && bytes[pos] != b'\n' {
-                pos += 1;
-            }
-
-            let mut line = &source[line_start..pos];
-
-            // Check if this line is the delimiter (possibly with leading whitespace if <<-)
-            let trimmed_line = if marker.strip_tabs {
-                line.trim_start_matches('\t')
-            } else {
-                line
-            };
-
-            if trimmed_line.trim() == marker.delimiter {
-                // Found delimiter, done
-                if pos < bytes.len() {
-                    pos += 1; // Skip newline after delimiter
-                }
-                break;
-            }
-
-            // POSIX: backslash-newline joins lines (unquoted delimiters only)
-            let mut line_content = line.to_string();
-            if !marker.no_expansion {
-                while line_content.ends_with('\\') && pos < bytes.len() {
-                    line_content.pop();
-                    
-                    if pos < bytes.len() && bytes[pos] == b'\n' {
-                        pos += 1;
-                    }
-                    
-                    // Lookahead: check if next line is delimiter
-                    let next_line_start = pos;
-                    while pos < bytes.len() && bytes[pos] != b'\n' {
-                        pos += 1;
-                    }
-                    
-                    let next_line = &source[next_line_start..pos];
-                    let trimmed_next = if marker.strip_tabs {
-                        next_line.trim_start_matches('\t')
-                    } else {
-                        next_line
-                    };
-                    
-                    if trimmed_next.trim() == marker.delimiter {
-                        // Backtrack: delimiter found, stop continuation
-                        pos = next_line_start;
-                        break;
-                    }
-                    
-                    line_content.push_str(next_line);
-                }
-            }
-
-            // Not delimiter, add to content
-            content.push_str(&line_content);
-            if pos < bytes.len() && bytes[pos] == b'\n' {
-                content.push('\n');
-                pos += 1; // Skip newline
-            }
+    for group in marker_groups {
+        if group.is_empty() {
+            continue;
         }
 
-        contents.insert(idx, HeredocContent {
-            content,
-            expand: !marker.no_expansion,
-            strip_tabs: marker.strip_tabs,
-        });
+        // All markers in this group share the same end_pos (command line end)
+        let group_end_pos = group[0].1.end_pos;
+        
+        // Copy source up to the command line end (only once per group)
+        if group_end_pos > last_pos {
+            normalized.push_str(&source[last_pos..group_end_pos]);
+        }
 
-        // Update last_pos to skip the heredoc content in normalized output
+        // Process heredocs in sequence - content appears in marker order
+        let mut pos = group_end_pos;
+
+        for (idx, marker) in group {
+            let mut content = String::new();
+
+            while pos < bytes.len() {
+                let line_start = pos;
+
+                // Read to end of line
+                while pos < bytes.len() && bytes[pos] != b'\n' {
+                    pos += 1;
+                }
+
+                let line = &source[line_start..pos];
+
+                // Check if this line is the delimiter (possibly with leading whitespace if <<-)
+                let trimmed_line = if marker.strip_tabs {
+                    line.trim_start_matches('\t')
+                } else {
+                    line
+                };
+
+                if trimmed_line.trim() == marker.delimiter {
+                    if pos < bytes.len() {
+                        pos += 1;
+                    }
+                    break;
+                }
+
+                // POSIX: backslash-newline joins lines (unquoted delimiters only)
+                let mut line_content = line.to_string();
+                if !marker.no_expansion {
+                    while line_content.ends_with('\\') && pos < bytes.len() {
+                        line_content.pop();
+                        
+                        if pos < bytes.len() && bytes[pos] == b'\n' {
+                            pos += 1;
+                        }
+                        
+                        // Lookahead: check if next line is delimiter
+                        let next_line_start = pos;
+                        while pos < bytes.len() && bytes[pos] != b'\n' {
+                            pos += 1;
+                        }
+                        
+                        let next_line = &source[next_line_start..pos];
+                        let trimmed_next = if marker.strip_tabs {
+                            next_line.trim_start_matches('\t')
+                        } else {
+                            next_line
+                        };
+                        
+                        if trimmed_next.trim() == marker.delimiter {
+                            // Backtrack: delimiter found, stop continuation
+                            pos = next_line_start;
+                            break;
+                        }
+                        
+                        line_content.push_str(next_line);
+                    }
+                }
+
+                // Not delimiter, add to content
+                content.push_str(&line_content);
+                if pos < bytes.len() && bytes[pos] == b'\n' {
+                    content.push('\n');
+                    pos += 1; // Skip newline
+                }
+            }
+
+            contents.insert(idx, HeredocContent {
+                content,
+                expand: !marker.no_expansion,
+                strip_tabs: marker.strip_tabs,
+            });
+        }
+
         last_pos = pos;
     }
 
@@ -335,7 +397,6 @@ echo done"#;
     }
 
     #[test]
-    #[ignore] // TODO: Handle multiple heredocs on same command line
     fn test_multiple_heredocs() {
         let source = r#"cat <<EOF1 <<EOF2
 content 1
@@ -363,5 +424,26 @@ EOF
 
         let content = contents.get(&0).unwrap();
         assert_eq!(content.content, "search this\nand this\n");
+    }
+
+    #[test]
+    fn test_heredoc_in_command_substitution() {
+        let source = r#"x=$(cat <<EOF
+hello
+world
+EOF
+)
+echo "$x""#;
+
+        let (normalized, contents) = preprocess_heredocs(source).unwrap();
+        
+        println!("Normalized source:\n{}", normalized);
+        println!("Contents: {} items", contents.len());
+        for (idx, content) in contents.iter() {
+            println!("  [{}]: {:?}", idx, content.content);
+        }
+        
+        assert_eq!(contents.len(), 0);
+        assert_eq!(normalized, source);
     }
 }

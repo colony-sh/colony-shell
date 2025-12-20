@@ -373,16 +373,19 @@ fn inject_heredoc_contents(
             }
         }
         Statement::For(for_stmt) => {
+            inject_into_redirects(&mut for_stmt.redirects, heredoc_contents, heredoc_index);
             for stmt in &mut for_stmt.body {
                 inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
             }
         }
         Statement::While(while_stmt) => {
+            inject_into_redirects(&mut while_stmt.redirects, heredoc_contents, heredoc_index);
             for stmt in &mut while_stmt.body {
                 inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
             }
         }
         Statement::Until(until_stmt) => {
+            inject_into_redirects(&mut until_stmt.redirects, heredoc_contents, heredoc_index);
             for stmt in &mut until_stmt.body {
                 inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
             }

@@ -63,6 +63,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "declare"
         | "true" | "false"
         | "read"
+        | "history"
     )
 }
 
@@ -791,36 +792,133 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
 }
 
 fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    use std::io::{self, BufRead};
+    use std::io::{self, BufRead, Read};
     
-    if args.is_empty() {
-        return Ok(BuiltinResult::Success(1));
+    let mut raw_mode = false;
+    let mut var_names: Vec<&str> = Vec::new();
+    
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "-r" {
+            raw_mode = true;
+        } else if arg.starts_with('-') {
+            i += 1;
+            continue;
+        } else {
+            var_names.push(arg);
+        }
+        i += 1;
     }
     
-    let var_name = &args[0];
+    if var_names.is_empty() {
+        var_names.push("REPLY");
+    }
     
     let stdin = io::stdin();
+    let mut stdin_lock = stdin.lock();
     let mut line = String::new();
     
-    match stdin.lock().read_line(&mut line) {
-        Ok(0) => {
-            Ok(BuiltinResult::Success(1))
-        }
-        Ok(_) => {
-            if line.ends_with('\n') {
-                line.pop();
-                if line.ends_with('\r') {
-                    line.pop();
+    if raw_mode {
+        match stdin_lock.read_line(&mut line) {
+            Ok(0) => {
+                for name in &var_names {
+                    context.set_var(name.to_string(), String::new());
                 }
+                return Ok(BuiltinResult::Success(1));
             }
-            
-            context.set_var(var_name.clone(), line);
-            Ok(BuiltinResult::Success(0))
+            Ok(_) => {}
+            Err(e) => return Err(ExecutionError::IoError(e)),
         }
-        Err(e) => {
-            Err(ExecutionError::IoError(e))
+    } else {
+        loop {
+            let mut chunk = String::new();
+            match stdin_lock.read_line(&mut chunk) {
+                Ok(0) => {
+                    if line.is_empty() {
+                        for name in &var_names {
+                            context.set_var(name.to_string(), String::new());
+                        }
+                        return Ok(BuiltinResult::Success(1));
+                    }
+                    break;
+                }
+                Ok(_) => {
+                    if chunk.ends_with('\n') {
+                        chunk.pop();
+                    }
+                    if chunk.ends_with('\\') {
+                        chunk.pop();
+                        line.push_str(&chunk);
+                    } else {
+                        line.push_str(&chunk);
+                        break;
+                    }
+                }
+                Err(e) => return Err(ExecutionError::IoError(e)),
+            }
         }
     }
+    
+    if line.ends_with('\n') {
+        line.pop();
+    }
+    if line.ends_with('\r') {
+        line.pop();
+    }
+    
+    let ifs = context.ifs();
+    let ifs_chars: Vec<char> = ifs.chars().collect();
+    let ifs_whitespace: Vec<char> = ifs_chars.iter()
+        .filter(|c| c.is_whitespace())
+        .copied()
+        .collect();
+    
+    if var_names.len() == 1 && var_names[0] == "REPLY" {
+        context.set_var("REPLY".to_string(), line);
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    let trimmed = line.trim_start_matches(|c: char| ifs_whitespace.contains(&c));
+    
+    let mut fields: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = trimmed.chars().collect();
+    let mut j = 0;
+    
+    while j < chars.len() {
+        let c = chars[j];
+        if ifs_chars.contains(&c) {
+            if !current.is_empty() || !ifs_whitespace.contains(&c) {
+                fields.push(current);
+                current = String::new();
+            }
+            while j + 1 < chars.len() && ifs_whitespace.contains(&chars[j + 1]) {
+                j += 1;
+            }
+        } else {
+            current.push(c);
+        }
+        j += 1;
+    }
+    if !current.is_empty() {
+        fields.push(current);
+    }
+    
+    for (idx, name) in var_names.iter().enumerate() {
+        if idx < fields.len() {
+            if idx == var_names.len() - 1 && idx + 1 < fields.len() {
+                let rest: Vec<&str> = fields[idx..].iter().map(|s| s.as_str()).collect();
+                context.set_var(name.to_string(), rest.join(" "));
+            } else {
+                context.set_var(name.to_string(), fields[idx].clone());
+            }
+        } else {
+            context.set_var(name.to_string(), String::new());
+        }
+    }
+    
+    Ok(BuiltinResult::Success(0))
 }
 
 #[cfg(test)]

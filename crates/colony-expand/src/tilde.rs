@@ -15,14 +15,22 @@ use crate::{ExpansionContext, ExpansionError, Result};
 pub fn expand_tilde(user: Option<&str>, context: &ExpansionContext) -> Result<String> {
     match user {
         None => {
-            // ~ → $HOME
             context
                 .home()
                 .map(|p| p.display().to_string())
                 .ok_or_else(|| ExpansionError::UndefinedVariable("HOME".to_string()))
         }
+        Some("+") => {
+            context
+                .get_var_or_env("PWD")
+                .ok_or_else(|| ExpansionError::UndefinedVariable("PWD".to_string()))
+        }
+        Some("-") => {
+            context
+                .get_var_or_env("OLDPWD")
+                .ok_or_else(|| ExpansionError::UndefinedVariable("OLDPWD".to_string()))
+        }
         Some(username) => {
-            // ~user → user's home directory
             expand_user_home(username)
         }
     }

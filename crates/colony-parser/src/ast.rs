@@ -396,6 +396,7 @@ pub struct ForStatement {
     pub var: String,
     pub words: Vec<Word>,
     pub body: Vec<Statement>,
+    pub redirects: Vec<Redirect>,
     pub span: Span,
 }
 
@@ -404,6 +405,7 @@ pub struct ForStatement {
 pub struct WhileStatement {
     pub condition: Condition,
     pub body: Vec<Statement>,
+    pub redirects: Vec<Redirect>,
     pub span: Span,
 }
 
@@ -412,6 +414,7 @@ pub struct WhileStatement {
 pub struct UntilStatement {
     pub condition: Condition,
     pub body: Vec<Statement>,
+    pub redirects: Vec<Redirect>,
     pub span: Span,
 }
 

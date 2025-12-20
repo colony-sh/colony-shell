@@ -197,7 +197,7 @@ impl AstBuilder {
                                 
                                 for sub in inner.into_inner() {
                                     match sub.as_rule() {
-                                        Rule::Identifier => {
+                                        Rule::AssignmentName | Rule::Identifier => {
                                             parts.push(WordPart::Literal(sub.as_str().to_string()));
                                         }
                                         Rule::ArraySubscript => {
@@ -532,11 +532,11 @@ impl AstBuilder {
 
     fn build_for_statement(pair: Pair<Rule>) -> Result<ForStatement, BuildError> {
         let span = span_from_pair(&pair);
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
 
-        // ForStatement = "for" ~ ForKind ~ ";"? ~ Block
+        // ForStatement = "for" ~ ForKind ~ ";"? ~ Block ~ Redirect*
         let children: Vec<_> = inner.collect();
-        let mut iter = children.into_iter();
+        let mut iter = children.into_iter().peekable();
         let for_kind = iter.next().ok_or(BuildError::MissingForKind)?;
 
         // Skip optional semicolon
@@ -549,12 +549,17 @@ impl AstBuilder {
 
         let body = Self::build_block(block)?;
 
+        let mut redirects = Vec::new();
+        for remaining in iter {
+            if remaining.as_rule() == Rule::Redirect {
+                redirects.push(Self::build_redirect(remaining)?);
+            }
+        }
+
         // Parse ForKind to extract var and words
         let kind_children: Vec<_> = for_kind.into_inner().collect();
         let mut kind_iter = kind_children.into_iter();
 
-        // Identifier ~ "in" ~ WordList
-        // Note: "in" is a literal keyword in grammar, not emitted as node
         let var = kind_iter.next()
             .ok_or(BuildError::MissingForVariable)?
             .as_str()
@@ -578,6 +583,7 @@ impl AstBuilder {
             var,
             words,
             body,
+            redirects,
             span,
         })
     }
@@ -586,7 +592,7 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // WhileStatement = "while" ~ Condition ~ Block
+        // WhileStatement = "while" ~ Condition ~ (";" | NL)* ~ Block ~ Redirect*
         let condition = Self::build_condition(
             inner.next().ok_or(BuildError::MissingCondition)?
         )?;
@@ -595,9 +601,17 @@ impl AstBuilder {
             inner.next().ok_or(BuildError::MissingBody)?
         )?;
 
+        let mut redirects = Vec::new();
+        for remaining in inner {
+            if remaining.as_rule() == Rule::Redirect {
+                redirects.push(Self::build_redirect(remaining)?);
+            }
+        }
+
         Ok(WhileStatement {
             condition,
             body,
+            redirects,
             span,
         })
     }
@@ -606,7 +620,7 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // UntilStatement = "until" ~ Condition ~ Block
+        // UntilStatement = "until" ~ Condition ~ (";" | NL)* ~ Block ~ Redirect*
         let condition = Self::build_condition(
             inner.next().ok_or(BuildError::MissingCondition)?
         )?;
@@ -615,9 +629,17 @@ impl AstBuilder {
             inner.next().ok_or(BuildError::MissingBody)?
         )?;
 
+        let mut redirects = Vec::new();
+        for remaining in inner {
+            if remaining.as_rule() == Rule::Redirect {
+                redirects.push(Self::build_redirect(remaining)?);
+            }
+        }
+
         Ok(UntilStatement {
             condition,
             body,
+            redirects,
             span,
         })
     }
@@ -1568,6 +1590,14 @@ impl AstBuilder {
                 Rule::BraceExpansion => {
                     WordPart::BraceExpansion(text)
                 }
+                Rule::TildeExpansion => {
+                    let user = if text.len() <= 1 {
+                        None
+                    } else {
+                        Some(text[1..].to_string())
+                    };
+                    WordPart::Tilde(user)
+                }
                 Rule::DollarExpansion => {
                     Self::build_dollar_expansion(part_pair)?
                 }
@@ -2254,19 +2284,21 @@ mod tests {
 
     #[test]
     fn test_build_while_statement() {
-        let source = "while (x < 100) { echo loop }";
+        // POSIX while uses command-based condition, not expression
+        let source = "while [ $x -lt 100 ]; do echo loop; done";
         let pairs = ColonyParser::parse(Rule::WhileStatement, source).unwrap();
         let result = AstBuilder::build_while_statement(pairs.into_iter().next().unwrap());
 
         assert!(result.is_ok());
         let while_stmt = result.unwrap();
-        assert!(matches!(while_stmt.condition, Condition::Expression(_)));
+        assert!(matches!(while_stmt.condition, Condition::Command(_)));
         assert_eq!(while_stmt.body.len(), 1);
     }
 
     #[test]
     fn test_build_until_statement() {
-        let source = "until (x) { echo waiting }";
+        // POSIX until uses command-based condition, not expression
+        let source = "until [ $x ]; do echo waiting; done";
         let pairs = ColonyParser::parse(Rule::UntilStatement, source).unwrap();
         let result = AstBuilder::build_until_statement(pairs.into_iter().next().unwrap());
 
@@ -2275,7 +2307,7 @@ mod tests {
         }
         assert!(result.is_ok(), "Failed to build until: {:?}", result.err());
         let until_stmt = result.unwrap();
-        assert!(matches!(until_stmt.condition, Condition::Expression(_)));
+        assert!(matches!(until_stmt.condition, Condition::Command(_)));
         assert_eq!(until_stmt.body.len(), 1);
     }
 

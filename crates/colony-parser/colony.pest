@@ -192,7 +192,7 @@ CaseTerminator = {
   | ";&"
 }
 
-ForStatement = { "for" ~ ForKind ~ ";"? ~ Block }
+ForStatement = { "for" ~ ForKind ~ ";"? ~ Block ~ Redirect* }
 
 ForKind = {
     Identifier ~ "," ~ Identifier ~ "in" ~ "enumerate" ~ "(" ~ Expression ~ ")"  // enumerate
@@ -207,9 +207,9 @@ WordList = { (!BlockStart ~ Word)+ }
 // Keywords that start a block (stop word list parsing)
 BlockStart = { ("do" | "then") ~ !(ASCII_ALPHANUMERIC | "_") | "{" }
 
-WhileStatement = { "while" ~ Condition ~ Block }
+WhileStatement = { "while" ~ Condition ~ (";" | NL)* ~ Block ~ Redirect* }
 
-UntilStatement = { "until" ~ Condition ~ Block }
+UntilStatement = { "until" ~ Condition ~ (";" | NL)* ~ Block ~ Redirect* }
 
 MatchStatement = {
     "match" ~ Expression ~ "{"
@@ -263,7 +263,7 @@ CatchBlock = {
     Identifier? ~ (":" ~ Identifier)? ~ Block
 }
 
-Condition = { Expression | CommandList }
+Condition = { CommandList | Expression }
 
 Block = {
     "{" ~ NL* ~ (Statement ~ (NL | ";")*)* ~ "}"
@@ -633,9 +633,21 @@ Word = ${
 WordPart = _{
     QuotedString
   | DollarExpansion
+  | TildeExpansion
   | BraceExpansion
   | UnquotedEscape
   | Bareword
+}
+
+// Tilde expansion: ~ or ~user or ~+ or ~-
+// Only at start of word, so we capture it as a WordPart
+// Examples: ~ ~/foo ~root ~+ ~- ~user/path
+TildeExpansion = @{
+    "~" ~ TildeUser?
+}
+
+TildeUser = @{
+    "+" | "-" | (!(WHITESPACE | "/" | SpecialChar) ~ ANY)*
 }
 
 // Escape sequences in unquoted context: \$ becomes $ for expansion, \x becomes x for other chars

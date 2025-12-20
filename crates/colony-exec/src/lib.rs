@@ -606,6 +606,8 @@ impl Executor {
     async fn execute_for_loop_internal(&mut self, for_stmt: &colony_parser::ForStatement) -> Result<i32> {
         use colony_expand::Expander;
         
+        let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&for_stmt.redirects, &mut self.context)?;
+        
         let mut expander = Expander::with_executor(self.context.clone(), |stmt, ctx| {
             crate::execute_and_capture(stmt, ctx)
         });
@@ -675,6 +677,8 @@ impl Executor {
     }
     
     async fn execute_while_internal(&mut self, while_stmt: &colony_parser::WhileStatement) -> Result<i32> {
+        let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&while_stmt.redirects, &mut self.context)?;
+        
         let mut last_exit = 0;
         loop {
             let cond_exit = self.execute_condition_internal(&while_stmt.condition).await?;
@@ -689,6 +693,8 @@ impl Executor {
     }
     
     async fn execute_until_internal(&mut self, until_stmt: &colony_parser::UntilStatement) -> Result<i32> {
+        let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&until_stmt.redirects, &mut self.context)?;
+        
         let mut last_exit = 0;
         loop {
             let cond_exit = self.execute_condition_internal(&until_stmt.condition).await?;

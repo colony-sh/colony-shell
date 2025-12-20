@@ -517,6 +517,7 @@ impl Parser {
             var,
             words,
             body,
+            redirects: vec![],
             span: Span::new(start, end),
         }))
     }
@@ -556,6 +557,7 @@ impl Parser {
         Ok(Statement::While(WhileStatement {
             condition,
             body,
+            redirects: vec![],
             span: Span::new(start, end),
         }))
     }
@@ -595,6 +597,7 @@ impl Parser {
         Ok(Statement::Until(UntilStatement {
             condition,
             body,
+            redirects: vec![],
             span: Span::new(start, end),
         }))
     }
