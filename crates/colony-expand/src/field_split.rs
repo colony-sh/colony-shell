@@ -29,15 +29,15 @@ pub fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<
 
     let mut fields = Vec::new();
     let mut current = String::new();
-    let mut is_quoted_field = false;
+    let mut current_should_glob = true;
 
     for segment in word.segments() {
-        if segment.quoted {
-            // Quoted segments don't split
+        if !segment.should_field_split() {
             current.push_str(&segment.text);
-            is_quoted_field = true;
+            if !segment.should_glob() {
+                current_should_glob = false;
+            }
         } else {
-            // Unquoted segments split on IFS
             let parts = split_on_ifs(
                 &segment.text,
                 &ifs_whitespace,
@@ -45,23 +45,21 @@ pub fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<
             );
 
             for (i, part) in parts.into_iter().enumerate() {
-                if i > 0 && !current.is_empty() {
-                    // New field boundary
-                    fields.push(Field::new(current, is_quoted_field));
+                if i > 0 {
+                    fields.push(Field::new(current, !current_should_glob));
                     current = String::new();
-                    is_quoted_field = false;
+                    current_should_glob = segment.should_glob();
                 }
                 current.push_str(&part);
             }
         }
     }
 
-    if !current.is_empty() || is_quoted_field {
-        fields.push(Field::new(current, is_quoted_field));
+    if !current.is_empty() || word.segments().iter().any(|s| s.quoted()) {
+        fields.push(Field::new(current, !current_should_glob));
     }
 
-    // POSIX: quoted empty "" produces field; unquoted $unset produces nothing
-    if fields.is_empty() && word.segments().iter().any(|s| s.quoted) {
+    if fields.is_empty() && word.segments().iter().any(|s| s.quoted()) {
         fields.push(Field::quoted(String::new()));
     }
 
@@ -81,8 +79,8 @@ fn split_on_ifs(
     let mut fields = Vec::new();
     let mut current = String::new();
     let mut chars = text.chars().peekable();
+    let mut ended_with_non_ws_ifs = false;
 
-    // Skip leading IFS whitespace
     while let Some(&c) = chars.peek() {
         if ifs_whitespace.contains(&c) {
             chars.next();
@@ -93,16 +91,15 @@ fn split_on_ifs(
 
     while let Some(c) = chars.next() {
         if ifs_non_whitespace.contains(&c) {
-            // Non-whitespace IFS: always creates field boundary (even empty fields)
             fields.push(current);
             current = String::new();
+            ended_with_non_ws_ifs = true;
         } else if ifs_whitespace.contains(&c) {
-            // Whitespace IFS: skip consecutive whitespace
             if !current.is_empty() {
                 fields.push(current);
                 current = String::new();
             }
-            // Skip additional whitespace
+            ended_with_non_ws_ifs = false;
             while let Some(&next) = chars.peek() {
                 if ifs_whitespace.contains(&next) {
                     chars.next();
@@ -111,13 +108,12 @@ fn split_on_ifs(
                 }
             }
         } else {
-            // Regular character
             current.push(c);
+            ended_with_non_ws_ifs = false;
         }
     }
 
-    // Push final field
-    if !current.is_empty() {
+    if !current.is_empty() || ended_with_non_ws_ifs {
         fields.push(current);
     }
 

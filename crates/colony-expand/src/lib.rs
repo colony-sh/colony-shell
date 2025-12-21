@@ -288,7 +288,7 @@ impl Expander {
                 if in_double_quote {
                     out.push_quoted(s);
                 } else {
-                    out.push_unquoted(s);
+                    out.push_literal(s);
                 }
             }
 
@@ -309,7 +309,7 @@ impl Expander {
                 if in_double_quote {
                     out.push_quoted(&expanded);
                 } else {
-                    out.push_unquoted(&expanded);
+                    out.push_literal(&expanded);
                 }
             }
 
@@ -318,7 +318,7 @@ impl Expander {
                 if in_double_quote {
                     out.push_quoted(&expanded);
                 } else {
-                    out.push_unquoted(&expanded);
+                    out.push_expanded(&expanded);
                 }
             }
 
@@ -327,7 +327,7 @@ impl Expander {
                 if in_double_quote {
                     out.push_quoted(&result);
                 } else {
-                    out.push_unquoted(&result);
+                    out.push_expanded(&result);
                 }
             }
 
@@ -343,7 +343,7 @@ impl Expander {
                                     if in_double_quote {
                                         out.push_quoted(trimmed);
                                     } else {
-                                        out.push_unquoted(trimmed);
+                                        out.push_expanded(trimmed);
                                     }
                                 }
                                 Err(e) => {
@@ -356,7 +356,7 @@ impl Expander {
                         }
                     }
                 } else {
-                    out.push_unquoted("");
+                    out.push_expanded("");
                 }
             }
 
@@ -368,7 +368,7 @@ impl Expander {
                             if in_double_quote {
                                 out.push_quoted(trimmed);
                             } else {
-                                out.push_unquoted(trimmed);
+                                out.push_expanded(trimmed);
                             }
                         }
                         Err(e) => {
@@ -376,7 +376,7 @@ impl Expander {
                         }
                     }
                 } else {
-                    out.push_unquoted("");
+                    out.push_expanded("");
                 }
             }
             
@@ -384,7 +384,7 @@ impl Expander {
                 if in_double_quote {
                     out.push_quoted(content);
                 } else {
-                    out.push_unquoted(content);
+                    out.push_literal(content);
                 }
             }
         }
@@ -394,18 +394,36 @@ impl Expander {
 }
 
 /// Intermediate representation during expansion
-///
-/// Tracks which portions are quoted to prevent field splitting
-/// on those portions later
 #[derive(Debug, Clone)]
 pub(crate) struct IntermediateWord {
     segments: Vec<Segment>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SegmentKind {
+    Quoted,
+    Literal,
+    Expanded,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Segment {
     pub text: String,
-    pub quoted: bool,
+    pub kind: SegmentKind,
+}
+
+impl Segment {
+    pub fn quoted(&self) -> bool {
+        self.kind == SegmentKind::Quoted
+    }
+    
+    pub fn should_field_split(&self) -> bool {
+        self.kind == SegmentKind::Expanded
+    }
+    
+    pub fn should_glob(&self) -> bool {
+        self.kind != SegmentKind::Quoted
+    }
 }
 
 impl IntermediateWord {
@@ -415,39 +433,51 @@ impl IntermediateWord {
 
     fn push_quoted(&mut self, text: &str) {
         if let Some(last) = self.segments.last_mut() {
-            if last.quoted {
+            if last.kind == SegmentKind::Quoted {
                 last.text.push_str(text);
                 return;
             }
         }
         self.segments.push(Segment {
             text: text.to_string(),
-            quoted: true,
+            kind: SegmentKind::Quoted,
+        });
+    }
+    
+    fn push_literal(&mut self, text: &str) {
+        if let Some(last) = self.segments.last_mut() {
+            if last.kind == SegmentKind::Literal {
+                last.text.push_str(text);
+                return;
+            }
+        }
+        self.segments.push(Segment {
+            text: text.to_string(),
+            kind: SegmentKind::Literal,
         });
     }
 
-    fn push_unquoted(&mut self, text: &str) {
+    fn push_expanded(&mut self, text: &str) {
         if let Some(last) = self.segments.last_mut() {
-            if !last.quoted {
+            if last.kind == SegmentKind::Expanded {
                 last.text.push_str(text);
                 return;
             }
         }
         self.segments.push(Segment {
             text: text.to_string(),
-            quoted: false,
+            kind: SegmentKind::Expanded,
         });
     }
 
     fn begin_quoted(&mut self) {
         self.segments.push(Segment {
             text: String::new(),
-            quoted: true,
+            kind: SegmentKind::Quoted,
         });
     }
 
     fn end_quoted(&mut self) {
-        // Nothing to do - quoted segments are already marked
     }
 
     pub fn segments(&self) -> &[Segment] {
