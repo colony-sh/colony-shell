@@ -64,6 +64,9 @@ pub fn is_builtin(name: &str) -> bool {
         | "true" | "false"
         | "read"
         | "history"
+        | "recho"
+        | "set"
+        | "printf"
     )
 }
 
@@ -136,6 +139,9 @@ pub fn execute_builtin(
         "true" => builtin_true(),
         "false" => builtin_false(),
         "read" => builtin_read(&args, context),
+        "recho" => builtin_recho(&args),
+        "set" => builtin_set(&args, context),
+        "printf" => builtin_printf(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -306,6 +312,49 @@ fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
         println!("{}", args.join(" "));
     }
 
+    Ok(BuiltinResult::Success(0))
+}
+
+/// recho - Really echo args (test helper)
+///
+/// Usage: recho [args...]
+/// Prints each argument on its own line as `argv[N] = <arg>` with control
+/// characters made visible. Used for testing word splitting and expansion.
+///
+/// Control character display:
+/// - 0x00-0x1F: ^@ through ^_ (e.g., ^A for 0x01, ^I for tab)
+/// - 0x7F: ^?
+///
+/// If no arguments are provided, prints nothing (not even "nothing").
+/// This matches bash's recho behavior for testing $@ expansion.
+fn builtin_recho(args: &[String]) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        // No arguments - print nothing (matches bash recho behavior)
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    for (i, arg) in args.iter().enumerate() {
+        print!("argv[{}] = <", i + 1);
+        for byte in arg.bytes() {
+            if byte < 0x20 {
+                // Control character 0x00-0x1F -> ^@ through ^_
+                print!("^{}", (byte + 64) as char);
+            } else if byte == 0x7F {
+                // DEL character -> ^?
+                print!("^?");
+            } else {
+                // Normal character
+                print!("{}", byte as char);
+            }
+        }
+        println!(">");
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    context.set_positional_params(args.to_vec());
     Ok(BuiltinResult::Success(0))
 }
 
@@ -919,6 +968,429 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     }
     
     Ok(BuiltinResult::Success(0))
+}
+
+/// printf - Format and print data
+///
+/// Usage: printf [-v varname] format [arguments...]
+///
+/// Supports:
+/// - Format specifiers: %s, %d, %i, %o, %x, %X, %b, %q, %%
+/// - Width and precision: %10s, %-10s, %.5s, %10.5s
+/// - Escape sequences: \n, \t, \r, \\, \", \', \0nnn, \xHH
+/// - -v varname: Store result in variable instead of printing
+fn builtin_printf(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("printf: missing format string");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let mut store_var: Option<&str> = None;
+    let mut arg_idx = 0;
+
+    // Parse options
+    while arg_idx < args.len() {
+        if args[arg_idx] == "-v" {
+            if arg_idx + 1 >= args.len() {
+                eprintln!("printf: -v requires variable name");
+                return Ok(BuiltinResult::Failure(1));
+            }
+            store_var = Some(&args[arg_idx + 1]);
+            arg_idx += 2;
+        } else if args[arg_idx].starts_with('-') && args[arg_idx] != "-" {
+            // Skip unknown options
+            arg_idx += 1;
+        } else {
+            break;
+        }
+    }
+
+    if arg_idx >= args.len() {
+        eprintln!("printf: missing format string");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let format = &args[arg_idx];
+    let format_args = &args[arg_idx + 1..];
+    
+    let output = format_printf(format, format_args)?;
+
+    if let Some(var_name) = store_var {
+        context.set_var(var_name.to_string(), output);
+    } else {
+        print!("{}", output);
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+/// Format a printf format string with arguments
+fn format_printf(format: &str, args: &[String]) -> Result<String> {
+    let mut output = String::new();
+    let mut arg_idx = 0;
+    let chars: Vec<char> = format.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] == '\\' {
+            // Escape sequence
+            i += 1;
+            if i < chars.len() {
+                let escaped = match chars[i] {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    'a' => '\x07', // bell
+                    'b' => '\x08', // backspace
+                    'f' => '\x0c', // form feed
+                    'v' => '\x0b', // vertical tab
+                    '\\' => '\\',
+                    '\'' => '\'',
+                    '"' => '"',
+                    '0' => {
+                        // Octal escape \0nnn
+                        let mut octal = String::new();
+                        i += 1;
+                        while i < chars.len() && chars[i].is_ascii_digit() && octal.len() < 3 {
+                            octal.push(chars[i]);
+                            i += 1;
+                        }
+                        i -= 1;
+                        if octal.is_empty() {
+                            '\0'
+                        } else {
+                            let val = u8::from_str_radix(&octal, 8).unwrap_or(0);
+                            val as char
+                        }
+                    }
+                    'x' => {
+                        // Hex escape \xHH
+                        let mut hex = String::new();
+                        i += 1;
+                        while i < chars.len() && chars[i].is_ascii_hexdigit() && hex.len() < 2 {
+                            hex.push(chars[i]);
+                            i += 1;
+                        }
+                        i -= 1;
+                        if hex.is_empty() {
+                            'x'
+                        } else {
+                            let val = u8::from_str_radix(&hex, 16).unwrap_or(0);
+                            val as char
+                        }
+                    }
+                    c => c,
+                };
+                output.push(escaped);
+            }
+        } else if chars[i] == '%' {
+            // Format specifier
+            i += 1;
+            if i >= chars.len() {
+                output.push('%');
+                continue;
+            }
+
+            if chars[i] == '%' {
+                output.push('%');
+                i += 1;
+                continue;
+            }
+
+            // Parse flags
+            let mut left_justify = false;
+            let mut zero_pad = false;
+            let mut plus_sign = false;
+            let mut space_sign = false;
+            let mut alternate = false;
+
+            while i < chars.len() {
+                match chars[i] {
+                    '-' => left_justify = true,
+                    '0' => zero_pad = true,
+                    '+' => plus_sign = true,
+                    ' ' => space_sign = true,
+                    '#' => alternate = true,
+                    _ => break,
+                }
+                i += 1;
+            }
+
+            // Parse width
+            let mut width = 0usize;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                width = width * 10 + (chars[i] as usize - '0' as usize);
+                i += 1;
+            }
+
+            // Parse precision
+            let mut precision: Option<usize> = None;
+            if i < chars.len() && chars[i] == '.' {
+                i += 1;
+                let mut prec = 0usize;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    prec = prec * 10 + (chars[i] as usize - '0' as usize);
+                    i += 1;
+                }
+                precision = Some(prec);
+            }
+
+            if i >= chars.len() {
+                output.push('%');
+                continue;
+            }
+
+            let spec = chars[i];
+            let arg = if arg_idx < args.len() {
+                let a = args[arg_idx].clone();
+                arg_idx += 1;
+                a
+            } else {
+                String::new()
+            };
+
+            let formatted = match spec {
+                's' => {
+                    let mut s = arg;
+                    if let Some(prec) = precision {
+                        if s.len() > prec {
+                            s = s[..prec].to_string();
+                        }
+                    }
+                    if width > 0 {
+                        if left_justify {
+                            format!("{:<width$}", s, width = width)
+                        } else {
+                            format!("{:>width$}", s, width = width)
+                        }
+                    } else {
+                        s
+                    }
+                }
+                'd' | 'i' => {
+                    let num: i64 = arg.parse().unwrap_or(0);
+                    format_number(num, 10, false, width, precision, left_justify, zero_pad, plus_sign, space_sign)
+                }
+                'u' => {
+                    let num: u64 = arg.parse().unwrap_or(0);
+                    format_unsigned(num, 10, false, width, left_justify, zero_pad)
+                }
+                'o' => {
+                    let num: u64 = arg.parse().unwrap_or(0);
+                    let prefix = if alternate && num != 0 { "0" } else { "" };
+                    format_unsigned_with_prefix(num, 8, false, width, left_justify, zero_pad, prefix)
+                }
+                'x' => {
+                    let num: u64 = arg.parse().unwrap_or(0);
+                    let prefix = if alternate && num != 0 { "0x" } else { "" };
+                    format_unsigned_with_prefix(num, 16, false, width, left_justify, zero_pad, prefix)
+                }
+                'X' => {
+                    let num: u64 = arg.parse().unwrap_or(0);
+                    let prefix = if alternate && num != 0 { "0X" } else { "" };
+                    format_unsigned_with_prefix(num, 16, true, width, left_justify, zero_pad, prefix)
+                }
+                'c' => {
+                    // First character
+                    arg.chars().next().map(|c| c.to_string()).unwrap_or_default()
+                }
+                'b' => {
+                    // %b expands escape sequences in the argument
+                    expand_escapes(&arg)
+                }
+                'q' => {
+                    // %q quotes the argument for shell reuse
+                    shell_quote(&arg)
+                }
+                _ => {
+                    // Unknown specifier - output literally
+                    format!("%{}", spec)
+                }
+            };
+            output.push_str(&formatted);
+        } else {
+            output.push(chars[i]);
+        }
+        i += 1;
+    }
+
+    Ok(output)
+}
+
+fn format_number(
+    num: i64,
+    _radix: u32,
+    _uppercase: bool,
+    width: usize,
+    _precision: Option<usize>,
+    left_justify: bool,
+    zero_pad: bool,
+    plus_sign: bool,
+    space_sign: bool,
+) -> String {
+    let sign = if num < 0 {
+        "-"
+    } else if plus_sign {
+        "+"
+    } else if space_sign {
+        " "
+    } else {
+        ""
+    };
+    
+    let abs_num = num.abs();
+    let num_str = abs_num.to_string();
+    
+    if width > 0 {
+        let content_len = sign.len() + num_str.len();
+        if content_len < width {
+            let padding = width - content_len;
+            if zero_pad && !left_justify {
+                format!("{}{:0>width$}", sign, num_str, width = num_str.len() + padding)
+            } else if left_justify {
+                format!("{}{}{}", sign, num_str, " ".repeat(padding))
+            } else {
+                format!("{}{}{}", " ".repeat(padding), sign, num_str)
+            }
+        } else {
+            format!("{}{}", sign, num_str)
+        }
+    } else {
+        format!("{}{}", sign, num_str)
+    }
+}
+
+fn format_unsigned(
+    num: u64,
+    radix: u32,
+    uppercase: bool,
+    width: usize,
+    left_justify: bool,
+    zero_pad: bool,
+) -> String {
+    format_unsigned_with_prefix(num, radix, uppercase, width, left_justify, zero_pad, "")
+}
+
+fn format_unsigned_with_prefix(
+    num: u64,
+    radix: u32,
+    uppercase: bool,
+    width: usize,
+    left_justify: bool,
+    zero_pad: bool,
+    prefix: &str,
+) -> String {
+    let num_str = match radix {
+        8 => format!("{:o}", num),
+        16 => {
+            if uppercase {
+                format!("{:X}", num)
+            } else {
+                format!("{:x}", num)
+            }
+        }
+        _ => num.to_string(),
+    };
+    
+    let full = format!("{}{}", prefix, num_str);
+    
+    if width > 0 && full.len() < width {
+        let padding = width - full.len();
+        if zero_pad && !left_justify {
+            format!("{}{:0>width$}", prefix, num_str, width = num_str.len() + padding)
+        } else if left_justify {
+            format!("{}{}", full, " ".repeat(padding))
+        } else {
+            format!("{}{}", " ".repeat(padding), full)
+        }
+    } else {
+        full
+    }
+}
+
+fn expand_escapes(s: &str) -> String {
+    let mut output = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() {
+            i += 1;
+            match chars[i] {
+                'n' => output.push('\n'),
+                't' => output.push('\t'),
+                'r' => output.push('\r'),
+                'a' => output.push('\x07'),
+                'b' => output.push('\x08'),
+                'f' => output.push('\x0c'),
+                'v' => output.push('\x0b'),
+                '\\' => output.push('\\'),
+                '\'' => output.push('\''),
+                '"' => output.push('"'),
+                '0' => {
+                    // Octal
+                    let mut octal = String::new();
+                    i += 1;
+                    while i < chars.len() && chars[i].is_ascii_digit() && octal.len() < 3 {
+                        octal.push(chars[i]);
+                        i += 1;
+                    }
+                    i -= 1;
+                    let val = u8::from_str_radix(&octal, 8).unwrap_or(0);
+                    output.push(val as char);
+                }
+                'x' => {
+                    // Hex
+                    let mut hex = String::new();
+                    i += 1;
+                    while i < chars.len() && chars[i].is_ascii_hexdigit() && hex.len() < 2 {
+                        hex.push(chars[i]);
+                        i += 1;
+                    }
+                    i -= 1;
+                    if !hex.is_empty() {
+                        let val = u8::from_str_radix(&hex, 16).unwrap_or(0);
+                        output.push(val as char);
+                    }
+                }
+                'c' => {
+                    // Stop processing - %b specific
+                    break;
+                }
+                c => output.push(c),
+            }
+        } else {
+            output.push(chars[i]);
+        }
+        i += 1;
+    }
+
+    output
+}
+
+fn shell_quote(s: &str) -> String {
+    // If the string is simple, just add single quotes
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '/') {
+        return s.to_string();
+    }
+    
+    // Use $'...' quoting for strings with special characters
+    let mut output = String::from("$'");
+    for c in s.chars() {
+        match c {
+            '\'' => output.push_str("\\'"),
+            '\\' => output.push_str("\\\\"),
+            '\n' => output.push_str("\\n"),
+            '\t' => output.push_str("\\t"),
+            '\r' => output.push_str("\\r"),
+            c if c.is_ascii_control() => {
+                output.push_str(&format!("\\x{:02x}", c as u8));
+            }
+            c => output.push(c),
+        }
+    }
+    output.push('\'');
+    output
 }
 
 #[cfg(test)]

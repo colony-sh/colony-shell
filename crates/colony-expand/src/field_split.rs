@@ -56,17 +56,13 @@ pub fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<
         }
     }
 
-    // Push final field if non-empty
-    if !current.is_empty() {
+    if !current.is_empty() || is_quoted_field {
         fields.push(Field::new(current, is_quoted_field));
     }
 
-    // Only return an empty field if the word had non-empty quoted content
-    // An empty array "${arr[@]}" should produce zero fields, not one empty field
-    // But a quoted empty string "" should produce one empty field
-    // The distinction: check if we had any segments at all
-    if fields.is_empty() && word.segments().iter().any(|s| !s.text.is_empty()) {
-        fields.push(Field::new(String::new(), is_quoted_field));
+    // POSIX: quoted empty "" produces field; unquoted $unset produces nothing
+    if fields.is_empty() && word.segments().iter().any(|s| s.quoted) {
+        fields.push(Field::quoted(String::new()));
     }
 
     fields

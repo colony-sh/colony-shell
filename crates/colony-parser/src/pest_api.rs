@@ -41,12 +41,17 @@ use crate::heredoc::preprocess_heredocs;
 ///
 /// This is the main entry point for parsing. It operates directly on
 /// source text using the pest PEG grammar, with minimal preprocessing
-/// for heredocs.
+/// for heredocs and arithmetic expansions.
 ///
 /// # Heredoc Handling
 ///
 /// Heredocs (`<<EOF`) require preprocessing because their content appears
 /// after the command line. This function automatically detects and handles them.
+///
+/// # Arithmetic Expansion Handling
+///
+/// Arithmetic expansions (`$((expr))`) with nested parentheses require
+/// preprocessing because the pest grammar cannot handle balanced parens inside.
 ///
 /// # Example
 /// ```ignore
@@ -69,12 +74,28 @@ use crate::heredoc::preprocess_heredocs;
 /// - AST building fails (malformed parse tree)
 /// - Heredoc preprocessing fails
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    // Check if source contains heredocs
-    if source.contains("<<") {
-        parse_with_heredocs(source)
+    // First preprocess arithmetic if needed
+    let (arith_normalized, arith_map) = if source.contains("$((") {
+        crate::arith_preprocess::preprocess_arithmetic(source)
     } else {
-        parse_direct(source)
+        (source.to_string(), Vec::new())
+    };
+    
+    // Check if source contains heredocs
+    let mut program = if arith_normalized.contains("<<") {
+        parse_with_heredocs(&arith_normalized)?
+    } else {
+        parse_direct(&arith_normalized)?
+    };
+    
+    // Inject arithmetic expressions back if we preprocessed them
+    if !arith_map.is_empty() {
+        for stmt in &mut program.statements {
+            inject_arithmetic(stmt, &arith_map);
+        }
     }
+    
+    Ok(program)
 }
 
 /// Parse source directly with pest (no heredocs)
@@ -242,12 +263,34 @@ fn inject_arithmetic(stmt: &mut crate::ast::Statement, arith_map: &[(String, Str
         }
     }
 
+    // Helper to inject into an assignment value
+    fn inject_into_assignment(assignment: &mut crate::ast::Assignment, arith_map: &[(String, String)]) {
+        use crate::ast::AssignmentValue;
+        match &mut assignment.value {
+            AssignmentValue::Word(word) => {
+                inject_into_word(word, arith_map);
+            }
+            AssignmentValue::Array(words) => {
+                for word in words {
+                    inject_into_word(word, arith_map);
+                }
+            }
+            AssignmentValue::AssocArray(_) => {
+                // Assoc arrays use string literals, no injection needed
+            }
+        }
+    }
+
     // Walk the statement tree
     match stmt {
         Statement::SimpleCommand(cmd) => {
             inject_into_word(&mut cmd.name, arith_map);
             for arg in &mut cmd.args {
                 inject_into_word(arg, arith_map);
+            }
+            // Also inject into env_assignments!
+            for assignment in &mut cmd.env_assignments {
+                inject_into_assignment(assignment, arith_map);
             }
         }
         Statement::Pipeline(pipeline) => {
@@ -284,9 +327,43 @@ fn inject_arithmetic(stmt: &mut crate::ast::Statement, arith_map: &[(String, Str
                 inject_arithmetic(stmt, arith_map);
             }
         }
-        _ => {
-            // Other statement types - skip for now
+        Statement::While(while_stmt) => {
+            for stmt in &mut while_stmt.body {
+                inject_arithmetic(stmt, arith_map);
+            }
         }
+        Statement::Until(until_stmt) => {
+            for stmt in &mut until_stmt.body {
+                inject_arithmetic(stmt, arith_map);
+            }
+        }
+        Statement::Case(case_stmt) => {
+            inject_into_word(&mut case_stmt.value, arith_map);
+            for arm in &mut case_stmt.arms {
+                for pattern in &mut arm.patterns {
+                    inject_into_word(pattern, arith_map);
+                }
+                for stmt in &mut arm.body {
+                    inject_arithmetic(stmt, arith_map);
+                }
+            }
+        }
+        Statement::Subshell(subshell) => {
+            for stmt in &mut subshell.body {
+                inject_arithmetic(stmt, arith_map);
+            }
+        }
+        Statement::BraceGroup(group) => {
+            for stmt in &mut group.body {
+                inject_arithmetic(stmt, arith_map);
+            }
+        }
+        Statement::FunctionDef(func) => {
+            for stmt in &mut func.body {
+                inject_arithmetic(stmt, arith_map);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -719,5 +796,35 @@ EOF"#;
 
         let result = parse(source);
         assert!(result.is_ok(), "Should parse heredoc in pipeline: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_arith_in_assignment() {
+        use crate::ast::{Statement, WordPart, AssignmentValue};
+        
+        let source = "x=$((1+1))";
+        let result = parse_statement(source);
+        assert!(result.is_ok(), "Should parse: {:?}", result.err());
+        
+        let stmt = result.unwrap();
+        
+        if let Statement::List(list) = stmt {
+            if let Statement::Pipeline(pipeline) = &*list.first {
+                if let Statement::SimpleCommand(cmd) = &*pipeline.elements[0].command {
+                    assert!(!cmd.env_assignments.is_empty(), "Should have assignment");
+                    let assignment = &cmd.env_assignments[0];
+                    assert_eq!(assignment.name, "x");
+                    
+                    if let AssignmentValue::Word(word) = &assignment.value {
+                        assert!(word.parts.iter().any(|p| matches!(p, WordPart::ArithRaw(_))), 
+                            "Assignment should contain ArithRaw, got: {:?}", word.parts);
+                    } else {
+                        panic!("Expected Word assignment value");
+                    }
+                    return;
+                }
+            }
+        }
+        panic!("Unexpected AST structure");
     }
 }

@@ -50,7 +50,7 @@ impl ExpansionContext {
         let home = std::env::var("HOME").ok().map(PathBuf::from);
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
 
-        Self {
+        let mut ctx = Self {
             variables: HashMap::new(),
             environment: std::env::vars().collect(),
             aliases: HashMap::new(),
@@ -60,7 +60,18 @@ impl ExpansionContext {
             cwd,
             ifs: " \t\n".to_string(), // POSIX default IFS
             home,
-        }
+        };
+
+        ctx.variables.insert("BASH_VERSINFO".to_string(), Variable::Array(vec![
+            "5".to_string(),
+            "2".to_string(),
+            "0".to_string(),
+            "1".to_string(),
+            "release".to_string(),
+            "colony".to_string(),
+        ]));
+
+        ctx
     }
 
     /// Get a shell variable
@@ -83,6 +94,8 @@ impl ExpansionContext {
             "#" => return Some(self.positional_params.len().to_string()),
             "@" | "*" => return Some(self.positional_params.join(" ")),
             "?" => return Some(self.last_exit_status.to_string()),
+            "BASH_VERSION" => return Some("5.2.0(1)-colony".to_string()),
+            "BASH_VERSINFO" => return Some("5".to_string()),
             _ => {}
         }
 

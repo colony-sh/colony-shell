@@ -71,7 +71,6 @@ impl AstBuilder {
             }
             Rule::ForStatement => {
                 Self::build_for_statement(pair)
-                    .map(Statement::For)
             }
             Rule::WhileStatement => {
                 Self::build_while_statement(pair)
@@ -106,6 +105,14 @@ impl AstBuilder {
                 let inner = pair.into_inner().next()
                     .ok_or(BuildError::EmptyCompoundCommand)?;
                 Self::build_statement(inner)
+            }
+            Rule::ConditionalCommand => {
+                Self::build_conditional_command(pair)
+                    .map(Statement::Conditional)
+            }
+            Rule::ArithmeticCommand => {
+                Self::build_arithmetic_command(pair)
+                    .map(Statement::Arithmetic)
             }
             Rule::BashAssignment => {
                 // Standalone bash assignment: arr=(a b c)
@@ -192,11 +199,14 @@ impl AstBuilder {
                         match inner.as_rule() {
                             Rule::BashAssignment => {
                                 let arg_span = span_from_pair(&inner);
+                                let full_text = inner.as_str();
                                 let mut parts = Vec::new();
-                                let mut op = "=";
                                 
                                 for sub in inner.into_inner() {
                                     match sub.as_rule() {
+                                        Rule::BashAssignmentLHS => {
+                                            parts.push(WordPart::Literal(sub.as_str().to_string()));
+                                        }
                                         Rule::AssignmentName | Rule::Identifier => {
                                             parts.push(WordPart::Literal(sub.as_str().to_string()));
                                         }
@@ -204,20 +214,18 @@ impl AstBuilder {
                                             parts.push(WordPart::Literal(sub.as_str().to_string()));
                                         }
                                         Rule::AssocArrayLiteral | Rule::ArrayLiteral => {
-                                            parts.push(WordPart::Literal(format!("{}{}", op, sub.as_str())));
+                                            parts.push(WordPart::Literal(sub.as_str().to_string()));
                                         }
                                         Rule::Word => {
-                                            parts.push(WordPart::Literal(op.to_string()));
                                             let word = Self::build_word(sub)?;
                                             parts.extend(word.parts);
                                         }
-                                        _ => {
-                                            let txt = sub.as_str();
-                                            if txt == "+=" || txt == "=" {
-                                                op = txt;
-                                            }
-                                        }
+                                        _ => {}
                                     }
+                                }
+                                
+                                if parts.is_empty() {
+                                    parts.push(WordPart::Literal(full_text.to_string()));
                                 }
                                 
                                 words.push(Word { parts, span: arg_span });
@@ -530,7 +538,7 @@ impl AstBuilder {
         Ok(statements)
     }
 
-    fn build_for_statement(pair: Pair<Rule>) -> Result<ForStatement, BuildError> {
+    fn build_for_statement(pair: Pair<Rule>) -> Result<Statement, BuildError> {
         let span = span_from_pair(&pair);
         let inner = pair.into_inner();
 
@@ -556,8 +564,51 @@ impl AstBuilder {
             }
         }
 
-        // Parse ForKind to extract var and words
         let kind_children: Vec<_> = for_kind.into_inner().collect();
+        
+        let is_cstyle = kind_children.iter().any(|c| {
+            matches!(c.as_rule(), Rule::CStyleForInit | Rule::CStyleForCond | Rule::CStyleForUpdate)
+        });
+        
+        if is_cstyle || kind_children.is_empty() {
+            let mut init = None;
+            let mut condition = None;
+            let mut update = None;
+            
+            for child in kind_children {
+                match child.as_rule() {
+                    Rule::CStyleForInit => {
+                        let s = child.as_str().trim();
+                        if !s.is_empty() {
+                            init = Some(s.to_string());
+                        }
+                    }
+                    Rule::CStyleForCond => {
+                        let s = child.as_str().trim();
+                        if !s.is_empty() {
+                            condition = Some(s.to_string());
+                        }
+                    }
+                    Rule::CStyleForUpdate => {
+                        let s = child.as_str().trim();
+                        if !s.is_empty() {
+                            update = Some(s.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            
+            return Ok(Statement::CStyleFor(CStyleForStatement {
+                init,
+                condition,
+                update,
+                body,
+                redirects,
+                span,
+            }));
+        }
+        
         let mut kind_iter = kind_children.into_iter();
 
         let var = kind_iter.next()
@@ -579,13 +630,13 @@ impl AstBuilder {
             return Err(BuildError::MissingForWords);
         }
 
-        Ok(ForStatement {
+        Ok(Statement::For(ForStatement {
             var,
             words,
             body,
             redirects,
             span,
-        })
+        }))
     }
 
     fn build_while_statement(pair: Pair<Rule>) -> Result<WhileStatement, BuildError> {
@@ -640,6 +691,152 @@ impl AstBuilder {
             condition,
             body,
             redirects,
+            span,
+        })
+    }
+
+    fn build_conditional_command(pair: Pair<Rule>) -> Result<ConditionalCommand, BuildError> {
+        let span = span_from_pair(&pair);
+        let inner = pair.into_inner().next()
+            .ok_or(BuildError::EmptyConditionalCommand)?;
+        
+        let expr = Self::build_cond_expr(inner)?;
+        
+        Ok(ConditionalCommand { expr, span })
+    }
+
+    fn build_cond_expr(pair: Pair<Rule>) -> Result<CondExpr, BuildError> {
+        match pair.as_rule() {
+            Rule::CondExpr | Rule::CondOrExpr => {
+                let mut inner = pair.into_inner();
+                let first = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
+                let mut result = Self::build_cond_expr(first)?;
+                
+                while let Some(next) = inner.next() {
+                    let right = Self::build_cond_expr(next)?;
+                    result = CondExpr::Or(Box::new(result), Box::new(right));
+                }
+                Ok(result)
+            }
+            Rule::CondAndExpr => {
+                let mut inner = pair.into_inner();
+                let first = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
+                let mut result = Self::build_cond_expr(first)?;
+                
+                while let Some(next) = inner.next() {
+                    let right = Self::build_cond_expr(next)?;
+                    result = CondExpr::And(Box::new(result), Box::new(right));
+                }
+                Ok(result)
+            }
+            Rule::CondUnaryExpr => {
+                let mut inner = pair.into_inner();
+                let first = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
+                
+                match first.as_str() {
+                    "!" => {
+                        let operand = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
+                        let expr = Self::build_cond_expr(operand)?;
+                        Ok(CondExpr::Not(Box::new(expr)))
+                    }
+                    "(" => {
+                        let inner_expr = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
+                        Self::build_cond_expr(inner_expr)
+                    }
+                    _ => {
+                        Self::build_cond_expr(first)
+                    }
+                }
+            }
+            Rule::CondPrimary => {
+                let inner = pair.into_inner().next()
+                    .ok_or(BuildError::EmptyConditionalCommand)?;
+                Self::build_cond_expr(inner)
+            }
+            Rule::CondBinaryTest => {
+                let mut inner = pair.into_inner();
+                let left = inner.next().ok_or(BuildError::MissingOperand)?.as_str().to_string();
+                let op_pair = inner.next().ok_or(BuildError::MissingOperator)?;
+                let op = Self::build_cond_binary_op(op_pair)?;
+                let right = inner.next().ok_or(BuildError::MissingOperand)?.as_str().to_string();
+                
+                Ok(CondExpr::Binary { left, op, right })
+            }
+            Rule::CondUnaryTest => {
+                let mut inner = pair.into_inner();
+                let op_pair = inner.next().ok_or(BuildError::MissingOperator)?;
+                let op = Self::build_cond_unary_op(op_pair)?;
+                let arg = inner.next().ok_or(BuildError::MissingOperand)?.as_str().to_string();
+                
+                Ok(CondExpr::Unary { op, arg })
+            }
+            Rule::CondStringTest => {
+                let operand = pair.into_inner().next()
+                    .ok_or(BuildError::EmptyConditionalCommand)?;
+                Ok(CondExpr::String(operand.as_str().to_string()))
+            }
+            Rule::CondOperand => {
+                Ok(CondExpr::String(pair.as_str().to_string()))
+            }
+            _ => Err(BuildError::UnexpectedRule {
+                expected: "conditional expression",
+                found: format!("{:?}", pair.as_rule()),
+            })
+        }
+    }
+
+    fn build_cond_binary_op(pair: Pair<Rule>) -> Result<CondBinaryOp, BuildError> {
+        match pair.as_str() {
+            "==" | "=" => Ok(CondBinaryOp::Eq),
+            "!=" => Ok(CondBinaryOp::Ne),
+            "=~" => Ok(CondBinaryOp::Match),
+            "<" => Ok(CondBinaryOp::Lt),
+            ">" => Ok(CondBinaryOp::Gt),
+            "-eq" => Ok(CondBinaryOp::IntEq),
+            "-ne" => Ok(CondBinaryOp::IntNe),
+            "-lt" => Ok(CondBinaryOp::IntLt),
+            "-le" => Ok(CondBinaryOp::IntLe),
+            "-gt" => Ok(CondBinaryOp::IntGt),
+            "-ge" => Ok(CondBinaryOp::IntGe),
+            "-nt" => Ok(CondBinaryOp::NewerThan),
+            "-ot" => Ok(CondBinaryOp::OlderThan),
+            "-ef" => Ok(CondBinaryOp::SameFile),
+            op => Err(BuildError::UnknownOperator(op.to_string())),
+        }
+    }
+
+    fn build_cond_unary_op(pair: Pair<Rule>) -> Result<CondUnaryOp, BuildError> {
+        match pair.as_str() {
+            "-n" => Ok(CondUnaryOp::NonZeroLen),
+            "-z" => Ok(CondUnaryOp::ZeroLen),
+            "-f" => Ok(CondUnaryOp::IsFile),
+            "-d" => Ok(CondUnaryOp::IsDir),
+            "-e" => Ok(CondUnaryOp::Exists),
+            "-r" => Ok(CondUnaryOp::Readable),
+            "-w" => Ok(CondUnaryOp::Writable),
+            "-x" => Ok(CondUnaryOp::Executable),
+            "-s" => Ok(CondUnaryOp::NonEmpty),
+            "-L" | "-h" => Ok(CondUnaryOp::IsSymlink),
+            "-p" => Ok(CondUnaryOp::IsPipe),
+            "-S" => Ok(CondUnaryOp::IsSocket),
+            "-b" => Ok(CondUnaryOp::IsBlock),
+            "-c" => Ok(CondUnaryOp::IsChar),
+            "-t" => Ok(CondUnaryOp::IsTerminal),
+            "-O" => Ok(CondUnaryOp::OwnedByEuid),
+            "-G" => Ok(CondUnaryOp::OwnedByEgid),
+            "-N" => Ok(CondUnaryOp::ModifiedSinceRead),
+            "-v" => Ok(CondUnaryOp::VarIsSet),
+            op => Err(BuildError::UnknownOperator(op.to_string())),
+        }
+    }
+
+    fn build_arithmetic_command(pair: Pair<Rule>) -> Result<ArithmeticCommand, BuildError> {
+        let span = span_from_pair(&pair);
+        let expr_pair = pair.into_inner().next()
+            .ok_or(BuildError::EmptyArithmeticCommand)?;
+        
+        Ok(ArithmeticCommand {
+            expr: expr_pair.as_str().to_string(),
             span,
         })
     }
@@ -1467,40 +1664,20 @@ impl AstBuilder {
 
     fn build_bash_assignment(pair: Pair<Rule>) -> Result<Assignment, BuildError> {
         let span = span_from_pair(&pair);
-        let full_text = pair.as_str();  // Capture for += detection
         let mut inner = pair.into_inner();
 
-        // BashAssignment = Identifier ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)?
-
-        let name = inner.next()
+        // BashAssignment = BashAssignmentLHS ~ (AssocArrayLiteral | ArrayLiteral | Word)?
+        // BashAssignmentLHS = name ~ [subscript]? ~ ("+=" | "=")
+        
+        let lhs = inner.next()
             .ok_or(BuildError::MissingAssignmentName)?
-            .as_str()
-            .to_string();
+            .as_str();
+        
+        // Parse the LHS to extract name, subscript, and operator
+        let (name, subscript, op) = Self::parse_assignment_lhs(lhs)?;
 
-        // Check if next is subscript or value (both are optional)
-        let next_pair = inner.next();
-
-        let (subscript, value_pair_opt) = if let Some(next) = next_pair {
-            if next.as_rule() == Rule::ArraySubscript {
-                // We have a subscript, next might be the value
-                let subscript = Some(Self::build_array_subscript(next)?);
-                let value_pair = inner.next();
-                (subscript, value_pair)
-            } else {
-                // No subscript, this is the value
-                (None, Some(next))
-            }
-        } else {
-            // No subscript and no value (e.g., empty=)
-            (None, None)
-        };
-
-        // Detect += operator by checking the full text
-        let op = if full_text.contains("+=") {
-            AssignOp::Append
-        } else {
-            AssignOp::Assign
-        };
+        // Next pair (if any) is the value
+        let value_pair_opt = inner.next();
 
         let value = if let Some(value_pair) = value_pair_opt {
             match value_pair.as_rule() {
@@ -1552,6 +1729,39 @@ impl AstBuilder {
             span,
         })
     }
+    
+    fn parse_assignment_lhs(lhs: &str) -> Result<(String, Option<ArraySubscript>, AssignOp), BuildError> {
+        let (rest, op) = if lhs.ends_with("+=") {
+            (&lhs[..lhs.len()-2], AssignOp::Append)
+        } else if lhs.ends_with('=') {
+            (&lhs[..lhs.len()-1], AssignOp::Assign)
+        } else {
+            return Err(BuildError::MissingAssignmentName);
+        };
+        
+        if let Some(bracket_pos) = rest.find('[') {
+            if rest.ends_with(']') {
+                let name = rest[..bracket_pos].to_string();
+                let subscript_str = &rest[bracket_pos+1..rest.len()-1];
+                
+                let subscript = if subscript_str == "@" {
+                    ArraySubscript::All
+                } else if subscript_str == "*" {
+                    ArraySubscript::Star
+                } else if let Ok(idx) = subscript_str.parse::<i64>() {
+                    ArraySubscript::Index(Box::new(Expression::Int(idx, Span::DUMMY)))
+                } else {
+                    ArraySubscript::Index(Box::new(Expression::Str(subscript_str.to_string(), Span::DUMMY)))
+                };
+                
+                Ok((name, Some(subscript), op))
+            } else {
+                Ok((rest.to_string(), None, op))
+            }
+        } else {
+            Ok((rest.to_string(), None, op))
+        }
+    }
 
     fn build_word(pair: Pair<Rule>) -> Result<Word, BuildError> {
         let span = span_from_pair(&pair);
@@ -1589,6 +1799,11 @@ impl AstBuilder {
                 }
                 Rule::BraceExpansion => {
                     WordPart::BraceExpansion(text)
+                }
+                Rule::BacktickCommandSub => {
+                    let inner = &text[1..text.len()-1];
+                    let unescaped = inner.replace("\\`", "`");
+                    WordPart::CommandSubRaw(unescaped)
                 }
                 Rule::TildeExpansion => {
                     let user = if text.len() <= 1 {
@@ -1831,19 +2046,18 @@ impl AstBuilder {
         }
 
         let first = inner.next();
-        if first.is_none() {
-            return Err(BuildError::InvalidVarModifier(text.to_string()));
-        }
-        let first = first.unwrap();
         
-        if first.as_rule() == Rule::SliceOffset {
-            let offset: i64 = first.as_str().parse().unwrap_or(0);
-            let length: Option<usize> = inner.next()
-                .and_then(|p| if p.as_rule() == Rule::SliceLength { p.as_str().parse().ok() } else { None });
-            return Ok(VarModifier::Slice { offset, length });
-        }
-        
-        let word_value = Self::build_word(first)?;
+        let word_value = if let Some(first) = first {
+            if first.as_rule() == Rule::SliceOffset {
+                let offset: i64 = first.as_str().parse().unwrap_or(0);
+                let length: Option<usize> = inner.next()
+                    .and_then(|p| if p.as_rule() == Rule::SliceLength { p.as_str().parse().ok() } else { None });
+                return Ok(VarModifier::Slice { offset, length });
+            }
+            Self::build_word(first)?
+        } else {
+            Word { parts: vec![], span: Span::DUMMY }
+        };
 
         match text {
             s if s.starts_with(":-") => Ok(VarModifier::Default {
@@ -1877,6 +2091,18 @@ impl AstBuilder {
             s if s.starts_with("+") => Ok(VarModifier::Alternate {
                 word: Box::new(word_value),
                 check_null: false,
+            }),
+            s if s.starts_with("##") => Ok(VarModifier::StripPrefixGreedy {
+                pattern: Box::new(word_value),
+            }),
+            s if s.starts_with("#") => Ok(VarModifier::StripPrefix {
+                pattern: Box::new(word_value),
+            }),
+            s if s.starts_with("%%") => Ok(VarModifier::StripSuffixGreedy {
+                pattern: Box::new(word_value),
+            }),
+            s if s.starts_with("%") => Ok(VarModifier::StripSuffix {
+                pattern: Box::new(word_value),
             }),
             _ => Err(BuildError::InvalidVarModifier(text.to_string())),
         }
@@ -1935,25 +2161,41 @@ impl AstBuilder {
                     flush_literal(&mut literal_buffer, &mut parts);
                     parts.push(Self::build_dollar_expansion(actual_content)?);
                 }
-                Rule::BacktickExpansion => {
+                Rule::BacktickCommandSub => {
                     flush_literal(&mut literal_buffer, &mut parts);
-                    // `cmd` - old-style command substitution
-                    // TODO: Parse command inside backticks
-                    parts.push(WordPart::Literal(actual_content.as_str().to_string()));
+                    let text = actual_content.as_str();
+                    let inner = &text[1..text.len()-1];
+                    let unescaped = inner.replace("\\`", "`");
+                    parts.push(WordPart::CommandSubRaw(unescaped));
                 }
                 Rule::EscapeSequence => {
-                    // \n, \t, \", etc.
+                    // POSIX: Inside double quotes, only $ ` " \ and newline are special after backslash
+                    // For all other characters, the backslash is preserved
                     let text = actual_content.as_str();
-                    let expanded = match text {
-                        "\\n" => "\n",
-                        "\\t" => "\t",
-                        "\\r" => "\r",
-                        "\\\\" => "\\",
-                        "\\\"" => "\"",
-                        "\\$" => "$",
-                        _ => text, // Keep as-is
-                    };
-                    literal_buffer.push_str(expanded);
+                    if text.len() >= 2 {
+                        let escaped_char = text.chars().nth(1).unwrap();
+                        let expanded = match escaped_char {
+                            '$' => "$",
+                            '`' => "`",
+                            '"' => "\"",
+                            '\\' => "\\",
+                            '\n' => "", // backslash-newline is line continuation (removed)
+                            // These are Colony/C-style extensions, keep for convenience
+                            'n' => "\n",
+                            't' => "\t",
+                            'r' => "\r",
+                            '0' => "\0",
+                            // POSIX: all other characters preserve the backslash
+                            _ => {
+                                literal_buffer.push_str(text); // preserve \a as \a
+                                continue;
+                            }
+                        };
+                        literal_buffer.push_str(expanded);
+                    } else {
+                        // Just a backslash at end - preserve it
+                        literal_buffer.push_str(text);
+                    }
                 }
                 Rule::DoubleQuotedChar => {
                     // Regular character inside double quotes - accumulate
@@ -2232,6 +2474,21 @@ pub enum BuildError {
 
     #[error("invalid case terminator: {0}")]
     InvalidCaseTerminator(String),
+
+    #[error("empty conditional command")]
+    EmptyConditionalCommand,
+
+    #[error("missing operand")]
+    MissingOperand,
+
+    #[error("missing operator")]
+    MissingOperator,
+
+    #[error("unknown operator: {0}")]
+    UnknownOperator(String),
+
+    #[error("empty arithmetic command")]
+    EmptyArithmeticCommand,
 
     #[error("parse error: {0}")]
     Parse(String),

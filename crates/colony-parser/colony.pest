@@ -53,6 +53,8 @@ Pipeline = { "!"? ~ PipelineElement ~ (PipeOp ~ PipelineElement)* }
 PipelineElement = {
     FunctionDef
   | CompoundCommand
+  | ConditionalCommand
+  | ArithmeticCommand
   | SimpleCommand
   | Subshell
 }
@@ -75,8 +77,16 @@ ArgumentWord = {
 }
 
 // Bash-style assignment: name=value or name=(array values) or name[index]=value or name+=(array values)
+// The left side (name, subscript, =) must be atomic (no whitespace)
 BashAssignment = {
-    AssignmentName ~ ArraySubscript? ~ ("+=" | "=") ~ (AssocArrayLiteral | ArrayLiteral | Word)?
+    BashAssignmentLHS ~ (AssocArrayLiteral | ArrayLiteral | Word)?
+}
+
+// Left-hand side of assignment - atomic to prevent "a = b" from being parsed as assignment
+BashAssignmentLHS = @{
+    (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
+    ~ ("[" ~ (!("]") ~ ANY)* ~ "]")?
+    ~ ("+=" | "=")
 }
 
 // Assignment name - can be any identifier including reserved words (bash allows var=x)
@@ -133,6 +143,99 @@ CompoundCommand = {
 BraceGroup = { "{" ~ NL* ~ (Statement ~ (NL | ";")*)* ~ "}" }
 
 Subshell = { "(" ~ CommandList ~ ")" }
+
+// ============================================================================
+// Bash Extended Commands
+// ============================================================================
+
+// [[ expression ]] - Extended conditional command
+ConditionalCommand = { "[[" ~ CondExpr ~ "]]" }
+
+// Conditional expression with logical operators
+CondExpr = { CondOrExpr }
+
+CondOrExpr = { CondAndExpr ~ ("||" ~ CondAndExpr)* }
+
+CondAndExpr = { CondUnaryExpr ~ ("&&" ~ CondUnaryExpr)* }
+
+CondUnaryExpr = {
+    "!" ~ CondUnaryExpr
+  | "(" ~ CondExpr ~ ")"
+  | CondPrimary
+}
+
+// Primary conditional tests
+CondPrimary = {
+    CondBinaryTest
+  | CondUnaryTest
+  | CondStringTest
+}
+
+// Binary comparisons: str == str, str != str, str =~ regex, str < str, str > str
+// Also: -eq -ne -lt -le -gt -ge for integers
+CondBinaryTest = { CondOperand ~ CondBinaryOp ~ CondOperand }
+
+CondBinaryOp = {
+    "=~"   // Regex match (bash extension)
+  | "=="   // String equality (pattern matching)
+  | "!="   // String inequality
+  | "<"    // String less than
+  | ">"    // String greater than
+  | "-eq"  // Integer equal
+  | "-ne"  // Integer not equal
+  | "-lt"  // Integer less than
+  | "-le"  // Integer less than or equal
+  | "-gt"  // Integer greater than
+  | "-ge"  // Integer greater than or equal
+  | "-nt"  // File newer than
+  | "-ot"  // File older than
+  | "-ef"  // Same file (inode)
+  | "="    // String equality (POSIX)
+}
+
+// Unary tests: -n str, -z str, -f file, -d dir, etc.
+CondUnaryTest = { CondUnaryOp ~ CondOperand }
+
+CondUnaryOp = {
+    "-n"   // Non-zero length string
+  | "-z"   // Zero length string
+  | "-f"   // Regular file
+  | "-d"   // Directory
+  | "-e"   // File exists
+  | "-r"   // Readable
+  | "-w"   // Writable
+  | "-x"   // Executable
+  | "-s"   // Non-empty file
+  | "-L"   // Symbolic link
+  | "-h"   // Symbolic link (synonym)
+  | "-p"   // Named pipe
+  | "-S"   // Socket
+  | "-b"   // Block device
+  | "-c"   // Character device
+  | "-t"   // Terminal
+  | "-O"   // Owned by effective uid
+  | "-G"   // Owned by effective gid
+  | "-N"   // Modified since last read
+  | "-v"   // Variable is set
+}
+
+// Simple string test (non-empty)
+CondStringTest = { CondOperand }
+
+// Operand in conditional - can be a word (with expansions)
+CondOperand = @{
+    (!(WHITESPACE | "]]" | "&&" | "||" | "(" | ")" | "!") ~ ANY)+
+}
+
+// (( expression )) - Arithmetic command
+ArithmeticCommand = { "((" ~ ArithExprInner ~ "))" }
+
+// Arithmetic expression - handle balanced parens
+ArithExprInner = @{ ArithExprPart* }
+ArithExprPart = @{
+    "(" ~ ArithExprInner ~ ")"
+  | (!")" ~ !"((" ~ !"))" ~ ANY)
+}
 
 // ============================================================================
 // Control Flow
@@ -196,9 +299,23 @@ ForStatement = { "for" ~ ForKind ~ ";"? ~ Block ~ Redirect* }
 
 ForKind = {
     Identifier ~ "," ~ Identifier ~ "in" ~ "enumerate" ~ "(" ~ Expression ~ ")"  // enumerate
-  | "(" ~ Expression? ~ ";" ~ Expression? ~ ";" ~ Expression? ~ ")"  // C-style
+  | "((" ~ CStyleForInit? ~ ";" ~ CStyleForCond? ~ ";" ~ CStyleForUpdate? ~ "))"  // C-style: for ((init; cond; update))
   | Identifier ~ "in" ~ WordList  // words (must come before Expression)
   | Identifier ~ "in" ~ Expression  // iterate
+}
+
+// C-style for loop components - arithmetic expressions captured as raw strings
+// These support: assignment (i=0), comparison (i<3), increment (i++, ++i), 
+// decrement (i--, --i), compound assignment (i+=1, i-=2, i*=2, i/=2)
+CStyleForInit = @{ CStyleArithExpr ~ ("," ~ CStyleArithExpr)* }
+CStyleForCond = @{ CStyleArithExpr }
+CStyleForUpdate = @{ CStyleArithExpr ~ ("," ~ CStyleArithExpr)* }
+
+// C-style arithmetic expression - captures everything up to ; or ))
+// Supports: var=val, var++, ++var, var--, --var, var+=val, var-=val, var*=val, var/=val
+// Comparisons: var<val, var<=val, var>val, var>=val, var==val, var!=val
+CStyleArithExpr = @{
+    (!(";" | "))") ~ !("," ~ CStyleArithExpr) ~ ANY)+
 }
 
 // Word list for for loops - must not consume keywords like "do"
@@ -633,10 +750,21 @@ Word = ${
 WordPart = _{
     QuotedString
   | DollarExpansion
+  | BacktickCommandSub
   | TildeExpansion
   | BraceExpansion
   | UnquotedEscape
   | Bareword
+}
+
+// Backtick command substitution: `cmd` - captured as raw string, parsed during expansion
+// Must handle escaped backticks within the content (\`)
+BacktickCommandSub = @{
+    "`" ~ BacktickContent ~ "`"
+}
+
+BacktickContent = @{
+    (!"\\`" ~ !"`" ~ ANY | "\\`")*
 }
 
 // Tilde expansion: ~ or ~user or ~+ or ~-
@@ -675,7 +803,7 @@ Bareword = {
 }
 
 BarewordChars = @{
-    (!WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"=" ~ ANY)+
+    (!WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"`" ~ !"\\" ~ ANY)+
 }
 
 SpecialChar = {
@@ -719,8 +847,41 @@ DollarArithRaw = @{
     "$((" ~ (!"))" ~ ANY)* ~ "))"
 }
 
-DollarCommandSubRaw = @{
-    "$(" ~ !"(" ~ (!")" ~ (NEWLINE | ANY))* ~ ")"
+// Command substitution with balanced parentheses support for nesting
+// $(cmd) where cmd can contain nested $(...) or plain (...)
+// Uses compound_atomic ($) to capture entire content as single string
+DollarCommandSubRaw = ${
+    "$(" ~ !"(" ~ DollarCommandSubInner ~ ")"
+}
+
+// Inner content of $(...) - NOT atomic, allows recursion
+DollarCommandSubInner = {
+    DollarCommandSubPart*
+}
+
+// Parts inside $(...) - handles balanced parentheses for nesting
+DollarCommandSubPart = {
+    DollarCommandSubRaw                              // nested $(...)
+  | DollarCommandSubParens                           // other balanced parens like (subshell)
+  | DollarCommandSubQuoted                           // quoted strings (may contain parens)
+  | DollarCommandSubChar                             // regular chars
+}
+
+// Balanced parentheses (not $())
+DollarCommandSubParens = {
+    "(" ~ DollarCommandSubInner ~ ")"
+}
+
+// Quoted strings inside command substitution
+DollarCommandSubQuoted = @{
+    ("\"" ~ (!"\"" ~ ANY | "\\\"")* ~ "\"")          // double-quoted
+  | ("'" ~ (!"'" ~ ANY)* ~ "'")                      // single-quoted
+}
+
+// Single character that's not special
+DollarCommandSubChar = @{
+    !(")" | "(" | "\"" | "'" | "$") ~ ANY            // regular chars
+  | "$" ~ !"("                                       // $ not followed by ( (like $var)
 }
 
 VariableRef = {
@@ -746,10 +907,14 @@ ArraySpecial = {
 
 VarModifier = {
     (":" ~ SliceOffset ~ (":" ~ SliceLength)?)  // slice ${arr[@]:offset:length} - MUST be first to avoid conflicts with :- etc
-  | (":-" ~ Word)                        // default
-  | (":=" ~ Word)                        // assign
-  | (":?" ~ Word)                        // error
-  | (":+" ~ Word)                        // alternate
+  | (":-" ~ Word?)                       // default (if unset or null)
+  | ("-" ~ Word?)                        // default (if unset only)
+  | (":=" ~ Word?)                       // assign (if unset or null)
+  | ("=" ~ Word?)                        // assign (if unset only)
+  | (":?" ~ Word?)                       // error (if unset or null)
+  | ("?" ~ Word?)                        // error (if unset only)
+  | (":+" ~ Word?)                       // alternate (if set and not null)
+  | ("+" ~ Word?)                        // alternate (if set)
   | ("##" ~ Word)                        // strip prefix greedy
   | ("#" ~ Word)                         // strip prefix
   | ("%%" ~ Word)                        // strip suffix greedy
@@ -822,7 +987,7 @@ DoubleQuoted = ${
 
 DoubleQuotedContent = {
     DollarExpansion
-  | BacktickExpansion
+  | BacktickCommandSub
   | EscapeSequence
   | DoubleQuotedChar
 }
@@ -831,12 +996,11 @@ DoubleQuotedChar = {
     !("\"" | "$" | "`" | "\\") ~ ANY
 }
 
-BacktickExpansion = {
-    "`" ~ CommandList ~ "`"
-}
-
+// POSIX: Inside double quotes, backslash only removes special meaning from: $ ` " \ newline
+// For any other character, the backslash is preserved literally (e.g., "\a" -> \a)
+// We capture the entire sequence and handle interpretation in the builder
 EscapeSequence = @{
-    "\\" ~ ("n" | "t" | "r" | "\\" | "\"" | "$" | "`" | "0")
+    "\\" ~ ANY
 }
 
 // Single-quoted strings are literal (no interpolation)

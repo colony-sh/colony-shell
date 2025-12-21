@@ -331,7 +331,103 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                 None => Ok(String::new()),
             }
         }
+
+        Some(VarModifier::StripPrefix { pattern }) => {
+            let pat = pattern.as_literal().unwrap_or("");
+            let value = var_value.unwrap_or_default();
+            Ok(strip_prefix_shortest(&value, pat))
+        }
+
+        Some(VarModifier::StripPrefixGreedy { pattern }) => {
+            let pat = pattern.as_literal().unwrap_or("");
+            let value = var_value.unwrap_or_default();
+            Ok(strip_prefix_longest(&value, pat))
+        }
+
+        Some(VarModifier::StripSuffix { pattern }) => {
+            let pat = pattern.as_literal().unwrap_or("");
+            let value = var_value.unwrap_or_default();
+            Ok(strip_suffix_shortest(&value, pat))
+        }
+
+        Some(VarModifier::StripSuffixGreedy { pattern }) => {
+            let pat = pattern.as_literal().unwrap_or("");
+            let value = var_value.unwrap_or_default();
+            Ok(strip_suffix_longest(&value, pat))
+        }
     }
+}
+
+fn strip_prefix_shortest(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    let glob_pattern = glob::Pattern::new(pattern).ok();
+    for i in 0..=value.len() {
+        let prefix = &value[..i];
+        if let Some(ref pat) = glob_pattern {
+            if pat.matches(prefix) {
+                return value[i..].to_string();
+            }
+        } else if prefix == pattern {
+            return value[i..].to_string();
+        }
+    }
+    value.to_string()
+}
+
+fn strip_prefix_longest(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    let glob_pattern = glob::Pattern::new(pattern).ok();
+    for i in (0..=value.len()).rev() {
+        let prefix = &value[..i];
+        if let Some(ref pat) = glob_pattern {
+            if pat.matches(prefix) {
+                return value[i..].to_string();
+            }
+        } else if prefix == pattern {
+            return value[i..].to_string();
+        }
+    }
+    value.to_string()
+}
+
+fn strip_suffix_shortest(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    let glob_pattern = glob::Pattern::new(pattern).ok();
+    for i in (0..=value.len()).rev() {
+        let suffix = &value[i..];
+        if let Some(ref pat) = glob_pattern {
+            if pat.matches(suffix) {
+                return value[..i].to_string();
+            }
+        } else if suffix == pattern {
+            return value[..i].to_string();
+        }
+    }
+    value.to_string()
+}
+
+fn strip_suffix_longest(value: &str, pattern: &str) -> String {
+    if pattern.is_empty() {
+        return value.to_string();
+    }
+    let glob_pattern = glob::Pattern::new(pattern).ok();
+    for i in 0..=value.len() {
+        let suffix = &value[i..];
+        if let Some(ref pat) = glob_pattern {
+            if pat.matches(suffix) {
+                return value[..i].to_string();
+            }
+        } else if suffix == pattern {
+            return value[..i].to_string();
+        }
+    }
+    value.to_string()
 }
 
 fn get_subscript_key(expr: &colony_parser::Expression, context: &ExpansionContext) -> String {

@@ -660,6 +660,607 @@ async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &m
     }
 }
 
+/// Evaluate a [[ ]] conditional expression
+fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &Executor) -> bool {
+    use colony_parser::{CondExpr, CondBinaryOp, CondUnaryOp};
+    
+    match expr {
+        CondExpr::And(left, right) => {
+            evaluate_conditional(left, executor) && evaluate_conditional(right, executor)
+        }
+        CondExpr::Or(left, right) => {
+            evaluate_conditional(left, executor) || evaluate_conditional(right, executor)
+        }
+        CondExpr::Not(inner) => {
+            !evaluate_conditional(inner, executor)
+        }
+        CondExpr::Binary { left, op, right } => {
+            let left_expanded = expand_cond_operand(left, executor);
+            let right_expanded = expand_cond_operand(right, executor);
+            
+            match op {
+                CondBinaryOp::Eq => {
+                    glob_match(&right_expanded, &left_expanded)
+                }
+                CondBinaryOp::Ne => {
+                    !glob_match(&right_expanded, &left_expanded)
+                }
+                CondBinaryOp::Match => {
+                    match regex::Regex::new(&right_expanded) {
+                        Ok(re) => re.is_match(&left_expanded),
+                        Err(_) => false,
+                    }
+                }
+                CondBinaryOp::Lt => left_expanded < right_expanded,
+                CondBinaryOp::Gt => left_expanded > right_expanded,
+                CondBinaryOp::IntEq => {
+                    left_expanded.parse::<i64>().ok() == right_expanded.parse::<i64>().ok()
+                }
+                CondBinaryOp::IntNe => {
+                    left_expanded.parse::<i64>().ok() != right_expanded.parse::<i64>().ok()
+                }
+                CondBinaryOp::IntLt => {
+                    match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                        (Ok(l), Ok(r)) => l < r,
+                        _ => false,
+                    }
+                }
+                CondBinaryOp::IntLe => {
+                    match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                        (Ok(l), Ok(r)) => l <= r,
+                        _ => false,
+                    }
+                }
+                CondBinaryOp::IntGt => {
+                    match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                        (Ok(l), Ok(r)) => l > r,
+                        _ => false,
+                    }
+                }
+                CondBinaryOp::IntGe => {
+                    match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                        (Ok(l), Ok(r)) => l >= r,
+                        _ => false,
+                    }
+                }
+                CondBinaryOp::NewerThan => {
+                    use std::fs;
+                    match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
+                        (Ok(m1), Ok(m2)) => m1.modified().ok() > m2.modified().ok(),
+                        _ => false,
+                    }
+                }
+                CondBinaryOp::OlderThan => {
+                    use std::fs;
+                    match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
+                        (Ok(m1), Ok(m2)) => m1.modified().ok() < m2.modified().ok(),
+                        _ => false,
+                    }
+                }
+                CondBinaryOp::SameFile => {
+                    use std::os::unix::fs::MetadataExt;
+                    use std::fs;
+                    match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
+                        (Ok(m1), Ok(m2)) => m1.dev() == m2.dev() && m1.ino() == m2.ino(),
+                        _ => false,
+                    }
+                }
+            }
+        }
+        CondExpr::Unary { op, arg } => {
+            let arg_expanded = expand_cond_operand(arg, executor);
+            let path = std::path::Path::new(&arg_expanded);
+            
+            match op {
+                CondUnaryOp::NonZeroLen => !arg_expanded.is_empty(),
+                CondUnaryOp::ZeroLen => arg_expanded.is_empty(),
+                CondUnaryOp::IsFile => path.is_file(),
+                CondUnaryOp::IsDir => path.is_dir(),
+                CondUnaryOp::Exists => path.exists(),
+                CondUnaryOp::Readable => path.exists() && std::fs::File::open(path).is_ok(),
+                CondUnaryOp::Writable => {
+                    use std::fs::OpenOptions;
+                    path.exists() && OpenOptions::new().write(true).open(path).is_ok()
+                }
+                CondUnaryOp::Executable => {
+                    use std::os::unix::fs::PermissionsExt;
+                    path.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+                }
+                CondUnaryOp::NonEmpty => {
+                    path.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                }
+                CondUnaryOp::IsSymlink => path.is_symlink(),
+                CondUnaryOp::IsPipe => {
+                    use std::os::unix::fs::FileTypeExt;
+                    path.metadata().map(|m| m.file_type().is_fifo()).unwrap_or(false)
+                }
+                CondUnaryOp::IsSocket => {
+                    use std::os::unix::fs::FileTypeExt;
+                    path.metadata().map(|m| m.file_type().is_socket()).unwrap_or(false)
+                }
+                CondUnaryOp::IsBlock => {
+                    use std::os::unix::fs::FileTypeExt;
+                    path.metadata().map(|m| m.file_type().is_block_device()).unwrap_or(false)
+                }
+                CondUnaryOp::IsChar => {
+                    use std::os::unix::fs::FileTypeExt;
+                    path.metadata().map(|m| m.file_type().is_char_device()).unwrap_or(false)
+                }
+                CondUnaryOp::IsTerminal => {
+                    arg_expanded.parse::<i32>().map(|fd| unsafe { libc::isatty(fd) } != 0).unwrap_or(false)
+                }
+                CondUnaryOp::OwnedByEuid => {
+                    use std::os::unix::fs::MetadataExt;
+                    path.metadata().map(|m| m.uid() == unsafe { libc::geteuid() }).unwrap_or(false)
+                }
+                CondUnaryOp::OwnedByEgid => {
+                    use std::os::unix::fs::MetadataExt;
+                    path.metadata().map(|m| m.gid() == unsafe { libc::getegid() }).unwrap_or(false)
+                }
+                CondUnaryOp::ModifiedSinceRead => {
+                    use std::os::unix::fs::MetadataExt;
+                    path.metadata().map(|m| m.mtime() > m.atime()).unwrap_or(false)
+                }
+                CondUnaryOp::VarIsSet => {
+                    executor.context().get_var_or_env(&arg_expanded).is_some()
+                }
+            }
+        }
+        CondExpr::String(s) => {
+            let expanded = expand_cond_operand(s, executor);
+            !expanded.is_empty()
+        }
+    }
+}
+
+fn expand_cond_operand(s: &str, executor: &Executor) -> String {
+    if s.starts_with('$') {
+        let var_name = s.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
+        executor.context().get_var_or_env(var_name).unwrap_or_default()
+    } else if s.starts_with('"') && s.ends_with('"') {
+        s[1..s.len()-1].to_string()
+    } else if s.starts_with('\'') && s.ends_with('\'') {
+        s[1..s.len()-1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+fn glob_match(pattern: &str, text: &str) -> bool {
+    let mut pattern_chars = pattern.chars().peekable();
+    let mut text_chars = text.chars().peekable();
+    
+    while let Some(p) = pattern_chars.next() {
+        match p {
+            '*' => {
+                if pattern_chars.peek().is_none() {
+                    return true;
+                }
+                let remaining_pattern: String = pattern_chars.collect();
+                let text_remaining: Vec<char> = text_chars.collect();
+                for i in 0..=text_remaining.len() {
+                    if glob_match(&remaining_pattern, &text_remaining[i..].iter().collect::<String>()) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            '?' => {
+                if text_chars.next().is_none() {
+                    return false;
+                }
+            }
+            c => {
+                if text_chars.next() != Some(c) {
+                    return false;
+                }
+            }
+        }
+    }
+    
+    text_chars.next().is_none()
+}
+
+fn evaluate_arithmetic_command(expr: &str, executor: &Executor) -> i64 {
+    let expanded = expand_arithmetic_vars(expr, executor);
+    evaluate_arithmetic_expr(&expanded)
+}
+
+fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
+    let mut result = String::new();
+    let mut chars = expr.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '$' {
+            let mut var_name = String::new();
+            if chars.peek() == Some(&'{') {
+                chars.next();
+                while let Some(&c) = chars.peek() {
+                    if c == '}' {
+                        chars.next();
+                        break;
+                    }
+                    var_name.push(chars.next().unwrap());
+                }
+            } else {
+                while let Some(&c) = chars.peek() {
+                    if c.is_alphanumeric() || c == '_' {
+                        var_name.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+            }
+            let val = executor.context().get_var_or_env(&var_name).unwrap_or_default();
+            result.push_str(&val);
+        } else if c.is_alphabetic() || c == '_' {
+            let mut var_name = String::from(c);
+            while let Some(&c) = chars.peek() {
+                if c.is_alphanumeric() || c == '_' {
+                    var_name.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                let mut index = String::new();
+                let mut bracket_depth = 1;
+                while let Some(&c) = chars.peek() {
+                    if c == '[' {
+                        bracket_depth += 1;
+                    } else if c == ']' {
+                        bracket_depth -= 1;
+                        if bracket_depth == 0 {
+                            chars.next();
+                            break;
+                        }
+                    }
+                    index.push(chars.next().unwrap());
+                }
+                let expanded_index = expand_arithmetic_vars(&index, executor);
+                let idx: usize = evaluate_arithmetic_expr(&expanded_index) as usize;
+                
+                if let Some(colony_expand::Variable::Array(arr)) = executor.context().get_variable(&var_name) {
+                    if let Some(val) = arr.get(idx) {
+                        result.push_str(val);
+                    } else {
+                        result.push('0');
+                    }
+                } else {
+                    result.push('0');
+                }
+            } else {
+                if let Some(val) = executor.context().get_var_or_env(&var_name) {
+                    result.push_str(&val);
+                } else {
+                    result.push_str(&var_name);
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    
+    result
+}
+
+fn evaluate_arithmetic_expr(expr: &str) -> i64 {
+    let expr = expr.trim();
+    
+    if let Some(idx) = expr.find("||") {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        return if left != 0 || right != 0 { 1 } else { 0 };
+    }
+    if let Some(idx) = expr.find("&&") {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        return if left != 0 && right != 0 { 1 } else { 0 };
+    }
+    
+    if let Some(idx) = expr.find(">=") {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        return if left >= right { 1 } else { 0 };
+    }
+    if let Some(idx) = expr.find("<=") {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        return if left <= right { 1 } else { 0 };
+    }
+    if let Some(idx) = expr.find("==") {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        return if left == right { 1 } else { 0 };
+    }
+    if let Some(idx) = expr.find("!=") {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        return if left != right { 1 } else { 0 };
+    }
+    if let Some(idx) = expr.rfind('>') {
+        if idx > 0 && !expr[..idx].ends_with('>') && !expr[..idx].ends_with('|') && !expr[..idx].ends_with('=') {
+            let left = evaluate_arithmetic_expr(&expr[..idx]);
+            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            return if left > right { 1 } else { 0 };
+        }
+    }
+    if let Some(idx) = expr.rfind('<') {
+        if idx > 0 && !expr[..idx].ends_with('<') && !expr[..idx].ends_with('|') && !expr[..idx].ends_with('=') {
+            let left = evaluate_arithmetic_expr(&expr[..idx]);
+            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            return if left < right { 1 } else { 0 };
+        }
+    }
+    
+    if let Some(idx) = expr.rfind('+') {
+        if idx > 0 {
+            let left = evaluate_arithmetic_expr(&expr[..idx]);
+            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            return left + right;
+        }
+    }
+    if let Some(idx) = expr.rfind('-') {
+        if idx > 0 {
+            let left = evaluate_arithmetic_expr(&expr[..idx]);
+            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            return left - right;
+        }
+    }
+    if let Some(idx) = expr.rfind('*') {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        return left * right;
+    }
+    if let Some(idx) = expr.rfind('/') {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        if right != 0 {
+            return left / right;
+        }
+        return 0;
+    }
+    if let Some(idx) = expr.rfind('%') {
+        let left = evaluate_arithmetic_expr(&expr[..idx]);
+        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        if right != 0 {
+            return left % right;
+        }
+        return 0;
+    }
+    
+    if expr.starts_with('(') && expr.ends_with(')') {
+        return evaluate_arithmetic_expr(&expr[1..expr.len()-1]);
+    }
+    
+    if let Some(stripped) = expr.strip_prefix('-') {
+        return -evaluate_arithmetic_expr(stripped);
+    }
+    
+    expr.parse().unwrap_or(0)
+}
+
+fn evaluate_cstyle_arith_expr(expr: &str, executor: &mut Executor) -> i64 {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return 0;
+    }
+    
+    let exprs: Vec<&str> = expr.split(',').collect();
+    if exprs.len() > 1 {
+        let mut result = 0;
+        for e in exprs {
+            result = evaluate_cstyle_arith_single(e.trim(), executor);
+        }
+        return result;
+    }
+    
+    evaluate_cstyle_arith_single(expr, executor)
+}
+
+fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return 0;
+    }
+    
+    if expr.starts_with("++") {
+        let var = &expr[2..].trim();
+        let current = get_var_as_i64(var, executor);
+        let new_val = current + 1;
+        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        return new_val;
+    }
+    if expr.starts_with("--") {
+        let var = &expr[2..].trim();
+        let current = get_var_as_i64(var, executor);
+        let new_val = current - 1;
+        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        return new_val;
+    }
+    
+    if expr.ends_with("++") {
+        let var = expr[..expr.len()-2].trim();
+        let current = get_var_as_i64(var, executor);
+        executor.context_mut().set_var(var.to_string(), (current + 1).to_string());
+        return current;
+    }
+    if expr.ends_with("--") {
+        let var = expr[..expr.len()-2].trim();
+        let current = get_var_as_i64(var, executor);
+        executor.context_mut().set_var(var.to_string(), (current - 1).to_string());
+        return current;
+    }
+    
+    if let Some(idx) = expr.find("+=") {
+        let var = expr[..idx].trim();
+        let val_expr = expr[idx+2..].trim();
+        let current = get_var_as_i64(var, executor);
+        let delta = evaluate_cstyle_arith_value(val_expr, executor);
+        let new_val = current + delta;
+        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        return new_val;
+    }
+    if let Some(idx) = expr.find("-=") {
+        let var = expr[..idx].trim();
+        let val_expr = expr[idx+2..].trim();
+        let current = get_var_as_i64(var, executor);
+        let delta = evaluate_cstyle_arith_value(val_expr, executor);
+        let new_val = current - delta;
+        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        return new_val;
+    }
+    if let Some(idx) = expr.find("*=") {
+        let var = expr[..idx].trim();
+        let val_expr = expr[idx+2..].trim();
+        let current = get_var_as_i64(var, executor);
+        let factor = evaluate_cstyle_arith_value(val_expr, executor);
+        let new_val = current * factor;
+        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        return new_val;
+    }
+    if let Some(idx) = expr.find("/=") {
+        let var = expr[..idx].trim();
+        let val_expr = expr[idx+2..].trim();
+        let current = get_var_as_i64(var, executor);
+        let divisor = evaluate_cstyle_arith_value(val_expr, executor);
+        if divisor != 0 {
+            let new_val = current / divisor;
+            executor.context_mut().set_var(var.to_string(), new_val.to_string());
+            return new_val;
+        }
+        return 0;
+    }
+    
+    if let Some(idx) = expr.find('=') {
+        if idx > 0 && !matches!(expr.chars().nth(idx.saturating_sub(1)), Some('!') | Some('<') | Some('>') | Some('=')) 
+            && !matches!(expr.chars().nth(idx+1), Some('=')) {
+            let var = expr[..idx].trim();
+            let val_expr = expr[idx+1..].trim();
+            let new_val = evaluate_cstyle_arith_value(val_expr, executor);
+            executor.context_mut().set_var(var.to_string(), new_val.to_string());
+            return new_val;
+        }
+    }
+    
+    evaluate_cstyle_arith_value(expr, executor)
+}
+
+fn evaluate_cstyle_arith_value(expr: &str, executor: &Executor) -> i64 {
+    let expanded = expand_arithmetic_vars(expr, executor);
+    evaluate_arithmetic_expr(&expanded)
+}
+
+fn get_var_as_i64(var: &str, executor: &Executor) -> i64 {
+    executor.context().get_var_or_env(var)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
+async fn execute_cstyle_for_loop(
+    cstyle_for: &colony_parser::CStyleForStatement,
+    executor: &mut Executor,
+) -> i32 {
+    if let Some(ref init) = cstyle_for.init {
+        evaluate_cstyle_arith_expr(init, executor);
+    }
+    
+    let mut last_exit = 0;
+    
+    loop {
+        if let Some(ref cond) = cstyle_for.condition {
+            let cond_result = evaluate_cstyle_arith_value(cond, executor);
+            if cond_result == 0 {
+                break;
+            }
+        }
+        
+        for stmt in &cstyle_for.body {
+            if let Statement::SimpleCommand(cmd) = stmt {
+                if let Some(name) = cmd.name.as_literal() {
+                    match name {
+                        "break" => return last_exit,
+                        "continue" => {
+                            if let Some(ref update) = cstyle_for.update {
+                                evaluate_cstyle_arith_expr(update, executor);
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            
+            last_exit = execute_statement_for_code(stmt, executor).await;
+        }
+        
+        if let Some(ref update) = cstyle_for.update {
+            evaluate_cstyle_arith_expr(update, executor);
+        }
+    }
+    
+    last_exit
+}
+
+async fn execute_cstyle_for_loop_with_control(
+    cstyle_for: &colony_parser::CStyleForStatement,
+    executor: &mut Executor,
+) -> i32 {
+    if let Some(ref init) = cstyle_for.init {
+        evaluate_cstyle_arith_expr(init, executor);
+    }
+    
+    let mut last_exit = 0;
+    
+    loop {
+        if let Some(ref cond) = cstyle_for.condition {
+            let cond_result = evaluate_cstyle_arith_value(cond, executor);
+            if cond_result == 0 {
+                break;
+            }
+        }
+        
+        let mut should_break = false;
+        let mut should_continue = false;
+        
+        for stmt in &cstyle_for.body {
+            let (code, flow) = execute_statement_with_control(stmt, executor).await;
+            last_exit = code;
+            
+            match flow {
+                ControlFlow::Break => {
+                    should_break = true;
+                    break;
+                }
+                ControlFlow::Continue => {
+                    should_continue = true;
+                    break;
+                }
+                ControlFlow::Return | ControlFlow::Exit => {
+                    should_break = true;
+                    break;
+                }
+                ControlFlow::Normal => {}
+            }
+        }
+        
+        if should_break {
+            break;
+        }
+        
+        if let Some(ref update) = cstyle_for.update {
+            evaluate_cstyle_arith_expr(update, executor);
+        }
+        
+        if should_continue {
+            continue;
+        }
+    }
+    
+    last_exit
+}
+
 /// Execute a for loop with break/continue support
 async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
     use colony_expand::Expander;
@@ -753,6 +1354,9 @@ fn execute_statement_with_control<'a>(
         Statement::For(for_stmt) => {
             (execute_for_loop_with_control(for_stmt, executor).await, ControlFlow::Normal)
         }
+        Statement::CStyleFor(cstyle_for) => {
+            (execute_cstyle_for_loop_with_control(cstyle_for, executor).await, ControlFlow::Normal)
+        }
         Statement::If(if_stmt) => {
             execute_if_with_control(if_stmt, executor).await
         }
@@ -789,6 +1393,14 @@ fn execute_statement_with_control<'a>(
         Statement::VarDecl(_) | Statement::ProcDef(_) => {
             eprintln!("This declaration not yet supported");
             (1, ControlFlow::Normal)
+        }
+        Statement::Conditional(cond_cmd) => {
+            let result = evaluate_conditional(&cond_cmd.expr, executor);
+            (if result { 0 } else { 1 }, ControlFlow::Normal)
+        }
+        Statement::Arithmetic(arith_cmd) => {
+            let result = evaluate_arithmetic_command(&arith_cmd.expr, executor);
+            (if result != 0 { 0 } else { 1 }, ControlFlow::Normal)
         }
         Statement::Empty => (0, ControlFlow::Normal),
     }
@@ -884,6 +1496,9 @@ fn _old_execute_statement_for_code<'a>(
         Statement::For(for_stmt) => {
             execute_for_loop(for_stmt, executor).await
         }
+        Statement::CStyleFor(cstyle_for) => {
+            execute_cstyle_for_loop(cstyle_for, executor).await
+        }
         Statement::If(if_stmt) => {
             execute_if_statement(if_stmt, executor).await
         }
@@ -907,6 +1522,12 @@ fn _old_execute_statement_for_code<'a>(
         Statement::VarDecl(_) | Statement::ProcDef(_) => {
             eprintln!("This declaration not yet supported");
             1
+        }
+        Statement::Conditional(cond_cmd) => {
+            if evaluate_conditional(&cond_cmd.expr, executor) { 0 } else { 1 }
+        }
+        Statement::Arithmetic(arith_cmd) => {
+            if evaluate_arithmetic_command(&arith_cmd.expr, executor) != 0 { 0 } else { 1 }
         }
         Statement::Empty => 0,
     }

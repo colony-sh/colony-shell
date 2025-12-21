@@ -332,8 +332,10 @@ impl Expander {
             }
 
             WordPart::CommandSubRaw(cmd_str) => {
-                if let Some(ref executor) = self.command_executor {
-                    match colony_parser::pest_api::parse_statement(cmd_str) {
+                let trimmed_cmd = cmd_str.trim();
+                if trimmed_cmd.is_empty() {
+                } else if let Some(ref executor) = self.command_executor {
+                    match colony_parser::pest_api::parse_statement(trimmed_cmd) {
                         Ok(stmt) => {
                             match executor(&stmt, &mut self.context) {
                                 Ok(output) => {

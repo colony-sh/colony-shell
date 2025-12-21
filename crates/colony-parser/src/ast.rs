@@ -31,10 +31,18 @@ pub enum Statement {
     Case(CaseStatement),
     /// for/do/done
     For(ForStatement),
+    /// for ((init; cond; update))
+    CStyleFor(CStyleForStatement),
     /// while/do/done
     While(WhileStatement),
     /// until/do/done
     Until(UntilStatement),
+
+    // === Bash Extended Commands ===
+    /// [[ expression ]] - Extended conditional
+    Conditional(ConditionalCommand),
+    /// (( expression )) - Arithmetic command
+    Arithmetic(ArithmeticCommand),
 
     // === Declarations (Colony) ===
     /// var x = value
@@ -62,8 +70,11 @@ impl Statement {
             Statement::If(i) => &i.span,
             Statement::Case(c) => &c.span,
             Statement::For(f) => &f.span,
+            Statement::CStyleFor(f) => &f.span,
             Statement::While(w) => &w.span,
             Statement::Until(u) => &u.span,
+            Statement::Conditional(c) => &c.span,
+            Statement::Arithmetic(a) => &a.span,
             Statement::VarDecl(v) => &v.span,
             Statement::FunctionDef(f) => &f.span,
             Statement::ProcDef(p) => &p.span,
@@ -338,6 +349,14 @@ pub enum VarModifier {
         offset: i64,
         length: Option<usize>,
     },
+    /// ${var#pattern} - remove shortest prefix match
+    StripPrefix { pattern: Box<Word> },
+    /// ${var##pattern} - remove longest prefix match
+    StripPrefixGreedy { pattern: Box<Word> },
+    /// ${var%pattern} - remove shortest suffix match
+    StripSuffix { pattern: Box<Word> },
+    /// ${var%%pattern} - remove longest suffix match
+    StripSuffixGreedy { pattern: Box<Word> },
 }
 
 /// if/elif/else/fi
@@ -390,12 +409,28 @@ pub enum CaseTerminator {
     Continue,
 }
 
-/// for loop
+/// for loop (traditional: for var in words)
 #[derive(Clone, Debug)]
 pub struct ForStatement {
     pub var: String,
     pub words: Vec<Word>,
     pub body: Vec<Statement>,
+    pub redirects: Vec<Redirect>,
+    pub span: Span,
+}
+
+/// C-style for loop: for ((init; cond; update)); do body; done
+#[derive(Clone, Debug)]
+pub struct CStyleForStatement {
+    /// Initialization expression (e.g., "i=0" or "i=0, j=10")
+    pub init: Option<String>,
+    /// Condition expression (e.g., "i<3" or "i<=5")
+    pub condition: Option<String>,
+    /// Update expression (e.g., "i++" or "i++, j--")
+    pub update: Option<String>,
+    /// Loop body
+    pub body: Vec<Statement>,
+    /// Redirections applied to the loop
     pub redirects: Vec<Redirect>,
     pub span: Span,
 }
@@ -415,6 +450,112 @@ pub struct UntilStatement {
     pub condition: Condition,
     pub body: Vec<Statement>,
     pub redirects: Vec<Redirect>,
+    pub span: Span,
+}
+
+/// [[ expression ]] - Extended conditional command
+#[derive(Clone, Debug)]
+pub struct ConditionalCommand {
+    pub expr: CondExpr,
+    pub span: Span,
+}
+
+/// Conditional expression inside [[ ]]
+#[derive(Clone, Debug)]
+pub enum CondExpr {
+    And(Box<CondExpr>, Box<CondExpr>),
+    Or(Box<CondExpr>, Box<CondExpr>),
+    Not(Box<CondExpr>),
+    Binary {
+        left: String,
+        op: CondBinaryOp,
+        right: String,
+    },
+    Unary {
+        op: CondUnaryOp,
+        arg: String,
+    },
+    String(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CondBinaryOp {
+    /// == or = (string equality, supports glob patterns in [[ ]])
+    Eq,
+    /// !=
+    Ne,
+    /// =~ (regex match)
+    Match,
+    /// < (string less than)
+    Lt,
+    /// > (string greater than)
+    Gt,
+    /// -eq (integer equal)
+    IntEq,
+    /// -ne (integer not equal)
+    IntNe,
+    /// -lt (integer less than)
+    IntLt,
+    /// -le (integer less or equal)
+    IntLe,
+    /// -gt (integer greater than)
+    IntGt,
+    /// -ge (integer greater or equal)
+    IntGe,
+    /// -nt (file newer than)
+    NewerThan,
+    /// -ot (file older than)
+    OlderThan,
+    /// -ef (same file)
+    SameFile,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CondUnaryOp {
+    /// -n (non-zero length)
+    NonZeroLen,
+    /// -z (zero length)
+    ZeroLen,
+    /// -f (regular file)
+    IsFile,
+    /// -d (directory)
+    IsDir,
+    /// -e (exists)
+    Exists,
+    /// -r (readable)
+    Readable,
+    /// -w (writable)
+    Writable,
+    /// -x (executable)
+    Executable,
+    /// -s (non-empty file)
+    NonEmpty,
+    /// -L or -h (symbolic link)
+    IsSymlink,
+    /// -p (named pipe)
+    IsPipe,
+    /// -S (socket)
+    IsSocket,
+    /// -b (block device)
+    IsBlock,
+    /// -c (character device)
+    IsChar,
+    /// -t (terminal)
+    IsTerminal,
+    /// -O (owned by euid)
+    OwnedByEuid,
+    /// -G (owned by egid)
+    OwnedByEgid,
+    /// -N (modified since read)
+    ModifiedSinceRead,
+    /// -v (variable is set)
+    VarIsSet,
+}
+
+/// (( expression )) - Arithmetic command
+#[derive(Clone, Debug)]
+pub struct ArithmeticCommand {
+    pub expr: String,
     pub span: Span,
 }
 
