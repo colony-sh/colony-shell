@@ -2572,7 +2572,7 @@ mod tests {
     fn test_build_for_statement() {
         // TODO: Fix word-list based for loops in grammar
         // For now, test C-style which works
-        let source = "for (;;) { echo hello }";
+        let source = "for ((;;)); do echo hello; done";
         let pairs = ColonyParser::parse(Rule::ForStatement, source).unwrap();
         let result = AstBuilder::build_for_statement(pairs.into_iter().next().unwrap());
 

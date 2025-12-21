@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     fn test_parse_for_loop() {
-        let source = "for (;;) { echo hello }";
+        let source = "for ((;;)); do echo hello; done";
         let result = ColonyParser::parse(Rule::ForStatement, source);
         assert!(result.is_ok(), "Failed to parse C-style for loop: {:?}", result.err());
     }

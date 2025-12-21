@@ -103,6 +103,7 @@ pub fn execute_and_capture(
 /// Returns an exit code which the child should exit with.
 fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) -> i32 {
     use crate::JobTable;
+    use colony_expand::Expander;
     use std::io::Write;
 
     match stmt {
@@ -111,32 +112,58 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
         }
 
         Statement::SimpleCommand(cmd) => {
+            let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+                execute_and_capture(stmt, ctx)
+            });
+            
+            let name_fields = match expander.expand_word(&cmd.name) {
+                Ok(fields) if !fields.is_empty() => fields,
+                _ => return 1,
+            };
+            let command_name = &name_fields[0].text;
+            
+            if let Some(func_def) = context.get_function(command_name).cloned() {
+                let mut args = Vec::new();
+                for arg_word in &cmd.args {
+                    if let Ok(fields) = expander.expand_word(arg_word) {
+                        for field in fields {
+                            args.push(field.text);
+                        }
+                    }
+                }
+                
+                context.set_positional_params(args);
+                
+                let mut last_exit = 0;
+                for body_stmt in &func_def.body {
+                    last_exit = execute_statement_in_child(body_stmt, context);
+                    context.set_last_exit_status(last_exit);
+                }
+                return last_exit;
+            }
 
-            // Check if it's a builtin
             let jobs = JobTable::new();
             let tuple_space = TupleSpace::new();
             let mut channels = ChannelManager::new();
 
             if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels)
             {
-                // Flush stdout after builtin (builtins use println! which is buffered)
                 let _ = std::io::stdout().flush();
 
                 match result {
                     Ok(builtin_result) => {
                         builtin_result.exit_code()
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         1
                     }
                 }
             } else {
-                // External command - call synchronous helper
                 match execute_command_in_child_blocking(cmd, context) {
                     Ok(status) => {
                         status.code()
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         1
                     }
                 }
@@ -144,7 +171,6 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
         }
 
         Statement::Pipeline(pipeline) => {
-            // Execute pipeline synchronously
             match execute_pipeline_in_child_blocking(pipeline, context) {
                 Ok(status) => status.code(),
                 Err(_) => 1,
@@ -152,17 +178,15 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
         }
 
         Statement::List(list) => {
-            // Execute first command
             let mut last_code = execute_statement_in_child(&list.first, context);
 
-            // Execute rest with operators
             for (op, stmt) in &list.rest {
                 use colony_parser::ListOp;
                 let should_run = match op {
-                    ListOp::Semi => true,                // Always run
-                    ListOp::And => last_code == 0,       // Run if previous succeeded
-                    ListOp::Or => last_code != 0,        // Run if previous failed
-                    ListOp::Background => true,          // Run in background (ignore for now)
+                    ListOp::Semi => true,
+                    ListOp::And => last_code == 0,
+                    ListOp::Or => last_code != 0,
+                    ListOp::Background => true,
                 };
 
                 if should_run {
@@ -247,14 +271,43 @@ fn execute_command_in_child_blocking(
 /// Execute a pipeline in child process (blocking, no tokio)
 fn execute_pipeline_in_child_blocking(
     pipeline: &colony_parser::Pipeline,
-    context: &ExpansionContext,
+    context: &mut ExpansionContext,
 ) -> Result<crate::ExitStatus> {
-
-    // For command substitution, we can just execute the first command
-    // and ignore piping complexity (the child process will exec anyway)
+    use colony_expand::Expander;
+    
     if let Some(first) = pipeline.elements.first() {
         if let colony_parser::Statement::SimpleCommand(cmd) = &*first.command {
-            execute_command_in_child_blocking(cmd, &mut context.clone())
+            let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+                execute_and_capture(stmt, ctx)
+            });
+            
+            let name_fields = match expander.expand_word(&cmd.name) {
+                Ok(fields) if !fields.is_empty() => fields,
+                _ => return Err(crate::ExecutionError::CommandNotFound("<empty>".to_string())),
+            };
+            let command_name = &name_fields[0].text;
+            
+            if let Some(func_def) = context.get_function(command_name).cloned() {
+                let mut args = Vec::new();
+                for arg_word in &cmd.args {
+                    if let Ok(fields) = expander.expand_word(arg_word) {
+                        for field in fields {
+                            args.push(field.text);
+                        }
+                    }
+                }
+                
+                context.set_positional_params(args);
+                
+                let mut last_exit = 0;
+                for body_stmt in &func_def.body {
+                    last_exit = execute_statement_in_child(body_stmt, context);
+                    context.set_last_exit_status(last_exit);
+                }
+                return Ok(crate::ExitStatus::new(last_exit));
+            }
+            
+            execute_command_in_child_blocking(cmd, context)
         } else {
             Err(crate::ExecutionError::CommandNotFound("<complex>".to_string()))
         }
@@ -309,5 +362,29 @@ mod tests {
         // Should capture "world\n"
         assert!(!output.is_empty(), "Output should not be empty");
         assert!(output.contains("world"), "Output should contain 'world', got: {:?}", output);
+    }
+
+    #[test]
+    fn test_function_in_command_substitution() {
+        use colony_parser::{FunctionDef, Span};
+        
+        let mut context = ExpansionContext::new();
+        
+        let func_body = pest_api::parse_statement("echo hello_from_func").unwrap();
+        let func_def = FunctionDef {
+            name: "myfunc".to_string(),
+            body: vec![func_body],
+            span: Span::DUMMY,
+        };
+        context.define_function("myfunc".to_string(), func_def);
+        
+        let stmt = pest_api::parse_statement("myfunc").unwrap();
+        let output = execute_and_capture(&stmt, &mut context).unwrap();
+        
+        assert!(
+            output.contains("hello_from_func"),
+            "Function output not captured. Got: {:?}",
+            output
+        );
     }
 }
