@@ -73,6 +73,7 @@ pub struct ExpansionContext {
     aliases: HashMap<String, String>,
     functions: HashMap<String, colony_parser::FunctionDef>,
     positional_params: Vec<String>,
+    shell_name: String,
     cwd: PathBuf,
     ifs: String,
     home: Option<PathBuf>,
@@ -93,6 +94,7 @@ impl ExpansionContext {
             aliases: HashMap::new(),
             functions: HashMap::new(),
             positional_params: Vec::new(),
+            shell_name: "colony".to_string(),
             last_exit_status: 0,
             cwd,
             ifs: " \t\n".to_string(),
@@ -128,6 +130,7 @@ impl ExpansionContext {
     /// Get variable or environment variable as string
     pub fn get_var_or_env(&self, name: &str) -> Option<String> {
         match name {
+            "0" => return Some(self.shell_name.clone()),
             "HOME" => return self.home.as_ref().map(|p| p.display().to_string()),
             "PWD" => return Some(self.cwd.display().to_string()),
             "IFS" => return Some(self.ifs.clone()),
@@ -267,11 +270,15 @@ impl ExpansionContext {
         self.positional_params = params;
     }
 
+    /// Set shell name ($0)
+    pub fn set_shell_name(&mut self, name: String) {
+        self.shell_name = name;
+    }
+
     /// Get positional parameter by index (1-based: $1 is index 0)
     pub fn get_positional_param(&self, index: usize) -> Option<&str> {
         if index == 0 {
-            // $0 is shell name, not a parameter
-            None
+            Some(&self.shell_name)
         } else {
             self.positional_params.get(index - 1).map(|s| s.as_str())
         }

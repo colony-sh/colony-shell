@@ -350,8 +350,8 @@ pub enum VarModifier {
     Indices,
     /// ${arr[@]:offset} or ${arr[@]:offset:length}
     Slice {
-        offset: i64,
-        length: Option<usize>,
+        offset: Box<Word>,
+        length: Option<Box<Word>>,
     },
     /// ${var#pattern} - remove shortest prefix match
     StripPrefix { pattern: Box<Word> },

@@ -240,13 +240,14 @@ async fn main() -> Result<()> {
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
 
-    // Check for -c flag (execute command and exit)
     if args.len() >= 3 && args[1] == "-c" {
-        // Execute inline command
         let command = &args[2];
 
-        // Initialize executor (no agent needed for -c mode)
-        let context = ExpansionContext::new();
+        let mut context = ExpansionContext::new();
+        if args.len() > 3 {
+            context.set_positional_params(args[3..].to_vec());
+        }
+
         let mut executor = Executor::new(context);
 
         // Execute the command and exit with its status

@@ -1126,7 +1126,10 @@ impl AstBuilder {
         for inner in pair.into_inner() {
             match inner.as_rule() {
                 Rule::Statement => {
-                    body.push(Self::build_statement(inner)?);
+                    // Statement is a wrapper rule - descend into it
+                    if let Some(stmt_inner) = inner.into_inner().next() {
+                        body.push(Self::build_statement(stmt_inner)?);
+                    }
                 }
                 Rule::Redirect => {
                     redirects.push(Self::build_redirect(inner)?);
@@ -2014,32 +2017,24 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // VariableRef = VarPrefix? ~ Identifier ~ ArraySubscript? ~ VarModifier?
         let mut prefix = None;
         let mut subscript = None;
         let mut modifier = None;
 
-        // First part might be prefix or identifier
         let first = inner.next().ok_or(BuildError::MissingVariableName)?;
 
         let name = if first.as_rule() == Rule::VarPrefix {
-            // Parse prefix
             prefix = Some(match first.as_str() {
                 "#" => VarPrefix::Length,
                 "!" => VarPrefix::Indices,
                 _ => return Err(BuildError::InvalidVarPrefix(first.as_str().to_string())),
             });
-            // Next must be identifier
-            inner.next()
-                .ok_or(BuildError::MissingVariableName)?
-                .as_str()
-                .to_string()
+            let name_part = inner.next().ok_or(BuildError::MissingVariableName)?;
+            Self::extract_variable_name(name_part)?
         } else {
-            // No prefix, this is the identifier
-            first.as_str().to_string()
+            Self::extract_variable_name(first)?
         };
 
-        // Parse optional subscript and modifier
         while let Some(part) = inner.next() {
             match part.as_rule() {
                 Rule::ArraySubscript => {
@@ -2059,6 +2054,19 @@ impl AstBuilder {
             modifier,
             span,
         })
+    }
+
+    fn extract_variable_name(pair: Pair<Rule>) -> Result<String, BuildError> {
+        match pair.as_rule() {
+            Rule::VariableRefName => {
+                let inner = pair.into_inner().next().ok_or(BuildError::MissingVariableName)?;
+                Self::extract_variable_name(inner)
+            }
+            Rule::Identifier | Rule::VariableName | Rule::PositionalParam => {
+                Ok(pair.as_str().to_string())
+            }
+            _ => Ok(pair.as_str().to_string())
+        }
     }
 
     fn build_array_subscript(pair: Pair<Rule>) -> Result<ArraySubscript, BuildError> {
@@ -2112,19 +2120,27 @@ impl AstBuilder {
             && !text.starts_with(":?") && !text.starts_with(":+") {
             let slice_text = &text[1..];
             let parts: Vec<&str> = slice_text.split(':').collect();
-            let offset: i64 = parts.get(0).and_then(|s| s.parse().ok()).unwrap_or(0);
-            let length: Option<usize> = parts.get(1).and_then(|s| s.parse().ok());
-            return Ok(VarModifier::Slice { offset, length });
+            let offset_str = parts.get(0).copied().unwrap_or("0");
+            let offset = Word { parts: vec![WordPart::Literal(offset_str.to_string())], span: Span::DUMMY };
+            let length = parts.get(1).map(|s| {
+                Word { parts: vec![WordPart::Literal(s.to_string())], span: Span::DUMMY }
+            });
+            return Ok(VarModifier::Slice { offset: Box::new(offset), length: length.map(Box::new) });
         }
 
         let first = inner.next();
         
         let word_value = if let Some(first) = first {
             if first.as_rule() == Rule::SliceOffset {
-                let offset: i64 = first.as_str().parse().unwrap_or(0);
-                let length: Option<usize> = inner.next()
-                    .and_then(|p| if p.as_rule() == Rule::SliceLength { p.as_str().parse().ok() } else { None });
-                return Ok(VarModifier::Slice { offset, length });
+                let offset_word = Self::build_slice_value(first)?;
+                let length_word = inner.next()
+                    .filter(|p| p.as_rule() == Rule::SliceLength)
+                    .map(|p| Self::build_slice_value(p))
+                    .transpose()?;
+                return Ok(VarModifier::Slice { 
+                    offset: Box::new(offset_word), 
+                    length: length_word.map(Box::new)
+                });
             }
             Self::build_word(first)?
         } else {
@@ -2178,6 +2194,28 @@ impl AstBuilder {
             }),
             _ => Err(BuildError::InvalidVarModifier(text.to_string())),
         }
+    }
+
+    fn build_slice_value(pair: Pair<Rule>) -> Result<Word, BuildError> {
+        let text = pair.as_str().to_string();
+        let mut parts = Vec::new();
+        for inner in pair.into_inner() {
+            match inner.as_rule() {
+                Rule::DollarExpansion => {
+                    parts.push(Self::build_dollar_expansion(inner)?);
+                }
+                _ => {
+                    let inner_text = inner.as_str();
+                    if !inner_text.is_empty() {
+                        parts.push(WordPart::Literal(inner_text.to_string()));
+                    }
+                }
+            }
+        }
+        if parts.is_empty() {
+            parts.push(WordPart::Literal(text));
+        }
+        Ok(Word { parts, span: Span::DUMMY })
     }
 
     fn build_quoted_string(pair: Pair<Rule>) -> Result<WordPart, BuildError> {

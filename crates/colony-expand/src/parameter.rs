@@ -15,6 +15,16 @@
 use crate::{expand_tilde, ExpansionContext, ExpansionError, Result};
 use colony_parser::{VarModifier, VariableRef, Word, WordPart};
 
+fn expand_word_to_i64(word: &Word, context: &ExpansionContext) -> i64 {
+    let expanded = expand_simple_word(word, context);
+    expanded.trim().parse().unwrap_or(0)
+}
+
+fn expand_word_to_usize(word: &Word, context: &ExpansionContext) -> usize {
+    let expanded = expand_simple_word(word, context);
+    expanded.trim().parse().unwrap_or(0)
+}
+
 fn expand_simple_word(word: &Word, context: &ExpansionContext) -> String {
     let mut result = String::new();
     for part in &word.parts {
@@ -56,6 +66,17 @@ pub enum ExpandedValue {
     Multiple(Vec<String>),
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ExpansionSideEffect {
+    pub assignment: Option<(String, String)>,
+}
+
+impl ExpansionSideEffect {
+    pub fn with_assignment(name: String, value: String) -> Self {
+        Self { assignment: Some((name, value)) }
+    }
+}
+
 impl ExpandedValue {
     pub fn as_single(&self) -> String {
         match self {
@@ -93,6 +114,9 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
     if let Some(prefix) = var_ref.prefix {
         match prefix {
             VarPrefix::Length => {
+                if var_ref.name == "@" || var_ref.name == "*" {
+                    return Ok(context.positional_param_count().to_string());
+                }
                 return match (&variable, &var_ref.subscript) {
                     (Some(crate::Variable::Array(arr)), Some(colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star)) => {
                         Ok(arr.len().to_string())
@@ -106,7 +130,12 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                     (Some(crate::Variable::String(s)), _) => {
                         Ok(s.len().to_string())
                     }
-                    (None, _) => Ok("0".to_string()),
+                    (None, _) => {
+                        match &var_value {
+                            Some(s) => Ok(s.len().to_string()),
+                            None => Ok("0".to_string()),
+                        }
+                    }
                     _ => Ok("0".to_string()),
                 };
             }
@@ -199,14 +228,15 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
             }
             colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star => {
                 if let Some(VarModifier::Slice { offset, length }) = &var_ref.modifier {
+                    let offset_val = expand_word_to_i64(offset, context);
                     let len = array.len() as i64;
-                    let start = if *offset < 0 {
-                        (len + *offset).max(0) as usize
+                    let start = if offset_val < 0 {
+                        (len + offset_val).max(0) as usize
                     } else {
-                        (*offset as usize).min(array.len())
+                        (offset_val as usize).min(array.len())
                     };
                     let end = match length {
-                        Some(l) => (start + l).min(array.len()),
+                        Some(l) => (start + expand_word_to_usize(l, context)).min(array.len()),
                         None => array.len(),
                     };
                     return Ok(array[start..end].join(" "));
@@ -307,16 +337,35 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
         }
 
         Some(VarModifier::Slice { offset, length }) => {
+            let offset_val = expand_word_to_i64(offset, context);
+            
+            if var_ref.name == "@" || var_ref.name == "*" {
+                let params = context.get_all_positional_params();
+                let len = params.len() as i64;
+                let positional_start = if offset_val < 0 {
+                    (len + offset_val).max(0) as usize
+                } else if offset_val == 0 {
+                    0
+                } else {
+                    ((offset_val - 1) as usize).min(params.len())
+                };
+                let end = match length {
+                    Some(l) => (positional_start + expand_word_to_usize(l, context)).min(params.len()),
+                    None => params.len(),
+                };
+                return Ok(params[positional_start..end].join(" "));
+            }
+            
             match variable {
                 Some(crate::Variable::Array(arr)) => {
                     let len = arr.len() as i64;
-                    let start = if *offset < 0 {
-                        (len + *offset).max(0) as usize
+                    let start = if offset_val < 0 {
+                        (len + offset_val).max(0) as usize
                     } else {
-                        (*offset as usize).min(arr.len())
+                        (offset_val as usize).min(arr.len())
                     };
                     let end = match length {
-                        Some(l) => (start + l).min(arr.len()),
+                        Some(l) => (start + expand_word_to_usize(l, context)).min(arr.len()),
                         None => arr.len(),
                     };
                     Ok(arr[start..end].join(" "))
@@ -324,20 +373,20 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                 Some(crate::Variable::AssocArray(map)) => {
                     let values: Vec<_> = map.values().cloned().collect();
                     let len = values.len() as i64;
-                    let start = if *offset < 0 { (len + *offset).max(0) as usize } else { (*offset as usize).min(values.len()) };
-                    let end = match length { Some(l) => (start + l).min(values.len()), None => values.len() };
+                    let start = if offset_val < 0 { (len + offset_val).max(0) as usize } else { (offset_val as usize).min(values.len()) };
+                    let end = match length { Some(l) => (start + expand_word_to_usize(l, context)).min(values.len()), None => values.len() };
                     Ok(values[start..end].join(" "))
                 }
                 Some(crate::Variable::String(s)) => {
                     let chars: Vec<char> = s.chars().collect();
                     let len = chars.len() as i64;
-                    let start = if *offset < 0 {
-                        (len + *offset).max(0) as usize
+                    let start = if offset_val < 0 {
+                        (len + offset_val).max(0) as usize
                     } else {
-                        (*offset as usize).min(chars.len())
+                        (offset_val as usize).min(chars.len())
                     };
                     let end = match length {
-                        Some(l) => (start + l).min(chars.len()),
+                        Some(l) => (start + expand_word_to_usize(l, context)).min(chars.len()),
                         None => chars.len(),
                     };
                     Ok(chars[start..end].iter().collect())

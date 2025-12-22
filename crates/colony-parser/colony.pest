@@ -906,7 +906,11 @@ DollarCommandSubChar = @{
 }
 
 VariableRef = {
-    VarPrefix? ~ Identifier ~ ArraySubscript? ~ VarModifier?
+    VarPrefix? ~ VariableRefName ~ ArraySubscript? ~ VarModifier?
+}
+
+VariableRefName = {
+    Identifier | PositionalParam
 }
 
 // Prefix modifiers that come before identifier
@@ -952,10 +956,9 @@ VarModifier = {
 }
 
 // Slice offset (simple integer or expression)
-SliceOffset = @{ "-"? ~ ASCII_DIGIT+ }
+SliceOffset = { "-"? ~ (DollarExpansion | ASCII_DIGIT+) }
 
-// Slice length (simple integer)
-SliceLength = @{ ASCII_DIGIT+ }
+SliceLength = { DollarExpansion | ASCII_DIGIT+ }
 
 Slice = {
     Expression ~ (":" ~ Expression)?
