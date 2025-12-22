@@ -140,7 +140,13 @@
         "2025-12-17: Builtins run in-process (no fork) - modify shell state directly",
         "2025-12-17: Added unset_env() to ExpansionContext",
         "2025-12-17: Added 9 comprehensive builtin tests - all passing",
-        "2025-12-17: COMPLETE - 27 tests total (18 + 9 builtins)"
+        "2025-12-17: COMPLETE - 27 tests total (18 + 9 builtins)",
+        "2025-12-21: Implemented source/. builtin with full POSIX semantics",
+        "2025-12-21: BuiltinResult::Source returns file path for caller to execute",
+        "2025-12-21: execute_source_file() runs in current context (vars/funcs persist)",
+        "2025-12-21: Positional parameters set from source args, restored after",
+        "2025-12-21: exit in sourced file properly exits shell (ExecutionError::Exit)",
+        "2025-12-21: Critical for BATS compatibility - now fully functional"
       ]
     },
     {

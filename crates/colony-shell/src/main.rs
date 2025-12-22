@@ -1330,6 +1330,7 @@ fn execute_statement_with_control<'a>(
 
             match executor.execute_simple_command(cmd).await {
                 Ok(status) => (status.code(), ControlFlow::Normal),
+                Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
                 Err(e) => {
                     eprintln!("execution error: {}", e);
                     (1, ControlFlow::Normal)
@@ -1342,6 +1343,7 @@ fn execute_statement_with_control<'a>(
             }
             match executor.execute_pipeline(&pipeline).await {
                 Ok(status) => (status.code(), ControlFlow::Normal),
+                Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
                 Err(e) => {
                     eprintln!("execution error: {}", e);
                     (1, ControlFlow::Normal)
@@ -1365,6 +1367,7 @@ fn execute_statement_with_control<'a>(
                 Ok(code) => (code, ControlFlow::Normal),
                 Err(ExecutionError::Break) => (0, ControlFlow::Break),
                 Err(ExecutionError::Continue) => (0, ControlFlow::Continue),
+                Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
                 Err(e) => {
                     eprintln!("{}", e);
                     (1, ControlFlow::Normal)
@@ -1601,21 +1604,23 @@ fn _old_execute_statement_for_code<'a>(
 
 /// Execute a shell command and return its exit code (for -c mode)
 async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32 {
-    // Parse with pest - use parse() not parse_statement() to handle multiple statements
     use colony_parser::pest_api::parse;
 
     let program = match parse(line) {
         Ok(program) => program,
         Err(e) => {
             eprintln!("parse error: {}", e);
-            return 2; // Parse error exit code
+            return 2;
         }
     };
 
-    // Execute all statements in sequence
     let mut last_exit = 0;
     for stmt in &program.statements {
-        last_exit = execute_statement_for_code(stmt, executor).await;
+        let (code, flow) = execute_statement_with_control(stmt, executor).await;
+        last_exit = code;
+        if flow == ControlFlow::Exit {
+            return code;
+        }
     }
     last_exit
 }

@@ -23,7 +23,7 @@ mod quote;
 mod context;
 mod brace;
 
-pub use context::{ExpansionContext, Variable};
+pub use context::{ExpansionContext, ShellOptions, Variable};
 pub use tilde::expand_tilde;
 pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
 pub use arithmetic::expand_arithmetic;
@@ -257,6 +257,30 @@ impl Expander {
                 return Ok(None);
             }
             if let WordPart::Variable(var_ref) = &inner_parts[0] {
+                // Handle "$@" - special: each positional param becomes separate quoted field
+                if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() {
+                    let params = self.context.get_all_positional_params();
+                    if params.is_empty() {
+                        // "$@" with no params expands to nothing (not even empty string)
+                        return Ok(Some(Vec::new()));
+                    }
+                    let fields: Vec<Field> = params.iter().map(|s| Field::quoted(s.clone())).collect();
+                    return Ok(Some(fields));
+                }
+                
+                // Handle "$*" - join with first char of IFS
+                if var_ref.name == "*" && var_ref.subscript.is_none() && var_ref.modifier.is_none() {
+                    let params = self.context.get_all_positional_params();
+                    let ifs = self.context.ifs();
+                    let sep = ifs.chars().next().unwrap_or(' ');
+                    let joined: String = params.iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(&sep.to_string());
+                    return Ok(Some(vec![Field::quoted(joined)]));
+                }
+                
+                // Handle "${array[@]}" - each element becomes separate quoted field  
                 if matches!(var_ref.subscript, Some(ArraySubscript::All)) {
                     if let Some(Variable::Array(arr)) = self.context.get_variable(&var_ref.name) {
                         let fields: Vec<Field> = arr.iter().map(|s| Field::quoted(s.clone())).collect();

@@ -1,7 +1,37 @@
 //! Expansion context - provides shell state for expansions
 
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShellOptions {
+    pub errexit: bool,
+    pub nounset: bool,
+    pub xtrace: bool,
+    pub noglob: bool,
+    pub noexec: bool,
+    pub verbose: bool,
+}
+
+impl ShellOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl fmt::Display for ShellOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut flags = String::new();
+        if self.errexit { flags.push('e'); }
+        if self.noglob { flags.push('f'); }
+        if self.noexec { flags.push('n'); }
+        if self.nounset { flags.push('u'); }
+        if self.verbose { flags.push('v'); }
+        if self.xtrace { flags.push('x'); }
+        write!(f, "{}", flags)
+    }
+}
 
 /// Shell variable value
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,9 +59,13 @@ impl Variable {
     }
 }
 
-/// Context for expansion operations
-///
-/// Provides access to shell state: variables, environment, current directory, aliases, functions
+/// Saved state for a local variable
+#[derive(Debug, Clone)]
+pub struct SavedVariable {
+    /// The previous value (None if the variable was unset)
+    pub previous: Option<Variable>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ExpansionContext {
     variables: HashMap<String, Variable>,
@@ -43,6 +77,9 @@ pub struct ExpansionContext {
     ifs: String,
     home: Option<PathBuf>,
     last_exit_status: i32,
+    function_depth: usize,
+    local_vars_stack: Vec<HashMap<String, SavedVariable>>,
+    shell_options: ShellOptions,
 }
 
 impl ExpansionContext {
@@ -58,8 +95,11 @@ impl ExpansionContext {
             positional_params: Vec::new(),
             last_exit_status: 0,
             cwd,
-            ifs: " \t\n".to_string(), // POSIX default IFS
+            ifs: " \t\n".to_string(),
             home,
+            function_depth: 0,
+            local_vars_stack: Vec::new(),
+            shell_options: ShellOptions::new(),
         };
 
         ctx.variables.insert("BASH_VERSINFO".to_string(), Variable::Array(vec![
@@ -94,6 +134,7 @@ impl ExpansionContext {
             "#" => return Some(self.positional_params.len().to_string()),
             "@" | "*" => return Some(self.positional_params.join(" ")),
             "?" => return Some(self.last_exit_status.to_string()),
+            "-" => return Some(self.shell_options.to_string()),
             "BASH_VERSION" => return Some("5.2.0(1)-colony".to_string()),
             "BASH_VERSINFO" => return Some("5".to_string()),
             _ => {}
@@ -252,6 +293,63 @@ impl ExpansionContext {
 
     pub fn last_exit_status(&self) -> i32 {
         self.last_exit_status
+    }
+
+    pub fn shell_options(&self) -> &ShellOptions {
+        &self.shell_options
+    }
+
+    pub fn shell_options_mut(&mut self) -> &mut ShellOptions {
+        &mut self.shell_options
+    }
+
+    pub fn in_function(&self) -> bool {
+        self.function_depth > 0
+    }
+
+    pub fn enter_function(&mut self) {
+        self.function_depth += 1;
+        self.local_vars_stack.push(HashMap::new());
+    }
+
+    pub fn exit_function(&mut self) {
+        if self.function_depth > 0 {
+            if let Some(local_vars) = self.local_vars_stack.pop() {
+                for (name, saved) in local_vars {
+                    match saved.previous {
+                        Some(var) => {
+                            self.variables.insert(name, var);
+                        }
+                        None => {
+                            self.variables.remove(&name);
+                        }
+                    }
+                }
+            }
+            self.function_depth -= 1;
+        }
+    }
+
+    pub fn declare_local(&mut self, name: &str, value: Option<Variable>) {
+        if self.function_depth == 0 {
+            return;
+        }
+
+        if let Some(locals) = self.local_vars_stack.last_mut() {
+            if !locals.contains_key(name) {
+                let previous = self.variables.get(name).cloned();
+                locals.insert(name.to_string(), SavedVariable { previous });
+            }
+        }
+
+        match value {
+            Some(var) => {
+                self.variables.insert(name.to_string(), var);
+            }
+            None => {
+                self.variables.insert(name.to_string(), Variable::String(String::new()));
+            }
+        }
     }
 }
 

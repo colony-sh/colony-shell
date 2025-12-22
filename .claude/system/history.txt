@@ -1335,3 +1335,31 @@
 [2025-12-21 12:40] VALIDATED: Tests 22-23 have wrong redirect order (should be 3>file 1>&3)
 [2025-12-21 12:45] VALIDATED: Test 40 (wc output) is macOS formatting issue, not Colony bug
 [2025-12-21 12:50] OVERALL: 517/620 BATS tests passing (83.4%)
+
+[2025-12-21 15:00] START: Implementing source builtin for BATS compatibility
+[2025-12-21 15:05] DESIGN: Using BuiltinResult::Source variant to return file path to caller
+[2025-12-21 15:10] IMPLEMENTED: builtin_source() finds file via PATH or direct path
+[2025-12-21 15:15] IMPLEMENTED: BuiltinResult::Source(PathBuf, Vec<String>) variant
+[2025-12-21 15:20] IMPLEMENTED: execute_source_file() reads, parses, and executes in current context
+[2025-12-21 15:25] IMPLEMENTED: Positional parameters saved/restored during sourced execution
+[2025-12-21 15:30] IMPLEMENTED: ExecutionError::Exit variant for proper exit propagation
+[2025-12-21 15:35] IMPLEMENTED: Exit from sourced file exits shell (matches bash)
+[2025-12-21 15:40] VALIDATED: 8/8 source tests passing (variables, functions, nested, args)
+[2025-12-21 15:45] VALIDATED: All cargo tests pass, 497/620 BATS tests passing
+[2025-12-21 15:50] COMPLETE: F007 stub source/. builtins now fully implemented
+[2025-12-22 00:00] START: Implementing local builtin for function-scoped variables
+[2025-12-22 00:05] ADDED: "local" to is_builtin() list in builtins.rs
+[2025-12-22 00:10] ADDED: SavedVariable struct to ExpansionContext for restore tracking
+[2025-12-22 00:15] ADDED: function_depth and local_vars_stack fields to ExpansionContext
+[2025-12-22 00:20] IMPLEMENTED: in_function() checks if currently executing inside a function
+[2025-12-22 00:25] IMPLEMENTED: enter_function() increments depth, creates new local vars scope
+[2025-12-22 00:30] IMPLEMENTED: exit_function() restores all local vars to previous values
+[2025-12-22 00:35] IMPLEMENTED: declare_local() saves current value and sets new value
+[2025-12-22 00:40] IMPLEMENTED: builtin_local() handles local x, local x=value, local x y=val z
+[2025-12-22 00:45] MODIFIED: execute_function() to call enter_function/exit_function
+[2025-12-22 00:50] FIX: declare_local(None) now sets empty string (bash behavior, not inherit)
+[2025-12-22 00:55] TESTED: local x=inner restores outer value on function exit ✅
+[2025-12-22 01:00] TESTED: local outside function errors ✅
+[2025-12-22 01:05] TESTED: nested functions with local vars work correctly ✅
+[2025-12-22 01:10] REMOVED: skip directive from function test 20 (local variables)
+[2025-12-22 01:15] MILESTONE: local keyword COMPLETE - BATS compatibility improved

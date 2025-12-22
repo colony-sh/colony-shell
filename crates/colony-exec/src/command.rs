@@ -45,6 +45,7 @@ fn execute_command_blocking(
         return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
     }
     let mut command_name = name_fields[0].text.clone();
+    let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
 
     // 1b. Check for alias expansion
     if let Some(alias_value) = context.get_alias(&command_name) {
@@ -63,6 +64,9 @@ fn execute_command_blocking(
             for alias_arg in &alias_words[1..] {
                 args.push(alias_arg.to_string());
             }
+            
+            // Add extra args from "$@" expansion
+            args.extend(extra_args_from_name.clone());
 
             // Add original command arguments
             for arg_word in &cmd.args {
@@ -84,6 +88,7 @@ fn execute_command_blocking(
 
     // 2. No alias - expand arguments normally
     let mut args = vec![command_name.clone()]; // argv[0] is the program name
+    args.extend(extra_args_from_name);
     for arg_word in &cmd.args {
         let fields = expander.expand_word(arg_word)?;
         for field in fields {

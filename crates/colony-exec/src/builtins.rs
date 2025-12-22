@@ -27,18 +27,19 @@ use std::path::PathBuf;
 /// Result of executing a builtin
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuiltinResult {
-    /// Builtin executed successfully with exit code
     Success(i32),
-    /// Builtin failed with exit code
     Failure(i32),
-    /// Builtin requested shell exit
     Exit(i32),
+    Source(PathBuf, Vec<String>),
 }
 
 impl BuiltinResult {
     pub fn exit_code(&self) -> i32 {
         match self {
-            BuiltinResult::Success(code) | BuiltinResult::Failure(code) | BuiltinResult::Exit(code) => *code,
+            BuiltinResult::Success(code) 
+            | BuiltinResult::Failure(code) 
+            | BuiltinResult::Exit(code) => *code,
+            BuiltinResult::Source(_, _) => 0,
         }
     }
 
@@ -48,6 +49,10 @@ impl BuiltinResult {
 
     pub fn is_exit(&self) -> bool {
         matches!(self, BuiltinResult::Exit(_))
+    }
+    
+    pub fn is_source(&self) -> bool {
+        matches!(self, BuiltinResult::Source(_, _))
     }
 }
 
@@ -60,7 +65,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "[" | "test"
         | ":"
         | "context"
-        | "declare"
+        | "declare" | "local"
         | "true" | "false"
         | "read"
         | "history"
@@ -103,8 +108,8 @@ pub fn execute_builtin(
         return None;
     }
 
-    // Expand arguments
-    let mut args = Vec::new();
+    // Expand arguments - include extra fields from name expansion (e.g., "$@" -> multiple fields)
+    let mut args: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
     for (i, arg_word) in cmd.args.iter().enumerate() {
         let fields = match expander.expand_word(arg_word) {
             Ok(fields) => {
@@ -137,6 +142,7 @@ pub fn execute_builtin(
         ":" => builtin_noop(&args),
         "context" => builtin_context(&args, channels),
         "declare" => builtin_declare(&args, context),
+        "local" => builtin_local(&args, context),
         "true" => builtin_true(),
         "false" => builtin_false(),
         "read" => builtin_read(&args, context),
@@ -351,7 +357,61 @@ fn builtin_recho(args: &[String]) -> Result<BuiltinResult> {
 }
 
 fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    context.set_positional_params(args.to_vec());
+    if args.is_empty() {
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    let mut positional_params: Vec<String> = Vec::new();
+    let mut seen_double_dash = false;
+    let mut processed_any_options = false;
+    
+    for arg in args {
+        if seen_double_dash {
+            positional_params.push(arg.clone());
+            continue;
+        }
+        
+        if arg == "--" {
+            seen_double_dash = true;
+            processed_any_options = true;
+            continue;
+        }
+        
+        if arg.starts_with('-') && arg.len() > 1 && arg != "-" {
+            processed_any_options = true;
+            for c in arg[1..].chars() {
+                match c {
+                    'e' => context.shell_options_mut().errexit = true,
+                    'u' => context.shell_options_mut().nounset = true,
+                    'x' => context.shell_options_mut().xtrace = true,
+                    'f' => context.shell_options_mut().noglob = true,
+                    'n' => context.shell_options_mut().noexec = true,
+                    'v' => context.shell_options_mut().verbose = true,
+                    _ => {}
+                }
+            }
+        } else if arg.starts_with('+') && arg.len() > 1 {
+            processed_any_options = true;
+            for c in arg[1..].chars() {
+                match c {
+                    'e' => context.shell_options_mut().errexit = false,
+                    'u' => context.shell_options_mut().nounset = false,
+                    'x' => context.shell_options_mut().xtrace = false,
+                    'f' => context.shell_options_mut().noglob = false,
+                    'n' => context.shell_options_mut().noexec = false,
+                    'v' => context.shell_options_mut().verbose = false,
+                    _ => {}
+                }
+            }
+        } else {
+            positional_params.push(arg.clone());
+        }
+    }
+    
+    if seen_double_dash || !positional_params.is_empty() {
+        context.set_positional_params(positional_params);
+    }
+    
     Ok(BuiltinResult::Success(0))
 }
 
@@ -450,13 +510,51 @@ fn builtin_unalias(args: &[String], context: &mut ExpansionContext) -> Result<Bu
     Ok(BuiltinResult::Success(0))
 }
 
-/// source/. - Execute commands from file
-///
-/// Usage: source filename
-/// TODO: Implement file reading and execution
-fn builtin_source(_args: &[String], _context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    eprintln!("source: not yet implemented");
-    Ok(BuiltinResult::Failure(1))
+fn builtin_source(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("source: filename argument required");
+        return Ok(BuiltinResult::Failure(2));
+    }
+    
+    let filename = &args[0];
+    let source_args = args[1..].to_vec();
+    
+    let file_path = if filename.contains('/') {
+        PathBuf::from(filename)
+    } else {
+        let path_var = context.get_env("PATH").unwrap_or_default();
+        let mut found_path = None;
+        
+        for dir in path_var.split(':') {
+            let candidate = PathBuf::from(dir).join(filename);
+            if candidate.is_file() {
+                found_path = Some(candidate);
+                break;
+            }
+        }
+        
+        if found_path.is_none() {
+            let cwd_candidate = PathBuf::from(filename);
+            if cwd_candidate.is_file() {
+                found_path = Some(cwd_candidate);
+            }
+        }
+        
+        match found_path {
+            Some(path) => path,
+            None => {
+                eprintln!("source: {}: No such file or directory", filename);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    };
+    
+    if !file_path.is_file() {
+        eprintln!("source: {}: No such file or directory", file_path.display());
+        return Ok(BuiltinResult::Failure(1));
+    }
+    
+    Ok(BuiltinResult::Source(file_path, source_args))
 }
 
 /// fg - Bring job to foreground
@@ -834,6 +932,29 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         }
     }
     
+    Ok(BuiltinResult::Success(0))
+}
+
+fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    if !context.in_function() {
+        eprintln!("local: can only be used in a function");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    if args.is_empty() {
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    for arg in args {
+        if let Some(eq_pos) = arg.find('=') {
+            let name = &arg[..eq_pos];
+            let value = &arg[eq_pos + 1..];
+            context.declare_local(name, Some(Variable::String(value.to_string())));
+        } else {
+            context.declare_local(arg, None);
+        }
+    }
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -1699,14 +1820,12 @@ mod tests {
         let tuple_space = TupleSpace::new();
         let mut channels = ChannelManager::new();
 
-        // Set then unset
         context.set_env("TO_DELETE", "old_value");
 
         let cmd = make_simple_command("unset", vec!["TO_DELETE"]);
         let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
         assert!(result.is_some());
 
-        // Check tuple was emitted with Null
         let pattern = Tuple::pattern(&[
             Value::Str("env_change".to_string()),
             Value::Str("TO_DELETE".to_string()),
@@ -1716,5 +1835,208 @@ mod tests {
 
         let tuple = tuple_space.inp(pattern);
         assert!(tuple.is_some());
+    }
+
+    #[test]
+    fn test_set_option_minus_e_enables_errexit() {
+        let mut context = ExpansionContext::new();
+        
+        assert!(!context.shell_options().errexit);
+        
+        let result = builtin_set(&["-e".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+        
+        assert!(context.shell_options().errexit);
+    }
+
+    #[test]
+    fn test_set_option_plus_e_disables_errexit() {
+        let mut context = ExpansionContext::new();
+        
+        context.shell_options_mut().errexit = true;
+        assert!(context.shell_options().errexit);
+        
+        let result = builtin_set(&["+e".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+        
+        assert!(!context.shell_options().errexit);
+    }
+
+    #[test]
+    fn test_set_option_minus_x_enables_xtrace() {
+        let mut context = ExpansionContext::new();
+        
+        assert!(!context.shell_options().xtrace);
+        
+        let result = builtin_set(&["-x".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.shell_options().xtrace);
+    }
+
+    #[test]
+    fn test_set_option_plus_x_disables_xtrace() {
+        let mut context = ExpansionContext::new();
+        context.shell_options_mut().xtrace = true;
+        
+        let result = builtin_set(&["+x".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(!context.shell_options().xtrace);
+    }
+
+    #[test]
+    fn test_set_combined_options() {
+        let mut context = ExpansionContext::new();
+        
+        assert!(!context.shell_options().errexit);
+        assert!(!context.shell_options().xtrace);
+        
+        let result = builtin_set(&["-ex".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.shell_options().errexit);
+        assert!(context.shell_options().xtrace);
+    }
+
+    #[test]
+    fn test_set_combined_disable_options() {
+        let mut context = ExpansionContext::new();
+        context.shell_options_mut().errexit = true;
+        context.shell_options_mut().xtrace = true;
+        
+        let result = builtin_set(&["+ex".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(!context.shell_options().errexit);
+        assert!(!context.shell_options().xtrace);
+    }
+
+    #[test]
+    fn test_set_option_u_nounset() {
+        let mut context = ExpansionContext::new();
+        
+        assert!(!context.shell_options().nounset);
+        
+        let result = builtin_set(&["-u".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.shell_options().nounset);
+    }
+
+    #[test]
+    fn test_set_option_f_noglob() {
+        let mut context = ExpansionContext::new();
+        
+        assert!(!context.shell_options().noglob);
+        
+        let result = builtin_set(&["-f".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.shell_options().noglob);
+    }
+
+    #[test]
+    fn test_set_option_n_noexec() {
+        let mut context = ExpansionContext::new();
+        
+        assert!(!context.shell_options().noexec);
+        
+        let result = builtin_set(&["-n".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.shell_options().noexec);
+    }
+
+    #[test]
+    fn test_set_option_v_verbose() {
+        let mut context = ExpansionContext::new();
+        
+        assert!(!context.shell_options().verbose);
+        
+        let result = builtin_set(&["-v".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.shell_options().verbose);
+    }
+
+    #[test]
+    fn test_set_double_dash_positional_params() {
+        let mut context = ExpansionContext::new();
+        
+        let result = builtin_set(&["--".to_string(), "a".to_string(), "b".to_string(), "c".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert_eq!(context.get_all_positional_params(), &["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_set_double_dash_clears_params_when_empty() {
+        let mut context = ExpansionContext::new();
+        context.set_positional_params(vec!["old1".to_string(), "old2".to_string()]);
+        
+        let result = builtin_set(&["--".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.get_all_positional_params().is_empty());
+    }
+
+    #[test]
+    fn test_set_options_then_double_dash_params() {
+        let mut context = ExpansionContext::new();
+        
+        let result = builtin_set(&["-ex".to_string(), "--".to_string(), "a".to_string(), "b".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert!(context.shell_options().errexit);
+        assert!(context.shell_options().xtrace);
+        assert_eq!(context.get_all_positional_params(), &["a", "b"]);
+    }
+
+    #[test]
+    fn test_set_no_args_preserves_params() {
+        let mut context = ExpansionContext::new();
+        context.set_positional_params(vec!["existing".to_string()]);
+        
+        let result = builtin_set(&[], &mut context);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_set_positional_params_without_double_dash() {
+        let mut context = ExpansionContext::new();
+        
+        let result = builtin_set(&["foo".to_string(), "bar".to_string()], &mut context);
+        assert!(result.is_ok());
+        
+        assert_eq!(context.get_all_positional_params(), &["foo", "bar"]);
+    }
+
+    #[test]
+    fn test_shell_options_to_string() {
+        let mut context = ExpansionContext::new();
+        
+        context.shell_options_mut().errexit = true;
+        context.shell_options_mut().xtrace = true;
+        
+        let options_str = context.shell_options().to_string();
+        assert!(options_str.contains('e'));
+        assert!(options_str.contains('x'));
+        assert!(!options_str.contains('u'));
+    }
+
+    #[test]
+    fn test_dollar_dash_special_variable() {
+        let mut context = ExpansionContext::new();
+        context.shell_options_mut().errexit = true;
+        context.shell_options_mut().xtrace = true;
+        
+        let value = context.get_var_or_env("-");
+        assert!(value.is_some());
+        let opts = value.unwrap();
+        assert!(opts.contains('e'));
+        assert!(opts.contains('x'));
     }
 }

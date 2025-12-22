@@ -85,6 +85,7 @@ impl Executor {
     ) -> Result<ExitStatus> {
         let saved_params = self.context.get_all_positional_params().to_vec();
         self.context.set_positional_params(args);
+        self.context.enter_function();
 
         let mut last_exit = 0;
         for stmt in &func_def.body {
@@ -99,12 +100,14 @@ impl Executor {
                     break;
                 }
                 Err(e) => {
+                    self.context.exit_function();
                     self.context.set_positional_params(saved_params);
                     return Err(e);
                 }
             }
         }
 
+        self.context.exit_function();
         self.context.set_positional_params(saved_params);
         Ok(ExitStatus::new(last_exit))
     }
@@ -301,12 +304,19 @@ impl Executor {
 
         let name_fields = expander.expand_word(&cmd.name)?;
         if name_fields.is_empty() {
+            if cmd.args.is_empty() {
+                return Ok(ExitStatus::success());
+            }
             return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
         }
         let command_name = &name_fields[0].text;
+        
+        // When "$@" expands to multiple fields in command position,
+        // extra fields become arguments (e.g., "$@" with args [echo, hello] -> run echo with arg hello)
+        let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
 
         if let Some(func_def) = self.context.get_function(command_name).cloned() {
-            let mut args = Vec::new();
+            let mut args = extra_args_from_name;
             for arg_word in &cmd.args {
                 let fields = expander.expand_word(arg_word)?;
                 for field in fields {
@@ -344,20 +354,19 @@ impl Executor {
         if is_builtin(command_name) {
             tracing::debug!("Command is builtin, executing with redirect support");
 
-            // Apply redirects for builtin (saves and restores FDs automatically)
             let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?;
 
-            // Execute builtin with redirects applied
             if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space, &mut self.channels) {
                 let result = builtin_result?;
 
-                // Handle exit builtin specially
                 if result.is_exit() {
-                    // TODO: Propagate exit request to shell
-                    // For now, just return the exit code
+                    return Err(ExecutionError::Exit(result.exit_code()));
+                }
+                
+                if let BuiltinResult::Source(file_path, source_args) = result {
+                    return self.execute_source_file(&file_path, source_args).await;
                 }
 
-                // Guard drops here, restoring FDs automatically
                 return Ok(ExitStatus::new(result.exit_code()));
             }
         }
@@ -400,9 +409,11 @@ impl Executor {
                 return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
             }
             let command_name = &name_fields[0].text;
+            let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
 
             // Expand arguments
             let mut args = vec![command_name.clone()];
+            args.extend(extra_args_from_name);
             for arg_word in &cmd_clone.args {
                 let fields = expander.expand_word(arg_word)?;
                 for field in fields {
@@ -485,6 +496,55 @@ impl Executor {
     /// Execute a pipeline
     pub async fn execute_pipeline(&mut self, pipeline: &Pipeline) -> Result<ExitStatus> {
         execute_pipeline(pipeline, &mut self.context).await
+    }
+    
+    pub async fn execute_source_file(&mut self, file_path: &std::path::Path, args: Vec<String>) -> Result<ExitStatus> {
+        use colony_parser::pest_api::parse;
+        
+        let content = std::fs::read_to_string(file_path).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::new(
+                e.kind(),
+                format!("source: {}: {}", file_path.display(), e),
+            ))
+        })?;
+        
+        let program = parse(&content).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("source: {}: parse error: {}", file_path.display(), e),
+            ))
+        })?;
+        
+        let saved_positional = self.context.get_all_positional_params().to_vec();
+        if !args.is_empty() {
+            self.context.set_positional_params(args);
+        }
+        
+        let mut last_exit = 0;
+        for stmt in &program.statements {
+            match self.execute_statement_recursive(stmt).await {
+                Ok(code) => {
+                    last_exit = code;
+                    self.context.set_last_exit_status(code);
+                }
+                Err(ExecutionError::Return(code)) => {
+                    last_exit = code;
+                    self.context.set_last_exit_status(code);
+                    break;
+                }
+                Err(ExecutionError::Exit(code)) => {
+                    self.context.set_positional_params(saved_positional);
+                    return Err(ExecutionError::Exit(code));
+                }
+                Err(e) => {
+                    self.context.set_positional_params(saved_positional);
+                    return Err(e);
+                }
+            }
+        }
+        
+        self.context.set_positional_params(saved_positional);
+        Ok(ExitStatus::new(last_exit))
     }
 
     /// Get mutable reference to expansion context

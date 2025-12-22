@@ -121,9 +121,10 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
                 _ => return 1,
             };
             let command_name = &name_fields[0].text;
+            let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
             
             if let Some(func_def) = context.get_function(command_name).cloned() {
-                let mut args = Vec::new();
+                let mut args = extra_args_from_name.clone();
                 for arg_word in &cmd.args {
                     if let Ok(fields) = expander.expand_word(arg_word) {
                         for field in fields {
@@ -228,9 +229,11 @@ fn execute_command_in_child_blocking(
         return Err(crate::ExecutionError::CommandNotFound("<empty>".to_string()));
     }
     let command_name = &name_fields[0].text;
+    let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
 
     // Expand arguments
     let mut args = vec![command_name.clone()];
+    args.extend(extra_args_from_name);
     for arg_word in &cmd.args {
         let fields = expander.expand_word(arg_word)?;
         for field in fields {
@@ -286,9 +289,10 @@ fn execute_pipeline_in_child_blocking(
                 _ => return Err(crate::ExecutionError::CommandNotFound("<empty>".to_string())),
             };
             let command_name = &name_fields[0].text;
+            let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
             
             if let Some(func_def) = context.get_function(command_name).cloned() {
-                let mut args = Vec::new();
+                let mut args = extra_args_from_name;
                 for arg_word in &cmd.args {
                     if let Ok(fields) = expander.expand_word(arg_word) {
                         for field in fields {

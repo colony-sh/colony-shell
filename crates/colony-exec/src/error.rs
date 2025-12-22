@@ -45,6 +45,9 @@ pub enum ExecutionError {
 
     #[error("Continue")]
     Continue,
+    
+    #[error("Exit with code {0}")]
+    Exit(i32),
 }
 
 pub type Result<T> = std::result::Result<T, ExecutionError>;

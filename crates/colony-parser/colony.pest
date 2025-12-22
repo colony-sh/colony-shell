@@ -69,16 +69,18 @@ CmdSuffix = {
     Redirect | ArgumentWord
 }
 
-// Command name - cannot be a reserved word
+// Command name - cannot be a reserved word or start with #
 // Uses ReservedWord (with boundary) not ReservedKeyword so "inner" works
+// The !"#" ensures comments (#...) aren't parsed as commands
 CommandWord = ${
-    !ReservedWord ~ WordPart+
+    !ReservedWord ~ !"#" ~ WordPart+
 }
 
 // Argument - CAN be a reserved word (echo done should work)
 // Also accepts assignment syntax for declare/local builtins
+// The !"#" ensures # starts a comment, not an argument
 ArgumentWord = {
-    BashAssignment | Word
+    BashAssignment | !"#" ~ Word
 }
 
 // Bash-style assignment: name=value or name=(array values) or name[index]=value or name+=(array values)

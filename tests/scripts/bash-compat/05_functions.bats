@@ -146,7 +146,6 @@ teardown() {
 }
 
 @test "function: local variables (if supported)" {
-    skip "local keyword not yet implemented"
     run "$COLONY" -c 'func() { local x=inner; }; x=outer; func; echo $x'
     [ "$status" -eq 0 ]
     [ "$output" = "outer" ]
