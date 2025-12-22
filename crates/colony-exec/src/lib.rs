@@ -425,8 +425,17 @@ impl Executor {
             let path_env = context_clone.get_env("PATH");
             let program_path = resolve_command(command_name, path_env)?;
 
-            // Build environment
-            let env: Vec<(String, String)> = std::env::vars().collect();
+            let mut env: Vec<(String, String)> = std::env::vars().collect();
+            
+            for assignment in &cmd_clone.env_assignments {
+                if assignment.subscript.is_none() {
+                    if let colony_parser::AssignmentValue::Word(word) = &assignment.value {
+                        let value = expander.expand_word_for_assignment(word)?;
+                        env.retain(|(k, _)| k != &assignment.name);
+                        env.push((assignment.name.clone(), value));
+                    }
+                }
+            }
 
             // Spawn process (F024: now returns channel_pipes)
             let mut handle = spawn_process(&program_path, &args, &env, &cmd_clone.redirects, &mut context_clone)?;

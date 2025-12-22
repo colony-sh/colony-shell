@@ -80,7 +80,16 @@ fn execute_command_blocking(
             let path_env = context.get_env("PATH");
             let program_path = resolve_command(&command_name, path_env)?;
 
-            let env: Vec<(String, String)> = std::env::vars().collect();
+            let mut env: Vec<(String, String)> = std::env::vars().collect();
+            for assignment in &cmd.env_assignments {
+                if assignment.subscript.is_none() {
+                    if let colony_parser::AssignmentValue::Word(word) = &assignment.value {
+                        let value = expander.expand_word_for_assignment(word)?;
+                        env.retain(|(k, _)| k != &assignment.name);
+                        env.push((assignment.name.clone(), value));
+                    }
+                }
+            }
             let handle = spawn_process(&program_path, &args, &env, &cmd.redirects, context)?;
             return handle.wait();
         }
@@ -100,10 +109,17 @@ fn execute_command_blocking(
     let path_env = context.get_env("PATH");
     let program_path = resolve_command(&command_name, path_env)?;
 
-    // 4. Build environment
-    // For now, just pass through current environment
-    // TODO: Handle cmd.env_assignments
-    let env: Vec<(String, String)> = std::env::vars().collect();
+    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    
+    for assignment in &cmd.env_assignments {
+        if assignment.subscript.is_none() {
+            if let colony_parser::AssignmentValue::Word(word) = &assignment.value {
+                let value = expander.expand_word_for_assignment(word)?;
+                env.retain(|(k, _)| k != &assignment.name);
+                env.push((assignment.name.clone(), value));
+            }
+        }
+    }
 
     // 5. Spawn process with redirects
     let handle = spawn_process(&program_path, &args, &env, &cmd.redirects, context)?;

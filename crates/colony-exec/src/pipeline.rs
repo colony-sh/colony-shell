@@ -297,7 +297,19 @@ fn execute_simple_command_in_child_blocking(
     match unsafe { fork() }.map_err(crate::ExecutionError::ForkError)? {
         ForkResult::Child => {
             let _ = crate::apply_redirects(&cmd.redirects, &mut context.clone());
-            let env: Vec<(String, String)> = std::env::vars().collect();
+            let mut env: Vec<(String, String)> = std::env::vars().collect();
+            
+            for assignment in &cmd.env_assignments {
+                if assignment.subscript.is_none() {
+                    if let colony_parser::AssignmentValue::Word(word) = &assignment.value {
+                        if let Ok(value) = expander.expand_word_for_assignment(word) {
+                            env.retain(|(k, _)| k != &assignment.name);
+                            env.push((assignment.name.clone(), value));
+                        }
+                    }
+                }
+            }
+            
             let c_program = CString::new(program_path.as_os_str().as_bytes()).unwrap();
             let c_args: Vec<CString> = args
                 .iter()
@@ -577,7 +589,19 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         }
     };
 
-    let env: Vec<(String, String)> = std::env::vars().collect();
+    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    
+    for assignment in &simple_cmd.env_assignments {
+        if assignment.subscript.is_none() {
+            if let colony_parser::AssignmentValue::Word(word) = &assignment.value {
+                if let Ok(value) = expander.expand_word_for_assignment(word) {
+                    env.retain(|(k, _)| k != &assignment.name);
+                    env.push((assignment.name.clone(), value));
+                }
+            }
+        }
+    }
+    
     let c_program = CString::new(program_path.as_os_str().as_bytes()).unwrap();
     let c_args: Vec<CString> = args
         .iter()
