@@ -1165,21 +1165,19 @@ fn format_printf(format: &str, args: &[String]) -> Result<String> {
                     '\\' => '\\',
                     '\'' => '\'',
                     '"' => '"',
-                    '0' => {
-                        // Octal escape \0nnn
+                    '0'..='7' => {
+                        // Octal escape \nnn (where n is 0-7)
+                        // Reads up to 3 octal digits starting from current character
                         let mut octal = String::new();
+                        octal.push(chars[i]);
                         i += 1;
-                        while i < chars.len() && chars[i].is_ascii_digit() && octal.len() < 3 {
+                        while i < chars.len() && chars[i] >= '0' && chars[i] <= '7' && octal.len() < 3 {
                             octal.push(chars[i]);
                             i += 1;
                         }
                         i -= 1;
-                        if octal.is_empty() {
-                            '\0'
-                        } else {
-                            let val = u8::from_str_radix(&octal, 8).unwrap_or(0);
-                            val as char
-                        }
+                        let val = u8::from_str_radix(&octal, 8).unwrap_or(0);
+                        val as char
                     }
                     'x' => {
                         // Hex escape \xHH
@@ -1445,11 +1443,11 @@ fn expand_escapes(s: &str) -> String {
                 '\\' => output.push('\\'),
                 '\'' => output.push('\''),
                 '"' => output.push('"'),
-                '0' => {
-                    // Octal
+                '0'..='7' => {
                     let mut octal = String::new();
+                    octal.push(chars[i]);
                     i += 1;
-                    while i < chars.len() && chars[i].is_ascii_digit() && octal.len() < 3 {
+                    while i < chars.len() && chars[i] >= '0' && chars[i] <= '7' && octal.len() < 3 {
                         octal.push(chars[i]);
                         i += 1;
                     }

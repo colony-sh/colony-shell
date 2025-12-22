@@ -280,12 +280,15 @@ fn execute_command_in_child_blocking(
     unreachable!()
 }
 
-/// Execute a pipeline in child process (blocking, no tokio)
 fn execute_pipeline_in_child_blocking(
     pipeline: &colony_parser::Pipeline,
     context: &mut ExpansionContext,
 ) -> Result<crate::ExitStatus> {
+    use crate::JobTable;
+    use colony_channels::ChannelManager;
     use colony_expand::Expander;
+    use colony_tuple::TupleSpace;
+    use std::io::Write;
     
     if let Some(first) = pipeline.elements.first() {
         if let colony_parser::Statement::SimpleCommand(cmd) = &*first.command {
@@ -320,7 +323,19 @@ fn execute_pipeline_in_child_blocking(
                 return Ok(crate::ExitStatus::new(last_exit));
             }
             
-            execute_command_in_child_blocking(cmd, context)
+            let jobs = JobTable::new();
+            let tuple_space = TupleSpace::new();
+            let mut channels = ChannelManager::new();
+
+            if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels) {
+                let _ = std::io::stdout().flush();
+                match result {
+                    Ok(builtin_result) => Ok(crate::ExitStatus::new(builtin_result.exit_code())),
+                    Err(_) => Ok(crate::ExitStatus::new(1)),
+                }
+            } else {
+                execute_command_in_child_blocking(cmd, context)
+            }
         } else {
             Err(crate::ExecutionError::CommandNotFound("<complex>".to_string()))
         }
@@ -375,6 +390,33 @@ mod tests {
         // Should capture "world\n"
         assert!(!output.is_empty(), "Output should not be empty");
         assert!(output.contains("world"), "Output should contain 'world', got: {:?}", output);
+    }
+
+    #[test]
+    fn test_multiline_command_substitution_semicolon() {
+        let mut context = ExpansionContext::new();
+
+        let stmt = pest_api::parse_statement("echo hello; echo world").unwrap();
+        let output = execute_and_capture(&stmt, &mut context).unwrap();
+
+        assert!(output.contains("hello"), "Output should contain 'hello', got: {:?}", output);
+        assert!(output.contains("world"), "Output should contain 'world', got: {:?}", output);
+    }
+
+    #[test]
+    fn test_multiline_command_substitution_newline() {
+        let mut context = ExpansionContext::new();
+
+        let program = pest_api::parse("echo hello\necho world").unwrap();
+        
+        let mut combined_output = String::new();
+        for stmt in &program.statements {
+            let output = execute_and_capture(stmt, &mut context).unwrap();
+            combined_output.push_str(&output);
+        }
+
+        assert!(combined_output.contains("hello"), "Output should contain 'hello', got: {:?}", combined_output);
+        assert!(combined_output.contains("world"), "Output should contain 'world', got: {:?}", combined_output);
     }
 
     #[test]

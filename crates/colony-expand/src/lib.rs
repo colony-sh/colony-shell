@@ -429,20 +429,24 @@ impl Expander {
                 let trimmed_cmd = cmd_str.trim();
                 if trimmed_cmd.is_empty() {
                 } else if let Some(ref executor) = self.command_executor {
-                    match colony_parser::pest_api::parse_statement(trimmed_cmd) {
-                        Ok(stmt) => {
-                            match executor(&stmt, &mut self.context) {
-                                Ok(output) => {
-                                    let trimmed = output.trim_end_matches('\n');
-                                    if in_double_quote {
-                                        out.push_quoted(trimmed);
-                                    } else {
-                                        out.push_expanded(trimmed);
+                    match colony_parser::pest_api::parse(trimmed_cmd) {
+                        Ok(program) => {
+                            let mut combined_output = String::new();
+                            for stmt in &program.statements {
+                                match executor(stmt, &mut self.context) {
+                                    Ok(output) => {
+                                        combined_output.push_str(&output);
+                                    }
+                                    Err(e) => {
+                                        return Err(ExpansionError::CommandFailed(e));
                                     }
                                 }
-                                Err(e) => {
-                                    return Err(ExpansionError::CommandFailed(e));
-                                }
+                            }
+                            let trimmed = combined_output.trim_end_matches('\n');
+                            if in_double_quote {
+                                out.push_quoted(trimmed);
+                            } else {
+                                out.push_expanded(trimmed);
                             }
                         }
                         Err(e) => {
