@@ -305,7 +305,7 @@ fn get_source_fd(redirect: &Redirect) -> RawFd {
     })
 }
 
-/// Apply a file redirect (>, >>, <, >|, <>)
+/// Apply a file redirect (>, >>, <, >|, <>, &>, &>>)
 fn apply_file_redirect(
     kind: RedirectKind,
     source_fd: RawFd,
@@ -327,6 +327,33 @@ fn apply_file_redirect(
     }
 
     let filename = &fields[0].text;
+
+    // Handle &> and &>> (redirect both stdout and stderr)
+    if matches!(kind, RedirectKind::AndOutput | RedirectKind::AndAppend) {
+        let flags = if kind == RedirectKind::AndOutput {
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC
+        } else {
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_APPEND
+        };
+        let mode = Mode::from_bits_truncate(0o666);
+        
+        let target_fd = open(filename.as_str(), flags, mode)
+            .map_err(|e| ExecutionError::RedirectError(format!("open {}: {}", filename, e)))?;
+        
+        opened_fds.push(target_fd);
+        
+        // Redirect stdout to file
+        dup2(target_fd, 1)
+            .map_err(|e| ExecutionError::RedirectError(format!("dup2 stdout: {}", e)))?;
+        // Redirect stderr to same file (via stdout)
+        dup2(1, 2)
+            .map_err(|e| ExecutionError::RedirectError(format!("dup2 stderr: {}", e)))?;
+        
+        nix::unistd::close(target_fd)
+            .map_err(|e| ExecutionError::RedirectError(format!("close: {}", e)))?;
+        
+        return Ok(());
+    }
 
     // Determine open flags based on redirect type
     let (flags, mode) = match kind {
@@ -356,6 +383,9 @@ fn apply_file_redirect(
             return Err(ExecutionError::InvalidRedirect(
                 "HereDoc should use apply_heredoc".to_string(),
             ))
+        }
+        RedirectKind::AndOutput | RedirectKind::AndAppend => {
+            unreachable!("Already handled above")
         }
     };
 

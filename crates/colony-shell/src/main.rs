@@ -1371,9 +1371,48 @@ fn execute_statement_with_control<'a>(
                 }
             }
         }
-        Statement::BraceGroup(_) | Statement::Subshell(_) => {
-            eprintln!("Compound commands not yet supported");
-            (1, ControlFlow::Normal)
+        Statement::BraceGroup(brace_group) => {
+            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+            let _redirect_guard = match BuiltinRedirectGuard::apply(&brace_group.redirects, executor.context_mut()) {
+                Ok(guard) => guard,
+                Err(e) => {
+                    eprintln!("colony: redirect error: {}", e);
+                    return (1, ControlFlow::Normal);
+                }
+            };
+            let mut last_exit = 0;
+            for stmt in &brace_group.body {
+                let (exit_code, flow) = execute_statement_with_control(stmt, executor).await;
+                last_exit = exit_code;
+                match flow {
+                    ControlFlow::Normal => {}
+                    other => return (last_exit, other),
+                }
+            }
+            (last_exit, ControlFlow::Normal)
+        }
+        Statement::Subshell(subshell) => {
+            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+            let _redirect_guard = match BuiltinRedirectGuard::apply(&subshell.redirects, executor.context_mut()) {
+                Ok(guard) => guard,
+                Err(e) => {
+                    eprintln!("colony: redirect error: {}", e);
+                    return (1, ControlFlow::Normal);
+                }
+            };
+            let mut last_exit = 0;
+            for stmt in &subshell.body {
+                let (exit_code, flow) = execute_statement_with_control(stmt, executor).await;
+                last_exit = exit_code;
+                match flow {
+                    ControlFlow::Normal => {}
+                    ControlFlow::Return | ControlFlow::Break | ControlFlow::Continue => {
+                        return (last_exit, flow);
+                    }
+                    ControlFlow::Exit => return (last_exit, ControlFlow::Exit),
+                }
+            }
+            (last_exit, ControlFlow::Normal)
         }
         Statement::FunctionDef(func_def) => {
             // Store function definition
@@ -1506,9 +1545,35 @@ fn _old_execute_statement_for_code<'a>(
             eprintln!("This control flow not yet supported");
             1
         }
-        Statement::BraceGroup(_) | Statement::Subshell(_) => {
-            eprintln!("Compound commands not yet supported");
-            1
+        Statement::BraceGroup(brace_group) => {
+            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+            let _redirect_guard = match BuiltinRedirectGuard::apply(&brace_group.redirects, executor.context_mut()) {
+                Ok(guard) => guard,
+                Err(e) => {
+                    eprintln!("colony: redirect error: {}", e);
+                    return 1;
+                }
+            };
+            let mut last_exit = 0;
+            for stmt in &brace_group.body {
+                last_exit = Box::pin(execute_statement_for_code(stmt, executor)).await;
+            }
+            last_exit
+        }
+        Statement::Subshell(subshell) => {
+            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+            let _redirect_guard = match BuiltinRedirectGuard::apply(&subshell.redirects, executor.context_mut()) {
+                Ok(guard) => guard,
+                Err(e) => {
+                    eprintln!("colony: redirect error: {}", e);
+                    return 1;
+                }
+            };
+            let mut last_exit = 0;
+            for stmt in &subshell.body {
+                last_exit = Box::pin(execute_statement_for_code(stmt, executor)).await;
+            }
+            last_exit
         }
         Statement::FunctionDef(func_def) => {
             // Store function definition

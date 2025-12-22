@@ -453,8 +453,31 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
     let mut context = context.clone();
     match &*element.command {
         Statement::SimpleCommand(_) => {}
-        Statement::BraceGroup(_) | Statement::Subshell(_) | Statement::For(_) | 
-        Statement::If(_) | Statement::While(_) | Statement::List(_) => {
+        Statement::BraceGroup(brace) => {
+            if !brace.redirects.is_empty() {
+                if let Err(e) = crate::redirect::apply_redirects(&brace.redirects, &mut context) {
+                    eprintln!("colony: redirect error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            match execute_statement_in_child_blocking(&element.command, &mut context) {
+                Ok(code) => std::process::exit(code),
+                Err(_) => std::process::exit(1),
+            }
+        }
+        Statement::Subshell(subshell) => {
+            if !subshell.redirects.is_empty() {
+                if let Err(e) = crate::redirect::apply_redirects(&subshell.redirects, &mut context) {
+                    eprintln!("colony: redirect error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            match execute_statement_in_child_blocking(&element.command, &mut context) {
+                Ok(code) => std::process::exit(code),
+                Err(_) => std::process::exit(1),
+            }
+        }
+        Statement::For(_) | Statement::If(_) | Statement::While(_) | Statement::List(_) => {
             match execute_statement_in_child_blocking(&element.command, &mut context) {
                 Ok(code) => std::process::exit(code),
                 Err(_) => std::process::exit(1),

@@ -120,8 +120,10 @@ impl ExpansionContext {
 
     /// Set a shell variable from string
     pub fn set_var(&mut self, name: String, value: String) {
-        if name == "IFS" {
-            self.ifs = value.clone();
+        match name.as_str() {
+            "IFS" => self.ifs = value.clone(),
+            "HOME" => self.home = Some(PathBuf::from(&value)),
+            _ => {}
         }
         self.variables.insert(name, Variable::String(value));
     }
@@ -138,6 +140,11 @@ impl ExpansionContext {
 
     /// Set environment variable
     pub fn set_env(&mut self, name: &str, value: &str) {
+        match name {
+            "HOME" => self.home = Some(PathBuf::from(value)),
+            "PWD" => self.cwd = PathBuf::from(value),
+            _ => {}
+        }
         self.environment.insert(name.to_string(), value.to_string());
     }
 
@@ -157,8 +164,11 @@ impl ExpansionContext {
     }
 
     /// Get home directory
-    pub fn home(&self) -> Option<&PathBuf> {
-        self.home.as_ref()
+    pub fn home(&self) -> Option<PathBuf> {
+        if let Some(var) = self.variables.get("HOME") {
+            return Some(PathBuf::from(var.as_str()));
+        }
+        self.home.clone()
     }
 
     /// Get IFS (field separator) characters

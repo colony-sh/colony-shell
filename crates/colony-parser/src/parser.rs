@@ -326,6 +326,7 @@ impl Parser {
 
         Ok(Statement::Subshell(Subshell {
             body,
+            redirects: Vec::new(),
             span: Span::new(start, end),
         }))
     }
@@ -352,6 +353,7 @@ impl Parser {
 
         Ok(Statement::BraceGroup(BraceGroup {
             body,
+            redirects: Vec::new(),
             span: Span::new(start, end),
         }))
     }

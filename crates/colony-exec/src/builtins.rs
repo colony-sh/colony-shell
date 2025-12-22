@@ -67,6 +67,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "recho"
         | "set"
         | "printf"
+        | "exec"
     )
 }
 
@@ -142,6 +143,7 @@ pub fn execute_builtin(
         "recho" => builtin_recho(&args),
         "set" => builtin_set(&args, context),
         "printf" => builtin_printf(&args, context),
+        "exec" => builtin_exec(&args, &cmd.redirects, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -156,14 +158,12 @@ pub fn execute_builtin(
 ///
 /// **Reactive:** Emits ("dir_change", old_dir, new_dir) tuple (Rule 46)
 fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
-    // Capture old directory for reactive tuple
     let old_dir = env::current_dir()
         .ok()
         .and_then(|p| p.to_str().map(String::from))
         .unwrap_or_else(|| "/".to_string());
 
     let target = if args.is_empty() {
-        // cd with no args goes to HOME
         context
             .get_env("HOME")
             .ok_or_else(|| ExecutionError::IoError(std::io::Error::new(
@@ -174,7 +174,6 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &Tup
         &args[0]
     };
 
-    // Change directory
     env::set_current_dir(target).map_err(|e| {
         ExecutionError::IoError(std::io::Error::new(
             e.kind(),
@@ -182,16 +181,14 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &Tup
         ))
     })?;
 
-    // Get new directory
     let new_dir = env::current_dir()
         .ok()
         .and_then(|p| p.to_str().map(String::from))
         .unwrap_or_else(|| target.to_string());
 
-    // Update PWD environment variable
+    context.set_env("OLDPWD", &old_dir);
     context.set_env("PWD", &new_dir);
 
-    // REACTIVE: Emit dir_change tuple (Rule 46)
     tuple_space.out(Tuple::from(vec![
         Value::Str("dir_change".to_string()),
         Value::Str(old_dir),
@@ -1391,6 +1388,37 @@ fn shell_quote(s: &str) -> String {
     }
     output.push('\'');
     output
+}
+
+/// exec - Apply redirections to shell or replace shell with command
+///
+/// Usage: exec [command [args...]] [redirections]
+fn builtin_exec(
+    args: &[String],
+    redirects: &[colony_parser::Redirect],
+    context: &mut ExpansionContext,
+) -> Result<BuiltinResult> {
+    use crate::redirect::apply_redirects;
+    
+    if !redirects.is_empty() {
+        match apply_redirects(redirects, context) {
+            Ok(_opened_fds) => {
+                tracing::debug!("exec: applied {} redirections to shell", redirects.len());
+            }
+            Err(e) => {
+                eprintln!("exec: {}", e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+    
+    if args.is_empty() {
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    eprintln!("exec: replacing shell with command not yet implemented");
+    eprintln!("exec: would execute: {} {}", args[0], args[1..].join(" "));
+    Ok(BuiltinResult::Failure(1))
 }
 
 #[cfg(test)]

@@ -163,16 +163,86 @@ impl Expander {
         Ok(fields)
     }
     
-    /// Expand a word for variable assignment RHS
-    /// POSIX: No field splitting or pathname expansion on assignment RHS
+    /// Expand a word for variable assignment RHS (no field splitting, tilde after colon)
     pub fn expand_word_for_assignment(&mut self, word: &Word) -> Result<String> {
-        let mut intermediate = IntermediateWord::new();
-
+        let mut segments: Vec<(String, bool)> = Vec::new();
+        
         for part in &word.parts {
-            self.expand_part(part, &mut intermediate)?;
+            match part {
+                WordPart::Literal(s) => {
+                    segments.push((s.clone(), false));
+                }
+                WordPart::SingleQuoted(s) => {
+                    segments.push((s.clone(), true));
+                }
+                WordPart::DoubleQuoted(inner) => {
+                    let mut inner_result = String::new();
+                    for inner_part in inner {
+                        match inner_part {
+                            WordPart::Literal(s) => inner_result.push_str(s),
+                            WordPart::Variable(var_ref) => {
+                                let expanded = expand_parameter(var_ref, &self.context)?;
+                                inner_result.push_str(&expanded);
+                            }
+                            WordPart::Tilde(user) => {
+                                inner_result.push('~');
+                                if let Some(u) = user {
+                                    inner_result.push_str(u);
+                                }
+                            }
+                            _ => {
+                                let mut temp = IntermediateWord::new();
+                                self.expand_part_with_quoted(inner_part, &mut temp, true)?;
+                                inner_result.push_str(&temp.as_single_string());
+                            }
+                        }
+                    }
+                    segments.push((inner_result, true));
+                }
+                WordPart::Tilde(user) => {
+                    let expanded = expand_tilde(user.as_deref(), &self.context)?;
+                    segments.push((expanded, false));
+                }
+                WordPart::Variable(var_ref) => {
+                    let expanded = expand_parameter(var_ref, &self.context)?;
+                    segments.push((expanded, true));
+                }
+                _ => {
+                    let mut intermediate = IntermediateWord::new();
+                    self.expand_part(part, &mut intermediate)?;
+                    segments.push((intermediate.as_single_string(), true));
+                }
+            }
         }
-
-        Ok(intermediate.as_single_string())
+        
+        let mut result = String::new();
+        for (text, quoted) in segments {
+            if quoted {
+                result.push_str(&text);
+            } else {
+                for (i, segment) in text.split(':').enumerate() {
+                    if i > 0 {
+                        result.push(':');
+                    }
+                    if segment.starts_with('~') {
+                        let slash_pos = segment.find('/').unwrap_or(segment.len());
+                        let (tilde_part, rest) = segment.split_at(slash_pos);
+                        let user = if tilde_part.len() > 1 { Some(&tilde_part[1..]) } else { None };
+                        match expand_tilde(user, &self.context) {
+                            Ok(expanded) => {
+                                result.push_str(&expanded);
+                                result.push_str(rest);
+                            }
+                            Err(_) => result.push_str(segment),
+                        }
+                    } else {
+                        result.push_str(segment);
+                    }
+                }
+            }
+        }
+        
+        Ok(result)
     }
     
     fn try_expand_array_at_word(&self, word: &Word) -> Result<Option<Vec<Field>>> {

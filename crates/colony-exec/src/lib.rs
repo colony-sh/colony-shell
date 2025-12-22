@@ -7,7 +7,7 @@
 //! - Exit status capture
 //! - Signal handling (future: job control)
 
-mod builtin_redirect;
+pub mod builtin_redirect;
 mod builtins;
 mod command;
 mod command_sub;

@@ -12,8 +12,42 @@
 //! - ${var+word} - use word if var set
 //! - ${#var} - length of var
 
-use crate::{ExpansionContext, ExpansionError, Result};
-use colony_parser::{VarModifier, VariableRef};
+use crate::{expand_tilde, ExpansionContext, ExpansionError, Result};
+use colony_parser::{VarModifier, VariableRef, Word, WordPart};
+
+fn expand_simple_word(word: &Word, context: &ExpansionContext) -> String {
+    let mut result = String::new();
+    for part in &word.parts {
+        match part {
+            WordPart::Literal(s) | WordPart::SingleQuoted(s) => result.push_str(s),
+            WordPart::Tilde(user) => {
+                if let Ok(expanded) = expand_tilde(user.as_deref(), context) {
+                    result.push_str(&expanded);
+                }
+            }
+            WordPart::Variable(var_ref) => {
+                if let Some(val) = context.get_var_or_env(&var_ref.name) {
+                    result.push_str(&val);
+                }
+            }
+            WordPart::DoubleQuoted(inner) => {
+                for inner_part in inner {
+                    match inner_part {
+                        WordPart::Literal(s) => result.push_str(s),
+                        WordPart::Variable(var_ref) => {
+                            if let Some(val) = context.get_var_or_env(&var_ref.name) {
+                                result.push_str(&val);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    result
+}
 
 /// Result of parameter expansion - can be single value or multiple (for array @ expansion)
 #[derive(Debug, Clone)]
@@ -212,29 +246,20 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
         }
 
         Some(VarModifier::Default { word, check_null }) => {
-            // ${var:-word} or ${var-word}
             let should_use_default = if *check_null {
-                // :-  check for unset OR null (empty string)
                 var_value.as_ref().map(|s| s.is_empty()).unwrap_or(true)
             } else {
-                // -   check for unset only
                 var_value.is_none()
             };
 
             if should_use_default {
-                // TODO: Expand the word recursively
-                // For now, just use literal
-                Ok(word
-                    .as_literal()
-                    .unwrap_or("")
-                    .to_string())
+                Ok(expand_simple_word(word, context))
             } else {
                 Ok(var_value.unwrap())
             }
         }
 
         Some(VarModifier::Assign { word, check_null }) => {
-            // ${var:=word} or ${var=word}
             let should_assign = if *check_null {
                 var_value.as_ref().map(|s| s.is_empty()).unwrap_or(true)
             } else {
@@ -242,15 +267,7 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
             };
 
             if should_assign {
-                // TODO: Expand the word recursively
-                let value = word
-                    .as_literal()
-                    .unwrap_or("")
-                    .to_string();
-                // Note: We can't mutate context here because we only have &ExpansionContext
-                // This is a design issue - assign needs mutable context
-                // For now, just return the value
-                Ok(value)
+                Ok(expand_simple_word(word, context))
             } else {
                 Ok(var_value.unwrap())
             }
@@ -283,10 +300,7 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
             };
 
             if should_use_alternate {
-                Ok(word
-                    .as_literal()
-                    .unwrap_or("")
-                    .to_string())
+                Ok(expand_simple_word(word, context))
             } else {
                 Ok(String::new())
             }

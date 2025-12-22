@@ -205,6 +205,10 @@ pub enum RedirectKind {
     DupFd,
     /// <<, <<-, <<< - Here-doc/string
     HereDoc(HereDocKind),
+    /// &> - Redirect both stdout and stderr (bash extension)
+    AndOutput,
+    /// &>> - Append both stdout and stderr (bash extension)
+    AndAppend,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -612,6 +616,7 @@ pub struct ReturnStatement {
 #[derive(Clone, Debug)]
 pub struct BraceGroup {
     pub body: Vec<Statement>,
+    pub redirects: Vec<Redirect>,
     pub span: Span,
 }
 
@@ -619,6 +624,7 @@ pub struct BraceGroup {
 #[derive(Clone, Debug)]
 pub struct Subshell {
     pub body: Vec<Statement>,
+    pub redirects: Vec<Redirect>,
     pub span: Span,
 }
 

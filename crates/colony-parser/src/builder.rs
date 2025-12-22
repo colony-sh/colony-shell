@@ -194,6 +194,59 @@ impl AstBuilder {
                 Rule::Word | Rule::CommandWord => {
                     words.push(Self::build_word(part)?);
                 }
+                Rule::CmdSuffix => {
+                    for suffix_inner in part.into_inner() {
+                        match suffix_inner.as_rule() {
+                            Rule::Redirect => {
+                                redirects.push(Self::build_redirect(suffix_inner)?);
+                            }
+                            Rule::ArgumentWord => {
+                                for inner in suffix_inner.into_inner() {
+                                    match inner.as_rule() {
+                                        Rule::BashAssignment => {
+                                            let arg_span = span_from_pair(&inner);
+                                            let full_text = inner.as_str();
+                                            let mut parts = Vec::new();
+                                            
+                                            for sub in inner.into_inner() {
+                                                match sub.as_rule() {
+                                                    Rule::BashAssignmentLHS => {
+                                                        parts.push(WordPart::Literal(sub.as_str().to_string()));
+                                                    }
+                                                    Rule::AssignmentName | Rule::Identifier => {
+                                                        parts.push(WordPart::Literal(sub.as_str().to_string()));
+                                                    }
+                                                    Rule::ArraySubscript => {
+                                                        parts.push(WordPart::Literal(sub.as_str().to_string()));
+                                                    }
+                                                    Rule::AssocArrayLiteral | Rule::ArrayLiteral => {
+                                                        parts.push(WordPart::Literal(sub.as_str().to_string()));
+                                                    }
+                                                    Rule::Word => {
+                                                        let word = Self::build_word(sub)?;
+                                                        parts.extend(word.parts);
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                            
+                                            if parts.is_empty() {
+                                                parts.push(WordPart::Literal(full_text.to_string()));
+                                            }
+                                            
+                                            words.push(Word { parts, span: arg_span });
+                                        }
+                                        Rule::Word => {
+                                            words.push(Self::build_word(inner)?);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 Rule::ArgumentWord => {
                     for inner in part.into_inner() {
                         match inner.as_rule() {
@@ -244,7 +297,7 @@ impl AstBuilder {
             }
         }
 
-        if words.is_empty() && env_assignments.is_empty() {
+        if words.is_empty() && env_assignments.is_empty() && redirects.is_empty() {
             return Err(BuildError::EmptyCommand);
         }
 
@@ -1054,16 +1107,35 @@ impl AstBuilder {
             other => vec![other],
         };
 
-        Ok(Subshell { body, span })
+        let mut redirects = Vec::new();
+        for remaining in inner {
+            if remaining.as_rule() == Rule::Redirect {
+                redirects.push(Self::build_redirect(remaining)?);
+            }
+        }
+
+        Ok(Subshell { body, redirects, span })
     }
 
     fn build_brace_group(pair: Pair<Rule>) -> Result<BraceGroup, BuildError> {
         let span = span_from_pair(&pair);
 
-        // BraceGroup = "{" ~ Statement* ~ "}"
-        let body = Self::build_block(pair)?;
+        let mut body = Vec::new();
+        let mut redirects = Vec::new();
 
-        Ok(BraceGroup { body, span })
+        for inner in pair.into_inner() {
+            match inner.as_rule() {
+                Rule::Statement => {
+                    body.push(Self::build_statement(inner)?);
+                }
+                Rule::Redirect => {
+                    redirects.push(Self::build_redirect(inner)?);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(BraceGroup { body, redirects, span })
     }
 
     pub fn build_expression(pair: Pair<Rule>) -> Result<Expression, BuildError> {
@@ -2213,67 +2285,107 @@ impl AstBuilder {
 
     fn build_redirect(pair: Pair<Rule>) -> Result<Redirect, BuildError> {
         let span = span_from_pair(&pair);
+        let inner = pair.into_inner().next().ok_or(BuildError::MissingRedirectOp)?;
+        
+        match inner.as_rule() {
+            Rule::FdRedirect => Self::build_fd_redirect(inner, span),
+            Rule::SimpleRedirect => Self::build_simple_redirect(inner, span),
+            _ => Err(BuildError::InvalidRedirectOp(format!("{:?}", inner.as_rule()))),
+        }
+    }
+    
+    fn build_fd_redirect(pair: Pair<Rule>, span: Span) -> Result<Redirect, BuildError> {
         let mut inner = pair.into_inner();
-
-        // Redirect = Integer? ~ RedirectOp ~ (Word | Integer)
-
-        // Check if first element is a file descriptor
-        let first = inner.next().ok_or(BuildError::MissingRedirectOp)?;
-
-        let (fd, op_pair) = if first.as_rule() == Rule::Integer {
-            let fd = first.as_str().parse::<i32>()
-                .map_err(|_| BuildError::InvalidFd(first.as_str().to_string()))?;
-            let op = inner.next().ok_or(BuildError::MissingRedirectOp)?;
-            (Some(fd), op)
-        } else {
-            (None, first)
-        };
-
-        // Parse redirect operator
-        let kind = match op_pair.as_str() {
-            "<" => RedirectKind::Input,
-            ">" => RedirectKind::Output,
-            ">>" => RedirectKind::Append,
-            ">|" => RedirectKind::Clobber,
-            "<>" => RedirectKind::ReadWrite,
-            ">&" => RedirectKind::DupFd,
-            "<&" => RedirectKind::DupFd,
-            "<<" => RedirectKind::HereDoc(HereDocKind::Normal),
-            "<<-" => RedirectKind::HereDoc(HereDocKind::StripTabs),
-            "<<<" => RedirectKind::HereDoc(HereDocKind::HereString),
-            _ => return Err(BuildError::InvalidRedirectOp(op_pair.as_str().to_string())),
-        };
-
-        // Parse target
+        
+        let prefix_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
+        let prefix_text = prefix_pair.as_str();
+        
+        let mut fd_digits = String::new();
+        let mut op_str = prefix_text;
+        
+        for (i, c) in prefix_text.char_indices() {
+            if c.is_ascii_digit() {
+                fd_digits.push(c);
+            } else {
+                op_str = &prefix_text[i..];
+                break;
+            }
+        }
+        
+        let fd = fd_digits.parse::<i32>()
+            .map_err(|_| BuildError::InvalidFd(fd_digits.clone()))?;
+        
+        let kind = Self::parse_redirect_op(op_str)?;
+        
         let target_pair = inner.next().ok_or(BuildError::MissingRedirectTarget)?;
-
-        let target = match target_pair.as_rule() {
-            Rule::Integer => {
-                let fd_num = target_pair.as_str().parse::<i32>()
-                    .map_err(|_| BuildError::InvalidFd(target_pair.as_str().to_string()))?;
-                if fd_num == -1 || target_pair.as_str() == "-" {
-                    RedirectTarget::Close
-                } else {
-                    RedirectTarget::Fd(fd_num)
-                }
-            }
-            Rule::Word => {
-                let word = Self::build_word(target_pair)?;
-                RedirectTarget::File(word)
-            }
-            _ => {
-                return Err(BuildError::InvalidRedirectTarget(
-                    format!("{:?}", target_pair.as_rule())
-                ));
-            }
-        };
-
+        let target = Self::parse_redirect_target(target_pair)?;
+        
         Ok(Redirect {
-            fd,
+            fd: Some(fd),
             kind,
             target,
             span,
         })
+    }
+    
+    fn build_simple_redirect(pair: Pair<Rule>, span: Span) -> Result<Redirect, BuildError> {
+        let mut inner = pair.into_inner();
+        
+        let op_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
+        let kind = Self::parse_redirect_op(op_pair.as_str())?;
+        
+        let target_pair = inner.next().ok_or(BuildError::MissingRedirectTarget)?;
+        let target = Self::parse_redirect_target(target_pair)?;
+        
+        Ok(Redirect {
+            fd: None,
+            kind,
+            target,
+            span,
+        })
+    }
+    
+    fn parse_redirect_op(op: &str) -> Result<RedirectKind, BuildError> {
+        match op {
+            "<" => Ok(RedirectKind::Input),
+            ">" => Ok(RedirectKind::Output),
+            ">>" => Ok(RedirectKind::Append),
+            ">|" => Ok(RedirectKind::Clobber),
+            "<>" => Ok(RedirectKind::ReadWrite),
+            ">&" => Ok(RedirectKind::DupFd),
+            "<&" => Ok(RedirectKind::DupFd),
+            "&>" => Ok(RedirectKind::AndOutput),
+            "&>>" => Ok(RedirectKind::AndAppend),
+            "<<" => Ok(RedirectKind::HereDoc(HereDocKind::Normal)),
+            "<<-" => Ok(RedirectKind::HereDoc(HereDocKind::StripTabs)),
+            "<<<" => Ok(RedirectKind::HereDoc(HereDocKind::HereString)),
+            _ => Err(BuildError::InvalidRedirectOp(op.to_string())),
+        }
+    }
+    
+    fn parse_redirect_target(pair: Pair<Rule>) -> Result<RedirectTarget, BuildError> {
+        match pair.as_rule() {
+            Rule::Integer => {
+                let fd_str = pair.as_str();
+                if fd_str == "-" {
+                    Ok(RedirectTarget::Close)
+                } else {
+                    let fd_num = fd_str.parse::<i32>()
+                        .map_err(|_| BuildError::InvalidFd(fd_str.to_string()))?;
+                    Ok(RedirectTarget::Fd(fd_num))
+                }
+            }
+            Rule::Word => {
+                let word = AstBuilder::build_word(pair)?;
+                if let Some(literal) = word.as_literal() {
+                    if literal == "-" {
+                        return Ok(RedirectTarget::Close);
+                    }
+                }
+                Ok(RedirectTarget::File(word))
+            }
+            _ => Err(BuildError::InvalidRedirectTarget(format!("{:?}", pair.as_rule()))),
+        }
     }
     
     fn build_bareword_with_escapes(input: &str) -> WordPart {
