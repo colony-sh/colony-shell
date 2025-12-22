@@ -66,6 +66,115 @@ pub struct SavedVariable {
     pub previous: Option<Variable>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TrapSignal {
+    Exit,
+    Err,
+    Debug,
+    Return,
+    Signal(i32),
+}
+
+impl TrapSignal {
+    pub fn parse(s: &str) -> Option<Self> {
+        let s_upper = s.to_uppercase();
+        let s_upper: &str = s_upper.strip_prefix("SIG").unwrap_or(&s_upper);
+        
+        match s_upper {
+            "EXIT" | "0" => Some(TrapSignal::Exit),
+            "ERR" => Some(TrapSignal::Err),
+            "DEBUG" => Some(TrapSignal::Debug),
+            "RETURN" => Some(TrapSignal::Return),
+            "HUP" | "1" => Some(TrapSignal::Signal(1)),
+            "INT" | "2" => Some(TrapSignal::Signal(2)),
+            "QUIT" | "3" => Some(TrapSignal::Signal(3)),
+            "ILL" | "4" => Some(TrapSignal::Signal(4)),
+            "TRAP" | "5" => Some(TrapSignal::Signal(5)),
+            "ABRT" | "6" => Some(TrapSignal::Signal(6)),
+            "BUS" | "7" => Some(TrapSignal::Signal(7)),
+            "FPE" | "8" => Some(TrapSignal::Signal(8)),
+            "KILL" | "9" => Some(TrapSignal::Signal(9)),
+            "USR1" | "10" => Some(TrapSignal::Signal(10)),
+            "SEGV" | "11" => Some(TrapSignal::Signal(11)),
+            "USR2" | "12" => Some(TrapSignal::Signal(12)),
+            "PIPE" | "13" => Some(TrapSignal::Signal(13)),
+            "ALRM" | "14" => Some(TrapSignal::Signal(14)),
+            "TERM" | "15" => Some(TrapSignal::Signal(15)),
+            "STKFLT" | "16" => Some(TrapSignal::Signal(16)),
+            "CHLD" | "17" => Some(TrapSignal::Signal(17)),
+            "CONT" | "18" => Some(TrapSignal::Signal(18)),
+            "STOP" | "19" => Some(TrapSignal::Signal(19)),
+            "TSTP" | "20" => Some(TrapSignal::Signal(20)),
+            "TTIN" | "21" => Some(TrapSignal::Signal(21)),
+            "TTOU" | "22" => Some(TrapSignal::Signal(22)),
+            _ => s.parse::<i32>().ok().and_then(|n| {
+                if (1..=31).contains(&n) {
+                    Some(TrapSignal::Signal(n))
+                } else {
+                    None
+                }
+            }),
+        }
+    }
+    
+    pub fn name(&self) -> &'static str {
+        match self {
+            TrapSignal::Exit => "EXIT",
+            TrapSignal::Err => "ERR",
+            TrapSignal::Debug => "DEBUG",
+            TrapSignal::Return => "RETURN",
+            TrapSignal::Signal(1) => "HUP",
+            TrapSignal::Signal(2) => "INT",
+            TrapSignal::Signal(3) => "QUIT",
+            TrapSignal::Signal(4) => "ILL",
+            TrapSignal::Signal(5) => "TRAP",
+            TrapSignal::Signal(6) => "ABRT",
+            TrapSignal::Signal(7) => "BUS",
+            TrapSignal::Signal(8) => "FPE",
+            TrapSignal::Signal(9) => "KILL",
+            TrapSignal::Signal(10) => "USR1",
+            TrapSignal::Signal(11) => "SEGV",
+            TrapSignal::Signal(12) => "USR2",
+            TrapSignal::Signal(13) => "PIPE",
+            TrapSignal::Signal(14) => "ALRM",
+            TrapSignal::Signal(15) => "TERM",
+            TrapSignal::Signal(16) => "STKFLT",
+            TrapSignal::Signal(17) => "CHLD",
+            TrapSignal::Signal(18) => "CONT",
+            TrapSignal::Signal(19) => "STOP",
+            TrapSignal::Signal(20) => "TSTP",
+            TrapSignal::Signal(21) => "TTIN",
+            TrapSignal::Signal(22) => "TTOU",
+            TrapSignal::Signal(_) => "UNKNOWN",
+        }
+    }
+    
+    pub fn can_trap(&self) -> bool {
+        !matches!(self, TrapSignal::Signal(9) | TrapSignal::Signal(19))
+    }
+    
+    pub fn all_signal_names() -> &'static [&'static str] {
+        &[
+            "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE",
+            "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM",
+            "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU",
+        ]
+    }
+}
+
+impl fmt::Display for TrapSignal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrapAction {
+    Ignore,
+    Default,
+    Command(String),
+}
+
 #[derive(Debug, Clone)]
 pub struct ExpansionContext {
     variables: HashMap<String, Variable>,
@@ -81,6 +190,7 @@ pub struct ExpansionContext {
     function_depth: usize,
     local_vars_stack: Vec<HashMap<String, SavedVariable>>,
     shell_options: ShellOptions,
+    traps: HashMap<TrapSignal, TrapAction>,
 }
 
 impl ExpansionContext {
@@ -102,6 +212,7 @@ impl ExpansionContext {
             function_depth: 0,
             local_vars_stack: Vec::new(),
             shell_options: ShellOptions::new(),
+            traps: HashMap::new(),
         };
 
         ctx.variables.insert("BASH_VERSINFO".to_string(), Variable::Array(vec![
@@ -357,6 +468,29 @@ impl ExpansionContext {
                 self.variables.insert(name.to_string(), Variable::String(String::new()));
             }
         }
+    }
+
+    pub fn set_trap(&mut self, signal: TrapSignal, action: TrapAction) {
+        match action {
+            TrapAction::Default => {
+                self.traps.remove(&signal);
+            }
+            _ => {
+                self.traps.insert(signal, action);
+            }
+        }
+    }
+
+    pub fn get_trap(&self, signal: &TrapSignal) -> Option<&TrapAction> {
+        self.traps.get(signal)
+    }
+
+    pub fn clear_trap(&mut self, signal: &TrapSignal) {
+        self.traps.remove(signal);
+    }
+
+    pub fn traps(&self) -> &HashMap<TrapSignal, TrapAction> {
+        &self.traps
     }
 }
 

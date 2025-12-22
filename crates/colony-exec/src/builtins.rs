@@ -73,6 +73,8 @@ pub fn is_builtin(name: &str) -> bool {
         | "set"
         | "printf"
         | "exec"
+        | "trap"
+        | "return"
     )
 }
 
@@ -150,6 +152,8 @@ pub fn execute_builtin(
         "set" => builtin_set(&args, context),
         "printf" => builtin_printf(&args, context),
         "exec" => builtin_exec(&args, &cmd.redirects, context),
+        "trap" => builtin_trap(&args, context),
+        "return" => builtin_return(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -1538,6 +1542,163 @@ fn builtin_exec(
     eprintln!("exec: replacing shell with command not yet implemented");
     eprintln!("exec: would execute: {} {}", args[0], args[1..].join(" "));
     Ok(BuiltinResult::Failure(1))
+}
+
+fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    use colony_expand::{TrapSignal, TrapAction};
+    
+    if args.is_empty() {
+        let traps = context.traps();
+        if traps.is_empty() {
+            return Ok(BuiltinResult::Success(0));
+        }
+        for (signal, action) in traps {
+            match action {
+                TrapAction::Ignore => println!("trap -- '' {}", signal),
+                TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                TrapAction::Default => {}
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    let mut print_mode = false;
+    let mut list_mode = false;
+    let mut skip_count = 0;
+    
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "-p" {
+            print_mode = true;
+            skip_count = i + 1;
+        } else if arg == "-l" {
+            list_mode = true;
+        } else if arg.starts_with('-') && arg != "-" {
+            continue;
+        } else {
+            break;
+        }
+    }
+    
+    if list_mode {
+        let names = TrapSignal::all_signal_names();
+        for (i, name) in names.iter().enumerate() {
+            print!("{:2}) {:<8}", i + 1, name);
+            if (i + 1) % 8 == 0 {
+                println!();
+            }
+        }
+        if names.len() % 8 != 0 {
+            println!();
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    let remaining_args = &args[skip_count..];
+    
+    if print_mode {
+        if remaining_args.is_empty() {
+            let traps = context.traps();
+            for (signal, action) in traps {
+                match action {
+                    TrapAction::Ignore => println!("trap -- '' {}", signal),
+                    TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                    TrapAction::Default => {}
+                }
+            }
+        } else {
+            for sig_name in remaining_args {
+                if let Some(signal) = TrapSignal::parse(sig_name) {
+                    if let Some(action) = context.get_trap(&signal) {
+                        match action {
+                            TrapAction::Ignore => println!("trap -- '' {}", signal),
+                            TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                            TrapAction::Default => {}
+                        }
+                    }
+                } else {
+                    eprintln!("trap: {}: invalid signal specification", sig_name);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if remaining_args.is_empty() {
+        let traps = context.traps();
+        for (signal, action) in traps {
+            match action {
+                TrapAction::Ignore => println!("trap -- '' {}", signal),
+                TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                TrapAction::Default => {}
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if remaining_args.len() == 1 {
+        let first = &remaining_args[0];
+        if first == "-" {
+            eprintln!("trap: missing signal specification");
+            return Ok(BuiltinResult::Failure(1));
+        }
+        if let Some(signal) = TrapSignal::parse(first) {
+            if let Some(action) = context.get_trap(&signal) {
+                match action {
+                    TrapAction::Ignore => println!("trap -- '' {}", signal),
+                    TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                    TrapAction::Default => {}
+                }
+            }
+            return Ok(BuiltinResult::Success(0));
+        }
+        eprintln!("trap: {}: invalid signal specification", first);
+        return Ok(BuiltinResult::Failure(1));
+    }
+    
+    let action_str = &remaining_args[0];
+    let signal_names = &remaining_args[1..];
+    
+    let action = if action_str == "-" {
+        TrapAction::Default
+    } else if action_str.is_empty() {
+        TrapAction::Ignore
+    } else {
+        TrapAction::Command(action_str.clone())
+    };
+    
+    for sig_name in signal_names {
+        match TrapSignal::parse(sig_name) {
+            Some(signal) => {
+                if !signal.can_trap() {
+                    eprintln!("trap: {}: cannot be trapped", sig_name);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                context.set_trap(signal, action.clone());
+            }
+            None => {
+                eprintln!("trap: {}: invalid signal specification", sig_name);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+    
+    Ok(BuiltinResult::Success(0))
+}
+
+fn builtin_return(args: &[String], context: &ExpansionContext) -> Result<BuiltinResult> {
+    if !context.in_function() {
+        eprintln!("return: can only be used in a function");
+        return Ok(BuiltinResult::Failure(1));
+    }
+    
+    let code = if args.is_empty() {
+        context.last_exit_status()
+    } else {
+        args[0].parse::<i32>().unwrap_or(255)
+    };
+    
+    Err(ExecutionError::Return(code))
 }
 
 #[cfg(test)]

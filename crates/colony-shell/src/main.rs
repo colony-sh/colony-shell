@@ -3,7 +3,7 @@
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
 use colony_config::{discover_config, ColonyConfig, ConfigLocation, TrustManager, TrustStatus};
 use colony_exec::{Executor, ExecutionError};
-use colony_expand::ExpansionContext;
+use colony_expand::{ExpansionContext, TrapSignal, TrapAction};
 use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
 use colony_tree_sitter::parse;
@@ -1329,27 +1329,35 @@ fn execute_statement_with_control<'a>(
                 }
             }
 
-            match executor.execute_simple_command(cmd).await {
+            let result = match executor.execute_simple_command(cmd).await {
                 Ok(status) => (status.code(), ControlFlow::Normal),
                 Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
                 Err(e) => {
                     eprintln!("execution error: {}", e);
                     (1, ControlFlow::Normal)
                 }
+            };
+            if result.0 != 0 && result.1 == ControlFlow::Normal {
+                execute_err_trap(executor).await;
             }
+            result
         }
         Statement::Pipeline(pipeline) => {
             if pipeline.elements.len() == 1 {
                 return execute_statement_with_control(&pipeline.elements[0].command, executor).await;
             }
-            match executor.execute_pipeline(&pipeline).await {
+            let result = match executor.execute_pipeline(&pipeline).await {
                 Ok(status) => (status.code(), ControlFlow::Normal),
                 Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
                 Err(e) => {
                     eprintln!("execution error: {}", e);
                     (1, ControlFlow::Normal)
                 }
+            };
+            if result.0 != 0 && result.1 == ControlFlow::Normal {
+                execute_err_trap(executor).await;
             }
+            result
         }
         Statement::List(list) => {
             execute_list_with_control(list, executor).await
@@ -1619,11 +1627,47 @@ async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32
     for stmt in &program.statements {
         let (code, flow) = execute_statement_with_control(stmt, executor).await;
         last_exit = code;
+        executor.context_mut().set_last_exit_status(code);
         if flow == ControlFlow::Exit {
+            if let Some(trap_code) = execute_exit_trap(executor, code).await {
+                return trap_code;
+            }
             return code;
         }
     }
+    
+    if let Some(trap_code) = execute_exit_trap(executor, last_exit).await {
+        return trap_code;
+    }
     last_exit
+}
+
+async fn execute_exit_trap(executor: &mut Executor, _exit_code: i32) -> Option<i32> {
+    use colony_parser::pest_api::parse;
+    
+    if let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Exit).cloned() {
+        if let Ok(program) = parse(&cmd) {
+            for stmt in &program.statements {
+                let (code, flow) = execute_statement_with_control(&stmt, executor).await;
+                if flow == ControlFlow::Exit {
+                    return Some(code);
+                }
+            }
+        }
+    }
+    None
+}
+
+async fn execute_err_trap(executor: &mut Executor) {
+    use colony_parser::pest_api::parse;
+    
+    if let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Err).cloned() {
+        if let Ok(program) = parse(&cmd) {
+            for stmt in &program.statements {
+                let _ = execute_statement_for_code(&stmt, executor).await;
+            }
+        }
+    }
 }
 
 async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {

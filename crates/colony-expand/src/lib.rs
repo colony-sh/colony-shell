@@ -23,7 +23,7 @@ mod quote;
 mod context;
 mod brace;
 
-pub use context::{ExpansionContext, ShellOptions, Variable};
+pub use context::{ExpansionContext, ShellOptions, Variable, TrapSignal, TrapAction};
 pub use tilde::expand_tilde;
 pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
 pub use arithmetic::expand_arithmetic;
