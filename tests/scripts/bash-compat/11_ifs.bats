@@ -122,7 +122,7 @@ c"; for i in $var; do echo $i; done'
     run $COLONY -c 'var="a:b:c"; echo $var; IFS=:; echo $var'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "a:b:c" ]
-    [ "${lines[1]}" = "a:b:c" ]
+    [ "${lines[1]}" = "a b c" ]
 }
 
 @test "ifs: temporary IFS for single command" {
