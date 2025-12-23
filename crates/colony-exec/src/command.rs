@@ -77,6 +77,7 @@ fn execute_command_blocking(
             }
 
             // Continue to path resolution with expanded alias
+            crate::xtrace::trace_simple_command(context, &command_name, &args[1..]);
             let path_env = context.get_env("PATH");
             let program_path = resolve_command(&command_name, path_env)?;
 
@@ -106,6 +107,7 @@ fn execute_command_blocking(
     }
 
     // 3. Resolve command path
+    crate::xtrace::trace_simple_command(context, &command_name, &args[1..]);
     let path_env = context.get_env("PATH");
     let program_path = resolve_command(&command_name, path_env)?;
 

@@ -241,6 +241,7 @@ fn execute_simple_command_in_child_blocking(
             }
         }
         
+        crate::xtrace::trace_simple_command(context, command_name, &args);
         context.set_positional_params(args);
         
         let mut last_exit = 0;
@@ -263,6 +264,16 @@ fn execute_simple_command_in_child_blocking(
         let jobs = crate::JobTable::new();
         let tuple_space = colony_tuple::TupleSpace::new();
         let mut channels = colony_channels::ChannelManager::new();
+        
+        let mut builtin_args = extra_args_from_name.clone();
+        for arg_word in &cmd.args {
+            if let Ok(fields) = expander.expand_word(arg_word) {
+                for field in fields {
+                    builtin_args.push(field.text);
+                }
+            }
+        }
+        crate::xtrace::trace_simple_command(context, command_name, &builtin_args);
         
         if let Some(result) = crate::builtins::execute_builtin(
             cmd, 
@@ -287,6 +298,8 @@ fn execute_simple_command_in_child_blocking(
             }
         }
     }
+    
+    crate::xtrace::trace_simple_command(context, command_name, &args[1..]);
     
     let path_env = context.get_env("PATH");
     let program_path = match resolve_command(command_name, path_env) {
@@ -532,6 +545,8 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
             }
         }
         
+        crate::xtrace::trace_simple_command(&context, command_name, &args);
+        
         let mut context = context.clone();
         context.set_positional_params(args);
         
@@ -556,6 +571,16 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         let tuple_space = colony_tuple::TupleSpace::new();
         let mut channels = colony_channels::ChannelManager::new();
         
+        let mut builtin_args = extra_args_from_name.clone();
+        for arg_word in &simple_cmd.args {
+            if let Ok(fields) = expander.expand_word(arg_word) {
+                for field in fields {
+                    builtin_args.push(field.text);
+                }
+            }
+        }
+        crate::xtrace::trace_simple_command(&context, command_name, &builtin_args);
+        
         if let Some(result) = crate::builtins::execute_builtin(
             simple_cmd, 
             &mut context, 
@@ -579,6 +604,8 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
             }
         }
     }
+
+    crate::xtrace::trace_simple_command(&context, command_name, &args[1..]);
 
     let path_env = context.get_env("PATH");
     let program_path = match resolve_command(command_name, path_env) {

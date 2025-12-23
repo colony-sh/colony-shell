@@ -375,49 +375,71 @@ fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<Builti
     
     let mut positional_params: Vec<String> = Vec::new();
     let mut seen_double_dash = false;
-    let mut processed_any_options = false;
+    let mut i = 0;
     
-    for arg in args {
+    while i < args.len() {
+        let arg = &args[i];
+        
         if seen_double_dash {
             positional_params.push(arg.clone());
+            i += 1;
             continue;
         }
         
         if arg == "--" {
             seen_double_dash = true;
-            processed_any_options = true;
+            i += 1;
+            continue;
+        }
+        
+        if arg == "-o" || arg == "+o" {
+            let enable = arg == "-o";
+            i += 1;
+            if i < args.len() {
+                set_option_by_name(context, &args[i], enable);
+            }
+            i += 1;
             continue;
         }
         
         if arg.starts_with('-') && arg.len() > 1 && arg != "-" {
-            processed_any_options = true;
-            for c in arg[1..].chars() {
-                match c {
-                    'e' => context.shell_options_mut().errexit = true,
-                    'u' => context.shell_options_mut().nounset = true,
-                    'x' => context.shell_options_mut().xtrace = true,
-                    'f' => context.shell_options_mut().noglob = true,
-                    'n' => context.shell_options_mut().noexec = true,
-                    'v' => context.shell_options_mut().verbose = true,
-                    _ => {}
+            if arg.starts_with("-o") && arg.len() > 2 {
+                set_option_by_name(context, &arg[2..], true);
+            } else {
+                for c in arg[1..].chars() {
+                    match c {
+                        'e' => context.shell_options_mut().errexit = true,
+                        'u' => context.shell_options_mut().nounset = true,
+                        'x' => context.shell_options_mut().xtrace = true,
+                        'f' => context.shell_options_mut().noglob = true,
+                        'n' => context.shell_options_mut().noexec = true,
+                        'v' => context.shell_options_mut().verbose = true,
+                        'o' => {}
+                        _ => {}
+                    }
                 }
             }
         } else if arg.starts_with('+') && arg.len() > 1 {
-            processed_any_options = true;
-            for c in arg[1..].chars() {
-                match c {
-                    'e' => context.shell_options_mut().errexit = false,
-                    'u' => context.shell_options_mut().nounset = false,
-                    'x' => context.shell_options_mut().xtrace = false,
-                    'f' => context.shell_options_mut().noglob = false,
-                    'n' => context.shell_options_mut().noexec = false,
-                    'v' => context.shell_options_mut().verbose = false,
-                    _ => {}
+            if arg.starts_with("+o") && arg.len() > 2 {
+                set_option_by_name(context, &arg[2..], false);
+            } else {
+                for c in arg[1..].chars() {
+                    match c {
+                        'e' => context.shell_options_mut().errexit = false,
+                        'u' => context.shell_options_mut().nounset = false,
+                        'x' => context.shell_options_mut().xtrace = false,
+                        'f' => context.shell_options_mut().noglob = false,
+                        'n' => context.shell_options_mut().noexec = false,
+                        'v' => context.shell_options_mut().verbose = false,
+                        'o' => {}
+                        _ => {}
+                    }
                 }
             }
         } else {
             positional_params.push(arg.clone());
         }
+        i += 1;
     }
     
     if seen_double_dash || !positional_params.is_empty() {
@@ -425,6 +447,19 @@ fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<Builti
     }
     
     Ok(BuiltinResult::Success(0))
+}
+
+fn set_option_by_name(context: &mut ExpansionContext, name: &str, enable: bool) {
+    let opts = context.shell_options_mut();
+    match name {
+        "errexit" => opts.errexit = enable,
+        "nounset" => opts.nounset = enable,
+        "xtrace" => opts.xtrace = enable,
+        "noglob" => opts.noglob = enable,
+        "noexec" => opts.noexec = enable,
+        "verbose" => opts.verbose = enable,
+        _ => {}
+    }
 }
 
 /// type - Check command type

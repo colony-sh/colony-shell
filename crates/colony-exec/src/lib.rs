@@ -18,6 +18,7 @@ mod path;
 mod pipeline;
 mod process;
 mod redirect;
+mod xtrace;
 
 pub use builtins::{execute_builtin, is_builtin, BuiltinResult};
 pub use command::execute_command;
@@ -260,8 +261,8 @@ impl Executor {
             } else {
                 match &assignment.value {
                     AssignmentValue::Word(word) => {
-                        // POSIX: No field splitting on assignment RHS
                         let value = expander.expand_word_for_assignment(word)?;
+                        xtrace::trace_assignment(&self.context, &assignment.name, &value);
                         if assignment.op == colony_parser::AssignOp::Append {
                             let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
                             self.context.set_var(assignment.name.clone(), existing + &value);
@@ -324,6 +325,7 @@ impl Executor {
                 }
             }
 
+            xtrace::trace_simple_command(&self.context, command_name, &args);
             let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?;
             return self.execute_function(&func_def, args).await;
         }
@@ -353,6 +355,21 @@ impl Executor {
 
         if is_builtin(command_name) {
             tracing::debug!("Command is builtin, executing with redirect support");
+
+            let mut builtin_args = extra_args_from_name.clone();
+            for arg_word in &cmd.args {
+                let fields = expander.expand_word(arg_word)?;
+                for field in fields {
+                    builtin_args.push(field.text);
+                }
+            }
+            
+            let is_assignment_only_noop = command_name == ":" 
+                && builtin_args.is_empty() 
+                && !cmd.env_assignments.is_empty();
+            if !is_assignment_only_noop {
+                xtrace::trace_simple_command(&self.context, command_name, &builtin_args);
+            }
 
             let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?;
 
@@ -420,6 +437,8 @@ impl Executor {
                     args.push(field.text);
                 }
             }
+
+            xtrace::trace_simple_command(&context_clone, command_name, &args[1..]);
 
             // Resolve command path
             let path_env = context_clone.get_env("PATH");
