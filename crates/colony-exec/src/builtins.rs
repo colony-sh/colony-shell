@@ -75,6 +75,9 @@ pub fn is_builtin(name: &str) -> bool {
         | "exec"
         | "trap"
         | "return"
+        | "getopts"
+        | "shift"
+        | "dirs" | "pushd" | "popd"
     )
 }
 
@@ -154,6 +157,11 @@ pub fn execute_builtin(
         "exec" => builtin_exec(&args, &cmd.redirects, context),
         "trap" => builtin_trap(&args, context),
         "return" => builtin_return(&args, context),
+        "getopts" => builtin_getopts(&args, context),
+        "shift" => builtin_shift(&args, context),
+        "dirs" => builtin_dirs(&args, context),
+        "pushd" => builtin_pushd(&args, context, tuple_space),
+        "popd" => builtin_popd(&args, context, tuple_space),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -1699,6 +1707,593 @@ fn builtin_return(args: &[String], context: &ExpansionContext) -> Result<Builtin
     };
     
     Err(ExecutionError::Return(code))
+}
+
+/// getopts - Parse positional parameters
+///
+/// Usage: getopts optstring name [arg...]
+///
+/// Parses positional parameters (or provided args) for single-character options.
+/// - `optstring`: Valid option characters. If followed by `:`, option requires argument.
+/// - `name`: Variable to store the current option letter.
+/// - `arg...`: Optional arguments to parse instead of positional parameters.
+///
+/// Returns 0 if an option is found, 1 when all options are processed.
+///
+/// Sets:
+/// - `name` to the option letter, or `?` on error
+/// - `OPTARG` to the option's argument (if any)
+/// - `OPTIND` to the index of the next argument to process
+///
+/// If optstring starts with `:`, silent error mode is enabled:
+/// - Invalid option: `name` = `?`, `OPTARG` = the invalid character
+/// - Missing argument: `name` = `:`, `OPTARG` = the option character
+fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    // Validate arguments: need at least optstring and name
+    if args.is_empty() {
+        eprintln!("getopts: usage: getopts optstring name [arg ...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+    
+    if args.len() < 2 {
+        eprintln!("getopts: usage: getopts optstring name [arg ...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+    
+    let optstring = &args[0];
+    let name = &args[1];
+    
+    // Determine if we're using custom args or positional params
+    let use_custom_args = args.len() > 2;
+    
+    // Get current OPTIND (defaults to 1)
+    let mut optind: usize = context
+        .get_var_or_env("OPTIND")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    
+    // Get getopts internal state (position within combined options like -abc)
+    // Format: "argindex:charpos" where charpos is position within current arg string
+    let (mut arg_index, mut char_pos) = parse_getopts_state(context, optind);
+    
+    // Determine if silent mode (optstring starts with :)
+    let (silent_mode, effective_optstring) = if optstring.starts_with(':') {
+        (true, &optstring[1..])
+    } else {
+        (false, optstring.as_str())
+    };
+    
+    // Get OPTERR (0 = suppress errors, default = 1)
+    let opterr = context
+        .get_var_or_env("OPTERR")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(1) != 0;
+    
+    // Get the arguments to parse
+    let arguments: Vec<String> = if use_custom_args {
+        args[2..].to_vec()
+    } else {
+        context.get_all_positional_params().to_vec()
+    };
+    
+    // Clear OPTARG by default
+    context.set_var("OPTARG".to_string(), String::new());
+    
+    // Check if we're done parsing
+    if arg_index > arguments.len() {
+        context.set_var(name.clone(), "?".to_string());
+        return Ok(BuiltinResult::Success(1));
+    }
+    
+    // Get current argument (1-indexed, so arg_index-1)
+    let current_arg = if arg_index > 0 && arg_index <= arguments.len() {
+        &arguments[arg_index - 1]
+    } else {
+        // No more arguments
+        context.set_var(name.clone(), "?".to_string());
+        return Ok(BuiltinResult::Success(1));
+    };
+    
+    // Check if current argument is an option (starts with -)
+    if !current_arg.starts_with('-') || current_arg == "-" {
+        // Not an option - done parsing
+        context.set_var(name.clone(), "?".to_string());
+        return Ok(BuiltinResult::Success(1));
+    }
+    
+    // Check for -- (end of options)
+    if current_arg == "--" {
+        context.set_var("OPTIND".to_string(), (arg_index + 1).to_string());
+        context.set_var(name.clone(), "?".to_string());
+        // Clear getopts state
+        context.unset_variable("_GETOPTS_STATE");
+        return Ok(BuiltinResult::Success(1));
+    }
+    
+    // Get the option character at current position
+    let arg_chars: Vec<char> = current_arg.chars().collect();
+    
+    // char_pos starts at 1 (skip the leading -)
+    if char_pos < 1 {
+        char_pos = 1;
+    }
+    
+    if char_pos >= arg_chars.len() {
+        // Move to next argument
+        arg_index += 1;
+        char_pos = 1;
+        optind = arg_index;
+        
+        // Recurse with updated state
+        context.set_var("OPTIND".to_string(), optind.to_string());
+        save_getopts_state(context, arg_index, char_pos);
+        return builtin_getopts(args, context);
+    }
+    
+    let opt_char = arg_chars[char_pos];
+    
+    // Check if this option is in optstring
+    let opt_pos = effective_optstring.find(opt_char);
+    
+    match opt_pos {
+        Some(pos) => {
+            // Valid option found
+            let needs_arg = pos + 1 < effective_optstring.len() 
+                && effective_optstring.chars().nth(pos + 1) == Some(':');
+            
+            if needs_arg {
+                // Option requires an argument
+                let opt_arg = if char_pos + 1 < arg_chars.len() {
+                    // Argument is attached: -bvalue
+                    let arg: String = arg_chars[char_pos + 1..].iter().collect();
+                    // Move to next argument
+                    arg_index += 1;
+                    char_pos = 1;
+                    Some(arg)
+                } else {
+                    // Argument is next positional parameter
+                    if arg_index < arguments.len() {
+                        let arg = arguments[arg_index].clone(); // arg_index is 1-based, so this is next
+                        arg_index += 2; // Skip current option and its argument
+                        char_pos = 1;
+                        Some(arg)
+                    } else {
+                        // Missing argument
+                        None
+                    }
+                };
+                
+                match opt_arg {
+                    Some(arg) => {
+                        context.set_var(name.clone(), opt_char.to_string());
+                        context.set_var("OPTARG".to_string(), arg);
+                        context.set_var("OPTIND".to_string(), arg_index.to_string());
+                        save_getopts_state(context, arg_index, char_pos);
+                        Ok(BuiltinResult::Success(0))
+                    }
+                    None => {
+                        // Missing required argument
+                        if silent_mode {
+                            context.set_var(name.clone(), ":".to_string());
+                            context.set_var("OPTARG".to_string(), opt_char.to_string());
+                        } else {
+                            if opterr {
+                                eprintln!("getopts: option requires an argument -- {}", opt_char);
+                            }
+                            context.set_var(name.clone(), "?".to_string());
+                        }
+                        arg_index += 1;
+                        context.set_var("OPTIND".to_string(), arg_index.to_string());
+                        save_getopts_state(context, arg_index, 1);
+                        Ok(BuiltinResult::Success(0))
+                    }
+                }
+            } else {
+                // Option doesn't require argument
+                context.set_var(name.clone(), opt_char.to_string());
+                
+                // Move to next character or next argument
+                char_pos += 1;
+                if char_pos >= arg_chars.len() {
+                    arg_index += 1;
+                    char_pos = 1;
+                }
+                
+                context.set_var("OPTIND".to_string(), arg_index.to_string());
+                save_getopts_state(context, arg_index, char_pos);
+                Ok(BuiltinResult::Success(0))
+            }
+        }
+        None => {
+            // Invalid option
+            if silent_mode {
+                context.set_var(name.clone(), "?".to_string());
+                context.set_var("OPTARG".to_string(), opt_char.to_string());
+            } else {
+                if opterr {
+                    eprintln!("getopts: illegal option -- {}", opt_char);
+                }
+                context.set_var(name.clone(), "?".to_string());
+            }
+            
+            // Move to next character or next argument
+            char_pos += 1;
+            if char_pos >= arg_chars.len() {
+                arg_index += 1;
+                char_pos = 1;
+            }
+            
+            context.set_var("OPTIND".to_string(), arg_index.to_string());
+            save_getopts_state(context, arg_index, char_pos);
+            Ok(BuiltinResult::Success(0))
+        }
+    }
+}
+
+/// Parse getopts internal state from _GETOPTS_STATE variable
+fn parse_getopts_state(context: &ExpansionContext, optind: usize) -> (usize, usize) {
+    if let Some(state) = context.get_var_or_env("_GETOPTS_STATE") {
+        let parts: Vec<&str> = state.split(':').collect();
+        if parts.len() == 2 {
+            let saved_optind: usize = parts[0].parse().unwrap_or(optind);
+            let char_pos: usize = parts[1].parse().unwrap_or(1);
+            
+            // If OPTIND was reset (e.g., OPTIND=1), reset internal state too
+            if optind == 1 && saved_optind != 1 {
+                return (1, 1);
+            }
+            
+            // If OPTIND matches, use saved char position
+            if saved_optind == optind || (optind == saved_optind) {
+                return (saved_optind, char_pos);
+            }
+        }
+    }
+    
+    (optind, 1)
+}
+
+/// Save getopts internal state to _GETOPTS_STATE variable
+fn save_getopts_state(context: &mut ExpansionContext, arg_index: usize, char_pos: usize) {
+    context.set_var("_GETOPTS_STATE".to_string(), format!("{}:{}", arg_index, char_pos));
+}
+
+fn builtin_shift(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    let n: usize = if args.is_empty() {
+        1
+    } else {
+        args[0].parse().unwrap_or(1)
+    };
+    
+    let current_params = context.get_all_positional_params().to_vec();
+    
+    if n > current_params.len() {
+        eprintln!("shift: shift count must be <= $#");
+        return Ok(BuiltinResult::Failure(1));
+    }
+    
+    let new_params: Vec<String> = current_params.into_iter().skip(n).collect();
+    context.set_positional_params(new_params);
+    
+    Ok(BuiltinResult::Success(0))
+}
+
+fn tilde_abbreviate(path: &std::path::Path, home: Option<&std::path::Path>) -> String {
+    if let Some(home_path) = home {
+        if let Ok(stripped) = path.strip_prefix(home_path) {
+            if stripped.as_os_str().is_empty() {
+                return "~".to_string();
+            }
+            return format!("~/{}", stripped.display());
+        }
+    }
+    path.display().to_string()
+}
+
+fn parse_stack_index(arg: &str, stack_len: usize) -> Option<usize> {
+    if arg.starts_with('+') {
+        arg[1..].parse::<usize>().ok().filter(|&n| n < stack_len)
+    } else if arg.starts_with('-') && arg.len() > 1 && arg.chars().nth(1).unwrap().is_ascii_digit() {
+        let n = arg[1..].parse::<usize>().ok()?;
+        if n < stack_len {
+            Some(stack_len - 1 - n)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn builtin_dirs(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    let mut clear = false;
+    let mut long_format = false;
+    let mut one_per_line = false;
+    let mut with_index = false;
+    let mut index_arg: Option<&str> = None;
+
+    for arg in args {
+        match arg.as_str() {
+            "-c" => clear = true,
+            "-l" => long_format = true,
+            "-p" => one_per_line = true,
+            "-v" => {
+                with_index = true;
+                one_per_line = true;
+            }
+            s if s.starts_with('+') || (s.starts_with('-') && s.len() > 1 && s.chars().nth(1).unwrap().is_ascii_digit()) => {
+                index_arg = Some(s);
+            }
+            _ => {
+                eprintln!("dirs: {}: invalid option", arg);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+
+    context.sync_dir_stack_top();
+    let stack = context.dir_stack();
+    let home = context.home();
+
+    if clear {
+        let cwd = stack.first().cloned().unwrap_or_else(|| env::current_dir().unwrap_or_default());
+        context.dir_stack_mut().clear();
+        context.dir_stack_mut().push(cwd);
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    if let Some(idx_str) = index_arg {
+        let stack_len = stack.len();
+        match parse_stack_index(idx_str, stack_len) {
+            Some(idx) => {
+                let path = &stack[idx];
+                let display = if long_format {
+                    path.display().to_string()
+                } else {
+                    tilde_abbreviate(path, home.as_deref())
+                };
+                println!("{}", display);
+                return Ok(BuiltinResult::Success(0));
+            }
+            None => {
+                eprintln!("dirs: {}: directory stack index out of range", idx_str);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+
+    if stack.is_empty() {
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    if one_per_line {
+        for (i, path) in stack.iter().enumerate() {
+            let display = if long_format {
+                path.display().to_string()
+            } else {
+                tilde_abbreviate(path, home.as_deref())
+            };
+            if with_index {
+                println!("{:>2}  {}", i, display);
+            } else {
+                println!("{}", display);
+            }
+        }
+    } else {
+        let entries: Vec<String> = stack
+            .iter()
+            .map(|p| {
+                if long_format {
+                    p.display().to_string()
+                } else {
+                    tilde_abbreviate(p, home.as_deref())
+                }
+            })
+            .collect();
+        println!("{}", entries.join(" "));
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+fn builtin_pushd(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+    let mut no_cd = false;
+    let mut target: Option<&str> = None;
+    let mut index_arg: Option<&str> = None;
+
+    for arg in args {
+        match arg.as_str() {
+            "-n" => no_cd = true,
+            s if s.starts_with('+') || (s.starts_with('-') && s.len() > 1 && s.chars().nth(1).unwrap().is_ascii_digit()) => {
+                index_arg = Some(s);
+            }
+            s => target = Some(s),
+        }
+    }
+
+    context.sync_dir_stack_top();
+    let home = context.home();
+
+    if let Some(idx_str) = index_arg {
+        let stack_len = context.dir_stack_len();
+        match parse_stack_index(idx_str, stack_len) {
+            Some(idx) => {
+                if idx == 0 {
+                    print_dir_stack(context, home.as_deref());
+                    return Ok(BuiltinResult::Success(0));
+                }
+                
+                let stack = context.dir_stack_mut();
+                let rotated: Vec<PathBuf> = stack[idx..].iter().chain(stack[..idx].iter()).cloned().collect();
+                *stack = rotated;
+
+                if !no_cd {
+                    let new_dir = stack[0].clone();
+                    let old_dir = env::current_dir().unwrap_or_default();
+                    
+                    if let Err(e) = env::set_current_dir(&new_dir) {
+                        eprintln!("pushd: {}: {}", new_dir.display(), e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                    
+                    context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
+                    context.set_env("PWD", new_dir.to_str().unwrap_or(""));
+                    
+                    tuple_space.out(Tuple::from(vec![
+                        Value::Str("dir_change".to_string()),
+                        Value::Str(old_dir.display().to_string()),
+                        Value::Str(new_dir.display().to_string()),
+                    ]));
+                }
+                
+                print_dir_stack(context, home.as_deref());
+                return Ok(BuiltinResult::Success(0));
+            }
+            None => {
+                eprintln!("pushd: {}: directory stack index out of range", idx_str);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+
+    if target.is_none() {
+        let stack_len = context.dir_stack_len();
+        if stack_len < 2 {
+            eprintln!("pushd: no other directory");
+            return Ok(BuiltinResult::Failure(1));
+        }
+        
+        let stack = context.dir_stack_mut();
+        stack.swap(0, 1);
+
+        if !no_cd {
+            let new_dir = stack[0].clone();
+            let old_dir = env::current_dir().unwrap_or_default();
+            
+            if let Err(e) = env::set_current_dir(&new_dir) {
+                stack.swap(0, 1);
+                eprintln!("pushd: {}: {}", new_dir.display(), e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+            
+            context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
+            context.set_env("PWD", new_dir.to_str().unwrap_or(""));
+            
+            tuple_space.out(Tuple::from(vec![
+                Value::Str("dir_change".to_string()),
+                Value::Str(old_dir.display().to_string()),
+                Value::Str(new_dir.display().to_string()),
+            ]));
+        }
+        
+        print_dir_stack(context, home.as_deref());
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    let target_path = PathBuf::from(target.unwrap());
+    
+    if !target_path.is_dir() {
+        eprintln!("pushd: {}: No such file or directory", target_path.display());
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let target_canonical = target_path.canonicalize().unwrap_or(target_path);
+    let old_dir = env::current_dir().unwrap_or_default();
+
+    if no_cd {
+        context.dir_stack_mut().insert(1, target_canonical);
+    } else {
+        if let Err(e) = env::set_current_dir(&target_canonical) {
+            eprintln!("pushd: {}: {}", target_canonical.display(), e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+        
+        context.dir_stack_mut().insert(0, target_canonical.clone());
+        context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
+        context.set_env("PWD", target_canonical.to_str().unwrap_or(""));
+        
+        tuple_space.out(Tuple::from(vec![
+            Value::Str("dir_change".to_string()),
+            Value::Str(old_dir.display().to_string()),
+            Value::Str(target_canonical.display().to_string()),
+        ]));
+    }
+
+    print_dir_stack(context, home.as_deref());
+    Ok(BuiltinResult::Success(0))
+}
+
+fn builtin_popd(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+    let mut no_cd = false;
+    let mut index_arg: Option<&str> = None;
+
+    for arg in args {
+        match arg.as_str() {
+            "-n" => no_cd = true,
+            s if s.starts_with('+') || (s.starts_with('-') && s.len() > 1 && s.chars().nth(1).unwrap().is_ascii_digit()) => {
+                index_arg = Some(s);
+            }
+            _ => {
+                eprintln!("popd: {}: invalid argument", arg);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+
+    context.sync_dir_stack_top();
+    let home = context.home();
+
+    let stack_len = context.dir_stack_len();
+    if stack_len <= 1 {
+        eprintln!("popd: directory stack empty");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let remove_idx = if let Some(idx_str) = index_arg {
+        match parse_stack_index(idx_str, stack_len) {
+            Some(idx) => idx,
+            None => {
+                eprintln!("popd: {}: directory stack index out of range", idx_str);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    } else {
+        0
+    };
+
+    let removed = context.dir_stack_mut().remove(remove_idx);
+    
+    if remove_idx == 0 && !no_cd {
+        let old_dir = removed;
+        let new_dir = context.dir_stack().first().cloned().unwrap_or_else(|| env::current_dir().unwrap_or_default());
+        
+        if let Err(e) = env::set_current_dir(&new_dir) {
+            context.dir_stack_mut().insert(0, old_dir);
+            eprintln!("popd: {}: {}", new_dir.display(), e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+        
+        context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
+        context.set_env("PWD", new_dir.to_str().unwrap_or(""));
+        
+        tuple_space.out(Tuple::from(vec![
+            Value::Str("dir_change".to_string()),
+            Value::Str(old_dir.display().to_string()),
+            Value::Str(new_dir.display().to_string()),
+        ]));
+    }
+
+    print_dir_stack(context, home.as_deref());
+    Ok(BuiltinResult::Success(0))
+}
+
+fn print_dir_stack(context: &ExpansionContext, home: Option<&std::path::Path>) {
+    let stack = context.dir_stack();
+    let entries: Vec<String> = stack
+        .iter()
+        .map(|p| tilde_abbreviate(p, home))
+        .collect();
+    println!("{}", entries.join(" "));
 }
 
 #[cfg(test)]

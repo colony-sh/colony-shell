@@ -1395,3 +1395,67 @@
 [2025-12-22 16:40] SKIPPED: Tests for unimplemented features (DEBUG, RETURN, SIGCHLD, set -e, bg jobs)
 [2025-12-22 16:45] RESULT: 74/74 trap tests passing (67 real + 7 skipped = 100%)
 [2025-12-22 16:50] MILESTONE: trap builtin COMPLETE for EXIT, ERR, and signal traps
+
+
+[2025-12-22 23:10] START: Session start - implementing F042 Directory Stack Builtins
+[2025-12-22 23:11] STATUS: 35 commits ahead of origin, uncommitted getopts implementation
+[2025-12-22 23:15] TASK: Implement dirs, pushd, popd builtins for Colony shell
+[2025-12-22 23:20] IMPLEMENTED: Added dir_stack: Vec<PathBuf> to ExpansionContext
+[2025-12-22 23:21] INVARIANT: Stack[0] always equals current working directory
+[2025-12-22 23:25] IMPLEMENTED: dir_stack(), dir_stack_mut(), dir_stack_len(), sync_dir_stack_top() methods
+[2025-12-22 23:30] IMPLEMENTED: tilde_abbreviate() helper for display formatting
+[2025-12-22 23:31] IMPLEMENTED: parse_stack_index() helper for +N/-N notation parsing
+[2025-12-22 23:35] IMPLEMENTED: builtin_dirs() with options -c, -l, -p, -v, +N, -N
+[2025-12-22 23:40] IMPLEMENTED: builtin_pushd() with dir, no-args swap, +N/-N rotate, -n option
+[2025-12-22 23:45] IMPLEMENTED: builtin_popd() with +N/-N index removal, -n option
+[2025-12-22 23:50] IMPLEMENTED: print_dir_stack() helper for bash-compatible output
+[2025-12-22 23:55] REACTIVE: All builtins emit dir_change tuples for terminal updates
+[2025-12-23 00:00] CREATED: tests/scripts/bash-compat/21_dstack.bats with 34 comprehensive tests
+[2025-12-23 00:05] CATEGORIES: dirs options, pushd operations, popd operations, integration, bash comparison
+[2025-12-23 00:10] RESULT: 34/34 tests passing (100%)
+[2025-12-23 00:15] RESULT: 31/31 builtin unit tests passing (no regression)
+[2025-12-23 00:20] MILESTONE: F042 Directory Stack Builtins COMPLETE
+[2025-12-23 00:25] ACHIEVEMENT: Full bash-compatible directory stack management
+
+[2025-12-22 12:00] START: Implementing F043 System Variables (UID, EUID, PPID, HOSTNAME, etc.)
+[2025-12-22 12:05] DESIGN: SystemVars struct computed once at shell startup, stored in ExpansionContext
+[2025-12-22 12:10] ADDED: nix (user, hostname features) and libc dependencies to colony-expand
+[2025-12-22 12:15] IMPLEMENTED: SystemVars::new() using nix::unistd::{getuid, geteuid, getppid, gethostname}
+[2025-12-22 12:20] IMPLEMENTED: get_hostname() - returns machine hostname via nix
+[2025-12-22 12:25] IMPLEMENTED: get_hosttype() - returns std::env::consts::ARCH (aarch64, x86_64)
+[2025-12-22 12:30] IMPLEMENTED: get_ostype() - darwin24.6.0 on macOS, linux-gnu on Linux
+[2025-12-22 12:35] IMPLEMENTED: get_machtype() - aarch64-apple-darwin24.6.0 format
+[2025-12-22 12:40] IMPLEMENTED: Darwin version via libc::uname system call
+[2025-12-22 12:45] IMPLEMENTED: get_username_from_uid() fallback using nix::unistd::User::from_uid
+[2025-12-22 12:50] INTEGRATED: Added UID, EUID, PPID, HOSTNAME, HOSTTYPE, OSTYPE, MACHTYPE, SHELL, USER to get_var_or_env
+[2025-12-22 12:55] FEATURE: Variables are read-only (checked before user variables in get_var_or_env)
+[2025-12-22 13:00] UPDATED: BASH_VERSINFO[5] now uses machtype instead of 'colony'
+[2025-12-22 13:05] CREATED: tests/scripts/bash-compat/22_system_vars.bats (14 tests)
+[2025-12-22 13:10] TESTED: All system variables match bash output ✅
+[2025-12-22 13:15] TESTED: Variables are read-only (assignment doesn't override) ✅
+[2025-12-22 13:20] RESULT: 14/14 BATS tests passing (100%)
+[2025-12-22 13:25] MILESTONE: F043 System Variables COMPLETE
+[2025-12-22 13:30] ACHIEVEMENT: Full bash-compatible system variables implementation
+
+[2025-12-22 14:00] START: Implementing F044 Startup File Processing (bash-compatible)
+[2025-12-22 14:05] DESIGN: ShellOptions struct parses --login, --noprofile, --norc, --rcfile, -c, --verbose
+[2025-12-22 14:10] IMPLEMENTED: Login shell detection (argv[0] starts with '-' or --login/-l flag)
+[2025-12-22 14:15] IMPLEMENTED: Interactive detection (no -c command, no script, stdin is tty)
+[2025-12-22 14:20] IMPLEMENTED: Combined short options parsing (-lc 'command')
+[2025-12-22 14:25] IMPLEMENTED: --help, --version, -h, -V options with proper output
+[2025-12-22 14:30] IMPLEMENTED: run_startup_files() with full bash startup file order
+[2025-12-22 14:35] LOGIN SHELL: Sources /etc/profile, then first of ~/.bash_profile, ~/.bash_login, ~/.profile
+[2025-12-22 14:40] INTERACTIVE: Sources /etc/bash.bashrc and ~/.bashrc (or --rcfile)
+[2025-12-22 14:45] NON-INTERACTIVE: Sources BASH_ENV or ENV if set (for scripts and -c)
+[2025-12-22 14:50] IMPLEMENTED: expand_tilde() for tilde expansion in startup file paths
+[2025-12-22 14:55] IMPLEMENTED: maybe_source_file() silently skips missing files, warns on errors
+[2025-12-22 15:00] IMPLEMENTED: --verbose mode shows login/interactive state and sourced files
+[2025-12-22 15:05] IMPLEMENTED: COLONY_STARTUP_SOURCED=1 marker set after startup files processed
+[2025-12-22 15:10] FIXED: Script mode correctly sets $0 via set_shell_name() (not in positional params)
+[2025-12-22 15:15] CREATED: tests/scripts/bash-compat/23_startup.bats (25 tests)
+[2025-12-22 15:20] TESTED: All command-line options work correctly
+[2025-12-22 15:25] TESTED: BASH_ENV and ENV sourcing works for non-interactive shells
+[2025-12-22 15:30] TESTED: --noprofile correctly skips profile files
+[2025-12-22 15:35] RESULT: 25/25 BATS tests passing (100%)
+[2025-12-22 15:40] MILESTONE: F044 Startup File Processing COMPLETE
+[2025-12-22 15:45] ACHIEVEMENT: Full bash-compatible startup file processing

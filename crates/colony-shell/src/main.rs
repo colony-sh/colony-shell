@@ -1,7 +1,7 @@
 //! Colony Shell - POSIX-compliant shell for AI-native terminal
 
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
-use colony_config::{discover_config, ColonyConfig, ConfigLocation, TrustManager, TrustStatus};
+use colony_config::{discover_config, ColonyConfig, TrustManager, TrustStatus};
 use colony_exec::{Executor, ExecutionError};
 use colony_expand::{ExpansionContext, TrapSignal, TrapAction};
 use colony_parser::pest_api::parse_statement;
@@ -10,6 +10,7 @@ use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
 use miette::Result;
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 /// Control flow signal for loops and functions
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,7 +39,7 @@ fn build_agent_config(colony_config: &Option<ColonyConfig>) -> AgentConfig {
          shell commands, system administration, and programming tasks.",
     );
 
-    let mut use_caching = true;
+    let use_caching = true;
     let mut max_tokens = 4096;
     let mut temperature = None;
 
@@ -230,6 +231,267 @@ use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{Editor, Helper};
 use tracing_subscriber::EnvFilter;
 
+/// Shell startup options (bash-compatible)
+#[derive(Debug, Default)]
+struct ShellOptions {
+    /// Force login shell behavior (--login, -l)
+    login: bool,
+    /// Don't read /etc/profile or personal profile files (--noprofile)
+    noprofile: bool,
+    /// Don't read ~/.bashrc (--norc)
+    norc: bool,
+    /// Use FILE instead of ~/.bashrc (--rcfile FILE, --init-file FILE)
+    rcfile: Option<PathBuf>,
+    /// Command to execute (-c)
+    command: Option<String>,
+    /// Script file to execute
+    script: Option<PathBuf>,
+    /// Positional parameters (arguments after -c command or script)
+    positional_args: Vec<String>,
+    /// Verbose mode - show which files are sourced (--verbose)
+    verbose: bool,
+}
+
+impl ShellOptions {
+    /// Parse command-line arguments
+    fn parse() -> Self {
+        let raw_args: Vec<String> = std::env::args().collect();
+        let mut opts = ShellOptions::default();
+        
+        // Check if invoked as login shell (argv[0] starts with '-')
+        if let Some(argv0) = raw_args.first() {
+            if let Some(basename) = std::path::Path::new(argv0).file_name() {
+                if basename.to_str().map(|s| s.starts_with('-')).unwrap_or(false) {
+                    opts.login = true;
+                }
+            }
+        }
+        
+        let mut i = 1;
+        while i < raw_args.len() {
+            let arg = &raw_args[i];
+            match arg.as_str() {
+                "--login" | "-l" => opts.login = true,
+                "--noprofile" => opts.noprofile = true,
+                "--norc" => opts.norc = true,
+                "--verbose" => opts.verbose = true,
+                "--rcfile" | "--init-file" => {
+                    i += 1;
+                    if i < raw_args.len() {
+                        opts.rcfile = Some(PathBuf::from(&raw_args[i]));
+                    } else {
+                        eprintln!("colony: {}: option requires an argument", arg);
+                        std::process::exit(2);
+                    }
+                }
+                "-c" => {
+                    i += 1;
+                    if i < raw_args.len() {
+                        opts.command = Some(raw_args[i].clone());
+                        // Rest are positional args
+                        if i + 1 < raw_args.len() {
+                            opts.positional_args = raw_args[i + 1..].to_vec();
+                        }
+                        break;
+                    } else {
+                        eprintln!("colony: -c: option requires an argument");
+                        std::process::exit(2);
+                    }
+                }
+                "--help" | "-h" => {
+                    print_help();
+                    std::process::exit(0);
+                }
+                "--version" | "-V" => {
+                    println!("Colony Shell v{}", env!("CARGO_PKG_VERSION"));
+                    std::process::exit(0);
+                }
+                arg if arg.starts_with('-') => {
+                    // Handle combined short options like -lc
+                    let chars: Vec<char> = arg[1..].chars().collect();
+                    let mut j = 0;
+                    while j < chars.len() {
+                        match chars[j] {
+                            'l' => opts.login = true,
+                            'c' => {
+                                // -c needs an argument
+                                if j + 1 < chars.len() {
+                                    // Rest of this arg is the command
+                                    opts.command = Some(chars[j+1..].iter().collect());
+                                } else {
+                                    // Next arg is the command
+                                    i += 1;
+                                    if i < raw_args.len() {
+                                        opts.command = Some(raw_args[i].clone());
+                                        if i + 1 < raw_args.len() {
+                                            opts.positional_args = raw_args[i + 1..].to_vec();
+                                        }
+                                    } else {
+                                        eprintln!("colony: -c: option requires an argument");
+                                        std::process::exit(2);
+                                    }
+                                }
+                                break;
+                            }
+                            _ => {
+                                eprintln!("colony: -{}: invalid option", chars[j]);
+                                std::process::exit(2);
+                            }
+                        }
+                        j += 1;
+                    }
+                    if opts.command.is_some() {
+                        break;
+                    }
+                }
+                _ => {
+                    // First non-option is script file
+                    opts.script = Some(PathBuf::from(arg));
+                    if i + 1 < raw_args.len() {
+                        opts.positional_args = raw_args[i + 1..].to_vec();
+                    }
+                    break;
+                }
+            }
+            i += 1;
+        }
+        
+        opts
+    }
+    
+    fn is_interactive(&self) -> bool {
+        self.command.is_none() && self.script.is_none() && unsafe { libc::isatty(0) != 0 }
+    }
+}
+
+fn print_help() {
+    println!("Colony Shell v{}", env!("CARGO_PKG_VERSION"));
+    println!("POSIX-compliant shell with AI agent integration");
+    println!();
+    println!("Usage: colony [options] [script [arguments]]");
+    println!("       colony [options] -c command [arguments]");
+    println!();
+    println!("Options:");
+    println!("  -c STRING         Execute commands from STRING");
+    println!("  -l, --login       Force login shell behavior");
+    println!("  --noprofile       Don't read /etc/profile or ~/.profile");
+    println!("  --norc            Don't read ~/.bashrc");
+    println!("  --rcfile FILE     Use FILE instead of ~/.bashrc");
+    println!("  --init-file FILE  Same as --rcfile");
+    println!("  --verbose         Show which startup files are sourced");
+    println!("  -h, --help        Show this help message");
+    println!("  -V, --version     Show version information");
+    println!();
+    println!("Startup files (login shell):");
+    println!("  1. /etc/profile");
+    println!("  2. ~/.bash_profile, ~/.bash_login, or ~/.profile (first found)");
+    println!();
+    println!("Startup files (interactive non-login):");
+    println!("  1. /etc/bash.bashrc (if exists)");
+    println!("  2. ~/.bashrc");
+    println!();
+    println!("Environment variables:");
+    println!("  BASH_ENV  File to source for non-interactive shells");
+    println!("  ENV       Same as BASH_ENV (POSIX)");
+}
+
+/// Expand tilde in a path (~ to home directory)
+fn expand_tilde(path: &str) -> PathBuf {
+    if path.starts_with("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(&path[2..]);
+        }
+    } else if path == "~" {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home);
+        }
+    }
+    PathBuf::from(path)
+}
+
+/// Source a startup file if it exists
+async fn maybe_source_file(path: &str, executor: &mut Executor, verbose: bool) -> bool {
+    let expanded = expand_tilde(path);
+    
+    if expanded.is_file() {
+        if verbose {
+            eprintln!("colony: sourcing {}", expanded.display());
+        }
+        match executor.execute_source_file(&expanded, vec![]).await {
+            Ok(_) => true,
+            Err(e) => {
+                eprintln!("colony: error sourcing {}: {}", expanded.display(), e);
+                false
+            }
+        }
+    } else {
+        false
+    }
+}
+
+/// Run startup files based on shell mode (login/interactive)
+async fn run_startup_files(opts: &ShellOptions, executor: &mut Executor) {
+    let is_login = opts.login;
+    let is_interactive = opts.is_interactive();
+    let verbose = opts.verbose;
+    
+    if verbose {
+        eprintln!("colony: login={}, interactive={}", is_login, is_interactive);
+    }
+    
+    // Login shell startup files
+    if is_login && !opts.noprofile {
+        // 1. System-wide profile
+        maybe_source_file("/etc/profile", executor, verbose).await;
+        
+        // 2. User profile - try in order, use first found
+        if !maybe_source_file("~/.bash_profile", executor, verbose).await {
+            if !maybe_source_file("~/.bash_login", executor, verbose).await {
+                maybe_source_file("~/.profile", executor, verbose).await;
+            }
+        }
+    }
+    
+    // Interactive non-login shell startup files
+    if is_interactive && !is_login && !opts.norc {
+        if let Some(ref rcfile) = opts.rcfile {
+            // Custom rcfile specified
+            if verbose {
+                eprintln!("colony: sourcing {}", rcfile.display());
+            }
+            if rcfile.is_file() {
+                if let Err(e) = executor.execute_source_file(rcfile, vec![]).await {
+                    eprintln!("colony: error sourcing {}: {}", rcfile.display(), e);
+                }
+            } else {
+                eprintln!("colony: {}: No such file or directory", rcfile.display());
+            }
+        } else {
+            // Default rc files
+            // Some systems have /etc/bash.bashrc
+            maybe_source_file("/etc/bash.bashrc", executor, verbose).await;
+            maybe_source_file("~/.bashrc", executor, verbose).await;
+        }
+    }
+    
+    // Non-interactive shell (script or -c command)
+    if !is_interactive {
+        // Only process BASH_ENV or ENV if set
+        if let Ok(env_file) = std::env::var("BASH_ENV") {
+            if !env_file.is_empty() {
+                maybe_source_file(&env_file, executor, verbose).await;
+            }
+        } else if let Ok(env_file) = std::env::var("ENV") {
+            if !env_file.is_empty() {
+                maybe_source_file(&env_file, executor, verbose).await;
+            }
+        }
+    }
+    
+    // Set marker to prevent re-sourcing
+    executor.context_mut().set_var("COLONY_STARTUP_SOURCED".to_string(), "1".to_string());
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
@@ -238,24 +500,47 @@ async fn main() -> Result<()> {
         .init();
 
     // Parse command-line arguments
-    let args: Vec<String> = std::env::args().collect();
+    let opts = ShellOptions::parse();
 
-    if args.len() >= 3 && args[1] == "-c" {
-        let command = &args[2];
-
+    // Handle -c command mode
+    if let Some(ref command) = opts.command {
         let mut context = ExpansionContext::new();
-        if args.len() > 3 {
-            context.set_positional_params(args[3..].to_vec());
+        if !opts.positional_args.is_empty() {
+            context.set_positional_params(opts.positional_args.clone());
         }
 
         let mut executor = Executor::new(context);
+        
+        // Source BASH_ENV for non-interactive shells
+        run_startup_files(&opts, &mut executor).await;
 
         // Execute the command and exit with its status
         let exit_code = execute_command_with_status(command, &mut executor).await;
         std::process::exit(exit_code);
     }
+    
+    // Handle script execution mode
+    if let Some(ref script) = opts.script {
+        let mut context = ExpansionContext::new();
+        context.set_shell_name(script.display().to_string());
+        context.set_positional_params(opts.positional_args.clone());
 
-    // No -c flag: start interactive REPL
+        let mut executor = Executor::new(context);
+        
+        // Source BASH_ENV for non-interactive shells
+        run_startup_files(&opts, &mut executor).await;
+
+        // Execute the script
+        match executor.execute_source_file(script, vec![]).await {
+            Ok(status) => std::process::exit(status.code()),
+            Err(e) => {
+                eprintln!("colony: {}: {}", script.display(), e);
+                std::process::exit(127);
+            }
+        }
+    }
+
+    // Interactive REPL mode
     println!("Colony Shell v{}", env!("CARGO_PKG_VERSION"));
     println!("POSIX-compliant shell with AI agent integration");
     println!();

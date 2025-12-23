@@ -4,6 +4,121 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 
+/// System variables that don't change during shell execution
+/// Computed once at shell startup
+#[derive(Debug, Clone)]
+pub struct SystemVars {
+    /// Real user ID
+    pub uid: u32,
+    /// Effective user ID
+    pub euid: u32,
+    /// Parent process ID
+    pub ppid: i32,
+    /// Machine hostname
+    pub hostname: String,
+    /// CPU architecture (e.g., "aarch64", "x86_64")
+    pub hosttype: String,
+    /// OS type with version (e.g., "darwin24.4.0", "linux-gnu")
+    pub ostype: String,
+    /// Full machine type (e.g., "aarch64-apple-darwin24.4.0")
+    pub machtype: String,
+    /// Path to shell executable (may be overridden by env)
+    pub shell_path: String,
+}
+
+impl SystemVars {
+    pub fn new() -> Self {
+        let uid = nix::unistd::getuid().as_raw();
+        let euid = nix::unistd::geteuid().as_raw();
+        let ppid = nix::unistd::getppid().as_raw();
+        let hostname = Self::get_hostname();
+        let hosttype = Self::get_hosttype();
+        let ostype = Self::get_ostype();
+        let machtype = Self::get_machtype(&hosttype, &ostype);
+        let shell_path = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "/bin/sh".to_string());
+
+        Self {
+            uid,
+            euid,
+            ppid,
+            hostname,
+            hosttype,
+            ostype,
+            machtype,
+            shell_path,
+        }
+    }
+
+    fn get_hostname() -> String {
+        if let Ok(hostname) = nix::unistd::gethostname() {
+            return hostname.to_string_lossy().to_string();
+        }
+        std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string())
+    }
+
+    fn get_hosttype() -> String {
+        std::env::consts::ARCH.to_string()
+    }
+
+    fn get_ostype() -> String {
+        #[cfg(target_os = "macos")]
+        {
+            let version = Self::get_darwin_version();
+            format!("darwin{}", version)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            "linux-gnu".to_string()
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            std::env::consts::OS.to_string()
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn get_darwin_version() -> String {
+        unsafe {
+            let mut utsname: libc::utsname = std::mem::zeroed();
+            if libc::uname(&mut utsname) == 0 {
+                let release = std::ffi::CStr::from_ptr(utsname.release.as_ptr())
+                    .to_string_lossy()
+                    .to_string();
+                return release;
+            }
+        }
+        String::new()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn get_darwin_version() -> String {
+        String::new()
+    }
+
+    fn get_machtype(hosttype: &str, ostype: &str) -> String {
+        #[cfg(target_os = "macos")]
+        let vendor = "apple";
+
+        #[cfg(target_os = "linux")]
+        let vendor = "pc";
+
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let vendor = "unknown";
+
+        format!("{}-{}-{}", hosttype, vendor, ostype)
+    }
+}
+
+impl Default for SystemVars {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ShellOptions {
     pub errexit: bool,
@@ -191,12 +306,16 @@ pub struct ExpansionContext {
     local_vars_stack: Vec<HashMap<String, SavedVariable>>,
     shell_options: ShellOptions,
     traps: HashMap<TrapSignal, TrapAction>,
+    dir_stack: Vec<PathBuf>,
+    system_vars: SystemVars,
 }
 
 impl ExpansionContext {
     pub fn new() -> Self {
         let home = std::env::var("HOME").ok().map(PathBuf::from);
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+        let system_vars = SystemVars::new();
+        let machtype_for_versinfo = system_vars.machtype.clone();
 
         let mut ctx = Self {
             variables: HashMap::new(),
@@ -206,13 +325,15 @@ impl ExpansionContext {
             positional_params: Vec::new(),
             shell_name: "colony".to_string(),
             last_exit_status: 0,
-            cwd,
+            cwd: cwd.clone(),
             ifs: " \t\n".to_string(),
             home,
             function_depth: 0,
             local_vars_stack: Vec::new(),
             shell_options: ShellOptions::new(),
             traps: HashMap::new(),
+            dir_stack: vec![cwd],
+            system_vars,
         };
 
         ctx.variables.insert("BASH_VERSINFO".to_string(), Variable::Array(vec![
@@ -221,8 +342,10 @@ impl ExpansionContext {
             "0".to_string(),
             "1".to_string(),
             "release".to_string(),
-            "colony".to_string(),
+            machtype_for_versinfo,
         ]));
+
+        ctx.variables.insert("OPTIND".to_string(), Variable::String("1".to_string()));
 
         ctx
     }
@@ -251,6 +374,25 @@ impl ExpansionContext {
             "-" => return Some(self.shell_options.to_string()),
             "BASH_VERSION" => return Some("5.2.0(1)-colony".to_string()),
             "BASH_VERSINFO" => return Some("5".to_string()),
+            "UID" => return Some(self.system_vars.uid.to_string()),
+            "EUID" => return Some(self.system_vars.euid.to_string()),
+            "PPID" => return Some(self.system_vars.ppid.to_string()),
+            "HOSTNAME" => return Some(self.system_vars.hostname.clone()),
+            "HOSTTYPE" => return Some(self.system_vars.hosttype.clone()),
+            "OSTYPE" => return Some(self.system_vars.ostype.clone()),
+            "MACHTYPE" => return Some(self.system_vars.machtype.clone()),
+            "SHELL" => {
+                if let Some(shell) = self.environment.get("SHELL") {
+                    return Some(shell.clone());
+                }
+                return Some(self.system_vars.shell_path.clone());
+            }
+            "USER" => {
+                if let Some(user) = self.environment.get("USER") {
+                    return Some(user.clone());
+                }
+                return self.get_username_from_uid();
+            }
             _ => {}
         }
 
@@ -266,6 +408,13 @@ impl ExpansionContext {
 
         // Fall back to environment
         self.environment.get(name).cloned()
+    }
+
+    fn get_username_from_uid(&self) -> Option<String> {
+        if let Ok(user) = nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(self.system_vars.uid)) {
+            return user.map(|u| u.name);
+        }
+        None
     }
 
     /// Set a shell variable
@@ -491,6 +640,26 @@ impl ExpansionContext {
 
     pub fn traps(&self) -> &HashMap<TrapSignal, TrapAction> {
         &self.traps
+    }
+
+    pub fn dir_stack(&self) -> &[PathBuf] {
+        &self.dir_stack
+    }
+
+    pub fn dir_stack_mut(&mut self) -> &mut Vec<PathBuf> {
+        &mut self.dir_stack
+    }
+
+    pub fn dir_stack_len(&self) -> usize {
+        self.dir_stack.len()
+    }
+
+    pub fn sync_dir_stack_top(&mut self) {
+        if self.dir_stack.is_empty() {
+            self.dir_stack.push(self.cwd.clone());
+        } else {
+            self.dir_stack[0] = self.cwd.clone();
+        }
     }
 }
 

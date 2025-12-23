@@ -773,6 +773,81 @@
         "2025-12-21: REMAINING: 4 failures - 1 incorrect test, 3 architectural limitations",
         "2025-12-21: COMPLETE: POSIX-compliant tilde expansion for all standard use cases"
       ]
+    },
+    {
+      "id": "F042",
+      "name": "Directory Stack Builtins (dirs/pushd/popd)",
+      "description": "Implementation of directory stack management builtins: dirs (display stack), pushd (push/rotate), popd (pop). Supports all bash options including -c, -l, -p, -v, -n and +N/-N index notation.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": ["F007"],
+      "notes": [
+        "2025-12-22: Starting F042 - Implementing directory stack builtins",
+        "2025-12-22: Added dir_stack: Vec<PathBuf> to ExpansionContext",
+        "2025-12-22: Stack[0] invariant: always equals current working directory",
+        "2025-12-22: Implemented dirs: -c (clear), -l (long), -p (per line), -v (indexed), +N/-N (index)",
+        "2025-12-22: Implemented pushd: dir push, no-args swap, +N/-N rotate, -n no-cd",
+        "2025-12-22: Implemented popd: pop, +N/-N index removal, -n no-cd",
+        "2025-12-22: Helper functions: tilde_abbreviate(), parse_stack_index()",
+        "2025-12-22: Emits dir_change tuples for reactive terminal updates",
+        "2025-12-22: Created comprehensive BATS test suite: 21_dstack.bats (34 tests)",
+        "2025-12-22: All 34 BATS tests passing (100%)",
+        "2025-12-22: All 31 builtin unit tests passing",
+        "2025-12-22: COMPLETE: Full bash-compatible directory stack implementation"
+      ]
+    },
+    {
+      "id": "F043",
+      "name": "System Variables (UID, EUID, PPID, HOSTNAME, etc.)",
+      "description": "Bash-compatible system variables: UID, EUID, PPID, HOSTNAME, HOSTTYPE, OSTYPE, MACHTYPE, USER, SHELL. Computed at shell startup and read-only.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": [],
+      "notes": [
+        "2025-12-22: Starting F043 - Implementing bash system variables",
+        "2025-12-22: Added SystemVars struct with uid, euid, ppid, hostname, hosttype, ostype, machtype, shell_path",
+        "2025-12-22: Added nix and libc dependencies to colony-expand crate",
+        "2025-12-22: Uses nix::unistd::{getuid, geteuid, getppid, gethostname}",
+        "2025-12-22: Uses libc::uname for Darwin version on macOS",
+        "2025-12-22: HOSTTYPE from std::env::consts::ARCH (aarch64, x86_64)",
+        "2025-12-22: OSTYPE format: darwin24.6.0, linux-gnu",
+        "2025-12-22: MACHTYPE format: aarch64-apple-darwin24.6.0",
+        "2025-12-22: USER falls back to passwd lookup via nix::unistd::User::from_uid",
+        "2025-12-22: SHELL prefers environment, falls back to current executable",
+        "2025-12-22: Variables are read-only (special-cased in get_var_or_env before user vars)",
+        "2025-12-22: Updated BASH_VERSINFO[5] to use machtype instead of 'colony'",
+        "2025-12-22: Created BATS test suite: 22_system_vars.bats (14 tests)",
+        "2025-12-22: All 14 BATS tests passing (100%)",
+        "2025-12-22: COMPLETE: Full bash-compatible system variables"
+      ]
+    },
+    {
+      "id": "F044",
+      "name": "Bash-Compatible Startup File Processing",
+      "description": "Process standard shell startup files like bash does. Login shells source /etc/profile and user profile. Interactive non-login shells source ~/.bashrc. Non-interactive shells only source BASH_ENV/ENV. Supports --login, --noprofile, --norc, --rcfile options.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": ["F007"],
+      "notes": [
+        "2025-12-22: Starting F044 - Implementing bash-compatible startup file processing",
+        "2025-12-22: Added ShellOptions struct for command-line argument parsing",
+        "2025-12-22: Supports --login/-l, --noprofile, --norc, --rcfile/--init-file, --verbose",
+        "2025-12-22: Login shell detection: argv[0] starts with '-' or --login flag set",
+        "2025-12-22: Interactive detection: no -c command, no script file, stdin is tty",
+        "2025-12-22: Login shell startup order: /etc/profile, then ~/.bash_profile OR ~/.bash_login OR ~/.profile",
+        "2025-12-22: Interactive non-login: /etc/bash.bashrc (if exists), ~/.bashrc (or --rcfile)",
+        "2025-12-22: Non-interactive: sources BASH_ENV or ENV if set",
+        "2025-12-22: expand_tilde() handles ~ paths in startup file names",
+        "2025-12-22: maybe_source_file() silently skips missing files, warns on parse errors",
+        "2025-12-22: --verbose shows login/interactive state and sourced files",
+        "2025-12-22: COLONY_STARTUP_SOURCED=1 marker set after startup processing",
+        "2025-12-22: Script mode sets $0 via set_shell_name(), not in positional params",
+        "2025-12-22: Combined short options work (-lc 'command')",
+        "2025-12-22: Created BATS test suite: 23_startup.bats (25 tests)",
+        "2025-12-22: All 25 BATS tests passing (100%)",
+        "2025-12-22: COMPLETE: Full bash-compatible startup file processing"
+      ]
     }
   ]
 }
+

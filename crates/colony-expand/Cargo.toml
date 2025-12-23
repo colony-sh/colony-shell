@@ -11,3 +11,5 @@ repository.workspace = true
 colony-parser.workspace = true
 thiserror.workspace = true
 glob = "0.3"
+nix.workspace = true
+libc = "0.2"
