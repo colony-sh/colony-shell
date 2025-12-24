@@ -268,6 +268,22 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                                 .collect();
                             return Ok(modified.join(" "));
                         }
+                        VarModifier::Substitute { pattern, replacement, all } => {
+                            let pat_str = expand_simple_word(pattern, context);
+                            let repl_str = expand_simple_word(replacement, context);
+                            if !pat_str.is_empty() {
+                                let modified: Vec<String> = array.iter()
+                                    .map(|s| {
+                                        if *all {
+                                            s.replace(&pat_str, &repl_str)
+                                        } else {
+                                            s.replacen(&pat_str, &repl_str, 1)
+                                        }
+                                    })
+                                    .collect();
+                                return Ok(modified.join(" "));
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -493,6 +509,36 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
         Some(VarModifier::ToggleCase { all }) => {
             let value = var_value.unwrap_or_default();
             Ok(apply_case_modification(&value, CaseOp::Toggle, *all))
+        }
+
+        Some(VarModifier::Substitute { pattern, replacement, all: replace_all }) => {
+            let pat_str = expand_simple_word(pattern, context);
+            let repl_str = expand_simple_word(replacement, context);
+            
+            if pat_str.is_empty() {
+                return Ok(var_value.unwrap_or_default());
+            }
+            
+            if var_ref.name == "@" || var_ref.name == "*" {
+                let params = context.get_all_positional_params();
+                let modified: Vec<String> = params.iter()
+                    .map(|s| {
+                        if *replace_all {
+                            s.replace(&pat_str, &repl_str)
+                        } else {
+                            s.replacen(&pat_str, &repl_str, 1)
+                        }
+                    })
+                    .collect();
+                return Ok(modified.join(" "));
+            }
+            
+            let value = var_value.unwrap_or_default();
+            if *replace_all {
+                Ok(value.replace(&pat_str, &repl_str))
+            } else {
+                Ok(value.replacen(&pat_str, &repl_str, 1))
+            }
         }
     }
 }

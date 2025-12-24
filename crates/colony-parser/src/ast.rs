@@ -416,6 +416,13 @@ pub enum VarModifier {
     LowerCase { all: bool },
     /// ${var~} - toggle case of first character, ${var~~} - toggle case of all
     ToggleCase { all: bool },
+    /// ${var/pattern/replacement} - replace first match
+    /// ${var//pattern/replacement} - replace all matches
+    Substitute {
+        pattern: Box<Word>,
+        replacement: Box<Word>,
+        all: bool, // true for //, false for /
+    },
 }
 
 /// if/elif/else/fi

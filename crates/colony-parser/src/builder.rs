@@ -2175,6 +2175,29 @@ impl AstBuilder {
 
         let first = inner.next();
         
+        if text.starts_with("//") || (text.starts_with("/") && !text.starts_with("//")) {
+            let all = text.starts_with("//");
+            let pattern = if let Some(ref p) = first {
+                if p.as_rule() == Rule::SubstPattern {
+                    Self::build_subst_word(p.clone())?
+                } else {
+                    Word { parts: vec![], span: Span::DUMMY }
+                }
+            } else {
+                Word { parts: vec![], span: Span::DUMMY }
+            };
+            let replacement = inner.next()
+                .filter(|p| p.as_rule() == Rule::SubstReplacement)
+                .map(|p| Self::build_subst_word(p))
+                .transpose()?
+                .unwrap_or_else(|| Word { parts: vec![], span: Span::DUMMY });
+            return Ok(VarModifier::Substitute {
+                pattern: Box::new(pattern),
+                replacement: Box::new(replacement),
+                all,
+            });
+        }
+
         let word_value = if let Some(first) = first {
             if first.as_rule() == Rule::SliceOffset {
                 let offset_word = Self::build_slice_value(first)?;
@@ -2265,6 +2288,40 @@ impl AstBuilder {
         }
         if parts.is_empty() {
             parts.push(WordPart::Literal(text));
+        }
+        Ok(Word { parts, span: Span::DUMMY })
+    }
+
+    fn build_subst_word(pair: Pair<Rule>) -> Result<Word, BuildError> {
+        let mut parts = Vec::new();
+        for inner in pair.into_inner() {
+            match inner.as_rule() {
+                Rule::QuotedString => {
+                    parts.push(Self::build_quoted_string(inner)?);
+                }
+                Rule::DollarExpansion => {
+                    parts.push(Self::build_dollar_expansion(inner)?);
+                }
+                Rule::BacktickCommandSub => {
+                    let text = inner.as_str();
+                    let content = text.trim_start_matches('`').trim_end_matches('`');
+                    parts.push(WordPart::CommandSubRaw(content.to_string()));
+                }
+                Rule::UnquotedEscape => {
+                    let text = inner.as_str();
+                    let escaped = text.trim_start_matches('\\');
+                    parts.push(WordPart::Literal(escaped.to_string()));
+                }
+                Rule::SubstBareword => {
+                    parts.push(WordPart::Literal(inner.as_str().to_string()));
+                }
+                _ => {
+                    let inner_text = inner.as_str();
+                    if !inner_text.is_empty() {
+                        parts.push(WordPart::Literal(inner_text.to_string()));
+                    }
+                }
+            }
         }
         Ok(Word { parts, span: Span::DUMMY })
     }

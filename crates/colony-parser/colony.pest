@@ -1053,9 +1053,12 @@ VariableRefName = {
 }
 
 // Prefix modifiers that come before identifier
+// IMPORTANT: # as prefix must be followed by a variable name, not a modifier
+// ${#var} = length of var, but ${#:-0} = $# with default modifier
+// Use negative lookahead to prevent # from being prefix when followed by :, -, =, ?, +, etc
 VarPrefix = {
-    "#"   // Length
-  | "!"   // Indices (for arrays)
+    "#" ~ &(Identifier | ASCII_DIGIT | "@" | "*")   // Length - only if followed by var name
+  | "!" ~ &(Identifier | ASCII_DIGIT | "@" | "*")   // Indices - only if followed by var name
 }
 
 // Array subscript: [index], [@], [*], [$var]
@@ -1070,21 +1073,21 @@ ArraySpecial = {
 }
 
 VarModifier = {
-    (":" ~ SliceOffset ~ (":" ~ SliceLength)?)  // slice ${arr[@]:offset:length} - MUST be first to avoid conflicts with :- etc
-  | (":-" ~ Word?)                       // default (if unset or null)
-  | ("-" ~ Word?)                        // default (if unset only)
+    (":-" ~ Word?)                       // default (if unset or null) - MUST be before slice to avoid :- being parsed as slice with negative offset
   | (":=" ~ Word?)                       // assign (if unset or null)
-  | ("=" ~ Word?)                        // assign (if unset only)
   | (":?" ~ Word?)                       // error (if unset or null)
-  | ("?" ~ Word?)                        // error (if unset only)
   | (":+" ~ Word?)                       // alternate (if set and not null)
+  | (":" ~ SliceOffset ~ (":" ~ SliceLength)?)  // slice ${arr[@]:offset:length}
+  | ("-" ~ Word?)                        // default (if unset only)
+  | ("=" ~ Word?)                        // assign (if unset only)
+  | ("?" ~ Word?)                        // error (if unset only)
   | ("+" ~ Word?)                        // alternate (if set)
   | ("##" ~ Word)                        // strip prefix greedy
   | ("#" ~ Word)                         // strip prefix
   | ("%%" ~ Word)                        // strip suffix greedy
   | ("%" ~ Word)                         // strip suffix
-  | ("//" ~ Word ~ "/" ~ Word)           // replace all
-  | ("/" ~ Word ~ "/" ~ Word)            // replace first
+  | ("//" ~ SubstPattern ~ "/" ~ SubstReplacement?)   // replace all
+  | ("/" ~ SubstPattern ~ "/" ~ SubstReplacement?)    // replace first
   | "^^"                                 // uppercase all
   | "^"                                  // uppercase first
   | ",,"                                 // lowercase all
@@ -1100,6 +1103,33 @@ VarModifier = {
 SliceOffset = { "-"? ~ (DollarExpansion | ASCII_DIGIT+) }
 
 SliceLength = { DollarExpansion | ASCII_DIGIT+ }
+
+// Substitution pattern and replacement - cannot contain "/" or "}" unescaped
+// Used in ${var/pattern/replacement} and ${var//pattern/replacement}
+SubstPattern = ${
+    SubstPart+
+}
+
+SubstReplacement = ${
+    SubstPart*
+}
+
+SubstPart = _{
+    QuotedString           // Quoted strings can contain anything
+  | DollarExpansion        // Variable expansions
+  | BacktickCommandSub     // Command substitution
+  | UnquotedEscape         // Escape sequences like \/
+  | SubstBareword          // Plain characters except / and }
+}
+
+// Bareword for substitution context - excludes / and } as delimiters
+SubstBareword = @{
+    SubstBarewordChar+
+}
+
+SubstBarewordChar = @{
+    !WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"`" ~ !"\\" ~ !"/" ~ !"}" ~ ANY
+}
 
 Slice = {
     Expression ~ (":" ~ Expression)?
