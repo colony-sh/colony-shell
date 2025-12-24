@@ -277,6 +277,8 @@ pub enum WordPart {
     SingleQuoted(String),
     /// Double-quoted: "text with $var"
     DoubleQuoted(Vec<WordPart>),
+    /// ANSI-C quoted: $'text with \n escapes' - raw string, processed during expansion
+    AnsiCQuoted(String),
     /// Variable reference: $var, ${var}, ${var:-default}
     Variable(VariableRef),
     /// Command substitution: $(cmd) or `cmd` - pre-parsed AST (legacy)
@@ -289,6 +291,46 @@ pub enum WordPart {
     Tilde(Option<String>),
     /// Brace expansion: {a,b,c} or {1..5} - raw string, expanded at expansion time
     BraceExpansion(String),
+    /// Process substitution: <(cmd) or >(cmd) - raw command string, direction
+    ProcessSub {
+        /// The direction: Input (<) means the path can be read from, Output (>) means written to
+        direction: ProcessSubDirection,
+        /// The raw command string to execute
+        command: String,
+    },
+    /// Extended glob pattern: ?(pat), *(pat), +(pat), @(pat), !(pat)
+    /// Stores the operator (?, *, +, @, !) and the pattern list as raw string
+    ExtGlob {
+        /// The extglob operator: '?' (zero or one), '*' (zero or more), '+' (one or more),
+        /// '@' (exactly one), '!' (not)
+        operator: ExtGlobOp,
+        /// The pattern list, e.g., "foo|bar|baz" from @(foo|bar|baz)
+        pattern_list: String,
+    },
+}
+
+/// Extended glob operator
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtGlobOp {
+    /// ?(pattern-list) - Matches zero or one occurrence
+    ZeroOrOne,
+    /// *(pattern-list) - Matches zero or more occurrences
+    ZeroOrMore,
+    /// +(pattern-list) - Matches one or more occurrences
+    OneOrMore,
+    /// @(pattern-list) - Matches exactly one of the patterns
+    ExactlyOne,
+    /// !(pattern-list) - Matches anything except the patterns
+    Not,
+}
+
+/// Direction of process substitution
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProcessSubDirection {
+    /// <(cmd) - input process substitution, command's stdout becomes readable file
+    Input,
+    /// >(cmd) - output process substitution, file writes go to command's stdin
+    Output,
 }
 
 /// Variable reference with optional prefix, subscript and modifier
@@ -361,6 +403,12 @@ pub enum VarModifier {
     StripSuffix { pattern: Box<Word> },
     /// ${var%%pattern} - remove longest suffix match
     StripSuffixGreedy { pattern: Box<Word> },
+    /// ${var^} - uppercase first character, ${var^^} - uppercase all
+    UpperCase { all: bool },
+    /// ${var,} - lowercase first character, ${var,,} - lowercase all
+    LowerCase { all: bool },
+    /// ${var~} - toggle case of first character, ${var~~} - toggle case of all
+    ToggleCase { all: bool },
 }
 
 /// if/elif/else/fi

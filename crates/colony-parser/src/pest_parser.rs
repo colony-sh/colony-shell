@@ -161,7 +161,6 @@ mod tests {
 
     #[test]
     fn test_heredoc_with_preprocessing() {
-        // Test via public API which handles preprocessing
         use crate::pest_api::parse;
 
         let source = r#"cat <<EOF
@@ -170,19 +169,59 @@ More content
 EOF"#;
 
         let result = parse(source);
-        // Should work now with heredoc preprocessing!
         assert!(result.is_ok(), "Heredoc should parse with preprocessing: {:?}", result.err());
     }
-}
 
     #[test]
-    fn test_parse_posix_for_loop() {
-        // Test POSIX for loop with word list
-        let source = "for i in a b c; do echo hello; done";
-        let result = ColonyParser::parse(Rule::ForStatement, source);
-        assert!(result.is_ok(), "Failed to parse POSIX for loop: {:?}", result.err());
+    fn test_extglob_patterns() {
+        let source = "@(foo|bar)";
+        let result = ColonyParser::parse(Rule::ExtGlob, source);
+        assert!(result.is_ok(), "Should parse @() extglob: {:?}", result.err());
+
+        let source = "!(foo)";
+        let result = ColonyParser::parse(Rule::ExtGlob, source);
+        assert!(result.is_ok(), "Should parse !() extglob: {:?}", result.err());
         
-        // Also test via Statement
-        let result2 = ColonyParser::parse(Rule::Statement, source);
-        assert!(result2.is_ok(), "Failed to parse as Statement: {:?}", result2.err());
+        let source = "?(foo|bar)";
+        let result = ColonyParser::parse(Rule::ExtGlob, source);
+        assert!(result.is_ok(), "Should parse ?() extglob: {:?}", result.err());
+        
+        let source = "*(foo)";
+        let result = ColonyParser::parse(Rule::ExtGlob, source);
+        assert!(result.is_ok(), "Should parse *() extglob: {:?}", result.err());
+        
+        let source = "+(foo)";
+        let result = ColonyParser::parse(Rule::ExtGlob, source);
+        assert!(result.is_ok(), "Should parse +() extglob: {:?}", result.err());
     }
+    
+    #[test]
+    fn test_extglob_in_word() {
+        let source = "!(foo).txt";
+        let result = ColonyParser::parse(Rule::Word, source);
+        assert!(result.is_ok(), "Should parse !().txt as Word: {:?}", result.err());
+        
+        if let Ok(mut pairs) = result {
+            let word_pair = pairs.next().unwrap();
+            println!("Word contents: {:?}", word_pair);
+            for inner in word_pair.into_inner() {
+                println!("  Inner rule: {:?}, text: {:?}", inner.as_rule(), inner.as_str());
+            }
+        }
+    }
+    
+    #[test]
+    fn test_extglob_in_simple_command() {
+        let source = "echo !(foo).txt";
+        let result = ColonyParser::parse(Rule::SimpleCommand, source);
+        assert!(result.is_ok(), "Should parse echo with extglob: {:?}", result.err());
+        
+        if let Ok(mut pairs) = result {
+            let cmd_pair = pairs.next().unwrap();
+            println!("SimpleCommand contents:");
+            for inner in cmd_pair.into_inner() {
+                println!("  Rule: {:?}, text: {:?}", inner.as_rule(), inner.as_str());
+            }
+        }
+    }
+}

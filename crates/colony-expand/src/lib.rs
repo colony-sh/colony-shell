@@ -18,7 +18,7 @@ mod parameter;
 mod command;
 mod arithmetic;
 mod field_split;
-mod pathname;
+pub mod pathname;
 mod quote;
 mod context;
 mod brace;
@@ -31,7 +31,7 @@ pub use field_split::split_fields;
 pub use pathname::expand_pathname;
 pub use brace::expand_braces;
 
-use colony_parser::{Word, WordPart};
+use colony_parser::{Word, WordPart, ProcessSubDirection};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -86,12 +86,21 @@ impl Field {
 pub type CommandExecutor =
     Box<dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>>;
 
+/// Process substitution executor callback
+///
+/// Takes a statement AST and expansion context, runs the command without capturing
+/// Returns exit code
+pub type ProcessSubExecutor =
+    Box<dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> i32>;
+
 /// Main expansion orchestrator
 pub struct Expander {
     context: ExpansionContext,
     /// Optional command executor for command substitution
     /// If None, command substitution returns empty string
     command_executor: Option<CommandExecutor>,
+    /// Optional executor for process substitution (runs commands without capturing)
+    process_sub_executor: Option<ProcessSubExecutor>,
 }
 
 impl Expander {
@@ -99,6 +108,7 @@ impl Expander {
         Self {
             context,
             command_executor: None,
+            process_sub_executor: None,
         }
     }
 
@@ -111,6 +121,25 @@ impl Expander {
         Self {
             context,
             command_executor: Some(Box::new(executor)),
+            process_sub_executor: None,
+        }
+    }
+
+    /// Create expander with both command and process substitution executors
+    pub fn with_executors<F, G>(
+        context: ExpansionContext,
+        cmd_executor: F,
+        procsub_executor: G,
+    ) -> Self
+    where
+        F: Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>
+            + 'static,
+        G: Fn(&colony_parser::Statement, &mut ExpansionContext) -> i32 + 'static,
+    {
+        Self {
+            context,
+            command_executor: Some(Box::new(cmd_executor)),
+            process_sub_executor: Some(Box::new(procsub_executor)),
         }
     }
 
@@ -281,7 +310,8 @@ impl Expander {
                 }
                 
                 // Handle "${array[@]}" - each element becomes separate quoted field  
-                if matches!(var_ref.subscript, Some(ArraySubscript::All)) {
+                let has_no_modifier = var_ref.modifier.is_none();
+                if matches!(var_ref.subscript, Some(ArraySubscript::All)) && has_no_modifier {
                     if let Some(Variable::Array(arr)) = self.context.get_variable(&var_ref.name) {
                         let fields: Vec<Field> = arr.iter().map(|s| Field::quoted(s.clone())).collect();
                         return Ok(Some(fields));
@@ -485,6 +515,49 @@ impl Expander {
                     out.push_literal(content);
                 }
             }
+            
+            WordPart::AnsiCQuoted(content) => {
+                let expanded = expand_ansi_c_string(content);
+                out.push_quoted(&expanded);
+            }
+            
+            WordPart::ProcessSub { direction, command } => {
+                if let Some(ref procsub_exec) = self.process_sub_executor {
+                    let path = expand_process_sub(*direction, command, procsub_exec, &mut self.context)?;
+                    if in_double_quote {
+                        out.push_quoted(&path);
+                    } else {
+                        out.push_literal(&path);
+                    }
+                } else if let Some(ref executor) = self.command_executor {
+                    let path = expand_process_sub_fallback(*direction, command, executor, &mut self.context)?;
+                    if in_double_quote {
+                        out.push_quoted(&path);
+                    } else {
+                        out.push_literal(&path);
+                    }
+                } else {
+                    return Err(ExpansionError::CommandFailed(
+                        "Process substitution requires command executor".to_string()
+                    ));
+                }
+            }
+            
+            WordPart::ExtGlob { operator, pattern_list } => {
+                let op_char = match operator {
+                    colony_parser::ExtGlobOp::ZeroOrOne => '?',
+                    colony_parser::ExtGlobOp::ZeroOrMore => '*',
+                    colony_parser::ExtGlobOp::OneOrMore => '+',
+                    colony_parser::ExtGlobOp::ExactlyOne => '@',
+                    colony_parser::ExtGlobOp::Not => '!',
+                };
+                let reconstructed = format!("{}({})", op_char, pattern_list);
+                if in_double_quote {
+                    out.push_quoted(&reconstructed);
+                } else {
+                    out.push_literal(&reconstructed);
+                }
+            }
         }
 
         Ok(())
@@ -584,5 +657,259 @@ impl IntermediateWord {
 
     fn as_single_string(&self) -> String {
         self.segments.iter().map(|s| s.text.as_str()).collect()
+    }
+}
+
+fn expand_ansi_c_string(content: &str) -> String {
+    let mut result = String::new();
+    let mut chars = content.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(&next) = chars.peek() {
+                chars.next();
+                match next {
+                    'a' => result.push('\x07'),
+                    'b' => result.push('\x08'),
+                    'e' | 'E' => result.push('\x1b'),
+                    'f' => result.push('\x0c'),
+                    'n' => result.push('\n'),
+                    'r' => result.push('\r'),
+                    't' => result.push('\t'),
+                    'v' => result.push('\x0b'),
+                    '\\' => result.push('\\'),
+                    '\'' => result.push('\''),
+                    '"' => result.push('"'),
+                    '?' => result.push('?'),
+                    'x' => {
+                        let mut hex = String::new();
+                        for _ in 0..2 {
+                            if let Some(&c) = chars.peek() {
+                                if c.is_ascii_hexdigit() {
+                                    hex.push(chars.next().unwrap());
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        if !hex.is_empty() {
+                            if let Ok(val) = u8::from_str_radix(&hex, 16) {
+                                result.push(val as char);
+                            }
+                        }
+                    }
+                    'u' => {
+                        let mut hex = String::new();
+                        for _ in 0..4 {
+                            if let Some(&c) = chars.peek() {
+                                if c.is_ascii_hexdigit() {
+                                    hex.push(chars.next().unwrap());
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        if !hex.is_empty() {
+                            if let Ok(val) = u32::from_str_radix(&hex, 16) {
+                                if let Some(c) = char::from_u32(val) {
+                                    result.push(c);
+                                }
+                            }
+                        }
+                    }
+                    'U' => {
+                        let mut hex = String::new();
+                        for _ in 0..8 {
+                            if let Some(&c) = chars.peek() {
+                                if c.is_ascii_hexdigit() {
+                                    hex.push(chars.next().unwrap());
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        if !hex.is_empty() {
+                            if let Ok(val) = u32::from_str_radix(&hex, 16) {
+                                if let Some(c) = char::from_u32(val) {
+                                    result.push(c);
+                                }
+                            }
+                        }
+                    }
+                    'c' => {
+                        if let Some(ctrl_char) = chars.next() {
+                            let ctrl_val = (ctrl_char.to_ascii_uppercase() as u8) & 0x1f;
+                            result.push(ctrl_val as char);
+                        }
+                    }
+                    '0'..='7' => {
+                        let mut octal = String::new();
+                        octal.push(next);
+                        for _ in 0..2 {
+                            if let Some(&c) = chars.peek() {
+                                if ('0'..='7').contains(&c) {
+                                    octal.push(chars.next().unwrap());
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        if let Ok(val) = u8::from_str_radix(&octal, 8) {
+                            result.push(val as char);
+                        }
+                    }
+                    _ => {
+                        result.push(next);
+                    }
+                }
+            } else {
+                result.push('\\');
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    
+    result
+}
+
+fn expand_process_sub(
+    direction: ProcessSubDirection,
+    command: &str,
+    executor: &ProcessSubExecutor,
+    context: &mut ExpansionContext,
+) -> Result<String> {
+    use std::os::unix::io::AsRawFd;
+    
+    let trimmed_cmd = command.trim();
+    if trimmed_cmd.is_empty() {
+        return Err(ExpansionError::CommandFailed("Empty process substitution".to_string()));
+    }
+    
+    let (read_fd, write_fd) = nix::unistd::pipe()
+        .map_err(|e| ExpansionError::CommandFailed(format!("pipe() failed: {}", e)))?;
+    
+    match unsafe { nix::unistd::fork() } {
+        Ok(nix::unistd::ForkResult::Child) => {
+            match direction {
+                ProcessSubDirection::Input => {
+                    drop(read_fd);
+                    nix::unistd::dup2(write_fd.as_raw_fd(), 1)
+                        .expect("dup2 failed");
+                    drop(write_fd);
+                }
+                ProcessSubDirection::Output => {
+                    drop(write_fd);
+                    nix::unistd::dup2(read_fd.as_raw_fd(), 0)
+                        .expect("dup2 failed");
+                    drop(read_fd);
+                }
+            }
+            
+            let exit_code = match colony_parser::pest_api::parse(trimmed_cmd) {
+                Ok(program) => {
+                    let mut last_code = 0;
+                    for stmt in &program.statements {
+                        last_code = executor(stmt, context);
+                    }
+                    last_code
+                }
+                Err(_) => 1,
+            };
+            
+            std::process::exit(exit_code);
+        }
+        Ok(nix::unistd::ForkResult::Parent { child: _ }) => {
+            match direction {
+                ProcessSubDirection::Input => {
+                    drop(write_fd);
+                    let fd_num = read_fd.as_raw_fd();
+                    std::mem::forget(read_fd);
+                    Ok(format!("/dev/fd/{}", fd_num))
+                }
+                ProcessSubDirection::Output => {
+                    drop(read_fd);
+                    let fd_num = write_fd.as_raw_fd();
+                    std::mem::forget(write_fd);
+                    Ok(format!("/dev/fd/{}", fd_num))
+                }
+            }
+        }
+        Err(e) => {
+            Err(ExpansionError::CommandFailed(format!("fork() failed: {}", e)))
+        }
+    }
+}
+
+fn expand_process_sub_fallback(
+    direction: ProcessSubDirection,
+    command: &str,
+    executor: &CommandExecutor,
+    context: &mut ExpansionContext,
+) -> Result<String> {
+    use std::os::unix::io::AsRawFd;
+    use std::io::Write;
+    
+    let trimmed_cmd = command.trim();
+    if trimmed_cmd.is_empty() {
+        return Err(ExpansionError::CommandFailed("Empty process substitution".to_string()));
+    }
+    
+    let (read_fd, write_fd) = nix::unistd::pipe()
+        .map_err(|e| ExpansionError::CommandFailed(format!("pipe() failed: {}", e)))?;
+    
+    match unsafe { nix::unistd::fork() } {
+        Ok(nix::unistd::ForkResult::Child) => {
+            match direction {
+                ProcessSubDirection::Input => {
+                    drop(read_fd);
+                    nix::unistd::dup2(write_fd.as_raw_fd(), 1)
+                        .expect("dup2 failed");
+                    drop(write_fd);
+                }
+                ProcessSubDirection::Output => {
+                    drop(write_fd);
+                    nix::unistd::dup2(read_fd.as_raw_fd(), 0)
+                        .expect("dup2 failed");
+                    drop(read_fd);
+                }
+            }
+            
+            match colony_parser::pest_api::parse(trimmed_cmd) {
+                Ok(program) => {
+                    for stmt in &program.statements {
+                        match executor(stmt, context) {
+                            Ok(output) => {
+                                let _ = std::io::stdout().write_all(output.as_bytes());
+                                let _ = std::io::stdout().flush();
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+            
+            std::process::exit(0);
+        }
+        Ok(nix::unistd::ForkResult::Parent { child: _ }) => {
+            match direction {
+                ProcessSubDirection::Input => {
+                    drop(write_fd);
+                    let fd_num = read_fd.as_raw_fd();
+                    std::mem::forget(read_fd);
+                    Ok(format!("/dev/fd/{}", fd_num))
+                }
+                ProcessSubDirection::Output => {
+                    drop(read_fd);
+                    let fd_num = write_fd.as_raw_fd();
+                    std::mem::forget(write_fd);
+                    Ok(format!("/dev/fd/{}", fd_num))
+                }
+            }
+        }
+        Err(e) => {
+            Err(ExpansionError::CommandFailed(format!("fork() failed: {}", e)))
+        }
     }
 }

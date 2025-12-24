@@ -22,7 +22,7 @@ mod xtrace;
 
 pub use builtins::{execute_builtin, is_builtin, BuiltinResult};
 pub use command::execute_command;
-pub use command_sub::execute_and_capture;
+pub use command_sub::{execute_and_capture, execute_statement_for_process_sub};
 pub use error::{ExecutionError, Result};
 pub use jobs::{init_job_control, Job, JobId, JobStatus, JobTable};
 pub use path::resolve_command;
@@ -871,6 +871,12 @@ impl Executor {
     }
 
     fn pattern_matches(value: &str, pattern: &str) -> bool {
+        use colony_expand::pathname::match_extglob_pattern;
+        
+        if colony_expand::pathname::contains_extglob(pattern) {
+            return match_extglob_pattern(pattern, value);
+        }
+        
         use glob::Pattern;
         
         match Pattern::new(pattern) {

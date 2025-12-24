@@ -241,9 +241,46 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                     };
                     return Ok(array[start..end].join(" "));
                 }
+                
+                if let Some(case_mod) = &var_ref.modifier {
+                    match case_mod {
+                        VarModifier::UpperCase { all } => {
+                            let modified: Vec<String> = array.iter()
+                                .map(|s| apply_case_modification(s, CaseOp::Upper, *all))
+                                .collect();
+                            return Ok(modified.join(" "));
+                        }
+                        VarModifier::LowerCase { all } => {
+                            let modified: Vec<String> = array.iter()
+                                .map(|s| apply_case_modification(s, CaseOp::Lower, *all))
+                                .collect();
+                            return Ok(modified.join(" "));
+                        }
+                        VarModifier::ToggleCase { all } => {
+                            let modified: Vec<String> = array.iter()
+                                .map(|s| apply_case_modification(s, CaseOp::Toggle, *all))
+                                .collect();
+                            return Ok(modified.join(" "));
+                        }
+                        _ => {}
+                    }
+                }
+                
                 array.join(" ")
             }
         };
+        
+        let result = if let Some(case_mod) = &var_ref.modifier {
+            match case_mod {
+                VarModifier::UpperCase { all } => apply_case_modification(&result, CaseOp::Upper, *all),
+                VarModifier::LowerCase { all } => apply_case_modification(&result, CaseOp::Lower, *all),
+                VarModifier::ToggleCase { all } => apply_case_modification(&result, CaseOp::Toggle, *all),
+                _ => result,
+            }
+        } else {
+            result
+        };
+        
         return Ok(result);
     }
 
@@ -418,6 +455,21 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
             let value = var_value.unwrap_or_default();
             Ok(strip_suffix_longest(&value, pat))
         }
+
+        Some(VarModifier::UpperCase { all }) => {
+            let value = var_value.unwrap_or_default();
+            Ok(apply_case_modification(&value, CaseOp::Upper, *all))
+        }
+
+        Some(VarModifier::LowerCase { all }) => {
+            let value = var_value.unwrap_or_default();
+            Ok(apply_case_modification(&value, CaseOp::Lower, *all))
+        }
+
+        Some(VarModifier::ToggleCase { all }) => {
+            let value = var_value.unwrap_or_default();
+            Ok(apply_case_modification(&value, CaseOp::Toggle, *all))
+        }
     }
 }
 
@@ -493,7 +545,51 @@ fn strip_suffix_longest(value: &str, pattern: &str) -> String {
     value.to_string()
 }
 
-fn get_subscript_key(expr: &colony_parser::Expression, context: &ExpansionContext) -> String {
+enum CaseOp {
+    Upper,
+    Lower,
+    Toggle,
+}
+
+fn apply_case_modification(value: &str, op: CaseOp, all: bool) -> String {
+    if value.is_empty() {
+        return String::new();
+    }
+    
+    let mut chars: Vec<char> = value.chars().collect();
+    
+    if all {
+        for c in chars.iter_mut() {
+            *c = match op {
+                CaseOp::Upper => c.to_uppercase().next().unwrap_or(*c),
+                CaseOp::Lower => c.to_lowercase().next().unwrap_or(*c),
+                CaseOp::Toggle => {
+                    if c.is_uppercase() {
+                        c.to_lowercase().next().unwrap_or(*c)
+                    } else {
+                        c.to_uppercase().next().unwrap_or(*c)
+                    }
+                }
+            };
+        }
+    } else if let Some(first) = chars.first_mut() {
+        *first = match op {
+            CaseOp::Upper => first.to_uppercase().next().unwrap_or(*first),
+            CaseOp::Lower => first.to_lowercase().next().unwrap_or(*first),
+            CaseOp::Toggle => {
+                if first.is_uppercase() {
+                    first.to_lowercase().next().unwrap_or(*first)
+                } else {
+                    first.to_uppercase().next().unwrap_or(*first)
+                }
+            }
+        };
+    }
+    
+    chars.into_iter().collect()
+}
+
+fn get_subscript_key(expr: &colony_parser::Expression, _context: &ExpansionContext) -> String {
     match expr {
         colony_parser::Expression::Variable { name, .. } => name.clone(),
         colony_parser::Expression::Str(s, _) => s.clone(),

@@ -827,4 +827,33 @@ EOF"#;
         }
         panic!("Unexpected AST structure");
     }
+    
+    #[test]
+    fn test_extglob_ast_building() {
+        use crate::ast::{Statement, WordPart, ExtGlobOp};
+        
+        let source = "echo !(foo).txt";
+        let result = parse_statement(source);
+        assert!(result.is_ok(), "Should parse extglob: {:?}", result.err());
+        
+        let stmt = result.unwrap();
+        println!("AST: {:?}", stmt);
+        
+        if let Statement::List(list) = stmt {
+            if let Statement::Pipeline(pipeline) = &*list.first {
+                if let Statement::SimpleCommand(cmd) = &*pipeline.elements[0].command {
+                    assert_eq!(cmd.args.len(), 1, "Should have 1 argument (!(foo).txt)");
+                    let arg_word = &cmd.args[0];
+                    println!("Arg word parts: {:?}", arg_word.parts);
+                    
+                    let has_extglob = arg_word.parts.iter().any(|p| {
+                        matches!(p, WordPart::ExtGlob { operator: ExtGlobOp::Not, .. })
+                    });
+                    assert!(has_extglob, "Should have ExtGlob Not part, got: {:?}", arg_word.parts);
+                    return;
+                }
+            }
+        }
+        panic!("Unexpected AST structure");
+    }
 }

@@ -770,12 +770,85 @@ Word = ${
 
 WordPart = _{
     QuotedString
+  | DollarSingleQuote
   | DollarExpansion
   | BacktickCommandSub
+  | ProcessSub             // <(cmd) and >(cmd) - must be before Bareword
   | TildeExpansion
+  | ExtGlob                // ?(pat), *(pat), +(pat), @(pat), !(pat) - before BraceExpansion
   | BraceExpansion
   | UnquotedEscape
   | Bareword
+}
+
+// ANSI-C Quoting: $'...' - allows escape sequences like \n, \t, \xHH, \uHHHH
+DollarSingleQuote = @{
+    "$'" ~ DollarSingleQuoteContent* ~ "'"
+}
+
+DollarSingleQuoteContent = @{
+    DollarSingleQuoteEscape | DollarSingleQuoteChar
+}
+
+DollarSingleQuoteEscape = @{
+    "\\" ~ (
+        "a" | "b" | "e" | "E" | "f" | "n" | "r" | "t" | "v" |
+        "\\" | "'" | "\"" | "?" |
+        "x" ~ ASCII_HEX_DIGIT{1,2} |
+        "u" ~ ASCII_HEX_DIGIT{4} |
+        "U" ~ ASCII_HEX_DIGIT{8} |
+        "c" ~ ANY |
+        ASCII_OCT_DIGIT{1,3} |
+        ANY
+    )
+}
+
+DollarSingleQuoteChar = @{
+    !("'" | "\\") ~ ANY
+}
+
+// Process substitution: <(cmd) and >(cmd) - bash extension
+// Creates a named pipe (FIFO) or /dev/fd/N, runs cmd, returns the path
+// Supports balanced parentheses for nested substitutions
+ProcessSub = ${
+    ProcessSubOp ~ "(" ~ ProcessSubInner ~ ")"
+}
+
+ProcessSubOp = @{
+    "<" | ">"
+}
+
+// Inner content of process substitution - similar to DollarCommandSubInner
+ProcessSubInner = {
+    ProcessSubPart*
+}
+
+// Parts inside <(...) or >(...) - handles balanced parentheses for nesting
+ProcessSubPart = {
+    ProcessSub                               // nested process substitution
+  | DollarCommandSubRaw                      // $(cmd) inside
+  | ProcessSubParens                         // other balanced parens like (subshell)
+  | ProcessSubQuoted                         // quoted strings (may contain parens)
+  | ProcessSubChar                           // regular chars
+}
+
+// Balanced parentheses (not process sub)
+ProcessSubParens = {
+    "(" ~ ProcessSubInner ~ ")"
+}
+
+// Quoted strings inside process substitution
+ProcessSubQuoted = @{
+    ("\"" ~ (!"\"" ~ ANY | "\\\"")* ~ "\"")          // double-quoted
+  | ("'" ~ (!"'" ~ ANY)* ~ "'")                      // single-quoted
+}
+
+// Single character that's not special
+ProcessSubChar = @{
+    !(")" | "(" | "\"" | "'" | "$" | "<" | ">") ~ ANY   // regular chars
+  | "$" ~ !"("                                          // $ not followed by ( (like $var)
+  | "<" ~ !"("                                          // < not followed by ( (redirect)
+  | ">" ~ !"("                                          // > not followed by ( (redirect)
 }
 
 // Backtick command substitution: `cmd` - captured as raw string, parsed during expansion
@@ -813,6 +886,43 @@ BraceContent = @{
     (!"}" ~ ANY)+
 }
 
+// Extended glob patterns (extglob): bash feature for advanced pattern matching
+// ?(pattern-list) - Matches zero or one occurrence of the given patterns
+// *(pattern-list) - Matches zero or more occurrences of the given patterns
+// +(pattern-list) - Matches one or more occurrences of the given patterns
+// @(pattern-list) - Matches exactly one of the given patterns
+// !(pattern-list) - Matches anything except one of the given patterns
+// Pattern lists are separated by | e.g., @(foo|bar|baz)
+ExtGlob = @{
+    ExtGlobOp ~ "(" ~ ExtGlobPatternList ~ ")"
+}
+
+ExtGlobOp = @{
+    "?" | "*" | "+" | "@" | "!"
+}
+
+// Pattern list inside extglob - patterns separated by |
+// Can contain nested extglob, other glob chars, and regular text
+ExtGlobPatternList = @{
+    ExtGlobPattern ~ ("|" ~ ExtGlobPattern)*
+}
+
+ExtGlobPattern = @{
+    ExtGlobPatternPart*
+}
+
+ExtGlobPatternPart = @{
+    ExtGlob                                            // nested extglob
+  | "(" ~ ExtGlobPatternList ~ ")"                     // nested parens (grouping)
+  | "[" ~ ExtGlobBracketContent ~ "]"                  // character class
+  | "\\" ~ ANY                                         // escaped character
+  | !(")" | "|" | "(" | "[" | "\\") ~ ANY              // regular characters
+}
+
+ExtGlobBracketContent = @{
+    ("!" | "^")? ~ (!"\\]" ~ !"]" ~ ANY | "\\]")*
+}
+
 // Array literal: (word1 word2 word3)
 ArrayLiteral = {
     "(" ~ Word* ~ ")"
@@ -824,7 +934,15 @@ Bareword = {
 }
 
 BarewordChars = @{
-    (!WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"`" ~ !"\\" ~ ANY)+
+    BarewordChar+
+}
+
+BarewordChar = @{
+    !WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"`" ~ !"\\" ~ !ExtGlobStart ~ ANY
+}
+
+ExtGlobStart = @{
+    ("?" | "*" | "+" | "@" | "!") ~ "("
 }
 
 SpecialChar = {
@@ -950,6 +1068,8 @@ VarModifier = {
   | "^"                                  // uppercase first
   | ",,"                                 // lowercase all
   | ","                                  // lowercase first
+  | "~~"                                 // toggle case all
+  | "~"                                  // toggle case first
   | "#"                                  // length (scalar or array)
   | "!"                                  // array indices
   | ("[" ~ Slice ~ "]")                  // slice (old syntax)

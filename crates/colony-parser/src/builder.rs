@@ -1880,6 +1880,9 @@ impl AstBuilder {
                     let unescaped = inner.replace("\\`", "`");
                     WordPart::CommandSubRaw(unescaped)
                 }
+                Rule::ProcessSub => {
+                    Self::build_process_sub(part_pair)?
+                }
                 Rule::TildeExpansion => {
                     let user = if text.len() <= 1 {
                         None
@@ -1887,6 +1890,14 @@ impl AstBuilder {
                         Some(text[1..].to_string())
                     };
                     WordPart::Tilde(user)
+                }
+                Rule::ExtGlob => {
+                    Self::build_extglob(part_pair)?
+                }
+                Rule::DollarSingleQuote => {
+                    let content = text.strip_prefix("$'").unwrap_or(&text);
+                    let content = content.strip_suffix('\'').unwrap_or(content);
+                    WordPart::AnsiCQuoted(content.to_string())
                 }
                 Rule::DollarExpansion => {
                     Self::build_dollar_expansion(part_pair)?
@@ -2192,6 +2203,12 @@ impl AstBuilder {
             s if s.starts_with("%") => Ok(VarModifier::StripSuffix {
                 pattern: Box::new(word_value),
             }),
+            "^^" => Ok(VarModifier::UpperCase { all: true }),
+            "^" => Ok(VarModifier::UpperCase { all: false }),
+            ",," => Ok(VarModifier::LowerCase { all: true }),
+            "," => Ok(VarModifier::LowerCase { all: false }),
+            "~~" => Ok(VarModifier::ToggleCase { all: true }),
+            "~" => Ok(VarModifier::ToggleCase { all: false }),
             _ => Err(BuildError::InvalidVarModifier(text.to_string())),
         }
     }
@@ -2319,6 +2336,50 @@ impl AstBuilder {
         flush_literal(&mut literal_buffer, &mut parts);
 
         Ok(WordPart::DoubleQuoted(parts))
+    }
+
+    fn build_process_sub(pair: Pair<Rule>) -> Result<WordPart, BuildError> {
+        let text = pair.as_str();
+        let mut inner = pair.into_inner();
+        
+        let op_pair = inner.next().ok_or(BuildError::MissingVariableName)?;
+        let op_text = op_pair.as_str();
+        
+        let direction = match op_text {
+            "<" => ProcessSubDirection::Input,
+            ">" => ProcessSubDirection::Output,
+            _ => return Err(BuildError::InvalidVarPrefix(format!("Unknown process sub operator: {}", op_text))),
+        };
+        
+        let command = if text.len() > 2 {
+            text[2..text.len()-1].to_string()
+        } else {
+            String::new()
+        };
+        
+        Ok(WordPart::ProcessSub { direction, command })
+    }
+
+    fn build_extglob(pair: Pair<Rule>) -> Result<WordPart, BuildError> {
+        let text = pair.as_str();
+        
+        let op_char = text.chars().next().ok_or(BuildError::EmptyWord)?;
+        let operator = match op_char {
+            '?' => ExtGlobOp::ZeroOrOne,
+            '*' => ExtGlobOp::ZeroOrMore,
+            '+' => ExtGlobOp::OneOrMore,
+            '@' => ExtGlobOp::ExactlyOne,
+            '!' => ExtGlobOp::Not,
+            _ => return Err(BuildError::InvalidVarPrefix(format!("Unknown extglob operator: {}", op_char))),
+        };
+        
+        let pattern_list = if text.len() > 2 {
+            text[2..text.len()-1].to_string()
+        } else {
+            String::new()
+        };
+        
+        Ok(WordPart::ExtGlob { operator, pattern_list })
     }
 
     fn build_redirect(pair: Pair<Rule>) -> Result<Redirect, BuildError> {
@@ -3122,5 +3183,65 @@ mod tests {
         eprintln!("Testing Bareword 'donex':");
         let result = ColonyParser::parse(Rule::Bareword, "donex");
         eprintln!("  Bareword match: {:?}", result.is_ok());
+    }
+
+    #[test]
+    fn test_array_case_mod_parsing() {
+        use pest::Parser;
+        
+        let source = "arr[@]^^";
+        eprintln!("\n=== Parsing: {} ===", source);
+        let pairs = ColonyParser::parse(Rule::VariableRef, source);
+        
+        match pairs {
+            Ok(pairs) => {
+                for pair in pairs {
+                    eprintln!("Top: {:?} = {:?}", pair.as_rule(), pair.as_str());
+                    for inner in pair.clone().into_inner() {
+                        eprintln!("  -> {:?} = {:?}", inner.as_rule(), inner.as_str());
+                        for inner2 in inner.into_inner() {
+                            eprintln!("    -> {:?} = {:?}", inner2.as_rule(), inner2.as_str());
+                        }
+                    }
+                    let var_ref = AstBuilder::build_variable_ref(pair).unwrap();
+                    eprintln!("Result: name={}, subscript={:?}, modifier={:?}", 
+                        var_ref.name, var_ref.subscript, var_ref.modifier);
+                    
+                    assert!(var_ref.subscript.is_some(), "subscript should be Some");
+                    assert!(var_ref.modifier.is_some(), "modifier should be Some for ^^");
+                }
+            }
+            Err(e) => panic!("Parse error: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_echo_array_case_mod() {
+        use crate::pest_api::parse_statement;
+        
+        let stmt = parse_statement(r#"echo "${arr[@]^^}""#).unwrap();
+        eprintln!("Statement: {:?}", stmt);
+        
+        if let Statement::SimpleCommand(cmd) = stmt {
+            eprintln!("Name: {:?}", cmd.name);
+            eprintln!("Args count: {}", cmd.args.len());
+            for (i, word) in cmd.args.iter().enumerate() {
+                eprintln!("Arg {}: {:?}", i, word);
+                for (j, part) in word.parts.iter().enumerate() {
+                    eprintln!("  Part {}: {:?}", j, part);
+                    if let WordPart::DoubleQuoted(inner_parts) = part {
+                        for (k, inner_part) in inner_parts.iter().enumerate() {
+                            eprintln!("    Inner part {}: {:?}", k, inner_part);
+                            if let WordPart::Variable(var_ref) = inner_part {
+                                eprintln!("      VariableRef: name={}, subscript={:?}, modifier={:?}",
+                                    var_ref.name, var_ref.subscript, var_ref.modifier);
+                                assert!(var_ref.subscript.is_some(), "subscript should be Some");
+                                assert!(var_ref.modifier.is_some(), "modifier should be Some");
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

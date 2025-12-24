@@ -318,16 +318,154 @@ fn builtin_pwd(_args: &[String]) -> Result<BuiltinResult> {
 
 /// echo - Print arguments
 ///
-/// Usage: echo [args...]
+/// Usage: echo [-neE] [args...]
 /// Prints arguments separated by spaces, followed by newline
+///
+/// Options:
+///   -n    Do not print trailing newline
+///   -e    Enable interpretation of backslash escapes
+///   -E    Disable interpretation of backslash escapes (default)
+///
+/// When -e is in effect, the following escape sequences are recognized:
+///   \\    backslash
+///   \a    alert (bell)
+///   \b    backspace
+///   \c    suppress further output (including trailing newline)
+///   \e    escape character
+///   \f    form feed
+///   \n    new line
+///   \r    carriage return
+///   \t    horizontal tab
+///   \v    vertical tab
+///   \0nnn octal value (0-3 octal digits)
+///   \xHH  hexadecimal value (1-2 hex digits)
 fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
-    if args.is_empty() {
-        println!();
+    let mut no_newline = false;
+    let mut interpret_escapes = false;
+    let mut text_args_start = 0;
+    
+    // Parse options - only at the start
+    for (i, arg) in args.iter().enumerate() {
+        if !arg.starts_with('-') || arg == "-" {
+            text_args_start = i;
+            break;
+        }
+        
+        // Check if all chars after '-' are valid option chars
+        let opt_chars: Vec<char> = arg[1..].chars().collect();
+        if opt_chars.is_empty() || !opt_chars.iter().all(|c| *c == 'n' || *c == 'e' || *c == 'E') {
+            // Not a valid option, treat as text
+            text_args_start = i;
+            break;
+        }
+        
+        // Apply options
+        for c in opt_chars {
+            match c {
+                'n' => no_newline = true,
+                'e' => interpret_escapes = true,
+                'E' => interpret_escapes = false,
+                _ => unreachable!(),
+            }
+        }
+        text_args_start = i + 1;
+    }
+    
+    let text_args = &args[text_args_start..];
+    let text = text_args.join(" ");
+    
+    let output = if interpret_escapes {
+        expand_echo_escapes(&text)
     } else {
-        println!("{}", args.join(" "));
+        (text, false)
+    };
+    
+    if output.1 {
+        // \c encountered - suppress further output including newline
+        print!("{}", output.0);
+    } else if no_newline {
+        print!("{}", output.0);
+    } else {
+        println!("{}", output.0);
     }
 
     Ok(BuiltinResult::Success(0))
+}
+
+/// Expand echo escape sequences
+/// Returns (expanded_string, stop_output) where stop_output is true if \c was encountered
+fn expand_echo_escapes(s: &str) -> (String, bool) {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('\\') => result.push('\\'),
+                Some('a') => result.push('\x07'),
+                Some('b') => result.push('\x08'),
+                Some('c') => return (result, true), // Stop output
+                Some('e') => result.push('\x1b'),
+                Some('f') => result.push('\x0c'),
+                Some('n') => result.push('\n'),
+                Some('r') => result.push('\r'),
+                Some('t') => result.push('\t'),
+                Some('v') => result.push('\x0b'),
+                Some('0') => {
+                    // Octal: \0, \0n, \0nn, \0nnn (0-3 digits after \0)
+                    let mut octal = String::new();
+                    for _ in 0..3 {
+                        if let Some(&next) = chars.peek() {
+                            if next >= '0' && next <= '7' {
+                                octal.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    if octal.is_empty() {
+                        result.push('\0');
+                    } else {
+                        let val = u8::from_str_radix(&octal, 8).unwrap_or(0);
+                        result.push(val as char);
+                    }
+                }
+                Some('x') => {
+                    // Hex: \xH or \xHH (1-2 hex digits)
+                    let mut hex = String::new();
+                    for _ in 0..2 {
+                        if let Some(&next) = chars.peek() {
+                            if next.is_ascii_hexdigit() {
+                                hex.push(chars.next().unwrap());
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    if hex.is_empty() {
+                        result.push_str("\\x");
+                    } else {
+                        let val = u8::from_str_radix(&hex, 16).unwrap_or(0);
+                        result.push(val as char);
+                    }
+                }
+                Some(other) => {
+                    // Unknown escape - keep backslash and character
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    
+    (result, false)
 }
 
 /// recho - Really echo args (test helper)

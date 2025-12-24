@@ -11,6 +11,13 @@ use colony_tuple::TupleSpace;
 use nix::unistd::{close, dup2, fork, pipe, read, ForkResult};
 use std::os::fd::{AsRawFd, OwnedFd};
 
+pub fn execute_statement_for_process_sub(
+    stmt: &Statement,
+    context: &mut ExpansionContext,
+) -> i32 {
+    execute_statement_in_child(stmt, context)
+}
+
 /// Execute a statement and capture its stdout
 ///
 /// This creates a pipe, forks, redirects stdout in the child,
@@ -288,59 +295,141 @@ fn execute_pipeline_in_child_blocking(
     use colony_channels::ChannelManager;
     use colony_expand::Expander;
     use colony_tuple::TupleSpace;
+    use nix::unistd::{close, pipe, fork, ForkResult, dup2};
     use std::io::Write;
+    use std::os::fd::AsRawFd;
+
+    let num_cmds = pipeline.elements.len();
     
-    if let Some(first) = pipeline.elements.first() {
-        if let colony_parser::Statement::SimpleCommand(cmd) = &*first.command {
-            let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-                execute_and_capture(stmt, ctx)
-            });
-            
-            let name_fields = match expander.expand_word(&cmd.name) {
-                Ok(fields) if !fields.is_empty() => fields,
-                _ => return Err(crate::ExecutionError::CommandNotFound("<empty>".to_string())),
-            };
-            let command_name = &name_fields[0].text;
-            let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
-            
-            if let Some(func_def) = context.get_function(command_name).cloned() {
-                let mut args = extra_args_from_name;
-                for arg_word in &cmd.args {
-                    if let Ok(fields) = expander.expand_word(arg_word) {
-                        for field in fields {
-                            args.push(field.text);
-                        }
+    if num_cmds == 0 {
+        return Ok(crate::ExitStatus::success());
+    }
+    
+    if num_cmds == 1 {
+        return execute_single_element_blocking(&pipeline.elements[0], context);
+    }
+    
+    let mut prev_read_fd: Option<OwnedFd> = None;
+    let mut child_pids = Vec::new();
+    
+    for (i, element) in pipeline.elements.iter().enumerate() {
+        let is_last = i == num_cmds - 1;
+        
+        let (read_fd, write_fd) = if !is_last {
+            let (r, w) = pipe().map_err(|e| 
+                crate::ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            (Some(r), Some(w))
+        } else {
+            (None, None)
+        };
+        
+        match unsafe { fork() } {
+            Ok(ForkResult::Child) => {
+                if let Some(prev_fd) = prev_read_fd {
+                    dup2(prev_fd.as_raw_fd(), 0).expect("dup2 stdin failed");
+                    drop(prev_fd);
+                }
+                
+                if let Some(ref wfd) = write_fd {
+                    dup2(wfd.as_raw_fd(), 1).expect("dup2 stdout failed");
+                }
+                drop(write_fd);
+                drop(read_fd);
+                
+                let exit_code = execute_statement_in_child(&element.command, context);
+                std::process::exit(exit_code);
+            }
+            Ok(ForkResult::Parent { child }) => {
+                child_pids.push(child);
+                
+                drop(prev_read_fd);
+                drop(write_fd);
+                
+                prev_read_fd = read_fd;
+            }
+            Err(e) => {
+                return Err(crate::ExecutionError::IoError(
+                    std::io::Error::new(std::io::ErrorKind::Other, e)));
+            }
+        }
+    }
+    
+    drop(prev_read_fd);
+    
+    let mut last_status = crate::ExitStatus::success();
+    for pid in child_pids {
+        match nix::sys::wait::waitpid(pid, None) {
+            Ok(nix::sys::wait::WaitStatus::Exited(_, code)) => {
+                last_status = crate::ExitStatus::new(code);
+            }
+            Ok(_) => {
+                last_status = crate::ExitStatus::new(1);
+            }
+            Err(_) => {}
+        }
+    }
+    
+    Ok(last_status)
+}
+
+fn execute_single_element_blocking(
+    element: &colony_parser::PipelineElement,
+    context: &mut ExpansionContext,
+) -> Result<crate::ExitStatus> {
+    use crate::JobTable;
+    use colony_channels::ChannelManager;
+    use colony_expand::Expander;
+    use colony_tuple::TupleSpace;
+    use std::io::Write;
+
+    if let colony_parser::Statement::SimpleCommand(cmd) = &*element.command {
+        let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+            execute_and_capture(stmt, ctx)
+        });
+        
+        let name_fields = match expander.expand_word(&cmd.name) {
+            Ok(fields) if !fields.is_empty() => fields,
+            _ => return Err(crate::ExecutionError::CommandNotFound("<empty>".to_string())),
+        };
+        let command_name = &name_fields[0].text;
+        let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
+        
+        if let Some(func_def) = context.get_function(command_name).cloned() {
+            let mut args = extra_args_from_name;
+            for arg_word in &cmd.args {
+                if let Ok(fields) = expander.expand_word(arg_word) {
+                    for field in fields {
+                        args.push(field.text);
                     }
                 }
-                
-                context.set_positional_params(args);
-                
-                let mut last_exit = 0;
-                for body_stmt in &func_def.body {
-                    last_exit = execute_statement_in_child(body_stmt, context);
-                    context.set_last_exit_status(last_exit);
-                }
-                return Ok(crate::ExitStatus::new(last_exit));
             }
             
-            let jobs = JobTable::new();
-            let tuple_space = TupleSpace::new();
-            let mut channels = ChannelManager::new();
+            context.set_positional_params(args);
+            
+            let mut last_exit = 0;
+            for body_stmt in &func_def.body {
+                last_exit = execute_statement_in_child(body_stmt, context);
+                context.set_last_exit_status(last_exit);
+            }
+            return Ok(crate::ExitStatus::new(last_exit));
+        }
+        
+        let jobs = JobTable::new();
+        let tuple_space = TupleSpace::new();
+        let mut channels = ChannelManager::new();
 
-            if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels) {
-                let _ = std::io::stdout().flush();
-                match result {
-                    Ok(builtin_result) => Ok(crate::ExitStatus::new(builtin_result.exit_code())),
-                    Err(_) => Ok(crate::ExitStatus::new(1)),
-                }
-            } else {
-                execute_command_in_child_blocking(cmd, context)
+        if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels) {
+            let _ = std::io::stdout().flush();
+            match result {
+                Ok(builtin_result) => Ok(crate::ExitStatus::new(builtin_result.exit_code())),
+                Err(_) => Ok(crate::ExitStatus::new(1)),
             }
         } else {
-            Err(crate::ExecutionError::CommandNotFound("<complex>".to_string()))
+            execute_command_in_child_blocking(cmd, context)
         }
     } else {
-        Ok(crate::ExitStatus::success())
+        let code = execute_statement_in_child(&element.command, context);
+        Ok(crate::ExitStatus::new(code))
     }
 }
 
