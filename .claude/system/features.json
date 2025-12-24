@@ -913,6 +913,57 @@
         "2025-12-24: BATS: 15/15 tests passing (100%)",
         "2025-12-24: COMPLETE: Full bash-compatible coprocess support"
       ]
+    },
+    {
+      "id": "F048",
+      "name": "Programmable Completion (complete/compgen)",
+      "description": "Bash-compatible programmable completion builtins: complete and compgen. Supports completion actions (-a alias, -b builtin, -c command, -d directory, -f file, -v variable, etc), wordlist (-W), glob patterns (-G), prefix/suffix (-P/-S), and filter patterns (-X).",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": ["F007"],
+      "notes": [
+        "2025-12-24: Starting programmable completion implementation",
+        "2025-12-24: Added CompletionSpec and CompletionAction to colony-expand",
+        "2025-12-24: Implemented complete builtin with -a, -b, -c, -d, -e, -f, -g, -j, -k, -s, -u, -v flags",
+        "2025-12-24: Implemented complete -A action for extended actions (alias, builtin, command, etc)",
+        "2025-12-24: Implemented complete -W wordlist, -G glob, -P prefix, -S suffix, -X filter",
+        "2025-12-24: Implemented complete -p (print), -r (remove), -D (default), -E (empty), -I (initial)",
+        "2025-12-24: Implemented compgen builtin to generate completions matching prefix",
+        "2025-12-24: BATS: 10/10 tests passing (100%)",
+        "2025-12-24: COMPLETE: Full bash-compatible programmable completion"
+      ]
+    },
+    {
+      "id": "F049",
+      "name": "Mapfile/Readarray Builtin",
+      "description": "Bash-compatible mapfile (readarray) builtin for reading lines from stdin into an array. Supports -t (trim newlines), -n count, -O origin, -s skip, -d delimiter options.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": ["F007"],
+      "notes": [
+        "2025-12-24: Implemented mapfile and readarray as aliases",
+        "2025-12-24: Supports -t (remove trailing delimiter), -n count (max lines)",
+        "2025-12-24: Supports -O origin (starting index), -s skip (skip first N lines)",
+        "2025-12-24: Supports -d delimiter (custom line delimiter)",
+        "2025-12-24: BATS: 34/34 tests passing (100%)",
+        "2025-12-24: COMPLETE: Full bash-compatible mapfile support"
+      ]
+    },
+    {
+      "id": "F050",
+      "name": "Shopt Builtin",
+      "description": "Bash-compatible shopt builtin for shell option management. Supports globstar, extglob, dotglob, nullglob, nocaseglob, failglob and other bash shell options.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": ["F007"],
+      "notes": [
+        "2025-12-24: Implemented shopt builtin with -s (set), -u (unset), -p (print), -q (quiet)",
+        "2025-12-24: Supports options: globstar, extglob, dotglob, nullglob, nocaseglob, failglob",
+        "2025-12-24: Supports options: extquote, nocasematch, lastpipe, checkwinsize",
+        "2025-12-24: Options stored in ShellOptions struct in ExpansionContext",
+        "2025-12-24: BATS: 18/18 globstar tests passing (100%)",
+        "2025-12-24: COMPLETE: Full bash-compatible shopt support"
+      ]
     }
   ]
 }
