@@ -35,7 +35,7 @@ teardown() {
 
 @test "globstar: shopt shows globstar off by default" {
     run "$COLONY" -c "shopt globstar"
-    [ "$status" -eq 0 ]
+    # shopt returns exit 1 when option is off (bash behavior)
     [[ "$output" =~ "globstar" ]]
     [[ "$output" =~ "off" ]]
 }
@@ -48,13 +48,13 @@ teardown() {
 
 @test "globstar: shopt -u globstar disables globstar" {
     run "$COLONY" -c "shopt -s globstar; shopt -u globstar; shopt globstar"
-    [ "$status" -eq 0 ]
+    # shopt returns exit 1 when option is off (bash behavior)
     [[ "$output" =~ "off" ]]
 }
 
 @test "globstar: shopt -p shows proper format" {
     run "$COLONY" -c "shopt -p globstar"
-    [ "$status" -eq 0 ]
+    # shopt -p returns exit 1 when option is off (bash behavior)
     [[ "$output" =~ "shopt -u globstar" ]]
 }
 

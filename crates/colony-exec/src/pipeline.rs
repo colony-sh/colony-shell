@@ -39,9 +39,12 @@ fn execute_pipeline_blocking(pipeline: &Pipeline, context: &ExpansionContext) ->
         return Ok(ExitStatus::success());
     }
 
+    let is_negated = pipeline.elements.last().map_or(false, |e| e.negated);
+
     if num_commands == 1 {
-        // Single command - no pipes needed
-        return execute_single_pipeline_element(&pipeline.elements[0], context);
+        let element = &pipeline.elements[0];
+        let status = execute_single_pipeline_element(element, context)?;
+        return Ok(negate_exit_status(status, element.negated));
     }
 
     // Create pipes: N commands need N-1 pipes
@@ -102,7 +105,19 @@ fn execute_pipeline_blocking(pipeline: &Pipeline, context: &ExpansionContext) ->
     }
 
     // Return the exit status of the last command
-    Ok(last_status)
+    Ok(negate_exit_status(last_status, is_negated))
+}
+
+fn negate_exit_status(status: ExitStatus, negated: bool) -> ExitStatus {
+    if negated {
+        if status.code() == 0 {
+            ExitStatus::new(1)
+        } else {
+            ExitStatus::success()
+        }
+    } else {
+        status
+    }
 }
 
 /// Setup file descriptors for a command in the pipeline

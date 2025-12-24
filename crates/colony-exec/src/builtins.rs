@@ -18,7 +18,7 @@
 
 use crate::{ExecutionError, JobTable, Result};
 use colony_channels::ChannelManager;
-use colony_expand::{ExpansionContext, Expander, Variable};
+use colony_expand::{ExpansionContext, Expander, Variable, CompletionSpec, CompletionAction};
 use colony_parser::{SimpleCommand, Word};
 use colony_tuple::{Tuple, TupleSpace, Value};
 use std::env;
@@ -71,6 +71,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "history"
         | "recho"
         | "set"
+        | "shopt"
         | "printf"
         | "exec"
         | "trap"
@@ -78,6 +79,8 @@ pub fn is_builtin(name: &str) -> bool {
         | "getopts"
         | "shift"
         | "dirs" | "pushd" | "popd"
+        | "complete" | "compgen"
+        | "mapfile" | "readarray"
     )
 }
 
@@ -158,6 +161,7 @@ pub fn execute_builtin(
         "read" => builtin_read(&args, context),
         "recho" => builtin_recho(&args),
         "set" => builtin_set(&args, context),
+        "shopt" => builtin_shopt(&args, context),
         "printf" => builtin_printf(&args, context),
         "exec" => builtin_exec(&args, &cmd.redirects, context),
         "trap" => builtin_trap(&args, context),
@@ -167,6 +171,9 @@ pub fn execute_builtin(
         "dirs" => builtin_dirs(&args, context),
         "pushd" => builtin_pushd(&args, context, tuple_space),
         "popd" => builtin_popd(&args, context, tuple_space),
+        "complete" => builtin_complete(&args, context),
+        "compgen" => builtin_compgen(&args, context),
+        "mapfile" | "readarray" => builtin_mapfile(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -317,18 +324,37 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
 ///
 /// **Reactive:** Emits ("env_change", var, old, null) tuple (Rule 43)
 fn builtin_unset(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
-    for var_name in args {
-        // Capture old value for reactive tuple (check both shell vars and env)
+    let mut unset_nameref_only = false;
+    let mut unset_function = false;
+    let mut var_names: Vec<&str> = Vec::new();
+    
+    for arg in args {
+        match arg.as_str() {
+            "-n" => unset_nameref_only = true,
+            "-f" => unset_function = true,
+            "-v" => {}
+            s if s.starts_with('-') => {}
+            _ => var_names.push(arg),
+        }
+    }
+    
+    for var_name in var_names {
+        if unset_function {
+            context.unset_function(var_name);
+            continue;
+        }
+        
+        if unset_nameref_only {
+            context.unset_nameref(var_name);
+            continue;
+        }
+        
         let old_value = context.get_var_or_env(var_name).unwrap_or_default();
 
-        // Unset from shell variables (includes arrays)
         context.unset_variable(var_name);
-
-        // Also unset from environment
         context.unset_env(var_name);
         env::remove_var(var_name);
 
-        // REACTIVE: Emit env_change tuple with Null for deleted (Rule 43)
         tuple_space.out(Tuple::from(vec![
             Value::Str("env_change".to_string()),
             Value::Str(var_name.to_string()),
@@ -1170,6 +1196,7 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
     
     let mut is_assoc = false;
     let mut is_indexed_array = false;
+    let mut is_nameref = false;
     let mut function_mode = false;
     let mut function_names_only = false;
     let mut print_mode = false;
@@ -1186,6 +1213,7 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                 match c {
                     'a' => is_indexed_array = true,
                     'A' => is_assoc = true,
+                    'n' => is_nameref = !removing_attrs,
                     'f' => function_mode = true,
                     'F' => { function_mode = true; function_names_only = true; }
                     'i' => attrs.integer = !removing_attrs,
@@ -1195,7 +1223,7 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                     'x' => attrs.export = !removing_attrs,
                     't' => attrs.trace = !removing_attrs,
                     'p' => print_mode = true,
-                    'n' | 'g' => {}
+                    'g' => {} // global - ignore in non-function context
                     _ => {}
                 }
             }
@@ -1314,6 +1342,12 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             continue;
         }
         
+        if is_nameref {
+            let target = value_opt.unwrap_or("").to_string();
+            context.set_nameref(name.to_string(), target);
+            continue;
+        }
+        
         if is_indexed_array {
             if let Some(value_part) = value_opt {
                 if value_part.starts_with('(') && value_part.ends_with(')') {
@@ -1352,11 +1386,34 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
         return Ok(BuiltinResult::Success(0));
     }
 
+    let mut is_nameref = false;
+    let mut var_args: Vec<&str> = Vec::new();
+    
     for arg in args {
+        if arg == "-n" {
+            is_nameref = true;
+        } else if arg.starts_with('-') && arg.len() > 1 {
+            for c in arg[1..].chars() {
+                if c == 'n' {
+                    is_nameref = true;
+                }
+            }
+        } else {
+            var_args.push(arg);
+        }
+    }
+
+    for arg in var_args {
         if let Some(eq_pos) = arg.find('=') {
             let name = &arg[..eq_pos];
             let value = &arg[eq_pos + 1..];
-            context.declare_local(name, Some(Variable::String(value.to_string())));
+            if is_nameref {
+                context.declare_local(name, Some(Variable::NameRef(value.to_string())));
+            } else {
+                context.declare_local(name, Some(Variable::String(value.to_string())));
+            }
+        } else if is_nameref {
+            context.declare_local(arg, Some(Variable::NameRef(String::new())));
         } else {
             context.declare_local(arg, None);
         }
@@ -1491,6 +1548,213 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
             context.set_var(name.to_string(), String::new());
         }
     }
+    
+    Ok(BuiltinResult::Success(0))
+}
+
+/// mapfile (also readarray) - Read lines from stdin into an array
+///
+/// Usage: mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [array]
+///
+/// Options:
+///   -d delim   Use DELIM as line delimiter instead of newline
+///   -n count   Read at most COUNT lines (0 means all)
+///   -O origin  Begin assigning to ARRAY at index ORIGIN (default 0)
+///   -s count   Skip the first COUNT lines
+///   -t         Remove trailing delimiter from each line
+///
+/// If ARRAY is not supplied, the default array name is MAPFILE.
+fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    use std::io::{self, BufRead, Read};
+    
+    // Parse options
+    let mut strip_newlines = false;
+    let mut count_limit: usize = 0;  // 0 means no limit
+    let mut origin: usize = 0;
+    let mut skip_count: usize = 0;
+    let mut delimiter: u8 = b'\n';  // default newline
+    let mut array_name = "MAPFILE".to_string();
+    
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        match arg.as_str() {
+            "-t" => strip_newlines = true,
+            "-n" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("mapfile: -n: option requires an argument");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                count_limit = args[i].parse().unwrap_or(0);
+            }
+            "-O" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("mapfile: -O: option requires an argument");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                origin = args[i].parse().unwrap_or(0);
+            }
+            "-s" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("mapfile: -s: option requires an argument");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                skip_count = args[i].parse().unwrap_or(0);
+            }
+            "-d" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("mapfile: -d: option requires an argument");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                let delim_arg = &args[i];
+                if delim_arg.is_empty() {
+                    // Empty string means NUL delimiter
+                    delimiter = 0;
+                } else {
+                    // Use first character as delimiter
+                    delimiter = delim_arg.as_bytes()[0];
+                }
+            }
+            s if s.starts_with('-') && s != "-" => {
+                // Unknown option - check if it's a combined option or invalid
+                // Handle combined options like -tn2
+                let chars: Vec<char> = s[1..].chars().collect();
+                let mut j = 0;
+                while j < chars.len() {
+                    match chars[j] {
+                        't' => strip_newlines = true,
+                        'n' | 'O' | 's' | 'd' => {
+                            // These options need arguments
+                            // Check if the rest of the string is the argument
+                            if j + 1 < chars.len() {
+                                let rest: String = chars[j + 1..].iter().collect();
+                                match chars[j] {
+                                    'n' => count_limit = rest.parse().unwrap_or(0),
+                                    'O' => origin = rest.parse().unwrap_or(0),
+                                    's' => skip_count = rest.parse().unwrap_or(0),
+                                    'd' => {
+                                        if rest.is_empty() {
+                                            delimiter = 0;
+                                        } else {
+                                            delimiter = rest.as_bytes()[0];
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                break; // consumed rest of the arg
+                            } else {
+                                eprintln!("mapfile: {}: invalid option", s);
+                                return Ok(BuiltinResult::Failure(1));
+                            }
+                        }
+                        _ => {
+                            eprintln!("mapfile: {}: invalid option", s);
+                            return Ok(BuiltinResult::Failure(1));
+                        }
+                    }
+                    j += 1;
+                }
+            }
+            _ => {
+                // This is the array name
+                array_name = arg.clone();
+            }
+        }
+        i += 1;
+    }
+    
+    // Read lines from stdin
+    let stdin = io::stdin();
+    let mut stdin_lock = stdin.lock();
+    let mut lines: Vec<String> = Vec::new();
+    let mut skipped = 0;
+    let mut read_count = 0;
+    
+    // Read using the delimiter
+    loop {
+        let mut buffer = Vec::new();
+        let bytes_read = if delimiter == b'\n' {
+            // Use read_until for newline delimiter
+            stdin_lock.read_until(b'\n', &mut buffer)
+        } else {
+            // Use read_until for custom delimiter
+            stdin_lock.read_until(delimiter, &mut buffer)
+        };
+        
+        match bytes_read {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                // Convert buffer to string
+                let mut line = String::from_utf8_lossy(&buffer).to_string();
+                
+                // Skip lines if needed
+                if skipped < skip_count {
+                    skipped += 1;
+                    continue;
+                }
+                
+                // Strip delimiter if -t flag is set
+                if strip_newlines {
+                    if delimiter == b'\n' {
+                        // Strip trailing \n and \r\n
+                        if line.ends_with('\n') {
+                            line.pop();
+                            if line.ends_with('\r') {
+                                line.pop();
+                            }
+                        }
+                    } else if delimiter != 0 {
+                        // Strip trailing custom delimiter
+                        if line.as_bytes().last() == Some(&delimiter) {
+                            line.pop();
+                        }
+                    } else {
+                        // NUL delimiter - strip trailing NUL
+                        if line.as_bytes().last() == Some(&0) {
+                            line.pop();
+                        }
+                    }
+                }
+                
+                lines.push(line);
+                read_count += 1;
+                
+                // Check if we've reached the count limit
+                if count_limit > 0 && read_count >= count_limit {
+                    break;
+                }
+            }
+            Err(e) => return Err(ExecutionError::IoError(e)),
+        }
+    }
+    
+    // Create the array, preserving existing elements if origin > 0
+    let mut elements: Vec<String> = Vec::new();
+    
+    if origin > 0 {
+        if let Some(Variable::Array(arr)) = context.get_variable(&array_name) {
+            for (idx, val) in arr.iter().enumerate() {
+                if idx >= origin {
+                    break;
+                }
+                elements.push(val.clone());
+            }
+        }
+        // Pad with empty strings if existing array was shorter than origin
+        while elements.len() < origin {
+            elements.push(String::new());
+        }
+    }
+    
+    // Append the read lines
+    elements.extend(lines);
+    
+    // Set the array in context
+    context.set_variable(array_name.clone(), Variable::Array(elements));
     
     Ok(BuiltinResult::Success(0))
 }
@@ -2926,6 +3190,731 @@ fn print_dir_stack(context: &ExpansionContext, home: Option<&std::path::Path>) {
         .map(|p| tilde_abbreviate(p, home))
         .collect();
     println!("{}", entries.join(" "));
+}
+
+/// shopt - Set and unset shell options
+///
+/// Usage: shopt [-pqsu] [-o] [optname ...]
+///   -s: Enable the named options
+///   -u: Disable the named options
+///   -p: Print options in reusable format
+///   -q: Quiet mode (suppress output, only set exit status)
+///   -o: Restrict to set -o options (not implemented, ignored)
+///
+/// Without options, displays all settable options and their status.
+/// With option names, displays those options.
+/// Returns 0 if all options are set/unset successfully.
+fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    use colony_expand::ShoptOptions;
+    
+    let mut set_mode = false;
+    let mut unset_mode = false;
+    let mut print_mode = false;
+    let mut quiet_mode = false;
+    let mut option_names: Vec<&str> = Vec::new();
+    
+    for arg in args {
+        if arg.starts_with('-') && arg.len() > 1 {
+            for c in arg[1..].chars() {
+                match c {
+                    's' => set_mode = true,
+                    'u' => unset_mode = true,
+                    'p' => print_mode = true,
+                    'q' => quiet_mode = true,
+                    'o' => {} // Ignored for now
+                    _ => {
+                        eprintln!("shopt: -{}: invalid option", c);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+        } else {
+            option_names.push(arg);
+        }
+    }
+    
+    // Get shopt options
+    let shopt = context.shopt_options_mut();
+    
+    // If both -s and -u are set, that's an error
+    if set_mode && unset_mode {
+        eprintln!("shopt: cannot set and unset options simultaneously");
+        return Ok(BuiltinResult::Failure(1));
+    }
+    
+    // Set or unset specified options
+    if set_mode || unset_mode {
+        if option_names.is_empty() {
+            // With -s/-u but no option names, list options that are on/off
+            let all_options = ShoptOptions::all_options();
+            for name in all_options {
+                if let Some(value) = shopt.get(name) {
+                    if (set_mode && value) || (unset_mode && !value) {
+                        if !quiet_mode {
+                            if print_mode {
+                                println!("shopt {} {}", if value { "-s" } else { "-u" }, name);
+                            } else {
+                                println!("{}\t{}", name, if value { "on" } else { "off" });
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(BuiltinResult::Success(0));
+        }
+        
+        let value = set_mode;
+        let mut exit_code = 0;
+        
+        for name in &option_names {
+            if !shopt.set(name, value) {
+                if !quiet_mode {
+                    eprintln!("shopt: {}: invalid shell option name", name);
+                }
+                exit_code = 1;
+            }
+        }
+        
+        return Ok(if exit_code == 0 {
+            BuiltinResult::Success(0)
+        } else {
+            BuiltinResult::Failure(1)
+        });
+    }
+    
+    // Query/display mode
+    if option_names.is_empty() {
+        // Display all options
+        let all_options = ShoptOptions::all_options();
+        for name in all_options {
+            if let Some(value) = shopt.get(name) {
+                if !quiet_mode {
+                    if print_mode {
+                        println!("shopt {} {}", if value { "-s" } else { "-u" }, name);
+                    } else {
+                        println!("{}\t{}", name, if value { "on" } else { "off" });
+                    }
+                }
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    // Display specific options
+    let mut all_set = true;
+    for name in &option_names {
+        if let Some(value) = shopt.get(name) {
+            if !quiet_mode {
+                if print_mode {
+                    println!("shopt {} {}", if value { "-s" } else { "-u" }, name);
+                } else {
+                    println!("{}\t{}", name, if value { "on" } else { "off" });
+                }
+            }
+            if !value {
+                all_set = false;
+            }
+        } else {
+            if !quiet_mode {
+                eprintln!("shopt: {}: invalid shell option name", name);
+            }
+            return Ok(BuiltinResult::Failure(1));
+        }
+    }
+    
+    // In query mode without -s/-u, return 0 if all named options are set
+    Ok(if all_set {
+        BuiltinResult::Success(0)
+    } else {
+        BuiltinResult::Failure(1)
+    })
+}
+
+fn builtin_complete(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    let mut spec = CompletionSpec::new();
+    let mut print_mode = false;
+    let mut remove_mode = false;
+    let mut commands: Vec<String> = Vec::new();
+    
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        
+        if arg == "-p" {
+            print_mode = true;
+            i += 1;
+        } else if arg == "-r" {
+            remove_mode = true;
+            i += 1;
+        } else if arg == "-D" || arg == "-E" {
+            i += 1;
+        } else if arg == "-F" {
+            i += 1;
+            if i < args.len() {
+                spec.function = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -F: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-W" {
+            i += 1;
+            if i < args.len() {
+                spec.wordlist = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -W: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-G" {
+            i += 1;
+            if i < args.len() {
+                spec.globpat = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -G: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-C" {
+            i += 1;
+            if i < args.len() {
+                spec.command = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -C: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-P" {
+            i += 1;
+            if i < args.len() {
+                spec.prefix = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -P: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-S" {
+            i += 1;
+            if i < args.len() {
+                spec.suffix = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -S: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-X" {
+            i += 1;
+            if i < args.len() {
+                spec.filter_pattern = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -X: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-o" {
+            i += 1;
+            if i < args.len() {
+                spec.options.push(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("complete: -o: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-A" {
+            i += 1;
+            if i < args.len() {
+                if let Some(action) = CompletionAction::from_action_name(&args[i]) {
+                    spec.actions.push(action);
+                } else {
+                    eprintln!("complete: {}: invalid action name", &args[i]);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                i += 1;
+            } else {
+                eprintln!("complete: -A: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-a" {
+            spec.actions.push(CompletionAction::Alias);
+            i += 1;
+        } else if arg == "-b" {
+            spec.actions.push(CompletionAction::Builtin);
+            i += 1;
+        } else if arg == "-c" {
+            spec.actions.push(CompletionAction::Command);
+            i += 1;
+        } else if arg == "-d" {
+            spec.actions.push(CompletionAction::Directory);
+            i += 1;
+        } else if arg == "-e" {
+            spec.actions.push(CompletionAction::Export);
+            i += 1;
+        } else if arg == "-f" {
+            spec.actions.push(CompletionAction::File);
+            i += 1;
+        } else if arg == "-g" {
+            spec.actions.push(CompletionAction::Group);
+            i += 1;
+        } else if arg == "-j" {
+            spec.actions.push(CompletionAction::Job);
+            i += 1;
+        } else if arg == "-k" {
+            spec.actions.push(CompletionAction::Keyword);
+            i += 1;
+        } else if arg == "-s" {
+            spec.actions.push(CompletionAction::Service);
+            i += 1;
+        } else if arg == "-u" {
+            spec.actions.push(CompletionAction::User);
+            i += 1;
+        } else if arg == "-v" {
+            spec.actions.push(CompletionAction::Variable);
+            i += 1;
+        } else if !arg.starts_with('-') {
+            commands.push(arg.clone());
+            i += 1;
+        } else {
+            eprintln!("complete: {}: invalid option", arg);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    }
+    
+    if print_mode || (commands.is_empty() && !remove_mode && spec.is_empty()) {
+        if commands.is_empty() {
+            for (cmd, spec) in context.completions() {
+                print_completion_spec(cmd, spec);
+            }
+        } else {
+            for cmd in &commands {
+                if let Some(spec) = context.get_completion(cmd) {
+                    print_completion_spec(cmd, spec);
+                } else {
+                    eprintln!("complete: {}: no completion specification", cmd);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if remove_mode {
+        for cmd in &commands {
+            context.remove_completion(cmd);
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    for cmd in commands {
+        context.set_completion(cmd, spec.clone());
+    }
+    
+    Ok(BuiltinResult::Success(0))
+}
+
+fn print_completion_spec(cmd: &str, spec: &CompletionSpec) {
+    let mut parts = vec!["complete".to_string()];
+    
+    for action in &spec.actions {
+        match action {
+            CompletionAction::Alias => parts.push("-a".to_string()),
+            CompletionAction::Builtin => parts.push("-b".to_string()),
+            CompletionAction::Command => parts.push("-c".to_string()),
+            CompletionAction::Directory => parts.push("-d".to_string()),
+            CompletionAction::Export => parts.push("-e".to_string()),
+            CompletionAction::File => parts.push("-f".to_string()),
+            CompletionAction::Group => parts.push("-g".to_string()),
+            CompletionAction::Job => parts.push("-j".to_string()),
+            CompletionAction::Keyword => parts.push("-k".to_string()),
+            CompletionAction::Service => parts.push("-s".to_string()),
+            CompletionAction::User => parts.push("-u".to_string()),
+            CompletionAction::Variable => parts.push("-v".to_string()),
+            CompletionAction::Function => parts.push("-A function".to_string()),
+            CompletionAction::Hostname => parts.push("-A hostname".to_string()),
+            CompletionAction::HelpTopic => parts.push("-A helptopic".to_string()),
+            CompletionAction::Signal => parts.push("-A signal".to_string()),
+            CompletionAction::Stopped => parts.push("-A stopped".to_string()),
+            CompletionAction::Running => parts.push("-A running".to_string()),
+            CompletionAction::SetOpt => parts.push("-A setopt".to_string()),
+            CompletionAction::ShOpt => parts.push("-A shopt".to_string()),
+            CompletionAction::ArrayVar => parts.push("-A arrayvar".to_string()),
+            CompletionAction::Binding => parts.push("-A binding".to_string()),
+        }
+    }
+    
+    for opt in &spec.options {
+        parts.push("-o".to_string());
+        parts.push(opt.clone());
+    }
+    
+    if let Some(ref func) = spec.function {
+        parts.push("-F".to_string());
+        parts.push(func.clone());
+    }
+    
+    if let Some(ref words) = spec.wordlist {
+        parts.push("-W".to_string());
+        parts.push(format!("'{}'", words));
+    }
+    
+    if let Some(ref glob) = spec.globpat {
+        parts.push("-G".to_string());
+        parts.push(format!("'{}'", glob));
+    }
+    
+    if let Some(ref cmd_str) = spec.command {
+        parts.push("-C".to_string());
+        parts.push(format!("'{}'", cmd_str));
+    }
+    
+    if let Some(ref prefix) = spec.prefix {
+        parts.push("-P".to_string());
+        parts.push(format!("'{}'", prefix));
+    }
+    
+    if let Some(ref suffix) = spec.suffix {
+        parts.push("-S".to_string());
+        parts.push(format!("'{}'", suffix));
+    }
+    
+    if let Some(ref filter) = spec.filter_pattern {
+        parts.push("-X".to_string());
+        parts.push(format!("'{}'", filter));
+    }
+    
+    parts.push(cmd.to_string());
+    
+    println!("{}", parts.join(" "));
+}
+
+fn builtin_compgen(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    let mut spec = CompletionSpec::new();
+    let mut word_prefix: Option<String> = None;
+    
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        
+        if arg == "--" {
+            i += 1;
+            if i < args.len() {
+                word_prefix = Some(args[i].clone());
+            }
+            break;
+        } else if arg == "-W" {
+            i += 1;
+            if i < args.len() {
+                spec.wordlist = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("compgen: -W: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-G" {
+            i += 1;
+            if i < args.len() {
+                spec.globpat = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("compgen: -G: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-P" {
+            i += 1;
+            if i < args.len() {
+                spec.prefix = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("compgen: -P: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-S" {
+            i += 1;
+            if i < args.len() {
+                spec.suffix = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("compgen: -S: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-X" {
+            i += 1;
+            if i < args.len() {
+                spec.filter_pattern = Some(args[i].clone());
+                i += 1;
+            } else {
+                eprintln!("compgen: -X: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-A" {
+            i += 1;
+            if i < args.len() {
+                if let Some(action) = CompletionAction::from_action_name(&args[i]) {
+                    spec.actions.push(action);
+                } else {
+                    eprintln!("compgen: {}: invalid action name", &args[i]);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                i += 1;
+            } else {
+                eprintln!("compgen: -A: option requires an argument");
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if arg == "-a" {
+            spec.actions.push(CompletionAction::Alias);
+            i += 1;
+        } else if arg == "-b" {
+            spec.actions.push(CompletionAction::Builtin);
+            i += 1;
+        } else if arg == "-c" {
+            spec.actions.push(CompletionAction::Command);
+            i += 1;
+        } else if arg == "-d" {
+            spec.actions.push(CompletionAction::Directory);
+            i += 1;
+        } else if arg == "-e" {
+            spec.actions.push(CompletionAction::Export);
+            i += 1;
+        } else if arg == "-f" {
+            spec.actions.push(CompletionAction::File);
+            i += 1;
+        } else if arg == "-g" {
+            spec.actions.push(CompletionAction::Group);
+            i += 1;
+        } else if arg == "-j" {
+            spec.actions.push(CompletionAction::Job);
+            i += 1;
+        } else if arg == "-k" {
+            spec.actions.push(CompletionAction::Keyword);
+            i += 1;
+        } else if arg == "-s" {
+            spec.actions.push(CompletionAction::Service);
+            i += 1;
+        } else if arg == "-u" {
+            spec.actions.push(CompletionAction::User);
+            i += 1;
+        } else if arg == "-v" {
+            spec.actions.push(CompletionAction::Variable);
+            i += 1;
+        } else if !arg.starts_with('-') {
+            word_prefix = Some(arg.clone());
+            i += 1;
+        } else {
+            eprintln!("compgen: {}: invalid option", arg);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    }
+    
+    let completions = generate_completions(&spec, context, word_prefix.as_deref());
+    
+    for comp in completions {
+        let mut result = String::new();
+        if let Some(ref prefix) = spec.prefix {
+            result.push_str(prefix);
+        }
+        result.push_str(&comp);
+        if let Some(ref suffix) = spec.suffix {
+            result.push_str(suffix);
+        }
+        println!("{}", result);
+    }
+    
+    Ok(BuiltinResult::Success(0))
+}
+
+fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_prefix: Option<&str>) -> Vec<String> {
+    let mut completions = Vec::new();
+    let prefix = word_prefix.unwrap_or("");
+    
+    if let Some(ref wordlist) = spec.wordlist {
+        for word in wordlist.split_whitespace() {
+            if word.starts_with(prefix) {
+                completions.push(word.to_string());
+            }
+        }
+    }
+    
+    if let Some(ref glob_pattern) = spec.globpat {
+        if let Ok(entries) = glob::glob(glob_pattern) {
+            for entry in entries.flatten() {
+                let path_str = entry.display().to_string();
+                if path_str.starts_with(prefix) {
+                    completions.push(path_str);
+                }
+            }
+        }
+    }
+    
+    for action in &spec.actions {
+        match action {
+            CompletionAction::Alias => {
+                for (name, _) in context.aliases() {
+                    if name.starts_with(prefix) {
+                        completions.push(name.clone());
+                    }
+                }
+            }
+            CompletionAction::Builtin => {
+                for name in get_builtin_names() {
+                    if name.starts_with(prefix) {
+                        completions.push(name.to_string());
+                    }
+                }
+            }
+            CompletionAction::Command => {
+                for name in get_builtin_names() {
+                    if name.starts_with(prefix) {
+                        completions.push(name.to_string());
+                    }
+                }
+                for (name, _) in context.functions() {
+                    if name.starts_with(prefix) {
+                        completions.push(name.clone());
+                    }
+                }
+                if let Ok(path) = std::env::var("PATH") {
+                    for dir in path.split(':') {
+                        if let Ok(entries) = std::fs::read_dir(dir) {
+                            for entry in entries.flatten() {
+                                if let Some(name) = entry.file_name().to_str() {
+                                    if name.starts_with(prefix) {
+                                        completions.push(name.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            CompletionAction::Directory => {
+                let pattern = if prefix.is_empty() { "*" } else { &format!("{}*", prefix) };
+                if let Ok(entries) = glob::glob(pattern) {
+                    for entry in entries.flatten() {
+                        if entry.is_dir() {
+                            completions.push(entry.display().to_string());
+                        }
+                    }
+                }
+            }
+            CompletionAction::Export => {
+                for name in context.exported_variable_names() {
+                    if name.starts_with(prefix) {
+                        completions.push(name.clone());
+                    }
+                }
+            }
+            CompletionAction::File => {
+                let pattern = if prefix.is_empty() { "*" } else { &format!("{}*", prefix) };
+                if let Ok(entries) = glob::glob(pattern) {
+                    for entry in entries.flatten() {
+                        completions.push(entry.display().to_string());
+                    }
+                }
+            }
+            CompletionAction::Function => {
+                for (name, _) in context.functions() {
+                    if name.starts_with(prefix) {
+                        completions.push(name.clone());
+                    }
+                }
+            }
+            CompletionAction::Variable => {
+                for name in context.variable_names() {
+                    if name.starts_with(prefix) {
+                        completions.push(name.clone());
+                    }
+                }
+                for name in context.exported_variable_names() {
+                    if name.starts_with(prefix) && !completions.contains(name) {
+                        completions.push(name.clone());
+                    }
+                }
+            }
+            CompletionAction::Keyword => {
+                for kw in &["if", "then", "else", "elif", "fi", "case", "esac", "for", "while", 
+                            "until", "do", "done", "in", "function", "select", "time", "coproc",
+                            "{", "}", "!", "[[", "]]"] {
+                    if kw.starts_with(prefix) {
+                        completions.push(kw.to_string());
+                    }
+                }
+            }
+            CompletionAction::User => {
+                if let Ok(contents) = std::fs::read_to_string("/etc/passwd") {
+                    for line in contents.lines() {
+                        if let Some(username) = line.split(':').next() {
+                            if username.starts_with(prefix) {
+                                completions.push(username.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            CompletionAction::Group => {
+                if let Ok(contents) = std::fs::read_to_string("/etc/group") {
+                    for line in contents.lines() {
+                        if let Some(groupname) = line.split(':').next() {
+                            if groupname.starts_with(prefix) {
+                                completions.push(groupname.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            CompletionAction::Signal => {
+                for sig in &["HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", 
+                            "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM",
+                            "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU",
+                            "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "PWR", "SYS"] {
+                    if sig.starts_with(prefix) || format!("SIG{}", sig).starts_with(prefix) {
+                        completions.push(sig.to_string());
+                    }
+                }
+            }
+            CompletionAction::SetOpt => {
+                for opt in &["errexit", "nounset", "xtrace", "noglob", "noexec", "verbose"] {
+                    if opt.starts_with(prefix) {
+                        completions.push(opt.to_string());
+                    }
+                }
+            }
+            CompletionAction::ShOpt => {
+                for opt in &["extglob", "globstar", "nullglob", "dotglob", "failglob", 
+                            "nocaseglob", "nocasematch", "expand_aliases", "histappend"] {
+                    if opt.starts_with(prefix) {
+                        completions.push(opt.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    if let Some(ref filter) = spec.filter_pattern {
+        completions.retain(|c| {
+            !glob::Pattern::new(filter)
+                .map(|p| p.matches(c))
+                .unwrap_or(false)
+        });
+    }
+    
+    completions.sort();
+    completions.dedup();
+    
+    completions
+}
+
+fn get_builtin_names() -> Vec<&'static str> {
+    vec![
+        ".", ":", "[", "alias", "bg", "break", "builtin", "cd", "command", 
+        "compgen", "complete", "compopt", "continue", "declare", "dirs",
+        "disown", "echo", "enable", "eval", "exec", "exit", "export", 
+        "false", "fc", "fg", "getopts", "hash", "help", "history", "jobs",
+        "kill", "let", "local", "logout", "mapfile", "popd", "printf",
+        "pushd", "pwd", "read", "readarray", "readonly", "return", "set",
+        "shift", "shopt", "source", "suspend", "test", "times", "trap",
+        "true", "type", "typeset", "ulimit", "umask", "unalias", "unset",
+        "wait",
+    ]
 }
 
 #[cfg(test)]

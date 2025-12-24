@@ -628,7 +628,7 @@ impl Executor {
                     Ok(code)
                 }
                 Statement::Pipeline(pipeline) => {
-                    if pipeline.elements.len() == 1 {
+                    if pipeline.elements.len() == 1 && !pipeline.elements[0].negated {
                         return self.execute_statement_recursive(&pipeline.elements[0].command).await;
                     }
                     let status = self.execute_pipeline(pipeline).await?;

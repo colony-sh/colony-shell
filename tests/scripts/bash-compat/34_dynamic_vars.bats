@@ -1,9 +1,7 @@
 #!/usr/bin/env bats
 # Tests for dynamic variables: RANDOM, SECONDS, LINENO, BASHPID, EPOCHSECONDS, EPOCHREALTIME, SRANDOM
 
-setup() {
-    COLONY="${COLONY:-./target/debug/colony}"
-}
+COLONY="${COLONY_BIN}"
 
 # =============================================================================
 # RANDOM tests

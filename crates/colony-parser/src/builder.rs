@@ -324,19 +324,11 @@ impl AstBuilder {
     /// Build a pipeline: cmd1 | cmd2 | cmd3
     fn build_pipeline(pair: Pair<Rule>) -> Result<Pipeline, BuildError> {
         let span = span_from_pair(&pair);
+        let raw_text = pair.as_str();
         let mut inner = pair.into_inner();
 
-        // Pipeline = "!"? ~ PipelineElement ~ (PipeOp ~ PipelineElement)*
         let mut elements = Vec::new();
-        let mut negated = false;
-
-        // Check for negation
-        if let Some(first) = inner.peek() {
-            if first.as_str() == "!" {
-                negated = true;
-                inner.next();
-            }
-        }
+        let negated = raw_text.trim_start().starts_with('!');
 
         // Parse elements
         let mut current_element: Option<Box<Statement>> = None;

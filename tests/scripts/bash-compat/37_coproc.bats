@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-COLONY="${COLONY:-./target/debug/colony}"
+COLONY="${COLONY_BIN}"
 
 @test "coproc: anonymous coprocess sets COPROC array" {
     run $COLONY -c 'coproc { echo hello; }; echo ${COPROC[@]}'
