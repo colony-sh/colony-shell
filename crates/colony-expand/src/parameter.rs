@@ -182,6 +182,13 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                 };
             }
             Some(crate::Variable::AssocArray(_)) => unreachable!(),
+            Some(crate::Variable::NameRef(target)) => {
+                if let Some(crate::Variable::Array(arr)) = context.get_variable(target) {
+                    arr
+                } else {
+                    return Ok(context.get_var_or_env(target).unwrap_or_default());
+                }
+            }
             None => return Ok(String::new()),
         };
 
@@ -296,6 +303,13 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                 Some(crate::Variable::Array(arr)) => Ok(arr.len().to_string()),
                 Some(crate::Variable::AssocArray(map)) => Ok(map.len().to_string()),
                 Some(crate::Variable::String(s)) => Ok(s.len().to_string()),
+                Some(crate::Variable::NameRef(target)) => {
+                    if let Some(v) = context.get_var_or_env(target) {
+                        Ok(v.len().to_string())
+                    } else {
+                        Ok("0".to_string())
+                    }
+                }
                 None => Ok("0".to_string()),
             }
         }
@@ -427,6 +441,17 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                         None => chars.len(),
                     };
                     Ok(chars[start..end].iter().collect())
+                }
+                Some(crate::Variable::NameRef(target)) => {
+                    if let Some(v) = context.get_var_or_env(target) {
+                        let chars: Vec<char> = v.chars().collect();
+                        let len = chars.len() as i64;
+                        let start = if offset_val < 0 { (len + offset_val).max(0) as usize } else { (offset_val as usize).min(chars.len()) };
+                        let end = match length { Some(l) => (start + expand_word_to_usize(l, context)).min(chars.len()), None => chars.len() };
+                        Ok(chars[start..end].iter().collect())
+                    } else {
+                        Ok(String::new())
+                    }
                 }
                 None => Ok(String::new()),
             }

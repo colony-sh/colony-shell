@@ -43,6 +43,8 @@ pub enum Statement {
     Conditional(ConditionalCommand),
     /// (( expression )) - Arithmetic command
     Arithmetic(ArithmeticCommand),
+    /// coproc [NAME] command
+    Coproc(CoprocCommand),
 
     // === Declarations (Colony) ===
     /// var x = value
@@ -75,6 +77,7 @@ impl Statement {
             Statement::Until(u) => &u.span,
             Statement::Conditional(c) => &c.span,
             Statement::Arithmetic(a) => &a.span,
+            Statement::Coproc(c) => &c.span,
             Statement::VarDecl(v) => &v.span,
             Statement::FunctionDef(f) => &f.span,
             Statement::ProcDef(p) => &p.span,
@@ -509,6 +512,13 @@ pub struct UntilStatement {
 #[derive(Clone, Debug)]
 pub struct ConditionalCommand {
     pub expr: CondExpr,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct CoprocCommand {
+    pub name: Option<String>,
+    pub command: Box<Statement>,
     pub span: Span,
 }
 

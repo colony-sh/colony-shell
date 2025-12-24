@@ -1,0 +1,34 @@
+[package]
+name = "colony-secure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Secure environment variable protection for Colony Shell"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+toml = "0.8"
+thiserror.workspace = true
+sha2 = "0.10"
+hex = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+glob = "0.3"
+parking_lot.workspace = true
+tracing.workspace = true
+nix = { workspace = true }
+
+# Encryption
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+
+# OS Keychain
+keyring = "3"
+
+[dev-dependencies]
+tempfile = "3.0"

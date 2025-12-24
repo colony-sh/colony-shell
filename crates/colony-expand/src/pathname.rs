@@ -577,6 +577,187 @@ pub fn match_extglob_pattern(pattern: &str, text: &str) -> bool {
     }
 }
 
+use crate::ShoptOptions;
+use walkdir::WalkDir;
+
+fn contains_globstar(pattern: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('/').collect();
+    for part in parts {
+        if part == "**" {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn expand_pathname_with_options(pattern: &str, options: &ShoptOptions) -> Result<Vec<String>> {
+    if !contains_glob_chars(pattern) {
+        return Ok(vec![pattern.to_string()]);
+    }
+    
+    if options.globstar && contains_globstar(pattern) {
+        return expand_globstar_pathname(pattern, options);
+    }
+
+    if contains_extglob(pattern) {
+        return expand_extglob_pathname(pattern);
+    }
+
+    let mut normalized = normalize_pattern(pattern);
+    
+    if !options.globstar && contains_globstar(&normalized) {
+        normalized = normalized.replace("**", "*");
+    }
+
+    match glob::glob(&normalized) {
+        Ok(paths) => {
+            let mut results: Vec<String> = paths
+                .filter_map(|entry| entry.ok())
+                .filter(|path| {
+                    let filename = path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+
+                    options.dotglob || !filename.starts_with('.') || pattern.contains("/.")
+                })
+                .map(|path| path.display().to_string())
+                .collect();
+
+            if results.is_empty() {
+                if options.nullglob {
+                    Ok(vec![])
+                } else {
+                    Ok(vec![pattern.to_string()])
+                }
+            } else {
+                results.sort();
+                Ok(results)
+            }
+        }
+        Err(_) => {
+            if options.nullglob {
+                Ok(vec![])
+            } else {
+                Ok(vec![pattern.to_string()])
+            }
+        }
+    }
+}
+
+fn expand_globstar_pathname(pattern: &str, options: &ShoptOptions) -> Result<Vec<String>> {
+    let parts: Vec<&str> = pattern.split('/').collect();
+    
+    let globstar_idx = parts.iter().position(|&p| p == "**");
+    let globstar_idx = match globstar_idx {
+        Some(idx) => idx,
+        None => return expand_pathname(pattern),
+    };
+    
+    let prefix_parts = &parts[..globstar_idx];
+    let suffix_parts = &parts[globstar_idx + 1..];
+    
+    let base_dir = if prefix_parts.is_empty() {
+        ".".to_string()
+    } else {
+        prefix_parts.join("/")
+    };
+    
+    let suffix_pattern = if suffix_parts.is_empty() {
+        None
+    } else {
+        Some(suffix_parts.join("/"))
+    };
+    
+    let dirs_only = pattern.ends_with("**/");
+    
+    let mut results = Vec::new();
+    
+    if !std::path::Path::new(&base_dir).exists() {
+        if options.nullglob {
+            return Ok(vec![]);
+        } else {
+            return Ok(vec![pattern.to_string()]);
+        }
+    }
+    
+    for entry in WalkDir::new(&base_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_str().unwrap_or("");
+            options.dotglob || !name.starts_with('.') || e.depth() == 0
+        })
+    {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        
+        let path = entry.path();
+        let path_str = path.display().to_string();
+        
+        let relative_path = if base_dir == "." {
+            path_str.clone()
+        } else if path_str.starts_with(&base_dir) {
+            let stripped = path_str.strip_prefix(&base_dir).unwrap_or(&path_str);
+            let stripped = stripped.strip_prefix('/').unwrap_or(stripped);
+            if stripped.is_empty() {
+                ".".to_string()
+            } else {
+                stripped.to_string()
+            }
+        } else {
+            path_str.clone()
+        };
+        
+        if dirs_only && !path.is_dir() {
+            continue;
+        }
+        
+        match &suffix_pattern {
+            None => {
+                let result = if prefix_parts.is_empty() {
+                    if relative_path == "." {
+                        continue;
+                    }
+                    relative_path
+                } else {
+                    path_str
+                };
+                
+                if dirs_only {
+                    results.push(format!("{}/", result.trim_end_matches('/')));
+                } else {
+                    results.push(result);
+                }
+            }
+            Some(suffix) => {
+                if path.is_dir() {
+                    let full_pattern = format!("{}/{}", path_str, suffix);
+                    let sub_results = expand_pathname_with_options(&full_pattern, options)?;
+                    for r in sub_results {
+                        if r != full_pattern || std::path::Path::new(&r).exists() {
+                            results.push(r);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if results.is_empty() {
+        if options.nullglob {
+            Ok(vec![])
+        } else {
+            Ok(vec![pattern.to_string()])
+        }
+    } else {
+        results.sort();
+        results.dedup();
+        Ok(results)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

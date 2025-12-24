@@ -429,6 +429,32 @@ async fn maybe_source_file(path: &str, executor: &mut Executor, verbose: bool) -
     }
 }
 
+fn load_exported_functions(context: &mut ExpansionContext) {
+    const BASHFUNC_PREFIX: &str = "BASH_FUNC_";
+    const BASHFUNC_SUFFIX: &str = "%%";
+    
+    for (key, value) in std::env::vars() {
+        if key.starts_with(BASHFUNC_PREFIX) && key.ends_with(BASHFUNC_SUFFIX) {
+            let name_start = BASHFUNC_PREFIX.len();
+            let name_end = key.len() - BASHFUNC_SUFFIX.len();
+            let func_name = &key[name_start..name_end];
+            
+            if !value.starts_with("() {") {
+                continue;
+            }
+            
+            let func_source = format!("{} {}", func_name, value);
+            
+            if let Ok(stmt) = parse_statement(&func_source) {
+                if let Statement::FunctionDef(func) = stmt {
+                    context.define_function(func.name.clone(), func);
+                    context.export_function(&func_name);
+                }
+            }
+        }
+    }
+}
+
 /// Run startup files based on shell mode (login/interactive)
 async fn run_startup_files(opts: &ShellOptions, executor: &mut Executor) {
     let is_login = opts.login;
@@ -505,6 +531,7 @@ async fn main() -> Result<()> {
     // Handle -c command mode
     if let Some(ref command) = opts.command {
         let mut context = ExpansionContext::new();
+        load_exported_functions(&mut context);
         if !opts.positional_args.is_empty() {
             context.set_positional_params(opts.positional_args.clone());
         }
@@ -522,6 +549,7 @@ async fn main() -> Result<()> {
     // Handle script execution mode
     if let Some(ref script) = opts.script {
         let mut context = ExpansionContext::new();
+        load_exported_functions(&mut context);
         context.set_shell_name(script.display().to_string());
         context.set_positional_params(opts.positional_args.clone());
 
@@ -570,7 +598,8 @@ async fn main() -> Result<()> {
     println!("   Type 'exit' to quit");
 
     // Initialize executor with reactive tuple space
-    let context = ExpansionContext::new();
+    let mut context = ExpansionContext::new();
+    load_exported_functions(&mut context);
     let executor = Executor::new(context);
 
     println!("🔄 Reactive environment enabled");
@@ -1629,7 +1658,13 @@ fn execute_statement_with_control<'a>(
         }
         Statement::Pipeline(pipeline) => {
             if pipeline.elements.len() == 1 {
-                return execute_statement_with_control(&pipeline.elements[0].command, executor).await;
+                let element = &pipeline.elements[0];
+                let (mut code, flow) = execute_statement_with_control(&element.command, executor).await;
+                if element.negated {
+                    code = if code == 0 { 1 } else { 0 };
+                }
+                executor.context_mut().set_last_exit_status(code);
+                return (code, flow);
             }
             let result = match executor.execute_pipeline(&pipeline).await {
                 Ok(status) => (status.code(), ControlFlow::Normal),
@@ -1738,6 +1773,15 @@ fn execute_statement_with_control<'a>(
             let result = evaluate_arithmetic_command(&arith_cmd.expr, executor);
             (if result != 0 { 0 } else { 1 }, ControlFlow::Normal)
         }
+        Statement::Coproc(coproc) => {
+            match execute_coproc(coproc, executor).await {
+                Ok(exit_code) => (exit_code, ControlFlow::Normal),
+                Err(e) => {
+                    eprintln!("colony: coproc error: {}", e);
+                    (1, ControlFlow::Normal)
+                }
+            }
+        }
         Statement::Empty => (0, ControlFlow::Normal),
     }
     })
@@ -1773,9 +1817,11 @@ fn _old_execute_statement_for_code<'a>(
             }
         }
         Statement::Pipeline(pipeline) => {
-            // Check if it's a single-element pipeline with a simple command
+            let element = &pipeline.elements[0];
+            let is_negated = pipeline.elements.last().map(|e| e.negated).unwrap_or(false);
+            
             if pipeline.elements.len() == 1 {
-                if let Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
+                let mut code = if let Statement::SimpleCommand(ref cmd) = *element.command {
                     match executor.execute_simple_command(cmd).await {
                         Ok(status) => status.code(),
                         Err(e) => {
@@ -1784,7 +1830,6 @@ fn _old_execute_statement_for_code<'a>(
                         }
                     }
                 } else {
-                    // Single-element but not simple command - fall through to pipeline
                     match executor.execute_pipeline(&pipeline).await {
                         Ok(status) => status.code(),
                         Err(e) => {
@@ -1792,16 +1837,23 @@ fn _old_execute_statement_for_code<'a>(
                             1
                         }
                     }
+                };
+                if is_negated {
+                    code = if code == 0 { 1 } else { 0 };
                 }
+                code
             } else {
-                // Real pipeline with multiple commands
-                match executor.execute_pipeline(&pipeline).await {
+                let mut code = match executor.execute_pipeline(&pipeline).await {
                     Ok(status) => status.code(),
                     Err(e) => {
                         eprintln!("execution error: {}", e);
                         1
                     }
+                };
+                if is_negated {
+                    code = if code == 0 { 1 } else { 0 };
                 }
+                code
             }
         }
         Statement::List(list) => {
@@ -1891,6 +1943,19 @@ fn _old_execute_statement_for_code<'a>(
         Statement::Arithmetic(arith_cmd) => {
             if evaluate_arithmetic_command(&arith_cmd.expr, executor) != 0 { 0 } else { 1 }
         }
+        Statement::Coproc(coproc) => {
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    handle.block_on(async {
+                        execute_coproc(coproc, executor).await.unwrap_or(1)
+                    })
+                }
+                Err(_) => {
+                    eprintln!("colony: coproc requires async runtime");
+                    1
+                }
+            }
+        }
         Statement::Empty => 0,
     }
     })
@@ -1952,6 +2017,268 @@ async fn execute_err_trap(executor: &mut Executor) {
                 let _ = execute_statement_for_code(&stmt, executor).await;
             }
         }
+    }
+}
+
+/// Serialize a Statement to a shell command string for child process execution
+fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
+    use colony_parser::{Statement, Word, WordPart, VariableRef};
+    
+    fn varref_to_string(v: &VariableRef) -> String {
+        let mut result = String::from("$");
+        if v.modifier.is_some() || v.subscript.is_some() || v.prefix.is_some() {
+            result.push('{');
+        }
+        result.push_str(&v.name);
+        if v.modifier.is_some() || v.subscript.is_some() || v.prefix.is_some() {
+            result.push('}');
+        }
+        result
+    }
+    
+    fn word_to_string(word: &Word) -> String {
+        let mut result = String::new();
+        for part in &word.parts {
+            match part {
+                WordPart::Literal(s) => {
+                    for c in s.chars() {
+                        if " \t\n\"'$`\\!&|;<>(){}[]".contains(c) {
+                            result.push('\\');
+                        }
+                        result.push(c);
+                    }
+                }
+                WordPart::SingleQuoted(s) => {
+                    result.push('\'');
+                    result.push_str(&s.replace('\'', "'\\''"));
+                    result.push('\'');
+                }
+                WordPart::DoubleQuoted(parts) => {
+                    result.push('"');
+                    for p in parts {
+                        match p {
+                            WordPart::Literal(s) => {
+                                for c in s.chars() {
+                                    if "\"$`\\".contains(c) {
+                                        result.push('\\');
+                                    }
+                                    result.push(c);
+                                }
+                            }
+                            WordPart::Variable(v) => {
+                                result.push_str(&varref_to_string(v));
+                            }
+                            _ => result.push_str(&format!("{:?}", p)),
+                        }
+                    }
+                    result.push('"');
+                }
+                WordPart::Variable(v) => {
+                    result.push_str(&varref_to_string(v));
+                }
+                WordPart::Tilde(user) => {
+                    result.push('~');
+                    if let Some(u) = user {
+                        result.push_str(u);
+                    }
+                }
+                WordPart::CommandSubRaw(s) => {
+                    result.push_str("$(");
+                    result.push_str(s);
+                    result.push(')');
+                }
+                WordPart::ArithRaw(s) => {
+                    result.push_str("$((");
+                    result.push_str(s);
+                    result.push_str("))");
+                }
+                _ => result.push_str(&format!("{:?}", part)),
+            }
+        }
+        result
+    }
+    
+    fn simple_cmd_to_string(cmd: &colony_parser::SimpleCommand) -> String {
+        let mut parts = Vec::new();
+        parts.push(word_to_string(&cmd.name));
+        for arg in &cmd.args {
+            parts.push(word_to_string(arg));
+        }
+        parts.join(" ")
+    }
+    
+    fn statements_to_string(stmts: &[Statement]) -> String {
+        stmts.iter()
+            .map(statement_to_shell_string)
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+    
+    fn condition_to_string(cond: &colony_parser::Condition) -> String {
+        match cond {
+            colony_parser::Condition::Command(stmt) => statement_to_shell_string(stmt),
+            colony_parser::Condition::Expression(expr) => format!("{:?}", expr),
+        }
+    }
+    
+    match stmt {
+        Statement::SimpleCommand(cmd) => simple_cmd_to_string(cmd),
+        Statement::Pipeline(pipe) => {
+            pipe.elements.iter()
+                .map(|elem| statement_to_shell_string(&elem.command))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        }
+        Statement::List(list) => {
+            let mut result = statement_to_shell_string(&list.first);
+            for (op, cmd) in &list.rest {
+                let op_str = match op {
+                    colony_parser::ListOp::And => "&&",
+                    colony_parser::ListOp::Or => "||",
+                    colony_parser::ListOp::Semi => ";",
+                    colony_parser::ListOp::Background => "&",
+                };
+                result.push_str(&format!(" {} {}", op_str, statement_to_shell_string(cmd)));
+            }
+            result
+        }
+        Statement::BraceGroup(bg) => {
+            format!("{{ {}; }}", statements_to_string(&bg.body))
+        }
+        Statement::Subshell(sub) => {
+            format!("( {} )", statements_to_string(&sub.body))
+        }
+        Statement::If(if_stmt) => {
+            let mut result = format!("if {}; then {}", 
+                condition_to_string(&if_stmt.condition),
+                statements_to_string(&if_stmt.then_body));
+            for elif in &if_stmt.elif_branches {
+                result.push_str(&format!("; elif {}; then {}",
+                    condition_to_string(&elif.condition),
+                    statements_to_string(&elif.body)));
+            }
+            if let Some(else_body) = &if_stmt.else_body {
+                result.push_str(&format!("; else {}", statements_to_string(else_body)));
+            }
+            result.push_str("; fi");
+            result
+        }
+        Statement::While(while_stmt) => {
+            format!("while {}; do {}; done",
+                condition_to_string(&while_stmt.condition),
+                statements_to_string(&while_stmt.body))
+        }
+        Statement::Until(until_stmt) => {
+            format!("until {}; do {}; done",
+                condition_to_string(&until_stmt.condition),
+                statements_to_string(&until_stmt.body))
+        }
+        Statement::For(for_stmt) => {
+            let words: Vec<String> = for_stmt.words.iter()
+                .map(word_to_string)
+                .collect();
+            format!("for {} in {}; do {}; done",
+                for_stmt.var,
+                words.join(" "),
+                statements_to_string(&for_stmt.body))
+        }
+        Statement::Case(case_stmt) => {
+            let word = word_to_string(&case_stmt.value);
+            let mut result = format!("case {} in ", word);
+            for arm in &case_stmt.arms {
+                let patterns: Vec<String> = arm.patterns.iter()
+                    .map(word_to_string)
+                    .collect();
+                result.push_str(&format!("{}) {};; ", patterns.join("|"), statements_to_string(&arm.body)));
+            }
+            result.push_str("esac");
+            result
+        }
+        Statement::Empty => String::new(),
+        other => format!("{:?}", other),
+    }
+}
+
+async fn execute_coproc(coproc: &colony_parser::CoprocCommand, executor: &mut Executor) -> Result<i32, String> {
+    use nix::unistd::{fork, ForkResult, pipe, dup2, close, execvp};
+    use std::os::fd::AsRawFd;
+    use std::ffi::CString;
+    
+    let coproc_name = coproc.name.clone().unwrap_or_else(|| "COPROC".to_string());
+    
+    let stdin_pipe = pipe().map_err(|e| format!("pipe error: {}", e))?;
+    let stdout_pipe = pipe().map_err(|e| format!("pipe error: {}", e))?;
+    
+    // Determine if we need to run through shell or can exec directly
+    let is_simple_external = matches!(coproc.command.as_ref(), colony_parser::Statement::SimpleCommand(cmd) 
+        if cmd.name.as_literal().is_some() && !colony_exec::is_builtin(cmd.name.as_literal().unwrap()));
+    
+    // For compound commands or builtins, serialize to shell string and run through colony
+    let shell_cmd = if !is_simple_external {
+        Some(statement_to_shell_string(coproc.command.as_ref()))
+    } else {
+        None
+    };
+    
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            close(stdin_pipe.1.as_raw_fd()).ok();
+            close(stdout_pipe.0.as_raw_fd()).ok();
+            
+            dup2(stdin_pipe.0.as_raw_fd(), 0).ok();
+            dup2(stdout_pipe.1.as_raw_fd(), 1).ok();
+            
+            close(stdin_pipe.0.as_raw_fd()).ok();
+            close(stdout_pipe.1.as_raw_fd()).ok();
+            
+            if let Some(cmd_string) = shell_cmd {
+                // Run compound command or builtin through colony shell
+                let exe_path = std::env::current_exe()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| "colony".to_string());
+                
+                let c_exe = CString::new(exe_path.as_str()).unwrap();
+                let c_flag = CString::new("-c").unwrap();
+                let c_cmd = CString::new(cmd_string.as_str()).unwrap();
+                
+                let args: Vec<&std::ffi::CStr> = vec![c_exe.as_c_str(), c_flag.as_c_str(), c_cmd.as_c_str()];
+                let _ = execvp(&c_exe, &args);
+                std::process::exit(127);
+            } else if let colony_parser::Statement::SimpleCommand(cmd) = coproc.command.as_ref() {
+                // Simple external command - exec directly for efficiency
+                let cmd_name = cmd.name.as_literal().unwrap_or("true");
+                let c_cmd = CString::new(cmd_name).unwrap();
+                let mut c_args: Vec<CString> = vec![c_cmd.clone()];
+                for arg in &cmd.args {
+                    if let Some(lit) = arg.as_literal() {
+                        c_args.push(CString::new(lit).unwrap());
+                    }
+                }
+                let c_args_ref: Vec<&std::ffi::CStr> = c_args.iter().map(|s| s.as_c_str()).collect();
+                let _ = execvp(&c_cmd, &c_args_ref);
+                std::process::exit(127);
+            } else {
+                // Should not reach here due to is_simple_external logic
+                std::process::exit(1);
+            }
+        }
+        Ok(ForkResult::Parent { child }) => {
+            drop(stdin_pipe.0);
+            drop(stdout_pipe.1);
+            
+            let read_fd = stdout_pipe.0.as_raw_fd();
+            let write_fd = stdin_pipe.1.as_raw_fd();
+            
+            executor.context_mut().set_array_element(&coproc_name, 0, &read_fd.to_string());
+            executor.context_mut().set_array_element(&coproc_name, 1, &write_fd.to_string());
+            executor.context_mut().set_var(format!("{}_PID", coproc_name), child.as_raw().to_string());
+            
+            std::mem::forget(stdout_pipe.0);
+            std::mem::forget(stdin_pipe.1);
+            
+            Ok(0)
+        }
+        Err(e) => Err(format!("fork error: {}", e)),
     }
 }
 

@@ -12,6 +12,7 @@ members = [
     "crates/colony-tuple",
     "crates/colony-mcp",
     "crates/colony-focus",
+    "crates/colony-secure",
     "crates/colony-shell",
     "crates/colony-tree-sitter",
 ]
@@ -79,6 +80,7 @@ colony-memory = { path = "crates/colony-memory" }
 colony-tuple = { path = "crates/colony-tuple" }
 colony-mcp = { path = "crates/colony-mcp" }
 colony-focus = { path = "crates/colony-focus" }
+colony-secure = { path = "crates/colony-secure" }
 colony-tree-sitter = { path = "crates/colony-tree-sitter" }
 
 [profile.dev]

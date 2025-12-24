@@ -264,10 +264,29 @@ impl Executor {
                         let value = expander.expand_word_for_assignment(word)?;
                         xtrace::trace_assignment(&self.context, &assignment.name, &value);
                         if assignment.op == colony_parser::AssignOp::Append {
-                            let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
-                            self.context.set_var(assignment.name.clone(), existing + &value);
+                            // For integer variables, += does arithmetic addition
+                            if self.context.is_integer(&assignment.name) {
+                                let existing = self.context.get_var_or_env(&assignment.name)
+                                    .and_then(|s| s.parse::<i64>().ok())
+                                    .unwrap_or(0);
+                                let addend = value.parse::<i64>().unwrap_or(0);
+                                let result = (existing + addend).to_string();
+                                if !self.context.set_var(assignment.name.clone(), result) {
+                                    eprintln!("colony: {}: readonly variable", &assignment.name);
+                                    return Ok(ExitStatus::new(1));
+                                }
+                            } else {
+                                let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
+                                if !self.context.set_var(assignment.name.clone(), existing + &value) {
+                                    eprintln!("colony: {}: readonly variable", &assignment.name);
+                                    return Ok(ExitStatus::new(1));
+                                }
+                            }
                         } else {
-                            self.context.set_var(assignment.name.clone(), value);
+                            if !self.context.set_var(assignment.name.clone(), value) {
+                                eprintln!("colony: {}: readonly variable", &assignment.name);
+                                return Ok(ExitStatus::new(1));
+                            }
                         }
                     }
                     AssignmentValue::Array(words) => {
@@ -283,6 +302,7 @@ impl Executor {
                                 Some(Variable::Array(arr)) => arr.clone(),
                                 Some(Variable::String(s)) => vec![s.clone()],
                                 Some(Variable::AssocArray(_)) => Vec::new(),
+                                Some(Variable::NameRef(_)) => Vec::new(),
                                 None => Vec::new(),
                             };
                             existing.extend(new_values);

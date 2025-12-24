@@ -34,3 +34,4 @@ libc = "0.2"
 
 # For REPL
 rustyline = "14.0"
+nix = { workspace = true }

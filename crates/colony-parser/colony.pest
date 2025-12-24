@@ -27,6 +27,7 @@ Statement = {
   | ReturnStatement
   | BreakStatement
   | ContinueStatement
+  | CoprocCommand
   | CommandList
   | BashAssignment
   | Assignment
@@ -55,6 +56,7 @@ PipelineElement = {
   | CompoundCommand
   | ConditionalCommand
   | ArithmeticCommand
+  | CoprocCommand
   | SimpleCommand
   | Subshell
 }
@@ -236,6 +238,15 @@ CondOperand = @{
 
 // (( expression )) - Arithmetic command
 ArithmeticCommand = { "((" ~ ArithExprInner ~ "))" }
+
+// coproc [NAME] command - runs command asynchronously with I/O pipes
+// Order matters: try named compound first, then unnamed compound, then simple command
+CoprocCommand = { "coproc" ~ (CoprocName ~ CompoundCommand | CompoundCommand | SimpleCommand) }
+
+// Optional name for coproc (defaults to COPROC)
+CoprocName = @{
+    !ReservedWord ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")*
+}
 
 // Arithmetic expression - handle balanced parens
 ArithExprInner = @{ ArithExprPart* }
@@ -1174,7 +1185,7 @@ ReservedKeyword = @{
     "if" | "then" | "else" | "elif" | "fi"
   | "case" | "esac" | "in"
   | "for" | "while" | "until" | "done" | "do"
-  | "function"
+  | "function" | "coproc"
   | "var" | "const" | "setvar"
   | "try" | "catch" | "finally"
   | "match" | "return" | "break" | "continue"

@@ -6,6 +6,21 @@ use crate::{ExecutionError, Result};
 use colony_expand::{ExpansionContext, Expander};
 use colony_parser::SimpleCommand;
 
+fn build_env_with_exported_functions(context: &ExpansionContext) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    
+    for func_name in context.exported_function_names() {
+        if let Some(func) = context.get_function(func_name) {
+            let body = crate::builtins::serialize_function_for_export(func);
+            let env_name = format!("BASH_FUNC_{}%%", func_name);
+            env.retain(|(k, _)| k != &env_name);
+            env.push((env_name, body));
+        }
+    }
+    
+    env
+}
+
 /// Execute a simple command
 ///
 /// This is the high-level entry point that:
@@ -81,7 +96,7 @@ fn execute_command_blocking(
             let path_env = context.get_env("PATH");
             let program_path = resolve_command(&command_name, path_env)?;
 
-            let mut env: Vec<(String, String)> = std::env::vars().collect();
+            let mut env = build_env_with_exported_functions(context);
             for assignment in &cmd.env_assignments {
                 if assignment.subscript.is_none() {
                     if let colony_parser::AssignmentValue::Word(word) = &assignment.value {
@@ -111,7 +126,7 @@ fn execute_command_blocking(
     let path_env = context.get_env("PATH");
     let program_path = resolve_command(&command_name, path_env)?;
 
-    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    let mut env = build_env_with_exported_functions(context);
     
     for assignment in &cmd.env_assignments {
         if assignment.subscript.is_none() {

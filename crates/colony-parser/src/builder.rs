@@ -114,6 +114,10 @@ impl AstBuilder {
                 Self::build_arithmetic_command(pair)
                     .map(Statement::Arithmetic)
             }
+            Rule::CoprocCommand => {
+                Self::build_coproc_command(pair)
+                    .map(Statement::Coproc)
+            }
             Rule::BashAssignment => {
                 // Standalone bash assignment: arr=(a b c)
                 // Convert to SimpleCommand with special handling
@@ -890,6 +894,44 @@ impl AstBuilder {
         
         Ok(ArithmeticCommand {
             expr: expr_pair.as_str().to_string(),
+            span,
+        })
+    }
+
+    fn build_coproc_command(pair: Pair<Rule>) -> Result<CoprocCommand, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+        
+        let mut name: Option<String> = None;
+        let mut command: Option<Box<Statement>> = None;
+        
+        for part in inner {
+            match part.as_rule() {
+                Rule::CoprocName => {
+                    name = Some(part.as_str().to_string());
+                }
+                Rule::CompoundCommand => {
+                    let inner_cmd = part.into_inner().next()
+                        .ok_or(BuildError::EmptyCompoundCommand)?;
+                    command = Some(Box::new(Self::build_statement(inner_cmd)?));
+                }
+                Rule::SimpleCommand => {
+                    command = Some(Box::new(Self::build_simple_command(part).map(Statement::SimpleCommand)?));
+                }
+                _ => {
+                    return Err(BuildError::UnexpectedRule {
+                        expected: "CoprocName, CompoundCommand, or SimpleCommand",
+                        found: format!("{:?}", part.as_rule()),
+                    });
+                }
+            }
+        }
+        
+        let command = command.ok_or(BuildError::MissingCoprocCommand)?;
+        
+        Ok(CoprocCommand {
+            name,
+            command,
             span,
         })
     }
@@ -2700,6 +2742,12 @@ pub enum BuildError {
 
     #[error("empty arithmetic command")]
     EmptyArithmeticCommand,
+
+    #[error("empty coproc command")]
+    EmptyCoprocCommand,
+
+    #[error("missing coproc command body")]
+    MissingCoprocCommand,
 
     #[error("parse error: {0}")]
     Parse(String),

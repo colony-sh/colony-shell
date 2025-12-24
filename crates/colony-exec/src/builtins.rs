@@ -81,6 +81,11 @@ pub fn is_builtin(name: &str) -> bool {
     )
 }
 
+pub fn serialize_function_for_export(func: &colony_parser::FunctionDef) -> String {
+    let body = format_function_body(&func.body);
+    format!("() {{ \n{}\n}}", body)
+}
+
 /// Execute a builtin command
 ///
 /// Returns None if the command is not a builtin.
@@ -216,33 +221,80 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &Tup
     Ok(BuiltinResult::Success(0))
 }
 
-/// export - Set environment variables
+/// export - Set environment variables or export functions
 ///
-/// Usage: export VAR=value [VAR2=value2 ...]
-///
-/// **Reactive:** Emits ("env_change", var, old, new) tuple (Rule 43)
+/// Usage: export [-f] [-n] [-p] [name[=value] ...]
+/// -f: Export functions (export -f funcname)
+/// -n: Remove export attribute (export -n name, export -fn funcname)
+/// -p: Print all exported variables/functions
 fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
-    if args.is_empty() {
-        // No args: print all exported variables
+    let mut export_functions = false;
+    let mut unexport = false;
+    let mut print_mode = false;
+    let mut names: Vec<&str> = Vec::new();
+    
+    for arg in args {
+        if arg.starts_with('-') && arg.len() > 1 && !arg.contains('=') {
+            for c in arg[1..].chars() {
+                match c {
+                    'f' => export_functions = true,
+                    'n' => unexport = true,
+                    'p' => print_mode = true,
+                    _ => {}
+                }
+            }
+        } else {
+            names.push(arg);
+        }
+    }
+    
+    if export_functions && unexport {
+        for name in &names {
+            context.unexport_function(name);
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if export_functions {
+        if names.is_empty() || print_mode {
+            for name in context.exported_function_names() {
+                if let Some(func) = context.get_function(name) {
+                    let body = format_function_body(&func.body);
+                    println!("{} () \n{{ \n{}\n}}", name, body);
+                }
+            }
+            return Ok(BuiltinResult::Success(0));
+        }
+        
+        let mut exit_code = 0;
+        for name in &names {
+            if context.is_function(name) {
+                context.export_function(name);
+            } else {
+                eprintln!("export: {}: not a function", name);
+                exit_code = 1;
+            }
+        }
+        return Ok(if exit_code == 0 { BuiltinResult::Success(0) } else { BuiltinResult::Failure(1) });
+    }
+    
+    if names.is_empty() {
         for (key, value) in env::vars() {
             println!("export {}={}", key, value);
         }
         return Ok(BuiltinResult::Success(0));
     }
 
-    // Parse VAR=value assignments
-    for arg in args {
+    for arg in names {
         if let Some(eq_pos) = arg.find('=') {
             let (name, value) = arg.split_at(eq_pos);
-            let value = &value[1..]; // Skip the '='
+            let value = &value[1..];
 
-            // Capture old value for reactive tuple
             let old_value = context.get_env(name).unwrap_or("").to_string();
 
             context.set_env(name, value);
             env::set_var(name, value);
 
-            // REACTIVE: Emit env_change tuple (Rule 43)
             tuple_space.out(Tuple::from(vec![
                 Value::Str("env_change".to_string()),
                 Value::Str(name.to_string()),
@@ -250,7 +302,6 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
                 Value::Str(value.to_string()),
             ]));
         } else {
-            // Just export existing variable
             if let Some(value) = context.get_env(arg) {
                 env::set_var(arg, value);
             }
@@ -1059,17 +1110,39 @@ fn builtin_context(args: &[String], channels: &mut ChannelManager) -> Result<Bui
 
 fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     use std::collections::HashMap;
+    use colony_expand::VarAttributes;
     
     let mut is_assoc = false;
+    let mut is_indexed_array = false;
+    let mut function_mode = false;
+    let mut function_names_only = false;
+    let mut print_mode = false;
+    let mut attrs = VarAttributes::default();
+    let mut removing_attrs = false;
     let mut reassembled_args: Vec<String> = Vec::new();
     let mut in_parens = false;
     let mut current_arg = String::new();
     
     for arg in args {
-        if arg == "-A" {
-            is_assoc = true;
-            continue;
-        } else if arg.starts_with('-') {
+        if (arg.starts_with('-') || arg.starts_with('+')) && arg.len() > 1 && !arg.contains('=') {
+            removing_attrs = arg.starts_with('+');
+            for c in arg[1..].chars() {
+                match c {
+                    'a' => is_indexed_array = true,
+                    'A' => is_assoc = true,
+                    'f' => function_mode = true,
+                    'F' => { function_mode = true; function_names_only = true; }
+                    'i' => attrs.integer = !removing_attrs,
+                    'l' => attrs.lowercase = !removing_attrs,
+                    'u' => attrs.uppercase = !removing_attrs,
+                    'r' => attrs.readonly = !removing_attrs,
+                    'x' => attrs.export = !removing_attrs,
+                    't' => attrs.trace = !removing_attrs,
+                    'p' => print_mode = true,
+                    'n' | 'g' => {}
+                    _ => {}
+                }
+            }
             continue;
         }
         
@@ -1089,31 +1162,124 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         }
     }
     
+    if print_mode {
+        if reassembled_args.is_empty() {
+            for (name, var, attr) in context.variables_with_attrs() {
+                let flags = attr.map(|a| a.to_flags()).unwrap_or_default();
+                let val = var.as_str();
+                println!("declare {} {}=\"{}\"", flags, name, val);
+            }
+        } else {
+            for name in &reassembled_args {
+                if let Some(value) = context.get_var_or_env(name) {
+                    let attr_flags = context.get_var_attributes(name)
+                        .map(|a| a.to_flags())
+                        .unwrap_or_else(|| "--".to_string());
+                    println!("declare {} {}=\"{}\"", attr_flags, name, value);
+                }
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if function_mode {
+        if reassembled_args.is_empty() {
+            for (name, func) in context.functions() {
+                if function_names_only {
+                    let export_flag = if context.is_function_exported(name) { "x" } else { "" };
+                    println!("declare -f{} {}", export_flag, name);
+                } else {
+                    let body = format_function_body(&func.body);
+                    println!("{} () \n{{ \n{}\n}}", name, body);
+                }
+            }
+        } else {
+            let mut exit_code = 0;
+            for name in &reassembled_args {
+                if let Some(func) = context.get_function(name) {
+                    if function_names_only {
+                        let export_flag = if context.is_function_exported(name) { "x" } else { "" };
+                        println!("declare -f{} {}", export_flag, name);
+                    } else {
+                        let body = format_function_body(&func.body);
+                        println!("{} () \n{{ \n{}\n}}", name, body);
+                    }
+                } else {
+                    exit_code = 1;
+                }
+            }
+            if exit_code != 0 {
+                return Ok(BuiltinResult::Failure(exit_code));
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if reassembled_args.is_empty() && attrs.has_any() {
+        return Ok(BuiltinResult::Success(0));
+    }
+    
     for var_spec in reassembled_args {
-        if let Some(eq_pos) = var_spec.find('=') {
-            let name = &var_spec[..eq_pos];
-            let value_part = &var_spec[eq_pos + 1..];
-            
-            if is_assoc && value_part.starts_with('(') && value_part.ends_with(')') {
-                let inner = &value_part[1..value_part.len()-1];
-                let mut map = HashMap::new();
-                for item in inner.split_whitespace() {
-                    if item.starts_with('[') {
-                        if let Some(end) = item.find("]=") {
-                            let key = &item[1..end];
-                            let val = &item[end+2..];
-                            map.insert(key.to_string(), val.to_string());
+        let (name, value_opt) = if let Some(eq_pos) = var_spec.find('=') {
+            (&var_spec[..eq_pos], Some(&var_spec[eq_pos + 1..]))
+        } else {
+            (var_spec.as_str(), None)
+        };
+        
+        if removing_attrs {
+            if let Err(e) = context.remove_attributes(name, attrs) {
+                eprintln!("declare: {}: {}", name, e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+            continue;
+        }
+        
+        if is_assoc {
+            if let Some(value_part) = value_opt {
+                if value_part.starts_with('(') && value_part.ends_with(')') {
+                    let inner = &value_part[1..value_part.len()-1];
+                    let mut map = HashMap::new();
+                    for item in inner.split_whitespace() {
+                        if item.starts_with('[') {
+                            if let Some(end) = item.find("]=") {
+                                let key = &item[1..end];
+                                let val = &item[end+2..];
+                                map.insert(key.to_string(), val.to_string());
+                            }
                         }
                     }
+                    context.set_variable(name.to_string(), Variable::AssocArray(map));
+                } else {
+                    context.set_variable(name.to_string(), Variable::AssocArray(HashMap::new()));
                 }
-                context.set_variable(name.to_string(), Variable::AssocArray(map));
-            } else if is_assoc {
-                context.set_variable(name.to_string(), Variable::AssocArray(HashMap::new()));
             } else {
-                context.set_var(name.to_string(), value_part.to_string());
+                context.set_variable(name.to_string(), Variable::AssocArray(HashMap::new()));
             }
-        } else if is_assoc {
-            context.set_variable(var_spec.clone(), Variable::AssocArray(HashMap::new()));
+            continue;
+        }
+        
+        if is_indexed_array {
+            if let Some(value_part) = value_opt {
+                if value_part.starts_with('(') && value_part.ends_with(')') {
+                    let inner = &value_part[1..value_part.len()-1];
+                    let elements: Vec<String> = inner.split_whitespace().map(String::from).collect();
+                    context.set_variable(name.to_string(), Variable::Array(elements));
+                } else {
+                    context.set_variable(name.to_string(), Variable::Array(vec![value_part.to_string()]));
+                }
+            } else {
+                context.set_variable(name.to_string(), Variable::Array(Vec::new()));
+            }
+            continue;
+        }
+        
+        if attrs.has_any() {
+            if let Err(e) = context.declare_with_attrs(name, value_opt.map(String::from), attrs) {
+                eprintln!("declare: {}: {}", name, e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        } else if let Some(value) = value_opt {
+            context.set_var(name.to_string(), value.to_string());
         }
     }
     
@@ -1325,6 +1491,242 @@ fn builtin_printf(args: &[String], context: &mut ExpansionContext) -> Result<Bui
     }
 
     Ok(BuiltinResult::Success(0))
+}
+
+fn format_function_body(body: &[colony_parser::Statement]) -> String {
+    let mut output = String::new();
+    for stmt in body {
+        let line = format_statement(stmt);
+        for l in line.lines() {
+            output.push_str("    ");
+            output.push_str(l);
+            output.push('\n');
+        }
+    }
+    output.trim_end().to_string()
+}
+
+fn format_statement(stmt: &colony_parser::Statement) -> String {
+    use colony_parser::{Statement, ListOp, Condition};
+    
+    match stmt {
+        Statement::SimpleCommand(cmd) => {
+            let mut parts: Vec<String> = vec![format_word(&cmd.name)];
+            for arg in &cmd.args {
+                parts.push(format_word(arg));
+            }
+            for redir in &cmd.redirects {
+                parts.push(format_redirect(redir));
+            }
+            parts.join(" ")
+        }
+        Statement::Pipeline(pipeline) => {
+            let cmds: Vec<String> = pipeline.elements.iter()
+                .map(|elem| format_statement(&elem.command))
+                .collect();
+            cmds.join(" | ")
+        }
+        Statement::List(list) => {
+            let first = format_statement(&list.first);
+            let mut result = first;
+            for (op, cmd) in &list.rest {
+                let sep = match op {
+                    ListOp::And => " && ",
+                    ListOp::Or => " || ",
+                    ListOp::Semi => "; ",
+                    ListOp::Background => " & ",
+                };
+                result.push_str(sep);
+                result.push_str(&format_statement(cmd));
+            }
+            result
+        }
+        Statement::If(if_stmt) => {
+            let cond = format_condition(&if_stmt.condition);
+            let mut result = format!("if {}; then\n", cond);
+            result.push_str(&format_statements_indented(&if_stmt.then_body));
+            for elif in &if_stmt.elif_branches {
+                result.push_str(&format!("\nelif {}; then\n", format_condition(&elif.condition)));
+                result.push_str(&format_statements_indented(&elif.body));
+            }
+            if let Some(else_body) = &if_stmt.else_body {
+                result.push_str("\nelse\n");
+                result.push_str(&format_statements_indented(else_body));
+            }
+            result.push_str("\nfi");
+            result
+        }
+        Statement::While(while_stmt) => {
+            format!("while {}; do\n{}\ndone", 
+                format_condition(&while_stmt.condition),
+                format_statements_indented(&while_stmt.body))
+        }
+        Statement::Until(until_stmt) => {
+            format!("until {}; do\n{}\ndone",
+                format_condition(&until_stmt.condition),
+                format_statements_indented(&until_stmt.body))
+        }
+        Statement::For(for_stmt) => {
+            if for_stmt.words.is_empty() {
+                format!("for {}; do\n{}\ndone",
+                    for_stmt.var,
+                    format_statements_indented(&for_stmt.body))
+            } else {
+                let words: Vec<String> = for_stmt.words.iter().map(format_word).collect();
+                format!("for {} in {}; do\n{}\ndone",
+                    for_stmt.var,
+                    words.join(" "),
+                    format_statements_indented(&for_stmt.body))
+            }
+        }
+        Statement::Case(case_stmt) => {
+            let mut result = format!("case {} in\n", format_word(&case_stmt.value));
+            for arm in &case_stmt.arms {
+                let patterns: Vec<String> = arm.patterns.iter().map(format_word).collect();
+                result.push_str(&format!("    {})\n", patterns.join(" | ")));
+                result.push_str(&format_statements_double_indented(&arm.body));
+                result.push_str("\n        ;;\n");
+            }
+            result.push_str("esac");
+            result
+        }
+        Statement::FunctionDef(func) => {
+            format!("{} () {{\n{}\n}}", func.name, format_function_body(&func.body))
+        }
+        Statement::BraceGroup(group) => {
+            format!("{{\n{}\n}}", format_statements_indented(&group.body))
+        }
+        Statement::Subshell(sub) => {
+            format!("(\n{}\n)", format_statements_indented(&sub.body))
+        }
+        Statement::VarDecl(decl) => {
+            format!("{}={}", decl.name, format_expr(&decl.value))
+        }
+        Statement::Return(ret) => {
+            if let Some(ref val) = ret.value {
+                format!("return {}", format_expr(val))
+            } else {
+                "return".to_string()
+            }
+        }
+        _ => "# unsupported".to_string()
+    }
+}
+
+fn format_condition(cond: &colony_parser::Condition) -> String {
+    match cond {
+        colony_parser::Condition::Command(stmt) => format_statement(stmt),
+        colony_parser::Condition::Expression(expr) => format_expr(expr),
+    }
+}
+
+fn format_statements_indented(stmts: &[colony_parser::Statement]) -> String {
+    stmts.iter()
+        .map(|s| format!("    {}", format_statement(s)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_statements_double_indented(stmts: &[colony_parser::Statement]) -> String {
+    stmts.iter()
+        .map(|s| format!("        {}", format_statement(s)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_word(word: &colony_parser::Word) -> String {
+    use colony_parser::WordPart;
+    
+    let mut result = String::new();
+    for part in &word.parts {
+        match part {
+            WordPart::Literal(s) => result.push_str(s),
+            WordPart::SingleQuoted(s) => result.push_str(&format!("'{}'", s)),
+            WordPart::DoubleQuoted(parts) => {
+                result.push('"');
+                for p in parts {
+                    match p {
+                        WordPart::Literal(s) => result.push_str(s),
+                        WordPart::Variable(v) => {
+                            if v.modifier.is_some() || v.prefix.is_some() {
+                                result.push_str(&format!("${{{}}}", v.name));
+                            } else {
+                                result.push_str(&format!("${}", v.name));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                result.push('"');
+            }
+            WordPart::Variable(v) => {
+                if v.modifier.is_some() || v.prefix.is_some() {
+                    result.push_str(&format!("${{{}}}", v.name));
+                } else {
+                    result.push_str(&format!("${}", v.name));
+                }
+            }
+            WordPart::CommandSub(stmt) => {
+                result.push_str(&format!("$({})", format_statement(stmt)));
+            }
+            WordPart::CommandSubRaw(s) => {
+                result.push_str(&format!("$({})", s));
+            }
+            WordPart::ArithRaw(s) => {
+                result.push_str(&format!("$(({})", s));
+            }
+            WordPart::Tilde(user) => {
+                result.push('~');
+                if let Some(u) = user {
+                    result.push_str(u);
+                }
+            }
+            WordPart::AnsiCQuoted(s) => result.push_str(&format!("$'{}'", s)),
+            WordPart::BraceExpansion(s) => result.push_str(&format!("{{{}}}", s)),
+            _ => {}
+        }
+    }
+    result
+}
+
+fn format_redirect(redir: &colony_parser::Redirect) -> String {
+    use colony_parser::{RedirectKind, RedirectTarget};
+    
+    let fd = redir.fd.map(|n| n.to_string()).unwrap_or_default();
+    let op = match redir.kind {
+        RedirectKind::Output => ">",
+        RedirectKind::Append => ">>",
+        RedirectKind::Input => "<",
+        RedirectKind::ReadWrite => "<>",
+        RedirectKind::Clobber => ">|",
+        RedirectKind::DupFd => ">&",
+        RedirectKind::HereDoc(_) => "<<",
+        RedirectKind::AndOutput => "&>",
+        RedirectKind::AndAppend => "&>>",
+    };
+    let target = match &redir.target {
+        RedirectTarget::File(w) => format_word(w),
+        RedirectTarget::Fd(n) => n.to_string(),
+        RedirectTarget::Close => "-".to_string(),
+        RedirectTarget::HereDoc { content, .. } => content.clone(),
+    };
+    format!("{}{}{}", fd, op, target)
+}
+
+fn format_expr(expr: &colony_parser::Expression) -> String {
+    use colony_parser::Expression;
+    
+    match expr {
+        Expression::Int(n, _) => n.to_string(),
+        Expression::Float(f, _) => f.to_string(),
+        Expression::Str(s, _) => format!("\"{}\"", s),
+        Expression::Bool(b, _) => b.to_string(),
+        Expression::Variable { name, .. } => format!("${}", name),
+        Expression::Binary { left, op, right, .. } => {
+            format!("{} {:?} {}", format_expr(left), op, format_expr(right))
+        }
+        _ => String::new()
+    }
 }
 
 /// Format a printf format string with arguments

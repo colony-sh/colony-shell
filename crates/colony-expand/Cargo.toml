@@ -9,9 +9,18 @@ repository.workspace = true
 
 [dependencies]
 colony-parser.workspace = true
+colony-secure = { path = "../colony-secure", optional = true }
+colony-protocol = { path = "../colony-protocol", optional = true }
 thiserror.workspace = true
 glob = "0.3"
 regex = "1.10"
 fancy-regex = "0.14"
+walkdir = "2.5"
 nix.workspace = true
 libc = "0.2"
+rand = "0.8"
+getrandom = "0.2"
+
+[features]
+default = []
+secure = ["colony-secure", "colony-protocol"]

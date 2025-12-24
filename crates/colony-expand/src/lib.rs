@@ -23,12 +23,12 @@ mod quote;
 mod context;
 mod brace;
 
-pub use context::{ExpansionContext, ShellOptions, Variable, TrapSignal, TrapAction};
+pub use context::{ExpansionContext, ShellOptions, ShoptOptions, Variable, VarAttributes, TrapSignal, TrapAction, CompletionSpec, CompletionAction};
 pub use tilde::expand_tilde;
 pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
 pub use arithmetic::expand_arithmetic;
 pub use field_split::split_fields;
-pub use pathname::expand_pathname;
+pub use pathname::{expand_pathname, expand_pathname_with_options};
 pub use brace::expand_braces;
 
 use colony_parser::{Word, WordPart, ProcessSubDirection};
@@ -161,11 +161,12 @@ impl Expander {
         let fields = split_fields(&intermediate, &self.context);
 
         let mut expanded_fields = Vec::new();
+        let shopt = self.context.shopt_options();
         for field in fields {
             if field.quoted {
                 expanded_fields.push(field);
             } else {
-                let paths = expand_pathname(&field.text)?;
+                let paths = expand_pathname_with_options(&field.text, shopt)?;
                 expanded_fields.extend(paths.into_iter().map(Field::unquoted));
             }
         }
@@ -310,8 +311,10 @@ impl Expander {
                 }
                 
                 // Handle "${array[@]}" - each element becomes separate quoted field  
+                // But NOT if there's a prefix like # (length) or ! (indices)
                 let has_no_modifier = var_ref.modifier.is_none();
-                if matches!(var_ref.subscript, Some(ArraySubscript::All)) && has_no_modifier {
+                let has_no_prefix = var_ref.prefix.is_none();
+                if matches!(var_ref.subscript, Some(ArraySubscript::All)) && has_no_modifier && has_no_prefix {
                     if let Some(Variable::Array(arr)) = self.context.get_variable(&var_ref.name) {
                         let fields: Vec<Field> = arr.iter().map(|s| Field::quoted(s.clone())).collect();
                         return Ok(Some(fields));
@@ -393,7 +396,7 @@ impl Expander {
                 expanded.push_str(&literal_parts[combo.len()]);
             }
             
-            let paths = expand_pathname(&expanded)?;
+            let paths = expand_pathname_with_options(&expanded, self.context.shopt_options())?;
             for path in paths {
                 results.push(Field::unquoted(path));
             }
