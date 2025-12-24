@@ -288,7 +288,8 @@ impl Expander {
             }
             if let WordPart::Variable(var_ref) = &inner_parts[0] {
                 // Handle "$@" - special: each positional param becomes separate quoted field
-                if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() {
+                // But NOT if there's a prefix like # (length) - ${#@} should return count
+                if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
                     let params = self.context.get_all_positional_params();
                     if params.is_empty() {
                         // "$@" with no params expands to nothing (not even empty string)
@@ -299,7 +300,8 @@ impl Expander {
                 }
                 
                 // Handle "$*" - join with first char of IFS
-                if var_ref.name == "*" && var_ref.subscript.is_none() && var_ref.modifier.is_none() {
+                // But NOT if there's a prefix like # (length) - ${#*} should return count
+                if var_ref.name == "*" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
                     let params = self.context.get_all_positional_params();
                     let ifs = self.context.ifs();
                     let sep = ifs.chars().next().unwrap_or(' ');

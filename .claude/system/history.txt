@@ -1611,3 +1611,11 @@
 [2025-12-24 14:05] RESULT: 93.84% pass rate (1951/2079 tests)
 [2025-12-24 14:10] COMMIT: 13cffa5 - Programmable completion, shopt, mapfile, test fixes
 [2025-12-24 14:15] UPDATED: features.json with F048, F049, F050 as complete
+[2025-12-24 14:30] START: Debugging ${#@} expansion bug - returns values instead of count
+[2025-12-24 14:35] DIAGNOSIS: Grammar parsing correctly (VarPrefix="#", VariableRefName="@")
+[2025-12-24 14:40] DIAGNOSIS: Builder correctly creates VariableRef with prefix=Some(Length), name="@"
+[2025-12-24 14:45] ROOT CAUSE: try_expand_array_at_word() fast path for "$@" didn't check var_ref.prefix
+[2025-12-24 14:50] FIX: Added && var_ref.prefix.is_none() to fast paths for "@" and "*" in try_expand_array_at_word()
+[2025-12-24 14:55] RESULT: ${#@} and ${#*} now correctly return positional param count
+[2025-12-24 15:00] RESULT: Positional tests improved from 24/30 (80%) to 26/30 (87%)
+[2025-12-24 15:05] MILESTONE: ${#@} and ${#*} expansion bug FIXED

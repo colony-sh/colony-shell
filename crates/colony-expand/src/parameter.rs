@@ -105,7 +105,6 @@ pub fn expand_parameter_multi(var_ref: &VariableRef, context: &ExpansionContext)
 pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Result<String> {
     use colony_parser::VarPrefix;
 
-    // Get variable (may be scalar or array)
     let variable = context.get_variable(&var_ref.name);
     let var_value = context.get_var_or_env(&var_ref.name);
 
