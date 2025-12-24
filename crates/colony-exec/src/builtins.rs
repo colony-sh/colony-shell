@@ -431,14 +431,15 @@ fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
         (text, false)
     };
     
+    use std::io::Write;
     if output.1 {
-        // \c encountered - suppress further output including newline
-        print!("{}", output.0);
+        let _ = std::io::stdout().write_all(output.0.as_bytes());
     } else if no_newline {
-        print!("{}", output.0);
+        let _ = std::io::stdout().write_all(output.0.as_bytes());
     } else {
-        println!("{}", output.0);
+        let _ = writeln!(std::io::stdout(), "{}", output.0);
     }
+    let _ = std::io::stdout().flush();
 
     Ok(BuiltinResult::Success(0))
 }
@@ -856,20 +857,75 @@ fn builtin_jobs(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
     Ok(BuiltinResult::Success(0))
 }
 
-/// wait - Wait for job to complete
+/// wait - Wait for job or process to complete
 ///
-/// Usage: wait [%job_id]
-/// TODO: Implement blocking wait on specific job
-fn builtin_wait(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
-    // For now, just acknowledge
-    let job_list = jobs.list_jobs();
-
-    if job_list.is_empty() {
+/// Usage: wait [pid...] or wait [%job_id...]
+/// Returns: Exit status of waited process, or 0 if no arguments
+///
+/// If no arguments, waits for all background children and returns 0.
+/// If PID given, waits for that process and returns its exit status.
+/// If process already exited, returns its cached status.
+fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
+    use nix::sys::wait::{waitpid, WaitStatus};
+    use nix::unistd::Pid;
+    
+    // No arguments: wait for all children
+    if args.is_empty() {
+        // Try to reap any zombie children
+        loop {
+            match waitpid(Pid::from_raw(-1), Some(nix::sys::wait::WaitPidFlag::WNOHANG)) {
+                Ok(WaitStatus::StillAlive) | Err(_) => break,
+                Ok(_) => continue, // Reaped one, try for more
+            }
+        }
         return Ok(BuiltinResult::Success(0));
     }
-
-    eprintln!("wait: would wait for jobs (not yet implemented)");
-    Ok(BuiltinResult::Success(0))
+    
+    // Process each PID argument
+    let mut last_status = 0;
+    for arg in args {
+        // Handle job IDs (e.g., %1)
+        if arg.starts_with('%') {
+            // Job ID handling - for now skip
+            continue;
+        }
+        
+        // Parse as PID
+        let pid: i32 = match arg.parse() {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!("wait: `{}': not a valid pid", arg);
+                last_status = 127;
+                continue;
+            }
+        };
+        
+        // Wait for the specific process
+        match waitpid(Pid::from_raw(pid), None) {
+            Ok(WaitStatus::Exited(_, code)) => {
+                last_status = code;
+            }
+            Ok(WaitStatus::Signaled(_, signal, _)) => {
+                // Process killed by signal - return 128 + signal number
+                last_status = 128 + signal as i32;
+            }
+            Ok(_) => {
+                // Other status (stopped, continued) - treat as success
+                last_status = 0;
+            }
+            Err(nix::errno::Errno::ECHILD) => {
+                // No such child process - already exited or not our child
+                // Bash returns 127 in this case
+                last_status = 127;
+            }
+            Err(e) => {
+                eprintln!("wait: {}: {}", pid, e);
+                last_status = 127;
+            }
+        }
+    }
+    
+    Ok(BuiltinResult::Success(last_status))
 }
 
 /// [ or test - Evaluate conditional expressions
@@ -1700,6 +1756,7 @@ fn format_redirect(redir: &colony_parser::Redirect) -> String {
         RedirectKind::ReadWrite => "<>",
         RedirectKind::Clobber => ">|",
         RedirectKind::DupFd => ">&",
+        RedirectKind::DupFdInput => "<&",
         RedirectKind::HereDoc(_) => "<<",
         RedirectKind::AndOutput => "&>",
         RedirectKind::AndAppend => "&>>",

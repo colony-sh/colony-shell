@@ -2429,12 +2429,42 @@ impl AstBuilder {
         let inner = pair.into_inner().next().ok_or(BuildError::MissingRedirectOp)?;
         
         match inner.as_rule() {
+            Rule::VarFdRedirect => Self::build_var_fd_redirect(inner, span),
             Rule::FdRedirect => Self::build_fd_redirect(inner, span),
             Rule::SimpleRedirect => Self::build_simple_redirect(inner, span),
             _ => Err(BuildError::InvalidRedirectOp(format!("{:?}", inner.as_rule()))),
         }
     }
     
+    fn build_var_fd_redirect(pair: Pair<Rule>, span: Span) -> Result<Redirect, BuildError> {
+        let mut inner = pair.into_inner();
+        
+        let var_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
+        let var_name = var_pair.as_str().to_string();
+        
+        let op_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
+        let kind = Self::parse_redirect_op(op_pair.as_str())?;
+        
+        let target = if let Some(target_pair) = inner.next() {
+            let text = target_pair.as_str();
+            if text == "-" {
+                RedirectTarget::Close
+            } else {
+                Self::parse_redirect_target(target_pair)?
+            }
+        } else {
+            RedirectTarget::Close
+        };
+        
+        Ok(Redirect {
+            fd: None,
+            fd_var: Some(var_name),
+            kind,
+            target,
+            span,
+        })
+    }
+
     fn build_fd_redirect(pair: Pair<Rule>, span: Span) -> Result<Redirect, BuildError> {
         let mut inner = pair.into_inner();
         
@@ -2463,6 +2493,7 @@ impl AstBuilder {
         
         Ok(Redirect {
             fd: Some(fd),
+            fd_var: None,
             kind,
             target,
             span,
@@ -2480,6 +2511,7 @@ impl AstBuilder {
         
         Ok(Redirect {
             fd: None,
+            fd_var: None,
             kind,
             target,
             span,
@@ -2494,7 +2526,7 @@ impl AstBuilder {
             ">|" => Ok(RedirectKind::Clobber),
             "<>" => Ok(RedirectKind::ReadWrite),
             ">&" => Ok(RedirectKind::DupFd),
-            "<&" => Ok(RedirectKind::DupFd),
+            "<&" => Ok(RedirectKind::DupFdInput),
             "&>" => Ok(RedirectKind::AndOutput),
             "&>>" => Ok(RedirectKind::AndAppend),
             "<<" => Ok(RedirectKind::HereDoc(HereDocKind::Normal)),

@@ -892,6 +892,27 @@
         "2025-12-24: REMAINING: 3 edge cases (*.!(ext) prefix, escaped extglob)",
         "2025-12-24: COMPLETE: Core extglob functionality fully operational"
       ]
+    },
+    {
+      "id": "F047",
+      "name": "Coprocess Support (coproc)",
+      "description": "Bash-compatible coprocess support: coproc [NAME] command. Runs command asynchronously with bidirectional pipes. Sets NAME array with read/write fds and NAME_PID with process ID. Supports compound commands, subshells, and simple commands.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": ["F021", "F006"],
+      "notes": [
+        "2025-12-24: Starting coproc implementation",
+        "2025-12-24: Grammar: CoprocCommand parses coproc with optional name",
+        "2025-12-24: Execution: execute_coproc creates pipes, forks, sets up fds",
+        "2025-12-24: Arrays: NAME[0]=read_fd, NAME[1]=write_fd, NAME_PID=pid",
+        "2025-12-24: FIX: wait builtin now properly waits for PIDs and returns exit status",
+        "2025-12-24: FIX: [[ ]] now expands variables in quoted strings properly",
+        "2025-12-24: FIX: Added Subshell to CompoundCommand for coproc ( cmd ) syntax",
+        "2025-12-24: FEATURE: {VAR}>&- syntax for closing fd from variable",
+        "2025-12-24: FIX: exec redirects bypass BuiltinRedirectGuard (permanent)",
+        "2025-12-24: BATS: 15/15 tests passing (100%)",
+        "2025-12-24: COMPLETE: Full bash-compatible coprocess support"
+      ]
     }
   ]
 }

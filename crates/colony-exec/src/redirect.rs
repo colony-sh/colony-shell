@@ -151,29 +151,45 @@ pub fn apply_redirects(
     let mut opened_fds = Vec::new();
 
     for redirect in redirects {
-        let source_fd = get_source_fd(redirect);
+        let source_fd = if redirect.fd_var.is_some() {
+            get_source_fd_with_context(redirect, context)?
+        } else {
+            get_source_fd(redirect)
+        };
 
         tracing::debug!(
-            "apply_redirects: kind={:?}, source_fd={}, target={:?}",
+            "apply_redirects: kind={:?}, source_fd={}, fd_var={:?}, target={:?}",
             redirect.kind,
             source_fd,
+            redirect.fd_var,
             redirect.target
         );
 
         match &redirect.target {
             RedirectTarget::File(word) => {
-                // WORKAROUND: Parser bug - >&3 creates File("3") instead of Fd(3)
-                // Check if this is actually an fd redirect
-                if matches!(redirect.kind, RedirectKind::DupFd) {
-                    // Try to parse word as fd number
+                if matches!(redirect.kind, RedirectKind::DupFd | RedirectKind::DupFdInput) {
                     if let Some(literal) = word.as_literal() {
                         if let Ok(target_fd) = literal.parse::<RawFd>() {
-                            tracing::debug!("Workaround: File('{}') → Fd({})", literal, target_fd);
-                            // Treat as fd redirect (even for channel fds)
+                            tracing::debug!("DupFd literal: '{}' → Fd({})", literal, target_fd);
                             apply_fd_redirect(source_fd, target_fd)?;
                             continue;
                         }
                     }
+                    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+                        crate::execute_and_capture(stmt, ctx)
+                    });
+                    if let Ok(expanded_fields) = expander.expand_word(word) {
+                        if let Some(first) = expanded_fields.first() {
+                            if let Ok(target_fd) = first.text.parse::<RawFd>() {
+                                tracing::debug!("DupFd expanded: '{}' → Fd({})", first.text, target_fd);
+                                apply_fd_redirect(source_fd, target_fd)?;
+                                continue;
+                            }
+                        }
+                    }
+                    return Err(ExecutionError::RedirectError(
+                        format!("Invalid fd for redirect: {:?}", word)
+                    ));
                 }
 
                 tracing::debug!("Applying file redirect");
@@ -293,6 +309,39 @@ pub fn process_channel_writes(
     Ok(())
 }
 
+/// Get source fd, handling both literal fd numbers and {VAR} syntax
+fn get_source_fd_with_context(redirect: &Redirect, context: &ExpansionContext) -> Result<RawFd> {
+    if let Some(ref var_name) = redirect.fd_var {
+        if let Some(bracket_pos) = var_name.find('[') {
+            if let Some(end_pos) = var_name.find(']') {
+                let name = &var_name[..bracket_pos];
+                let index_str = &var_name[bracket_pos+1..end_pos];
+                
+                if let Some(colony_expand::Variable::Array(arr)) = context.get_variable(name) {
+                    if let Ok(index) = index_str.parse::<usize>() {
+                        if let Some(val) = arr.get(index) {
+                            return val.parse::<RawFd>()
+                                .map_err(|_| ExecutionError::RedirectError(
+                                    format!("Invalid fd from variable: {}", val)
+                                ));
+                        }
+                    }
+                }
+            }
+        }
+        let value = context.get_var_or_env(var_name).unwrap_or_default();
+        return value.parse::<RawFd>()
+            .map_err(|_| ExecutionError::RedirectError(
+                format!("Invalid fd from variable {}: {}", var_name, value)
+            ));
+    }
+    
+    Ok(redirect.fd.unwrap_or_else(|| match redirect.kind {
+        RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) | RedirectKind::DupFdInput => 0,
+        _ => 1,
+    }))
+}
+
 /// Get the source file descriptor for a redirect
 ///
 /// Defaults:
@@ -300,7 +349,7 @@ pub fn process_channel_writes(
 /// - Output redirects: fd 1 (stdout)
 fn get_source_fd(redirect: &Redirect) -> RawFd {
     redirect.fd.unwrap_or_else(|| match redirect.kind {
-        RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) => 0,
+        RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) | RedirectKind::DupFdInput => 0,
         _ => 1,
     })
 }
@@ -374,7 +423,7 @@ fn apply_file_redirect(
             OFlag::O_RDWR | OFlag::O_CREAT,
             Mode::from_bits_truncate(0o666),
         ),
-        RedirectKind::DupFd => {
+        RedirectKind::DupFd | RedirectKind::DupFdInput => {
             return Err(ExecutionError::InvalidRedirect(
                 "DupFd should use apply_fd_redirect".to_string(),
             ))
@@ -525,7 +574,8 @@ mod tests {
         let _ = fs::remove_file(test_file); // Clean up if exists
 
         let redirects = vec![Redirect {
-            fd: None, // Default to stdout (1)
+            fd: None,
+            fd_var: None,
             kind: RedirectKind::Output,
             target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
             span: Span::DUMMY,
@@ -559,7 +609,8 @@ mod tests {
         fs::write(test_file, "test input\n").unwrap();
 
         let redirects = vec![Redirect {
-            fd: None, // Default to stdin (0)
+            fd: None,
+            fd_var: None,
             kind: RedirectKind::Input,
             target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
             span: Span::DUMMY,
@@ -590,6 +641,7 @@ mod tests {
         // First: echo line1 > file
         let redirect1 = vec![Redirect {
             fd: None,
+            fd_var: None,
             kind: RedirectKind::Output,
             target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
             span: Span::DUMMY,
@@ -607,6 +659,7 @@ mod tests {
         // Second: echo line2 >> file (append)
         let redirect2 = vec![Redirect {
             fd: None,
+            fd_var: None,
             kind: RedirectKind::Append,
             target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
             span: Span::DUMMY,
@@ -635,16 +688,16 @@ mod tests {
         let _ = fs::remove_file(test_file);
 
         let redirects = vec![
-            // Redirect stdout to file
             Redirect {
                 fd: Some(1),
+                fd_var: None,
                 kind: RedirectKind::Output,
                 target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
                 span: Span::DUMMY,
             },
-            // Duplicate stderr to stdout (now both go to file)
             Redirect {
                 fd: Some(2),
+                fd_var: None,
                 kind: RedirectKind::DupFd,
                 target: RedirectTarget::Fd(1),
                 span: Span::DUMMY,
@@ -686,6 +739,7 @@ mod tests {
 
         let redirects = vec![Redirect {
             fd: None,
+            fd_var: None,
             kind: RedirectKind::HereDoc(HereDocKind::Normal),
             target: RedirectTarget::HereDoc {
                 delimiter: "EOF".to_string(),

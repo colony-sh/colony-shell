@@ -1537,3 +1537,22 @@
 [2025-12-24 03:35] MILESTONE: F046 Extended Glob Patterns COMPLETE (core functionality)
 [2025-12-24 03:40] ACHIEVEMENT: Bash-compatible extglob in pathname expansion and case statements
 [2025-12-23 23:14] START: F047 Programmable Completion (complete, compgen) - implementing bash-compatible completion builtins
+
+[2025-12-24 05:00] START: Continuing coproc implementation (7/15 BATS tests passing)
+[2025-12-24 05:10] FIX: Implemented proper wait builtin with PID support and exit status return
+[2025-12-24 05:15] WAIT: Uses nix::sys::wait::waitpid for actual process waiting
+[2025-12-24 05:20] FIX: expand_cond_operand now expands variables in quoted strings for [[ ]]
+[2025-12-24 05:25] FIX: Added expand_double_quoted() and expand_variable_ref() helpers for [[ ]]
+[2025-12-24 05:30] FIX: expand_variable_ref handles array subscripts ${arr[0]} properly
+[2025-12-24 05:35] RESULT: Tests 10, 13 now passing (9/15 → 11/15)
+[2025-12-24 05:40] FIX: Added Subshell to CompoundCommand grammar rule
+[2025-12-24 05:45] REASON: coproc NAME ( cmd ) wasn't parsing as named coproc with subshell
+[2025-12-24 05:50] RESULT: Test 12 now passing (11/15 → 12/15)
+[2025-12-24 05:55] FEATURE: Implemented {VAR}>&- redirect syntax for exec
+[2025-12-24 06:00] GRAMMAR: Added VarFdRedirect rule to colony.pest
+[2025-12-24 06:05] AST: Added fd_var: Option<String> field to Redirect struct
+[2025-12-24 06:10] EXECUTION: Added get_source_fd_with_context() for variable fd resolution
+[2025-12-24 06:15] BUG: exec redirects were applied twice (BuiltinRedirectGuard + builtin_exec)
+[2025-12-24 06:20] FIX: Skip BuiltinRedirectGuard for exec builtin (redirects should be permanent)
+[2025-12-24 06:25] RESULT: Tests 8, 9, 14 now passing (12/15 → 15/15)
+[2025-12-24 06:30] MILESTONE: Coproc implementation COMPLETE - 15/15 BATS tests passing

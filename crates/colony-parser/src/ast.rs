@@ -185,6 +185,8 @@ pub enum ListOp {
 pub struct Redirect {
     /// Source file descriptor (default based on type)
     pub fd: Option<i32>,
+    /// Source fd from variable (e.g., {COPROC[1]} syntax)
+    pub fd_var: Option<String>,
     /// Redirection type
     pub kind: RedirectKind,
     /// Target (filename, fd number, or here-doc content)
@@ -204,8 +206,10 @@ pub enum RedirectKind {
     Clobber,
     /// <> - Input/output
     ReadWrite,
-    /// <& or >& - Duplicate fd
+    /// >& - Duplicate fd (output direction, defaults to fd 1)
     DupFd,
+    /// <& - Duplicate fd (input direction, defaults to fd 0)
+    DupFdInput,
     /// <<, <<-, <<< - Here-doc/string
     HereDoc(HereDocKind),
     /// &> - Redirect both stdout and stderr (bash extension)

@@ -391,7 +391,11 @@ impl Executor {
                 xtrace::trace_simple_command(&self.context, command_name, &builtin_args);
             }
 
-            let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?;
+            let _redirect_guard = if command_name == "exec" {
+                None
+            } else {
+                Some(builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?)
+            };
 
             if let Some(builtin_result) = execute_builtin(cmd, &mut self.context, &self.jobs, &self.tuple_space, &mut self.channels) {
                 let result = builtin_result?;

@@ -1741,3 +1741,78 @@ impl Default for ExpansionContext {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_integer_attribute_arithmetic_evaluation() {
+        let mut ctx = ExpansionContext::new();
+        
+        // Set integer attribute first
+        let attrs = VarAttributes {
+            integer: true,
+            ..Default::default()
+        };
+        ctx.set_var_attributes("num", attrs);
+        
+        // Verify attribute is set
+        assert!(ctx.is_integer("num"), "num should be an integer variable");
+        assert!(ctx.get_var_attributes("num").is_some(), "num should have attributes");
+        
+        // Now set variable - should evaluate arithmetic
+        ctx.set_var("num".to_string(), "5+3".to_string());
+        
+        // Should be evaluated to 8
+        assert_eq!(ctx.get_var_or_env("num"), Some("8".to_string()), "5+3 should evaluate to 8 for integer variable");
+    }
+
+    #[test]
+    fn test_lowercase_attribute() {
+        let mut ctx = ExpansionContext::new();
+        
+        let attrs = VarAttributes {
+            lowercase: true,
+            ..Default::default()
+        };
+        ctx.set_var_attributes("str", attrs);
+        ctx.set_var("str".to_string(), "HELLO".to_string());
+        
+        assert_eq!(ctx.get_var_or_env("str"), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_uppercase_attribute() {
+        let mut ctx = ExpansionContext::new();
+        
+        let attrs = VarAttributes {
+            uppercase: true,
+            ..Default::default()
+        };
+        ctx.set_var_attributes("str", attrs);
+        ctx.set_var("str".to_string(), "hello".to_string());
+        
+        assert_eq!(ctx.get_var_or_env("str"), Some("HELLO".to_string()));
+    }
+
+    #[test]
+    fn test_readonly_attribute_blocks_set() {
+        let mut ctx = ExpansionContext::new();
+        
+        ctx.set_var("const".to_string(), "original".to_string());
+        
+        let attrs = VarAttributes {
+            readonly: true,
+            ..Default::default()
+        };
+        ctx.set_var_attributes("const", attrs);
+        
+        // Attempt to modify should fail (return false)
+        let result = ctx.set_var("const".to_string(), "modified".to_string());
+        assert!(!result, "set_var should return false for readonly variable");
+        
+        // Value should remain unchanged
+        assert_eq!(ctx.get_var_or_env("const"), Some("original".to_string()));
+    }
+}

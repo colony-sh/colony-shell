@@ -141,6 +141,7 @@ ListOp = {
 
 CompoundCommand = {
     BraceGroup
+  | Subshell
   | IfStatement
   | CaseStatement
   | ForStatement
@@ -529,7 +530,16 @@ ContinueStatement = { "continue" ~ Identifier? }
 // ============================================================================
 
 Redirect = {
-    FdRedirect | SimpleRedirect
+    VarFdRedirect | FdRedirect | SimpleRedirect
+}
+
+// {VAR}>&- style - fd number from variable
+VarFdRedirect = {
+    "{" ~ VarFdName ~ "}" ~ RedirectOp ~ (Word | Integer | "-")
+}
+
+VarFdName = @{
+    (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "[" | "]")*
 }
 
 FdRedirect = {

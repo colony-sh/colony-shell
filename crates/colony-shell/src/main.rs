@@ -520,6 +520,11 @@ async fn run_startup_files(opts: &ShellOptions, executor: &mut Executor) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Ignore SIGPIPE so writes to broken pipes return EPIPE instead of killing process
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+    }
+    
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -1129,16 +1134,102 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &Executor) -> 
 }
 
 fn expand_cond_operand(s: &str, executor: &Executor) -> String {
-    if s.starts_with('$') {
-        let var_name = s.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}');
-        executor.context().get_var_or_env(var_name).unwrap_or_default()
-    } else if s.starts_with('"') && s.ends_with('"') {
+    if s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2 {
         s[1..s.len()-1].to_string()
-    } else if s.starts_with('\'') && s.ends_with('\'') {
-        s[1..s.len()-1].to_string()
+    } else if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+        expand_double_quoted(&s[1..s.len()-1], executor)
+    } else if s.starts_with('$') {
+        expand_variable_ref(s, executor)
     } else {
         s.to_string()
     }
+}
+
+fn expand_double_quoted(content: &str, executor: &Executor) -> String {
+    let mut result = String::new();
+    let mut chars = content.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '$' {
+            let mut var_str = String::from("$");
+            if chars.peek() == Some(&'{') {
+                var_str.push(chars.next().unwrap());
+                while let Some(&ch) = chars.peek() {
+                    var_str.push(chars.next().unwrap());
+                    if ch == '}' {
+                        break;
+                    }
+                }
+            } else if chars.peek() == Some(&'(') {
+                var_str.push(chars.next().unwrap());
+                let mut depth = 1;
+                while depth > 0 {
+                    if let Some(ch) = chars.next() {
+                        var_str.push(ch);
+                        if ch == '(' { depth += 1; }
+                        if ch == ')' { depth -= 1; }
+                    } else {
+                        break;
+                    }
+                }
+            } else {
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_alphanumeric() || ch == '_' || ch == '[' || ch == ']' {
+                        var_str.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+            }
+            result.push_str(&expand_variable_ref(&var_str, executor));
+        } else if c == '\\' {
+            if let Some(escaped) = chars.next() {
+                match escaped {
+                    '$' | '"' | '\\' | '`' => result.push(escaped),
+                    _ => {
+                        result.push('\\');
+                        result.push(escaped);
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    
+    result
+}
+
+fn expand_variable_ref(s: &str, executor: &Executor) -> String {
+    use colony_expand::Variable;
+    
+    if !s.starts_with('$') {
+        return s.to_string();
+    }
+    
+    let content = if s.starts_with("${") && s.ends_with('}') {
+        &s[2..s.len()-1]
+    } else {
+        &s[1..]
+    };
+    
+    if let Some(bracket_pos) = content.find('[') {
+        if let Some(end_pos) = content.find(']') {
+            let var_name = &content[..bracket_pos];
+            let index_str = &content[bracket_pos+1..end_pos];
+            
+            if let Some(Variable::Array(arr)) = executor.context().get_variable(var_name) {
+                if let Ok(index) = index_str.parse::<usize>() {
+                    return arr.get(index).cloned().unwrap_or_default();
+                } else if index_str == "@" || index_str == "*" {
+                    return arr.join(" ");
+                }
+            }
+            return String::new();
+        }
+    }
+    
+    executor.context().get_var_or_env(content).unwrap_or_default()
 }
 
 fn glob_match(pattern: &str, text: &str) -> bool {

@@ -123,9 +123,9 @@ mod tests {
 
     #[test]
     fn test_get_affected_fds() {
-        // Output redirect affects fd 1
         let redirects = vec![Redirect {
             fd: None,
+            fd_var: None,
             kind: RedirectKind::Output,
             target: RedirectTarget::File(Word::literal("file.txt", Span::DUMMY)),
             span: Span::DUMMY,
@@ -134,9 +134,9 @@ mod tests {
         let fds = get_affected_fds(&redirects);
         assert_eq!(fds, vec![1]);
 
-        // Input redirect affects fd 0
         let redirects = vec![Redirect {
             fd: None,
+            fd_var: None,
             kind: RedirectKind::Input,
             target: RedirectTarget::File(Word::literal("file.txt", Span::DUMMY)),
             span: Span::DUMMY,
