@@ -74,8 +74,10 @@ use crate::heredoc::preprocess_heredocs;
 /// - AST building fails (malformed parse tree)
 /// - Heredoc preprocessing fails
 pub fn parse(source: &str) -> Result<Program, ParseError> {
+    let source = preprocess_line_continuations(source);
+    
     let (arith_normalized, arith_map) = if source.contains("$((") {
-        crate::arith_preprocess::preprocess_arithmetic(source)
+        crate::arith_preprocess::preprocess_arithmetic(&source)
     } else {
         (source.to_string(), Vec::new())
     };
@@ -214,6 +216,45 @@ pub fn parse_expression(source: &str) -> Result<crate::ast::Expression, ParseErr
 
     AstBuilder::build_expression(pair)
         .map_err(ParseError::Build)
+}
+
+fn preprocess_line_continuations(source: &str) -> String {
+    let mut result = String::with_capacity(source.len());
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    let mut in_single_quote = false;
+    
+    while i < bytes.len() {
+        if bytes[i] == b'\'' && !in_single_quote {
+            in_single_quote = true;
+            result.push('\'');
+            i += 1;
+            continue;
+        }
+        
+        if bytes[i] == b'\'' && in_single_quote {
+            in_single_quote = false;
+            result.push('\'');
+            i += 1;
+            continue;
+        }
+        
+        if in_single_quote {
+            result.push(bytes[i] as char);
+            i += 1;
+            continue;
+        }
+        
+        if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+            i += 2;
+            continue;
+        }
+        
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+    
+    result
 }
 
 /// Inject arithmetic expressions back into AST

@@ -4,7 +4,7 @@
 //! applied to the shell's own file descriptors temporarily.
 //!
 //! Strategy:
-//! 1. Save current FDs that will be redirected
+//! 1. Save current FDs that will be redirected (using F_DUPFD to fds >= 100)
 //! 2. Apply redirects using dup2 on shell's FDs
 //! 3. Execute builtin
 //! 4. Restore saved FDs
@@ -14,8 +14,11 @@
 use crate::{ExecutionError, Result};
 use colony_expand::ExpansionContext;
 use colony_parser::Redirect;
-use nix::unistd::dup;
+use nix::fcntl::{fcntl, FcntlArg};
 use std::os::unix::io::RawFd;
+
+/// Minimum fd number for saved fds (to avoid conflicts with user fds like {fd}>file)
+const SAVED_FD_MIN: RawFd = 100;
 
 /// Saved file descriptor for restoration
 struct SavedFd {
@@ -44,11 +47,14 @@ impl BuiltinRedirectGuard {
 
         // Determine which FDs will be affected
         let affected_fds = get_affected_fds(redirects);
+        tracing::debug!("BuiltinRedirectGuard: affected_fds={:?}", affected_fds);
 
-        // Save affected FDs by duplicating them
+        // Save affected FDs by duplicating them to high fd numbers (>= 100)
+        // This avoids conflicts with user-allocated fds like exec {fd}>file
         for &fd in &affected_fds {
-            match dup(fd) {
+            match fcntl(fd, FcntlArg::F_DUPFD(SAVED_FD_MIN)) {
                 Ok(saved_fd) => {
+                    tracing::debug!("BuiltinRedirectGuard: F_DUPFD({}, {}) = {}", fd, SAVED_FD_MIN, saved_fd);
                     saved_fds.push(SavedFd {
                         original_fd: fd,
                         saved_fd,

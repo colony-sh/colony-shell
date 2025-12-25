@@ -151,6 +151,41 @@ pub fn apply_redirects(
     let mut opened_fds = Vec::new();
 
     for redirect in redirects {
+        // Handle {varname}>file fd allocation (vredir)
+        if let Some(ref var_name) = redirect.fd_var {
+            if var_name.is_empty() {
+                return Err(ExecutionError::RedirectError("empty variable name in fd redirect".to_string()));
+            }
+            match &redirect.target {
+                RedirectTarget::File(word) => {
+                    // {fd}>file or {fd}<file - allocate fd and open file
+                    if !matches!(redirect.kind, RedirectKind::DupFd | RedirectKind::DupFdInput) {
+                        let allocated_fd = apply_vredir_file(redirect.kind, var_name, word, context, &mut opened_fds)?;
+                        context.set_var(var_name.clone(), allocated_fd.to_string());
+                        tracing::debug!("vredir: allocated fd {} for variable {}", allocated_fd, var_name);
+                        continue;
+                    }
+                }
+                RedirectTarget::Close => {
+                    let fd = get_source_fd_with_context(redirect, context)?;
+                    tracing::debug!("vredir: closing fd {} for variable {:?}", fd, var_name);
+                    close_fd(fd)?;
+                    continue;
+                }
+                RedirectTarget::Fd(target_fd) => {
+                    // {fd}>&N - dup target to allocated fd
+                    let source_fd = get_source_fd_with_context(redirect, context)?;
+                    apply_fd_redirect(source_fd, *target_fd)?;
+                    continue;
+                }
+                RedirectTarget::HereDoc { content, expand, strip_tabs, .. } => {
+                    let allocated_fd = allocate_heredoc_fd(content, *expand, *strip_tabs, context)?;
+                    context.set_var(var_name.clone(), allocated_fd.to_string());
+                    continue;
+                }
+            }
+        }
+
         let source_fd = if redirect.fd_var.is_some() {
             get_source_fd_with_context(redirect, context)?
         } else {
@@ -167,6 +202,19 @@ pub fn apply_redirects(
 
         match &redirect.target {
             RedirectTarget::File(word) => {
+                if matches!(redirect.kind, RedirectKind::HereDoc(HereDocKind::HereString)) {
+                    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+                        crate::execute_and_capture(stmt, ctx)
+                    });
+                    let content = if let Ok(fields) = expander.expand_word(word) {
+                        fields.iter().map(|f| f.text.clone()).collect::<Vec<_>>().join(" ")
+                    } else {
+                        word.as_literal().unwrap_or_default().to_string()
+                    };
+                    apply_here_string(source_fd, &content)?;
+                    continue;
+                }
+                
                 if matches!(redirect.kind, RedirectKind::DupFd | RedirectKind::DupFdInput) {
                     if let Some(literal) = word.as_literal() {
                         if let Ok(target_fd) = literal.parse::<RawFd>() {
@@ -197,8 +245,6 @@ pub fn apply_redirects(
             }
             RedirectTarget::Fd(target_fd) => {
                 tracing::debug!("Target is Fd({}), is_channel={}", target_fd, is_channel_fd(*target_fd));
-                // F024 Phase 2: Channel fds are set up by apply_channel_redirects_in_child()
-                // but we still need to dup source_fd to target_fd (e.g., dup stdout to fd 3)
                 apply_fd_redirect(source_fd, *target_fd)?;
             }
             RedirectTarget::Close => {
@@ -213,6 +259,105 @@ pub fn apply_redirects(
     }
 
     Ok(opened_fds)
+}
+
+/// Apply vredir file redirect: {varname}>file
+/// Opens the file, then dups to an fd >= 10 using F_DUPFD
+fn apply_vredir_file(
+    kind: RedirectKind,
+    _var_name: &str,
+    word: &colony_parser::Word,
+    context: &mut ExpansionContext,
+    opened_fds: &mut Vec<RawFd>,
+) -> Result<RawFd> {
+    use nix::fcntl::{fcntl, FcntlArg};
+    
+    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
+        crate::execute_and_capture(stmt, ctx)
+    });
+    let fields = expander.expand_word(word)?;
+
+    if fields.is_empty() || fields.len() > 1 {
+        return Err(ExecutionError::AmbiguousRedirect);
+    }
+
+    let filename = &fields[0].text;
+
+    let (flags, mode) = match kind {
+        RedirectKind::Input => (OFlag::O_RDONLY, Mode::empty()),
+        RedirectKind::Output => (
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC,
+            Mode::from_bits_truncate(0o666),
+        ),
+        RedirectKind::Append => (
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_APPEND,
+            Mode::from_bits_truncate(0o666),
+        ),
+        RedirectKind::Clobber => (
+            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC,
+            Mode::from_bits_truncate(0o666),
+        ),
+        RedirectKind::ReadWrite => (
+            OFlag::O_RDWR | OFlag::O_CREAT,
+            Mode::from_bits_truncate(0o666),
+        ),
+        _ => return Err(ExecutionError::InvalidRedirect(
+            format!("Unsupported redirect kind for vredir: {:?}", kind)
+        )),
+    };
+
+    let file_fd = open(filename.as_str(), flags, mode)
+        .map_err(|e| ExecutionError::RedirectError(format!("open {}: {}", filename, e)))?;
+
+    opened_fds.push(file_fd);
+
+    let allocated_fd = fcntl(file_fd, FcntlArg::F_DUPFD(10))
+        .map_err(|e| ExecutionError::RedirectError(format!("F_DUPFD: {}", e)))?;
+
+    nix::unistd::close(file_fd)
+        .map_err(|e| ExecutionError::RedirectError(format!("close: {}", e)))?;
+
+    Ok(allocated_fd)
+}
+
+fn allocate_heredoc_fd(
+    content: &str,
+    expand: bool,
+    strip_tabs: bool,
+    context: &mut ExpansionContext,
+) -> Result<RawFd> {
+    use nix::fcntl::{fcntl, FcntlArg};
+    use std::os::fd::{AsRawFd, BorrowedFd};
+    
+    let expanded_content = if expand {
+        expand_heredoc_content(content, context)
+    } else {
+        content.to_string()
+    };
+    
+    let final_content = if strip_tabs {
+        expanded_content
+            .lines()
+            .map(|line| line.trim_start_matches('\t'))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        expanded_content
+    };
+
+    let (read_fd, write_fd) = nix::unistd::pipe()
+        .map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
+
+    let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
+    nix::unistd::write(&write_borrowed, final_content.as_bytes())
+        .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
+    
+    drop(write_fd);
+
+    let allocated_fd = fcntl(read_fd.as_raw_fd(), FcntlArg::F_DUPFD(10))
+        .map_err(|e| ExecutionError::RedirectError(format!("F_DUPFD: {}", e)))?;
+
+    Ok(allocated_fd)
 }
 
 /// Apply channel redirects in child process
@@ -457,16 +602,32 @@ fn apply_file_redirect(
 
 /// Apply fd duplication (N>&M or N<&M)
 fn apply_fd_redirect(source_fd: RawFd, target_fd: RawFd) -> Result<()> {
-    dup2(target_fd, source_fd)
-        .map_err(|e| ExecutionError::RedirectError(format!("dup2: {}", e)))?;
-    Ok(())
+    tracing::debug!("apply_fd_redirect: dup2({}, {})", target_fd, source_fd);
+    match dup2(target_fd, source_fd) {
+        Ok(_) => {
+            tracing::debug!("apply_fd_redirect: dup2 succeeded");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::debug!("apply_fd_redirect: dup2 failed: {}", e);
+            Err(ExecutionError::RedirectError(format!("dup2: {}", e)))
+        }
+    }
 }
 
 /// Close a file descriptor (N>&- or N<&-)
 fn close_fd(fd: RawFd) -> Result<()> {
-    nix::unistd::close(fd)
-        .map_err(|e| ExecutionError::RedirectError(format!("close: {}", e)))?;
-    Ok(())
+    tracing::debug!("close_fd: closing fd {}", fd);
+    match nix::unistd::close(fd) {
+        Ok(_) => {
+            tracing::debug!("close_fd: fd {} closed successfully", fd);
+            Ok(())
+        }
+        Err(e) => {
+            tracing::debug!("close_fd: failed to close fd {}: {}", fd, e);
+            Err(ExecutionError::RedirectError(format!("close: {}", e)))
+        }
+    }
 }
 
 fn expand_heredoc_content(content: &str, context: &mut ExpansionContext) -> String {
@@ -556,6 +717,27 @@ fn apply_heredoc(
         .map_err(|e| ExecutionError::RedirectError(format!("dup2: {}", e)))?;
 
     // read_fd automatically closed when dropped
+
+    Ok(())
+}
+
+fn apply_here_string(source_fd: RawFd, content: &str) -> Result<()> {
+    use std::os::fd::{AsRawFd, BorrowedFd};
+    
+    let (read_fd, write_fd) = nix::unistd::pipe()
+        .map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
+
+    let mut final_content = content.to_string();
+    final_content.push('\n');
+    
+    let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
+    nix::unistd::write(&write_borrowed, final_content.as_bytes())
+        .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
+
+    drop(write_fd);
+
+    dup2(read_fd.as_raw_fd(), source_fd)
+        .map_err(|e| ExecutionError::RedirectError(format!("dup2: {}", e)))?;
 
     Ok(())
 }

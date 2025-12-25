@@ -14,21 +14,171 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::{AsRawFd, RawFd};
 
-/// Execute a pipeline
-///
-/// All commands run concurrently with pipes connecting them.
-/// Returns the exit status of the last command in the pipeline.
 pub async fn execute_pipeline(
     pipeline: &Pipeline,
     context: &mut ExpansionContext,
 ) -> Result<ExitStatus> {
+    let num_commands = pipeline.elements.len();
+    let use_lastpipe = context.shopt_options().lastpipe && num_commands > 1;
+    
+    if use_lastpipe {
+        execute_pipeline_with_lastpipe(pipeline, context).await
+    } else {
+        let pipeline_clone = pipeline.clone();
+        let context_clone = context.clone();
+
+        tokio::task::spawn_blocking(move || execute_pipeline_blocking(&pipeline_clone, &context_clone))
+            .await
+            .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+    }
+}
+
+async fn execute_pipeline_with_lastpipe(
+    pipeline: &Pipeline,
+    context: &mut ExpansionContext,
+) -> Result<ExitStatus> {
+    let num_commands = pipeline.elements.len();
+    let is_negated = pipeline.elements.last().map_or(false, |e| e.negated);
+    
     let pipeline_clone = pipeline.clone();
     let context_clone = context.clone();
+    
+    let (pids, last_pipe_read_fd) = tokio::task::spawn_blocking(move || {
+        execute_pipeline_head_blocking(&pipeline_clone, &context_clone)
+    })
+    .await
+    .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+    
+    let last_element = &pipeline.elements[num_commands - 1];
+    let saved_stdin = nix::unistd::dup(0).ok();
+    
+    if let Err(e) = dup2(last_pipe_read_fd, 0) {
+        if let Some(fd) = saved_stdin {
+            let _ = close(fd);
+        }
+        let _ = close(last_pipe_read_fd);
+        return Err(ExecutionError::IoError(std::io::Error::new(
+            std::io::ErrorKind::Other, 
+            format!("lastpipe: failed to redirect stdin: {}", e)
+        )));
+    }
+    
+    let _ = close(last_pipe_read_fd);
+    
+    let last_status = execute_single_pipeline_element_in_current_shell(last_element, context).await;
+    
+    if let Some(fd) = saved_stdin {
+        let _ = dup2(fd, 0);
+        let _ = close(fd);
+    }
+    
+    tokio::task::spawn_blocking(move || {
+        for pid in pids {
+            let _ = waitpid(pid, None);
+        }
+    })
+    .await
+    .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    
+    let status = last_status?;
+    Ok(negate_exit_status(status, is_negated))
+}
 
-    // Use spawn_blocking since we use fork/exec
-    tokio::task::spawn_blocking(move || execute_pipeline_blocking(&pipeline_clone, &context_clone))
-        .await
-        .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+fn execute_pipeline_head_blocking(
+    pipeline: &Pipeline,
+    context: &ExpansionContext,
+) -> Result<(Vec<Pid>, RawFd)> {
+    let num_commands = pipeline.elements.len();
+    
+    let mut pipes: Vec<(RawFd, RawFd)> = Vec::new();
+    for _ in 0..(num_commands - 1) {
+        let pipe_fds = pipe().map_err(ExecutionError::ForkError)?;
+        let read_end = pipe_fds.0.as_raw_fd();
+        let write_end = pipe_fds.1.as_raw_fd();
+        pipes.push((read_end, write_end));
+        std::mem::forget(pipe_fds.0);
+        std::mem::forget(pipe_fds.1);
+    }
+    
+    let mut pids: Vec<Pid> = Vec::new();
+    
+    for (i, element) in pipeline.elements.iter().take(num_commands - 1).enumerate() {
+        match unsafe { fork() }.map_err(ExecutionError::ForkError)? {
+            ForkResult::Parent { child } => {
+                pids.push(child);
+            }
+            ForkResult::Child => {
+                setup_pipeline_fds(i, num_commands, &pipes);
+                
+                for (read_fd, write_fd) in &pipes {
+                    let _ = close(*read_fd);
+                    let _ = close(*write_fd);
+                }
+                
+                execute_pipeline_element_in_child(element, context);
+            }
+        }
+    }
+    
+    for (i, (read_fd, write_fd)) in pipes.iter().enumerate() {
+        let _ = close(*write_fd);
+        if i < pipes.len() - 1 {
+            let _ = close(*read_fd);
+        }
+    }
+    
+    let last_pipe_read_fd = pipes[pipes.len() - 1].0;
+    Ok((pids, last_pipe_read_fd))
+}
+
+async fn execute_single_pipeline_element_in_current_shell(
+    element: &PipelineElement,
+    context: &mut ExpansionContext,
+) -> Result<ExitStatus> {
+    match &*element.command {
+        Statement::SimpleCommand(cmd) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let status = executor.execute_simple_command(cmd).await?;
+            *context = executor.into_context();
+            Ok(status)
+        }
+        Statement::For(for_stmt) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let code = executor.execute_for_loop_internal(for_stmt).await.unwrap_or(1);
+            *context = executor.into_context();
+            Ok(ExitStatus::new(code))
+        }
+        Statement::If(if_stmt) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let code = executor.execute_if_internal(if_stmt).await.unwrap_or(1);
+            *context = executor.into_context();
+            Ok(ExitStatus::new(code))
+        }
+        Statement::While(while_stmt) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let code = executor.execute_while_internal(while_stmt).await.unwrap_or(1);
+            *context = executor.into_context();
+            Ok(ExitStatus::new(code))
+        }
+        Statement::BraceGroup(brace) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let mut last = 0;
+            for stmt in &brace.body {
+                last = executor.execute_statement_recursive(stmt).await.unwrap_or(1);
+            }
+            *context = executor.into_context();
+            Ok(ExitStatus::new(last))
+        }
+        Statement::Subshell(subshell) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let mut last = 0;
+            for stmt in &subshell.body {
+                last = executor.execute_statement_recursive(stmt).await.unwrap_or(1);
+            }
+            Ok(ExitStatus::new(last))
+        }
+        _ => Err(ExecutionError::CommandNotFound("<complex>".to_string())),
+    }
 }
 
 /// Execute pipeline synchronously (blocking)

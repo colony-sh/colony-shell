@@ -53,9 +53,9 @@ Pipeline = { "!"? ~ PipelineElement ~ (PipeOp ~ PipelineElement)* }
 
 PipelineElement = {
     FunctionDef
-  | CompoundCommand
-  | ConditionalCommand
   | ArithmeticCommand
+  | ConditionalCommand
+  | CompoundCommand
   | CoprocCommand
   | SimpleCommand
   | Subshell
@@ -534,8 +534,10 @@ Redirect = {
 }
 
 // {VAR}>&- style - fd number from variable
+// VarFdName can be empty (which is an error), but we match it to prevent
+// {} from being parsed as an empty brace group followed by a redirect
 VarFdRedirect = {
-    "{" ~ VarFdName ~ "}" ~ RedirectOp ~ (Word | Integer | "-")
+    "{" ~ VarFdName? ~ "}" ~ RedirectOp ~ (Word | Integer | "-")
 }
 
 VarFdName = @{

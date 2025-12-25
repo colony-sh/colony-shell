@@ -69,13 +69,15 @@ COLONY="${COLONY_BIN:-../../target/release/colony}"
 # =============================================================================
 
 @test "vredir: close output fd with {fd}>&-" {
-    run "$COLONY" -c 'exec {fd}>/tmp/vredir_close.txt; exec {fd}>&-; echo test >&$fd 2>&1; rm -f /tmp/vredir_close.txt'
-    [ "$status" -ne 0 ] || [[ "$output" == *"Bad file descriptor"* ]]
+    # Note: The final 'true' ensures we can check the redirect error, not rm's status
+    run "$COLONY" -c 'exec {fd}>/tmp/vredir_close.txt; exec {fd}>&-; echo test >&$fd 2>&1; exitcode=$?; rm -f /tmp/vredir_close.txt; exit $exitcode'
+    [ "$status" -ne 0 ] || [[ "$output" == *"Bad file"* ]]
 }
 
 @test "vredir: close input fd with {fd}<&-" {
-    run "$COLONY" -c 'echo test > /tmp/vredir_closein.txt; exec {fd}</tmp/vredir_closein.txt; exec {fd}<&-; cat <&$fd 2>&1; rm -f /tmp/vredir_closein.txt'
-    [ "$status" -ne 0 ] || [[ "$output" == *"Bad file descriptor"* ]]
+    # Note: The final 'true' ensures we can check the redirect error, not rm's status
+    run "$COLONY" -c 'echo test > /tmp/vredir_closein.txt; exec {fd}</tmp/vredir_closein.txt; exec {fd}<&-; cat <&$fd 2>&1; exitcode=$?; rm -f /tmp/vredir_closein.txt; exit $exitcode'
+    [ "$status" -ne 0 ] || [[ "$output" == *"Bad file"* ]]
 }
 
 # =============================================================================

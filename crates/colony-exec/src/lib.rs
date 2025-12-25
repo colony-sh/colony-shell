@@ -79,6 +79,11 @@ impl Executor {
         &self.tuple_space
     }
 
+    /// Consume the executor and return the context (for lastpipe variable persistence)
+    pub fn into_context(self) -> ExpansionContext {
+        self.context
+    }
+
     pub async fn execute_function(
         &mut self,
         func_def: &colony_parser::FunctionDef,
@@ -394,7 +399,6 @@ impl Executor {
         if is_builtin(command_name) {
             tracing::debug!("Command is builtin, executing with redirect support");
             
-            // Don't sync for assignment-only commands - we've already applied assignments directly
             if !is_assignment_only {
                 self.context.sync_variables_from(expander.context());
             }
@@ -403,7 +407,15 @@ impl Executor {
                 && cmd.args.is_empty()
                 && !cmd.env_assignments.is_empty();
             if !is_assignment_only_noop {
-                xtrace::trace_simple_command(&self.context, command_name, &extra_args_from_name);
+                let mut trace_args = extra_args_from_name.clone();
+                for arg_word in &cmd.args {
+                    if let Ok(fields) = expander.expand_word(arg_word) {
+                        for field in fields {
+                            trace_args.push(field.text);
+                        }
+                    }
+                }
+                xtrace::trace_simple_command(&self.context, command_name, &trace_args);
             }
 
             let _redirect_guard = if command_name == "exec" {
@@ -686,9 +698,10 @@ impl Executor {
                     };
                     Err(ExecutionError::Return(code))
                 }
-                Statement::Empty => {
-                    Ok(0)
-                }
+            Statement::Empty => {
+                // Empty statement preserves previous exit status
+                Ok(self.context.last_exit_status())
+            }
                 Statement::For(for_stmt) => {
                     self.execute_for_loop_internal(for_stmt).await
                 }
@@ -712,15 +725,29 @@ impl Executor {
                     Ok(last)
                 }
                 Statement::Subshell(subshell) => {
+                    let mut subshell_executor = Executor::new(self.context.clone());
                     let mut last = 0;
                     for stmt in &subshell.body {
-                        last = self.execute_statement_recursive(stmt).await?;
+                        last = subshell_executor.execute_statement_recursive(stmt).await?;
                     }
                     Ok(last)
                 }
                 Statement::FunctionDef(func_def) => {
                     self.context.define_function(func_def.name.clone(), func_def.clone());
                     Ok(0)
+                }
+                Statement::Arithmetic(arith) => {
+                    match colony_expand::expand_arithmetic(&arith.expr, &mut self.context) {
+                        Ok(result) => {
+                            let value: i64 = result.parse().unwrap_or(0);
+                            let code = if value == 0 { 1 } else { 0 };
+                            Ok(code)
+                        }
+                        Err(e) => {
+                            eprintln!("colony: arithmetic error: {}", e);
+                            Ok(1)
+                        }
+                    }
                 }
                 other => {
                     eprintln!("Statement type not yet supported in function: {:?}", other);

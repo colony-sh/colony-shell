@@ -1327,9 +1327,11 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     text_chars.next().is_none()
 }
 
-fn evaluate_arithmetic_command(expr: &str, executor: &Executor) -> i64 {
-    let expanded = expand_arithmetic_vars(expr, executor);
-    evaluate_arithmetic_expr(&expanded)
+fn evaluate_arithmetic_command(expr: &str, executor: &mut Executor) -> i64 {
+    match colony_expand::expand_arithmetic(expr, executor.context_mut()) {
+        Ok(result) => result.parse().unwrap_or(0),
+        Err(_) => 0,
+    }
 }
 
 fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
@@ -1876,7 +1878,8 @@ fn execute_statement_with_control<'a>(
         }
         Statement::Subshell(subshell) => {
             use colony_exec::builtin_redirect::BuiltinRedirectGuard;
-            let _redirect_guard = match BuiltinRedirectGuard::apply(&subshell.redirects, executor.context_mut()) {
+            let mut subshell_executor = Executor::new(executor.context().clone());
+            let _redirect_guard = match BuiltinRedirectGuard::apply(&subshell.redirects, subshell_executor.context_mut()) {
                 Ok(guard) => guard,
                 Err(e) => {
                     eprintln!("colony: redirect error: {}", e);
@@ -1885,7 +1888,7 @@ fn execute_statement_with_control<'a>(
             };
             let mut last_exit = 0;
             for stmt in &subshell.body {
-                let (exit_code, flow) = execute_statement_with_control(stmt, executor).await;
+                let (exit_code, flow) = execute_statement_with_control(stmt, &mut subshell_executor).await;
                 last_exit = exit_code;
                 match flow {
                     ControlFlow::Normal => {}
@@ -1933,7 +1936,7 @@ fn execute_statement_with_control<'a>(
                 }
             }
         }
-        Statement::Empty => (0, ControlFlow::Normal),
+        Statement::Empty => (executor.context().last_exit_status(), ControlFlow::Normal),
     }
     })
 }

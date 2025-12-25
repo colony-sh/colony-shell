@@ -1744,18 +1744,33 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
 
 fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     use std::io::{self, BufRead, Read};
+    use std::os::unix::io::FromRawFd;
     
     let mut raw_mode = false;
     let mut var_names: Vec<&str> = Vec::new();
+    let mut input_fd: Option<i32> = None;
     
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
         if arg == "-r" {
             raw_mode = true;
-        } else if arg.starts_with('-') {
+        } else if arg == "-u" {
             i += 1;
-            continue;
+            if i < args.len() {
+                if let Ok(fd) = args[i].parse::<i32>() {
+                    input_fd = Some(fd);
+                }
+            }
+        } else if arg.starts_with('-') {
+            if arg.starts_with("-u") && arg.len() > 2 {
+                if let Ok(fd) = arg[2..].parse::<i32>() {
+                    input_fd = Some(fd);
+                }
+            } else {
+                i += 1;
+                continue;
+            }
         } else {
             var_names.push(arg);
         }
@@ -1766,47 +1781,105 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         var_names.push("REPLY");
     }
     
-    let stdin = io::stdin();
-    let mut stdin_lock = stdin.lock();
     let mut line = String::new();
     
-    if raw_mode {
-        match stdin_lock.read_line(&mut line) {
-            Ok(0) => {
-                for name in &var_names {
-                    context.set_var(name.to_string(), String::new());
-                }
-                return Ok(BuiltinResult::Success(1));
-            }
-            Ok(_) => {}
-            Err(e) => return Err(ExecutionError::IoError(e)),
-        }
-    } else {
-        loop {
-            let mut chunk = String::new();
-            match stdin_lock.read_line(&mut chunk) {
+    if let Some(fd) = input_fd {
+        let file = unsafe { std::fs::File::from_raw_fd(fd) };
+        let mut reader = io::BufReader::new(file);
+        
+        if raw_mode {
+            match reader.read_line(&mut line) {
                 Ok(0) => {
-                    if line.is_empty() {
-                        for name in &var_names {
-                            context.set_var(name.to_string(), String::new());
-                        }
-                        return Ok(BuiltinResult::Success(1));
+                    std::mem::forget(reader.into_inner());
+                    for name in &var_names {
+                        context.set_var(name.to_string(), String::new());
                     }
-                    break;
+                    return Ok(BuiltinResult::Success(1));
                 }
                 Ok(_) => {
-                    if chunk.ends_with('\n') {
-                        chunk.pop();
-                    }
-                    if chunk.ends_with('\\') {
-                        chunk.pop();
-                        line.push_str(&chunk);
-                    } else {
-                        line.push_str(&chunk);
+                    std::mem::forget(reader.into_inner());
+                }
+                Err(e) => {
+                    std::mem::forget(reader.into_inner());
+                    return Err(ExecutionError::IoError(e));
+                }
+            }
+        } else {
+            loop {
+                let mut chunk = String::new();
+                match reader.read_line(&mut chunk) {
+                    Ok(0) => {
+                        if line.is_empty() {
+                            std::mem::forget(reader.into_inner());
+                            for name in &var_names {
+                                context.set_var(name.to_string(), String::new());
+                            }
+                            return Ok(BuiltinResult::Success(1));
+                        }
                         break;
                     }
+                    Ok(_) => {
+                        if chunk.ends_with('\n') {
+                            chunk.pop();
+                        }
+                        if chunk.ends_with('\\') {
+                            chunk.pop();
+                            line.push_str(&chunk);
+                        } else {
+                            line.push_str(&chunk);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        std::mem::forget(reader.into_inner());
+                        return Err(ExecutionError::IoError(e));
+                    }
                 }
+            }
+            std::mem::forget(reader.into_inner());
+        }
+    } else {
+        let stdin = io::stdin();
+        let mut stdin_lock = stdin.lock();
+    
+        if raw_mode {
+            match stdin_lock.read_line(&mut line) {
+                Ok(0) => {
+                    for name in &var_names {
+                        context.set_var(name.to_string(), String::new());
+                    }
+                    return Ok(BuiltinResult::Success(1));
+                }
+                Ok(_) => {}
                 Err(e) => return Err(ExecutionError::IoError(e)),
+            }
+        } else {
+            loop {
+                let mut chunk = String::new();
+                match stdin_lock.read_line(&mut chunk) {
+                    Ok(0) => {
+                        if line.is_empty() {
+                            for name in &var_names {
+                                context.set_var(name.to_string(), String::new());
+                            }
+                            return Ok(BuiltinResult::Success(1));
+                        }
+                        break;
+                    }
+                    Ok(_) => {
+                        if chunk.ends_with('\n') {
+                            chunk.pop();
+                        }
+                        if chunk.ends_with('\\') {
+                            chunk.pop();
+                            line.push_str(&chunk);
+                        } else {
+                            line.push_str(&chunk);
+                            break;
+                        }
+                    }
+                    Err(e) => return Err(ExecutionError::IoError(e)),
+                }
             }
         }
     }

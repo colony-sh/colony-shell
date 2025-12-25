@@ -2488,10 +2488,16 @@ impl AstBuilder {
     fn build_var_fd_redirect(pair: Pair<Rule>, span: Span) -> Result<Redirect, BuildError> {
         let mut inner = pair.into_inner();
         
-        let var_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
-        let var_name = var_pair.as_str().to_string();
+        let first_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
         
-        let op_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
+        let (var_name, op_pair) = if first_pair.as_rule() == Rule::VarFdName {
+            let var_name = first_pair.as_str().to_string();
+            let op_pair = inner.next().ok_or(BuildError::MissingRedirectOp)?;
+            (var_name, op_pair)
+        } else {
+            return Err(BuildError::InvalidVarPrefix("{}: empty variable name in redirect".to_string()));
+        };
+        
         let kind = Self::parse_redirect_op(op_pair.as_str())?;
         
         let target = if let Some(target_pair) = inner.next() {

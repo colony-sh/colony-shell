@@ -116,6 +116,10 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
         }
         
         if i + 1 < bytes.len() && bytes[i] == b'<' && bytes[i + 1] == b'<' {
+            if i + 2 < bytes.len() && bytes[i + 2] == b'<' {
+                i += 3;
+                continue;
+            }
             i += 2;
 
             let strip_tabs = if i < bytes.len() && bytes[i] == b'-' {
