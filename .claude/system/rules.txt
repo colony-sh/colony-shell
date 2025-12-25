@@ -78,3 +78,22 @@
 52. Git info is cached (500ms default) to avoid latency on every prompt
 53. Fallback text prompt used when COLONY_TERMINAL env var is not set
 54. Prompt=ready/Prompt=busy signals enable terminal to show execution state
+
+## TUI Architecture
+
+55. Use ratatui for terminal UI components (panes, layouts, widgets)
+56. Separate concerns: data structs hold state, render() methods only draw
+57. Use crossterm for event handling (keyboard input, terminal raw mode)
+58. TUI panes need viewport_height tracking for scroll calculations
+59. Clear terminal after dup2 stdout restoration to prevent corruption
+
+## Serialization
+
+60. Add Serialize derive to AST types that need JSON export (serde feature)
+61. Use serde_json::to_value() for AST→JSON conversion in trace events
+
+## Output Capture Pattern
+
+62. For capturing command output: pipe() → fork → dup2(pipe_write, 1) → exec → read pipe_read
+63. Set O_NONBLOCK on read end to avoid blocking after child completes
+64. Terminal clear after output capture prevents display corruption

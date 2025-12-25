@@ -964,6 +964,31 @@
         "2025-12-24: BATS: 18/18 globstar tests passing (100%)",
         "2025-12-24: COMPLETE: Full bash-compatible shopt support"
       ]
+    },
+    {
+      "id": "F051",
+      "name": "Tutorial Mode (Script X-Ray)",
+      "description": "Interactive script learning mode with 4-pane TUI: Script, Magic (AST/trace), Environment, and Output. Real-time execution tracing, concept explanations, and variable tracking.",
+      "status": "complete",
+      "priority": 3,
+      "dependencies": ["F021"],
+      "notes": [
+        "2025-12-23: Started Tutorial Mode implementation",
+        "2025-12-23: Created tutorial module with runner, events, tracer, complexity scorer",
+        "2025-12-23: Implemented TUI with ratatui: script_pane, magic_pane, output_pane, controls",
+        "2025-12-24: Added hierarchical AST summarization in runner.rs",
+        "2025-12-24: Added Serialize to all AST types for JSON export",
+        "2025-12-24: Added scrolling support to magic_pane (j/k, arrow keys, Page Up/Down)",
+        "2025-12-24: Added collapsible AST JSON (e key to toggle expand/collapse)",
+        "2025-12-24: Created env_pane.rs for environment variable display",
+        "2025-12-24: Implemented 4-pane layout: Script (30%) | Magic (30%) | Env (20%) | Output (20%)",
+        "2025-12-24: Added TraceEvent::Environment emission from runner after each statement",
+        "2025-12-24: Variable change highlighting in environment pane",
+        "2025-12-24: Output capture via pipe/dup2 for stdout display",
+        "2025-12-24: Teach mode with concept explanations on first occurrence",
+        "2025-12-24: Command hints for common external commands",
+        "2025-12-24: COMPLETE: Full Script X-Ray feature operational"
+      ]
     }
   ]
 }
