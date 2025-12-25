@@ -136,6 +136,15 @@ impl Executor {
             crate::execute_and_capture(stmt, ctx)
         });
 
+        // POSIX: Detect if this is an assignment-only command (no actual command to execute)
+        // In this case, assignments should be applied to the shell context.
+        // For real commands with prefix assignments (like "IFS=: echo $var"),
+        // the assignments should ONLY be passed to the child process environment,
+        // NOT applied to the shell context before expansion.
+        let is_assignment_only = cmd.name.as_literal() == Some(":")
+            && cmd.args.is_empty()
+            && !cmd.env_assignments.is_empty();
+
         // Convert env_assignments to argument words for builtins that expect them
         let cmd = if assignments_are_args && !cmd.env_assignments.is_empty() {
             let mut new_cmd = cmd.clone();
@@ -207,123 +216,129 @@ impl Executor {
         };
         let cmd = cmd.as_ref();
 
-        for assignment in &cmd.env_assignments {
-            if let Some(ref subscript) = assignment.subscript {
-                match &assignment.value {
-                    AssignmentValue::Word(word) => {
-                        // POSIX: No field splitting on assignment RHS
-                        let value = expander.expand_word_for_assignment(word)?;
-                        
-                        let key = match subscript {
-                            colony_parser::ArraySubscript::Index(expr) => {
-                                match &**expr {
-                                    colony_parser::Expression::Variable { name, .. } => {
-                                        if let Some(Variable::AssocArray(_)) = self.context.get_variable(&assignment.name) {
-                                            name.clone()
-                                        } else {
-                                            self.context.get_var_or_env(name).unwrap_or_else(|| name.clone())
+        // Only apply assignments to shell context for assignment-only commands.
+        // For real commands with prefix assignments, we skip this and pass them to child env.
+        if is_assignment_only {
+            for assignment in &cmd.env_assignments {
+                if let Some(ref subscript) = assignment.subscript {
+                    match &assignment.value {
+                        AssignmentValue::Word(word) => {
+                            let value = expander.expand_word_for_assignment(word)?;
+                            
+                            let key = match subscript {
+                                colony_parser::ArraySubscript::Index(expr) => {
+                                    match &**expr {
+                                        colony_parser::Expression::Variable { name, .. } => {
+                                            if let Some(Variable::AssocArray(_)) = self.context.get_variable(&assignment.name) {
+                                                name.clone()
+                                            } else {
+                                                self.context.get_var_or_env(name).unwrap_or_else(|| name.clone())
+                                            }
                                         }
+                                        colony_parser::Expression::Str(s, _) => s.clone(),
+                                        colony_parser::Expression::Int(n, _) => n.to_string(),
+                                        _ => String::new()
                                     }
-                                    colony_parser::Expression::Str(s, _) => s.clone(),
-                                    colony_parser::Expression::Int(n, _) => n.to_string(),
-                                    _ => String::new()
                                 }
-                            }
-                            _ => String::new()
-                        };
-                        
-                        if let Some(Variable::AssocArray(existing)) = self.context.get_variable(&assignment.name) {
-                            let mut map = existing.clone();
-                            map.insert(key, value);
-                            self.context.set_variable(assignment.name.clone(), Variable::AssocArray(map));
-                        } else {
-                            let arr = match self.context.get_variable(&assignment.name) {
-                                Some(Variable::Array(existing)) => existing.clone(),
-                                _ => Vec::new(),
+                                _ => String::new()
                             };
                             
-                            let index = key.parse::<usize>().unwrap_or(0);
-                            let mut new_arr = arr;
-                            if index >= new_arr.len() {
-                                new_arr.resize(index + 1, String::new());
+                            if let Some(Variable::AssocArray(existing)) = self.context.get_variable(&assignment.name) {
+                                let mut map = existing.clone();
+                                map.insert(key, value);
+                                self.context.set_variable(assignment.name.clone(), Variable::AssocArray(map));
+                            } else {
+                                let arr = match self.context.get_variable(&assignment.name) {
+                                    Some(Variable::Array(existing)) => existing.clone(),
+                                    _ => Vec::new(),
+                                };
+                                
+                                let index = key.parse::<usize>().unwrap_or(0);
+                                let mut new_arr = arr;
+                                if index >= new_arr.len() {
+                                    new_arr.resize(index + 1, String::new());
+                                }
+                                new_arr[index] = value;
+                                self.context.set_variable(assignment.name.clone(), Variable::Array(new_arr));
                             }
-                            new_arr[index] = value;
-                            self.context.set_variable(assignment.name.clone(), Variable::Array(new_arr));
+                        }
+                        AssignmentValue::Array(_) => {
+                            eprintln!("Warning: Cannot assign array to array element");
+                        }
+                        AssignmentValue::AssocArray(_) => {
+                            eprintln!("Warning: Cannot assign assoc array to array element");
                         }
                     }
-                    AssignmentValue::Array(_) => {
-                        eprintln!("Warning: Cannot assign array to array element");
-                    }
-                    AssignmentValue::AssocArray(_) => {
-                        eprintln!("Warning: Cannot assign assoc array to array element");
-                    }
-                }
-            } else {
-                match &assignment.value {
-                    AssignmentValue::Word(word) => {
-                        let value = expander.expand_word_for_assignment(word)?;
-                        xtrace::trace_assignment(&self.context, &assignment.name, &value);
-                        if assignment.op == colony_parser::AssignOp::Append {
-                            // For integer variables, += does arithmetic addition
-                            if self.context.is_integer(&assignment.name) {
-                                let existing = self.context.get_var_or_env(&assignment.name)
-                                    .and_then(|s| s.parse::<i64>().ok())
-                                    .unwrap_or(0);
-                                let addend = value.parse::<i64>().unwrap_or(0);
-                                let result = (existing + addend).to_string();
-                                if !self.context.set_var(assignment.name.clone(), result) {
-                                    eprintln!("colony: {}: readonly variable", &assignment.name);
-                                    return Ok(ExitStatus::new(1));
+                } else {
+                    match &assignment.value {
+                        AssignmentValue::Word(word) => {
+                            let value = expander.expand_word_for_assignment(word)?;
+                            xtrace::trace_assignment(&self.context, &assignment.name, &value);
+                            if assignment.op == colony_parser::AssignOp::Append {
+                                if self.context.is_integer(&assignment.name) {
+                                    let existing = self.context.get_var_or_env(&assignment.name)
+                                        .and_then(|s| s.parse::<i64>().ok())
+                                        .unwrap_or(0);
+                                    let addend = value.parse::<i64>().unwrap_or(0);
+                                    let result = (existing + addend).to_string();
+                                    if !self.context.set_var(assignment.name.clone(), result) {
+                                        eprintln!("colony: {}: readonly variable", &assignment.name);
+                                        return Ok(ExitStatus::new(1));
+                                    }
+                                } else {
+                                    let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
+                                    if !self.context.set_var(assignment.name.clone(), existing + &value) {
+                                        eprintln!("colony: {}: readonly variable", &assignment.name);
+                                        return Ok(ExitStatus::new(1));
+                                    }
                                 }
                             } else {
-                                let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
-                                if !self.context.set_var(assignment.name.clone(), existing + &value) {
+                                if !self.context.set_var(assignment.name.clone(), value) {
                                     eprintln!("colony: {}: readonly variable", &assignment.name);
                                     return Ok(ExitStatus::new(1));
                                 }
                             }
-                        } else {
-                            if !self.context.set_var(assignment.name.clone(), value) {
-                                eprintln!("colony: {}: readonly variable", &assignment.name);
-                                return Ok(ExitStatus::new(1));
+                        }
+                        AssignmentValue::Array(words) => {
+                            let mut new_values = Vec::new();
+                            for word in words {
+                                let fields = expander.expand_word(word)?;
+                                for field in fields {
+                                    new_values.push(field.text.clone());
+                                }
+                            }
+                            if assignment.op == colony_parser::AssignOp::Append {
+                                let mut existing = match self.context.get_variable(&assignment.name) {
+                                    Some(Variable::Array(arr)) => arr.clone(),
+                                    Some(Variable::String(s)) => vec![s.clone()],
+                                    Some(Variable::AssocArray(_)) => Vec::new(),
+                                    Some(Variable::NameRef(_)) => Vec::new(),
+                                    None => Vec::new(),
+                                };
+                                existing.extend(new_values);
+                                self.context.set_variable(assignment.name.clone(), Variable::Array(existing));
+                            } else {
+                                self.context.set_variable(assignment.name.clone(), Variable::Array(new_values));
                             }
                         }
-                    }
-                    AssignmentValue::Array(words) => {
-                        let mut new_values = Vec::new();
-                        for word in words {
-                            let fields = expander.expand_word(word)?;
-                            for field in fields {
-                                new_values.push(field.text.clone());
+                        AssignmentValue::AssocArray(entries) => {
+                            use std::collections::HashMap;
+                            let mut map = HashMap::new();
+                            for (key, val) in entries {
+                                map.insert(key.clone(), val.clone());
                             }
+                            self.context.set_variable(assignment.name.clone(), Variable::AssocArray(map));
                         }
-                        if assignment.op == colony_parser::AssignOp::Append {
-                            let mut existing = match self.context.get_variable(&assignment.name) {
-                                Some(Variable::Array(arr)) => arr.clone(),
-                                Some(Variable::String(s)) => vec![s.clone()],
-                                Some(Variable::AssocArray(_)) => Vec::new(),
-                                Some(Variable::NameRef(_)) => Vec::new(),
-                                None => Vec::new(),
-                            };
-                            existing.extend(new_values);
-                            self.context.set_variable(assignment.name.clone(), Variable::Array(existing));
-                        } else {
-                            self.context.set_variable(assignment.name.clone(), Variable::Array(new_values));
-                        }
-                    }
-                    AssignmentValue::AssocArray(entries) => {
-                        use std::collections::HashMap;
-                        let mut map = HashMap::new();
-                        for (key, val) in entries {
-                            map.insert(key.clone(), val.clone());
-                        }
-                        self.context.set_variable(assignment.name.clone(), Variable::AssocArray(map));
                     }
                 }
             }
         }
 
-        self.context.sync_variables_from(expander.context());
+        // For assignment-only commands, we've already applied changes to self.context directly.
+        // Don't sync from expander's stale copy.
+        if !is_assignment_only {
+            self.context.sync_variables_from(expander.context());
+        }
 
         let name_fields = expander.expand_word(&cmd.name)?;
         if name_fields.is_empty() {
@@ -379,7 +394,10 @@ impl Executor {
         if is_builtin(command_name) {
             tracing::debug!("Command is builtin, executing with redirect support");
             
-            self.context.sync_variables_from(expander.context());
+            // Don't sync for assignment-only commands - we've already applied assignments directly
+            if !is_assignment_only {
+                self.context.sync_variables_from(expander.context());
+            }
             
             let is_assignment_only_noop = command_name == ":" 
                 && cmd.args.is_empty()

@@ -126,9 +126,8 @@ c"; for i in $var; do echo $i; done'
 }
 
 @test "ifs: temporary IFS for single command" {
-    run $COLONY -c 'var="a:b:c"; IFS=: echo $var; echo done'
+    run $COLONY -c 'x="a:b:c"; IFS=: echo $x; echo done'
     [ "$status" -eq 0 ]
-    # IFS assignment before builtin doesn't affect that command in most contexts
     [ "${lines[0]}" = "a:b:c" ]
     [ "${lines[1]}" = "done" ]
 }
@@ -154,14 +153,14 @@ c"; for i in $var; do echo $i; done'
 }
 
 @test "ifs: empty field at end" {
-    run $COLONY -c 'IFS=:; var="a:b:"; for i in $var; do echo "[$i]"; done'
+    run $COLONY -c 'IFS=:; x="a:b:"; for i in $x; do echo "[$i]"; done'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "[a]" ]
     [ "${lines[1]}" = "[b]" ]
 }
 
 @test "ifs: only delimiter" {
-    run $COLONY -c 'IFS=:; var=":"; for i in $var; do echo "[$i]"; done'
+    run $COLONY -c 'IFS=:; x=":"; for i in $x; do echo "[$i]"; done'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "[]" ]
 }
@@ -222,7 +221,7 @@ c"; for i in $var; do echo $i; done'
 }
 
 @test "ifs: unquoted vs quoted in for loop" {
-    run $COLONY -c 'IFS=:; var="a:b"; for i in $var; do echo unquoted-$i; done; for i in "$var"; do echo quoted-$i; done'
+    run $COLONY -c 'IFS=:; x="a:b"; for i in $x; do echo unquoted-$i; done; for i in "$x"; do echo quoted-$i; done'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "unquoted-a" ]
     [ "${lines[1]}" = "unquoted-b" ]
