@@ -8,6 +8,15 @@ pub enum TutorialAction {
     Search,
     ToggleTeachMode,
     Quit,
+    HistoryBack,
+    HistoryForward,
+    SpeedUp,
+    SpeedDown,
+    ScrollUp,
+    ScrollDown,
+    ScrollPageUp,
+    ScrollPageDown,
+    ToggleAstExpand,
     None,
 }
 
@@ -24,6 +33,15 @@ pub fn handle_key_event(event: KeyEvent) -> TutorialAction {
             TutorialAction::Quit
         }
         KeyCode::Esc => TutorialAction::Quit,
+        KeyCode::Left => TutorialAction::HistoryBack,
+        KeyCode::Right => TutorialAction::HistoryForward,
+        KeyCode::Char('+') | KeyCode::Char('=') => TutorialAction::SpeedUp,
+        KeyCode::Char('-') | KeyCode::Char('_') => TutorialAction::SpeedDown,
+        KeyCode::Up | KeyCode::Char('k') => TutorialAction::ScrollUp,
+        KeyCode::Down | KeyCode::Char('j') => TutorialAction::ScrollDown,
+        KeyCode::PageUp => TutorialAction::ScrollPageUp,
+        KeyCode::PageDown => TutorialAction::ScrollPageDown,
+        KeyCode::Char('e') => TutorialAction::ToggleAstExpand,
         _ => TutorialAction::None,
     }
 }

@@ -323,6 +323,8 @@ impl Executor {
             }
         }
 
+        self.context.sync_variables_from(expander.context());
+
         let name_fields = expander.expand_word(&cmd.name)?;
         if name_fields.is_empty() {
             if cmd.args.is_empty() {
@@ -345,6 +347,7 @@ impl Executor {
                 }
             }
 
+            self.context.sync_variables_from(expander.context());
             xtrace::trace_simple_command(&self.context, command_name, &args);
             let _redirect_guard = builtin_redirect::BuiltinRedirectGuard::apply(&cmd.redirects, &mut self.context)?;
             return self.execute_function(&func_def, args).await;
@@ -375,20 +378,14 @@ impl Executor {
 
         if is_builtin(command_name) {
             tracing::debug!("Command is builtin, executing with redirect support");
-
-            let mut builtin_args = extra_args_from_name.clone();
-            for arg_word in &cmd.args {
-                let fields = expander.expand_word(arg_word)?;
-                for field in fields {
-                    builtin_args.push(field.text);
-                }
-            }
+            
+            self.context.sync_variables_from(expander.context());
             
             let is_assignment_only_noop = command_name == ":" 
-                && builtin_args.is_empty() 
+                && cmd.args.is_empty()
                 && !cmd.env_assignments.is_empty();
             if !is_assignment_only_noop {
-                xtrace::trace_simple_command(&self.context, command_name, &builtin_args);
+                xtrace::trace_simple_command(&self.context, command_name, &extra_args_from_name);
             }
 
             let _redirect_guard = if command_name == "exec" {

@@ -158,14 +158,12 @@ c"; for i in $var; do echo $i; done'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "[a]" ]
     [ "${lines[1]}" = "[b]" ]
-    [ "${lines[2]}" = "[]" ]
 }
 
 @test "ifs: only delimiter" {
     run $COLONY -c 'IFS=:; var=":"; for i in $var; do echo "[$i]"; done'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "[]" ]
-    [ "${lines[1]}" = "[]" ]
 }
 
 @test "ifs: empty string splits to nothing" {
@@ -205,10 +203,12 @@ c"; for i in $var; do echo $i; done'
 }
 
 @test "ifs: function IFS doesn't affect caller" {
+    # Function sets IFS=: which causes word splitting inside the function
+    # After function returns, caller's IFS should still be space
     run $COLONY -c 'f() { IFS=:; var="a:b:c"; echo $var; }; IFS=" "; f; var="x y"; echo $var'
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "a:b:c" ]
-    [ "${lines[1]}" = "x y" ]
+    [ "${lines[0]}" = "a b c" ]  # IFS=: causes splitting inside function
+    [ "${lines[1]}" = "x y" ]    # Caller's IFS unchanged
 }
 
 # ============================================================================
@@ -226,7 +226,7 @@ c"; for i in $var; do echo $i; done'
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "unquoted-a" ]
     [ "${lines[1]}" = "unquoted-b" ]
-    [ "${lines[2]}" = "quoted-a:b" ]
+    [ "${lines[2]}" = "quoted-a b" ]
 }
 
 # ============================================================================
@@ -254,15 +254,16 @@ c"; for i in $var; do echo $i; done'
 # ============================================================================
 
 @test "ifs: IFS affects parameter expansion word splitting" {
+    # ${var} is word split by IFS, then echo rejoins with spaces
     run $COLONY -c 'IFS=:; var="a:b:c"; echo ${var}'
     [ "$status" -eq 0 ]
-    [ "$output" = "a:b:c" ]
+    [ "$output" = "a b c" ]
 }
 
 @test "ifs: IFS with default parameter expansion" {
     run $COLONY -c 'IFS=:; echo ${undefined:-a:b:c}'
     [ "$status" -eq 0 ]
-    [ "$output" = "a:b:c" ]
+    [ "$output" = "a b c" ]
 }
 
 # ============================================================================
@@ -272,14 +273,14 @@ c"; for i in $var; do echo $i; done'
 @test "ifs: IFS in array context" {
     run $COLONY -c 'IFS=:; arr=(a:b:c); echo ${#arr[@]}; echo ${arr[0]}'
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "3" ]
-    [ "${lines[1]}" = "a" ]
+    [ "${lines[0]}" = "1" ]
+    [ "${lines[1]}" = "a b c" ]
 }
 
 @test "ifs: IFS with read builtin" {
     run $COLONY -c 'IFS=:; echo "a:b:c" | read x y z; echo $x $y $z'
     [ "$status" -eq 0 ]
-    [ "$output" = "a b c" ]
+    [ "$output" = "" ]
 }
 
 # ============================================================================

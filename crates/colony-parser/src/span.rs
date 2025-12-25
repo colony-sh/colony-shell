@@ -1,7 +1,7 @@
 //! Source span tracking for error reporting and tooling
 
 /// Position in source code
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Position {
     /// Byte offset in source
     pub offset: usize,
@@ -36,7 +36,7 @@ impl Default for Position {
 }
 
 /// Source span (start..end)
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Span {
     pub start: Position,
     pub end: Position,

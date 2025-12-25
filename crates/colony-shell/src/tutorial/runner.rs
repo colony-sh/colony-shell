@@ -3,7 +3,10 @@
 //! This module connects the TUI, tracer, and executor to provide
 //! an interactive tutorial experience for any shell script.
 
+use std::collections::HashMap;
 use std::io;
+use std::io::{Read, Write};
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
@@ -13,10 +16,11 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use nix::unistd::{dup, dup2, pipe};
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use colony_exec::Executor;
-use colony_expand::ExpansionContext;
+use colony_expand::{ExpansionContext, Variable};
 use colony_parser::pest_api::parse;
 use colony_parser::{Statement, Word, WordPart};
 
@@ -30,13 +34,8 @@ use crate::tutorial::tui::TutorialTui;
 /// Configuration for tutorial mode
 #[derive(Debug, Clone)]
 pub struct TutorialConfig {
-    /// Trace depth (Level 2 = mechanics, Level 3 = internals)
     pub depth: TraceDepth,
-    /// Enable teach mode (explain concepts on first occurrence)
     pub teach_mode: bool,
-    /// Auto-advance speed multiplier (1.0 = normal)
-    pub speed: f32,
-    /// Pause on high complexity statements
     pub pause_on_complex: bool,
 }
 
@@ -45,7 +44,6 @@ impl Default for TutorialConfig {
         Self {
             depth: TraceDepth::Mechanics,
             teach_mode: false,
-            speed: 1.0,
             pause_on_complex: true,
         }
     }
@@ -118,12 +116,12 @@ impl TutorialRunner {
     ///
     /// This sets up the terminal, creates the TUI, and runs the event loop.
     pub fn run(&mut self) -> TutorialResult<i32> {
-        // Set up terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
+        terminal.clear()?;
 
         // Create TUI
         let tracer_config = TracerConfig {
@@ -161,67 +159,256 @@ impl TutorialRunner {
         result
     }
 
-    /// Generate a human-readable AST summary for a statement
     fn summarize_statement(stmt: &Statement) -> String {
+        Self::format_statement_tree(stmt, 0)
+    }
+    
+    fn format_statement_tree(stmt: &Statement, indent: usize) -> String {
+        let prefix = "│ ".repeat(indent);
+        let branch = if indent > 0 { "├─" } else { "" };
+        
         match stmt {
             Statement::SimpleCommand(cmd) => {
-                let name = cmd.name.as_literal().unwrap_or("<dynamic>");
-                let arg_count = cmd.args.len();
-                let redirect_count = cmd.redirects.len();
-                let assign_count = cmd.env_assignments.len();
+                let mut lines = vec![format!("{}{}SimpleCommand", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
                 
-                let mut parts = vec![format!("Command: {}", name)];
-                if arg_count > 0 {
-                    parts.push(format!("{} arg(s)", arg_count));
+                lines.push(format!("{}├─name: {}", child_prefix, Self::format_word_tree(&cmd.name, indent + 2)));
+                
+                for (i, arg) in cmd.args.iter().enumerate() {
+                    let is_last = i == cmd.args.len() - 1 && cmd.redirects.is_empty() && cmd.env_assignments.is_empty();
+                    let connector = if is_last { "└─" } else { "├─" };
+                    lines.push(format!("{}{}arg[{}]: {}", child_prefix, connector, i, Self::format_word_tree(arg, indent + 2)));
                 }
-                if redirect_count > 0 {
-                    parts.push(format!("{} redirect(s)", redirect_count));
+                
+                for (i, redir) in cmd.redirects.iter().enumerate() {
+                    let is_last = i == cmd.redirects.len() - 1 && cmd.env_assignments.is_empty();
+                    let connector = if is_last { "└─" } else { "├─" };
+                    lines.push(format!("{}{}redir: {}", child_prefix, connector, Self::format_redirect(redir)));
                 }
-                if assign_count > 0 {
-                    parts.push(format!("{} assignment(s)", assign_count));
+                
+                for (i, assign) in cmd.env_assignments.iter().enumerate() {
+                    let is_last = i == cmd.env_assignments.len() - 1;
+                    let connector = if is_last { "└─" } else { "├─" };
+                    lines.push(format!("{}{}env: {}={}", child_prefix, connector, assign.name, Self::format_assignment_value(&assign.value)));
                 }
-                parts.join(", ")
+                
+                lines.join("\n")
             }
             Statement::Pipeline(pipeline) => {
-                let count = pipeline.elements.len();
-                format!("Pipeline: {} command(s)", count)
+                let mut lines = vec![format!("{}{}Pipeline", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                
+                for (i, elem) in pipeline.elements.iter().enumerate() {
+                    let is_last = i == pipeline.elements.len() - 1;
+                    let connector = if is_last { "└─" } else { "├─" };
+                    let pipe_op = elem.pipe_op.map(|op| match op {
+                        colony_parser::PipeOp::Pipe => " |",
+                        colony_parser::PipeOp::PipeErr => " |&",
+                        colony_parser::PipeOp::Arrow => " ->",
+                        colony_parser::PipeOp::FatArrow => " =>",
+                        colony_parser::PipeOp::Alter => " ~>",
+                    }).unwrap_or("");
+                    lines.push(format!("{}{}[{}]{}", child_prefix, connector, i, pipe_op));
+                    lines.push(Self::format_statement_tree(&elem.command, indent + 2));
+                }
+                
+                lines.join("\n")
             }
             Statement::List(list) => {
-                let ops: Vec<&str> = list.rest.iter().map(|(op, _)| {
-                    match op {
+                let mut lines = vec![format!("{}{}CommandList", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                
+                lines.push(format!("{}├─first:", child_prefix));
+                lines.push(Self::format_statement_tree(&list.first, indent + 2));
+                
+                for (i, (op, stmt)) in list.rest.iter().enumerate() {
+                    let is_last = i == list.rest.len() - 1;
+                    let connector = if is_last { "└─" } else { "├─" };
+                    let op_str = match op {
                         colony_parser::ListOp::Semi => ";",
                         colony_parser::ListOp::And => "&&",
                         colony_parser::ListOp::Or => "||",
                         colony_parser::ListOp::Background => "&",
-                    }
-                }).collect();
-                format!("Command list with operators: {}", ops.join(", "))
+                    };
+                    lines.push(format!("{}{}[{}]", child_prefix, connector, op_str));
+                    lines.push(Self::format_statement_tree(stmt, indent + 2));
+                }
+                
+                lines.join("\n")
             }
-            Statement::If(_) => "If statement".to_string(),
+            Statement::If(if_stmt) => {
+                let mut lines = vec![format!("{}{}IfStatement", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!("{}├─condition: <test>", child_prefix));
+                lines.push(format!("{}├─then: {} stmt(s)", child_prefix, if_stmt.then_body.len()));
+                if !if_stmt.elif_branches.is_empty() {
+                    lines.push(format!("{}├─elif: {} branch(es)", child_prefix, if_stmt.elif_branches.len()));
+                }
+                if let Some(ref else_body) = if_stmt.else_body {
+                    lines.push(format!("{}└─else: {} stmt(s)", child_prefix, else_body.len()));
+                }
+                lines.join("\n")
+            }
             Statement::For(for_stmt) => {
-                format!("For loop: {} in ...", for_stmt.var)
+                let mut lines = vec![format!("{}{}ForLoop", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!("{}├─var: {}", child_prefix, for_stmt.var));
+                let words: Vec<String> = for_stmt.words.iter().map(|w| Self::format_word_tree(w, 0)).collect();
+                lines.push(format!("{}├─in: [{}]", child_prefix, words.join(", ")));
+                lines.push(format!("{}└─body: {} stmt(s)", child_prefix, for_stmt.body.len()));
+                lines.join("\n")
             }
-            Statement::While(_) => "While loop".to_string(),
-            Statement::Until(_) => "Until loop".to_string(),
-            Statement::Case(_) => "Case statement".to_string(),
+            Statement::While(w) => {
+                let mut lines = vec![format!("{}{}WhileLoop", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!("{}├─condition: <test>", child_prefix));
+                lines.push(format!("{}└─body: {} stmt(s)", child_prefix, w.body.len()));
+                lines.join("\n")
+            }
+            Statement::Until(u) => {
+                let mut lines = vec![format!("{}{}UntilLoop", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!("{}├─condition: <test>", child_prefix));
+                lines.push(format!("{}└─body: {} stmt(s)", child_prefix, u.body.len()));
+                lines.join("\n")
+            }
+            Statement::Case(c) => {
+                let mut lines = vec![format!("{}{}CaseStatement", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!("{}├─value: {}", child_prefix, Self::format_word_tree(&c.value, 0)));
+                lines.push(format!("{}└─arms: {} pattern(s)", child_prefix, c.arms.len()));
+                lines.join("\n")
+            }
             Statement::FunctionDef(f) => {
-                format!("Function definition: {}", f.name)
+                let mut lines = vec![format!("{}{}FunctionDef", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!("{}├─name: {}", child_prefix, f.name));
+                lines.push(format!("{}└─body: {} stmt(s)", child_prefix, f.body.len()));
+                lines.join("\n")
             }
-            Statement::Subshell(_) => "Subshell (...)".to_string(),
-            Statement::BraceGroup(_) => "Brace group {{ ... }}".to_string(),
+            Statement::Subshell(s) => {
+                format!("{}{}Subshell ({} stmt(s))", prefix, branch, s.body.len())
+            }
+            Statement::BraceGroup(b) => {
+                format!("{}{}BraceGroup ({} stmt(s))", prefix, branch, b.body.len())
+            }
             Statement::Coproc(c) => {
                 let name = c.name.as_deref().unwrap_or("COPROC");
-                format!("Coprocess: {}", name)
+                format!("{}{}Coproc: {}", prefix, branch, name)
             }
             Statement::Return(r) => {
                 if r.value.is_some() {
-                    "Return with value".to_string()
+                    format!("{}{}Return <value>", prefix, branch)
                 } else {
-                    "Return".to_string()
+                    format!("{}{}Return", prefix, branch)
                 }
             }
-            Statement::Empty => "Empty statement".to_string(),
-            _ => "Statement".to_string(),
+            Statement::Empty => format!("{}{}Empty", prefix, branch),
+            Statement::Conditional(_) => format!("{}{}[[ ... ]]", prefix, branch),
+            Statement::Arithmetic(_) => format!("{}{}(( ... ))", prefix, branch),
+            _ => format!("{}{}Statement", prefix, branch),
+        }
+    }
+    
+    fn format_word_tree(word: &Word, _indent: usize) -> String {
+        if word.parts.len() == 1 {
+            Self::format_word_part(&word.parts[0])
+        } else {
+            let parts: Vec<String> = word.parts.iter().map(|p| Self::format_word_part(p)).collect();
+            format!("Word[{}]", parts.join(" + "))
+        }
+    }
+    
+    fn format_word_part(part: &WordPart) -> String {
+        match part {
+            WordPart::Literal(s) => format!("Lit({})", s),
+            WordPart::SingleQuoted(s) => format!("SQ('{}')", s),
+            WordPart::DoubleQuoted(inner) => {
+                let parts: Vec<String> = inner.iter().map(|p| Self::format_word_part(p)).collect();
+                format!("DQ({})", parts.join(" + "))
+            }
+            WordPart::Variable(var) => {
+                let mut desc = format!("${}", var.name);
+                if var.modifier.is_some() {
+                    desc = format!("${{{}:mod}}", var.name);
+                } else if var.prefix.is_some() {
+                    desc = format!("${{#{}}}", var.name);
+                } else if var.subscript.is_some() {
+                    desc = format!("${{{}[sub]}}", var.name);
+                }
+                format!("Var({})", desc)
+            }
+            WordPart::CommandSubRaw(cmd) => format!("CmdSub({})", cmd),
+            WordPart::ArithRaw(expr) => format!("Arith({})", expr),
+            WordPart::Tilde(user) => {
+                if let Some(u) = user {
+                    format!("Tilde(~{})", u)
+                } else {
+                    "Tilde(~)".to_string()
+                }
+            }
+            WordPart::ExtGlob { operator, pattern_list } => {
+                let op = match operator {
+                    colony_parser::ExtGlobOp::ZeroOrOne => "?",
+                    colony_parser::ExtGlobOp::ZeroOrMore => "*",
+                    colony_parser::ExtGlobOp::OneOrMore => "+",
+                    colony_parser::ExtGlobOp::ExactlyOne => "@",
+                    colony_parser::ExtGlobOp::Not => "!",
+                };
+                format!("ExtGlob({}({}))", op, pattern_list)
+            }
+            WordPart::BraceExpansion(s) => format!("Brace({{{}}})", s),
+            WordPart::ProcessSub { direction, command } => {
+                let op = if *direction == colony_parser::ProcessSubDirection::Input { "<" } else { ">" };
+                format!("ProcSub({}({}))", op, command)
+            }
+            WordPart::AnsiCQuoted(s) => format!("ANSI($'{}')", s),
+            WordPart::CommandSub(_) => "CmdSub(<ast>)".to_string(),
+            _ => "<?>".to_string(),
+        }
+    }
+    
+    fn format_redirect(redir: &colony_parser::Redirect) -> String {
+        use colony_parser::{RedirectKind, RedirectTarget, HereDocKind};
+        
+        let fd = redir.fd.map(|f| format!("fd{}:", f)).unwrap_or_default();
+        let kind = match &redir.kind {
+            RedirectKind::Output => ">",
+            RedirectKind::Append => ">>",
+            RedirectKind::Input => "<",
+            RedirectKind::HereDoc(HereDocKind::Normal) => "<<",
+            RedirectKind::HereDoc(HereDocKind::StripTabs) => "<<-",
+            RedirectKind::HereDoc(HereDocKind::HereString) => "<<<",
+            RedirectKind::DupFd => ">&",
+            RedirectKind::DupFdInput => "<&",
+            RedirectKind::ReadWrite => "<>",
+            RedirectKind::Clobber => ">|",
+            RedirectKind::AndOutput => "&>",
+            RedirectKind::AndAppend => "&>>",
+        };
+        let target = match &redir.target {
+            RedirectTarget::File(w) => Self::format_word_tree(w, 0),
+            RedirectTarget::Fd(n) => format!("&{}", n),
+            RedirectTarget::Close => "-".to_string(),
+            RedirectTarget::HereDoc { content, .. } => format!("heredoc({} chars)", content.len()),
+        };
+        format!("{}{} {}", fd, kind, target)
+    }
+    
+    fn format_assignment_value(val: &colony_parser::AssignmentValue) -> String {
+        use colony_parser::AssignmentValue;
+        match val {
+            AssignmentValue::Word(w) => Self::format_word_tree(w, 0),
+            AssignmentValue::Array(arr) => {
+                let items: Vec<String> = arr.iter().map(|w| Self::format_word_tree(w, 0)).collect();
+                format!("Array({})", items.join(", "))
+            }
+            AssignmentValue::AssocArray(arr) => {
+                let items: Vec<String> = arr.iter()
+                    .map(|(k, v)| format!("[{}]={}", k, v))
+                    .collect();
+                format!("AssocArray({})", items.join(", "))
+            }
         }
     }
 
@@ -365,30 +552,29 @@ impl TutorialRunner {
 
     fn emit_statement_trace(&mut self, stmt: &Statement, line: u32, tx: &Sender<TraceEvent>, ctx: &ExpansionContext) {
         let summary = Self::summarize_statement(stmt);
+        let ast_full = serde_json::to_value(stmt).ok();
         tx.send(TraceEvent::Parse {
             line,
             ast_summary: summary,
-            ast_full: None,
+            ast_full,
         }).ok();
 
-        if self.config.teach_mode {
-            self.emit_concepts_for_statement(stmt, line, tx);
-        }
+        // Always emit concept events - TUI will filter based on its teach_mode setting
+        self.emit_concepts_for_statement(stmt, line, tx);
 
         match stmt {
             Statement::SimpleCommand(cmd) => {
-                if self.config.teach_mode {
-                    if let Some(name) = cmd.name.as_literal() {
-                        let args: Vec<String> = cmd.args.iter()
-                            .filter_map(|w| w.as_literal().map(String::from))
-                            .collect();
-                        if let Some(hint) = self.command_explainer.format_hint(name, &args) {
-                            tx.send(TraceEvent::CommandHint {
-                                line,
-                                command: name.to_string(),
-                                hint,
-                            }).ok();
-                        }
+                // Always emit command hints - TUI will filter based on its teach_mode setting
+                if let Some(name) = cmd.name.as_literal() {
+                    let args: Vec<String> = cmd.args.iter()
+                        .filter_map(|w| w.as_literal().map(String::from))
+                        .collect();
+                    if let Some(hint) = self.command_explainer.format_hint(name, &args) {
+                        tx.send(TraceEvent::CommandHint {
+                            line,
+                            command: name.to_string(),
+                            hint,
+                        }).ok();
                     }
                 }
                 
@@ -638,6 +824,128 @@ impl TutorialRunner {
         }
     }
 
+    fn collect_environment_snapshot(&self, ctx: &ExpansionContext) -> HashMap<String, String> {
+        let mut vars = HashMap::new();
+        for (name, var, _attrs) in ctx.variables_with_attrs() {
+            match var {
+                Variable::String(s) => {
+                    vars.insert(name.clone(), s.clone());
+                }
+                Variable::Array(arr) => {
+                    vars.insert(name.clone(), format!("({} elements)", arr.len()));
+                }
+                Variable::AssocArray(map) => {
+                    vars.insert(name.clone(), format!("(assoc: {} keys)", map.len()));
+                }
+                Variable::NameRef(target) => {
+                    vars.insert(name.clone(), format!("&{}", target));
+                }
+            }
+        }
+        vars
+    }
+
+    fn detect_changed_variables(&self, _ctx: &ExpansionContext, stmt: &Statement) -> Vec<String> {
+        let mut changed = Vec::new();
+        match stmt {
+            Statement::SimpleCommand(cmd) => {
+                for assign in &cmd.env_assignments {
+                    changed.push(assign.name.clone());
+                }
+            }
+            _ => {}
+        }
+        changed
+    }
+
+    fn execute_with_capture(
+        &self,
+        executor: &mut Executor,
+        stmt: &Statement,
+    ) -> (String, Result<i32, colony_exec::ExecutionError>) {
+        use std::fs::File;
+        use std::os::unix::io::OwnedFd;
+        use nix::unistd::close;
+        
+        let _ = io::stdout().flush();
+        
+        let (pipe_read, pipe_write): (OwnedFd, OwnedFd) = match pipe() {
+            Ok(fds) => fds,
+            Err(_) => {
+                let result = futures::executor::block_on(async {
+                    executor.execute_statement_recursive(stmt).await
+                });
+                return (String::new(), result);
+            }
+        };
+        
+        let read_fd = pipe_read.as_raw_fd();
+        let write_fd = pipe_write.as_raw_fd();
+
+        let saved_stdout: RawFd = match dup(1) {
+            Ok(fd) => fd,
+            Err(_) => {
+                let result = futures::executor::block_on(async {
+                    executor.execute_statement_recursive(stmt).await
+                });
+                return (String::new(), result);
+            }
+        };
+
+        let saved_stderr: Option<RawFd> = dup(2).ok();
+        if let Ok(devnull) = std::fs::File::open("/dev/null") {
+            let _ = dup2(devnull.as_raw_fd(), 2);
+        }
+
+        if dup2(write_fd, 1).is_err() {
+            let _ = dup2(saved_stdout, 1);
+            let _ = close(saved_stdout);
+            if let Some(fd) = saved_stderr {
+                let _ = dup2(fd, 2);
+                let _ = close(fd);
+            }
+            let result = futures::executor::block_on(async {
+                executor.execute_statement_recursive(stmt).await
+            });
+            return (String::new(), result);
+        }
+
+        let result = futures::executor::block_on(async {
+            executor.execute_statement_recursive(stmt).await
+        });
+
+        let _ = io::stdout().flush();
+        
+        let _ = dup2(saved_stdout, 1);
+        let _ = close(saved_stdout);
+        if let Some(fd) = saved_stderr {
+            let _ = dup2(fd, 2);
+            let _ = close(fd);
+        }
+        
+        drop(pipe_write);
+
+        let mut captured = String::new();
+        let mut read_file = unsafe { File::from_raw_fd(read_fd) };
+        std::mem::forget(pipe_read);
+        
+        use std::io::ErrorKind;
+        use nix::fcntl::{fcntl, FcntlArg, OFlag};
+        let _ = fcntl(read_fd, FcntlArg::F_SETFL(OFlag::O_NONBLOCK));
+        
+        let mut buf = [0u8; 4096];
+        loop {
+            match read_file.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => captured.push_str(&String::from_utf8_lossy(&buf[..n])),
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                Err(_) => break,
+            }
+        }
+
+        (captured, result)
+    }
+
     fn event_loop(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -650,6 +958,7 @@ impl TutorialRunner {
         let lines: Vec<&str> = source_clone.lines().collect();
         let mut current_stmt_idx = 0;
         let mut exit_code = 0;
+        let mut last_execution = std::time::Instant::now();
 
         let context = ExpansionContext::new();
         let mut executor = Executor::new(context);
@@ -675,8 +984,26 @@ impl TutorialRunner {
                 }
             }
 
-            if (tui.is_playing() || tui.is_stepping()) && current_stmt_idx < program.statements.len() {
+            if tui.is_browsing_history() {
+                continue;
+            }
+
+            let should_execute = if tui.is_stepping() {
+                true
+            } else if tui.is_playing() {
+                let speed_ms = tui.get_playback_speed_ms();
+                last_execution.elapsed() >= Duration::from_millis(speed_ms)
+            } else {
+                false
+            };
+
+            if should_execute && current_stmt_idx < program.statements.len() {
                 let stmt = &program.statements[current_stmt_idx];
+                
+                if matches!(stmt, Statement::Empty) {
+                    current_stmt_idx += 1;
+                    continue;
+                }
                 
                 let line_num = stmt.span().start.line;
                 let line_idx = if line_num > 0 { (line_num - 1) as usize } else { current_stmt_idx };
@@ -693,9 +1020,16 @@ impl TutorialRunner {
 
                 let complexity = ComplexityScorer::score(stmt);
                 
-                let result = futures::executor::block_on(async {
-                    executor.execute_statement_recursive(stmt).await
-                });
+                let (captured_output, result) = self.execute_with_capture(&mut executor, stmt);
+                
+                terminal.clear()?;
+                
+                if !captured_output.is_empty() {
+                    tx.send(TraceEvent::Output {
+                        line: line_num,
+                        text: captured_output,
+                    }).ok();
+                }
 
                 match result {
                     Ok(code) => {
@@ -714,31 +1048,36 @@ impl TutorialRunner {
                     }
                 }
 
+                let env_vars = self.collect_environment_snapshot(executor.context());
+                let changed_vars = self.detect_changed_variables(executor.context(), stmt);
+                tx.send(TraceEvent::Environment {
+                    line: line_num,
+                    variables: env_vars,
+                    changed: changed_vars,
+                }).ok();
+
                 tx.send(TraceEvent::LineExit {
                     line: line_num,
                     duration_us: 0,
                 }).ok();
 
                 current_stmt_idx += 1;
+                last_execution = std::time::Instant::now();
 
-                // If stepping, pause after each step
                 if tui.is_stepping() {
                     tui.finish_step();
                 }
 
-                // If high complexity and pause_on_complex, pause
                 if self.config.pause_on_complex && ComplexityScorer::should_auto_pause(complexity) {
                     tui.finish_step();
                 }
             }
 
-            // If we've finished all statements
             if current_stmt_idx >= program.statements.len() && !tui.should_quit() {
                 tx.send(TraceEvent::ScriptEnd {
                     exit_code,
-                    duration_ms: 0, // TODO: measure actual duration
+                    duration_ms: 0,
                 }).ok();
-                // Don't auto-quit, let user explore
             }
         }
 
@@ -757,7 +1096,6 @@ mod tests {
         let config = TutorialConfig::default();
         assert_eq!(config.depth, TraceDepth::Mechanics);
         assert!(!config.teach_mode);
-        assert_eq!(config.speed, 1.0);
         assert!(config.pause_on_complex);
     }
 

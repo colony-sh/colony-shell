@@ -1049,7 +1049,7 @@ VariableRef = {
 }
 
 VariableRefName = {
-    Identifier | PositionalParam
+    VariableName | PositionalParam
 }
 
 // Prefix modifiers that come before identifier
@@ -1057,8 +1057,8 @@ VariableRefName = {
 // ${#var} = length of var, but ${#:-0} = $# with default modifier
 // Use negative lookahead to prevent # from being prefix when followed by :, -, =, ?, +, etc
 VarPrefix = {
-    "#" ~ &(Identifier | ASCII_DIGIT | "@" | "*")   // Length - only if followed by var name
-  | "!" ~ &(Identifier | ASCII_DIGIT | "@" | "*")   // Indices - only if followed by var name
+    "#" ~ &(VariableName | ASCII_DIGIT | "@" | "*")   // Length - only if followed by var name
+  | "!" ~ &(VariableName | ASCII_DIGIT | "@" | "*")   // Indices - only if followed by var name
 }
 
 // Array subscript: [index], [@], [*], [$var]

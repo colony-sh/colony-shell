@@ -74,21 +74,18 @@ use crate::heredoc::preprocess_heredocs;
 /// - AST building fails (malformed parse tree)
 /// - Heredoc preprocessing fails
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    // First preprocess arithmetic if needed
     let (arith_normalized, arith_map) = if source.contains("$((") {
         crate::arith_preprocess::preprocess_arithmetic(source)
     } else {
         (source.to_string(), Vec::new())
     };
     
-    // Check if source contains heredocs
     let mut program = if arith_normalized.contains("<<") {
         parse_with_heredocs(&arith_normalized)?
     } else {
         parse_direct(&arith_normalized)?
     };
     
-    // Inject arithmetic expressions back if we preprocessed them
     if !arith_map.is_empty() {
         for stmt in &mut program.statements {
             inject_arithmetic(stmt, &arith_map);
@@ -226,17 +223,13 @@ pub fn parse_expression(source: &str) -> Result<crate::ast::Expression, ParseErr
 fn inject_arithmetic(stmt: &mut crate::ast::Statement, arith_map: &[(String, String)]) {
     use crate::ast::{Statement, WordPart};
 
-    // Helper to inject into a Word
     fn inject_into_word(word: &mut crate::ast::Word, arith_map: &[(String, String)]) {
         for part in &mut word.parts {
             match part {
                 WordPart::Variable(var_ref) => {
-                    // Check if this is an arithmetic placeholder
                     if var_ref.name.starts_with("__ARITH_") && var_ref.modifier.is_none() {
-                        // Find the expression
                         for (placeholder, expr) in arith_map {
                             if var_ref.name == *placeholder {
-                                // Replace with ArithRaw
                                 *part = WordPart::ArithRaw(expr.clone());
                                 break;
                             }

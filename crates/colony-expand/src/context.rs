@@ -1517,7 +1517,7 @@ impl ExpansionContext {
         
         let resolved = self.resolve_arithmetic_variables(expr);
         
-        match crate::expand_arithmetic(&resolved, self) {
+        match crate::expand_arithmetic_immut(&resolved, self) {
             Ok(result) => result,
             Err(_) => "0".to_string(),
         }
@@ -1657,6 +1657,18 @@ impl ExpansionContext {
         self.variables.iter().map(|(name, var)| {
             (name, var, self.var_attributes.get(name))
         })
+    }
+    
+    pub fn sync_variables_from(&mut self, other: &ExpansionContext) {
+        for (name, value) in &other.variables {
+            if !self.is_readonly(name) {
+                self.variables.insert(name.clone(), value.clone());
+            }
+        }
+        
+        for (name, attrs) in &other.var_attributes {
+            self.var_attributes.insert(name.clone(), *attrs);
+        }
     }
 
     pub fn enter_function_with_attrs(&mut self) {

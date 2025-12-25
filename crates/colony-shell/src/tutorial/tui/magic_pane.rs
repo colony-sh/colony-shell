@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::tutorial::events::TraceEvent;
+use crate::tutorial::events::{BranchType, LoopType, TraceEvent};
 use crate::tutorial::tracer::TraceDepth;
 
 pub struct MagicSection {
@@ -26,7 +26,10 @@ pub enum SectionStyle {
 
 pub struct MagicPane {
     sections: Vec<MagicSection>,
-    scroll_offset: u32,
+    scroll_offset: u16,
+    total_lines: u16,
+    viewport_height: u16,
+    ast_expanded: bool,
 }
 
 impl MagicPane {
@@ -34,12 +37,33 @@ impl MagicPane {
         Self {
             sections: Vec::new(),
             scroll_offset: 0,
+            total_lines: 0,
+            viewport_height: 0,
+            ast_expanded: false,
         }
     }
 
     pub fn clear(&mut self) {
         self.sections.clear();
         self.scroll_offset = 0;
+        self.total_lines = 0;
+    }
+
+    pub fn scroll_up(&mut self, amount: u16) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+    }
+
+    pub fn scroll_down(&mut self, amount: u16) {
+        let max_scroll = self.total_lines.saturating_sub(self.viewport_height);
+        self.scroll_offset = (self.scroll_offset + amount).min(max_scroll);
+    }
+
+    pub fn toggle_ast_expand(&mut self) {
+        self.ast_expanded = !self.ast_expanded;
+    }
+
+    pub fn is_ast_expanded(&self) -> bool {
+        self.ast_expanded
     }
 
     pub fn handle_event(&mut self, event: TraceEvent, depth: TraceDepth) {
@@ -49,19 +73,30 @@ impl MagicPane {
                 ast_full,
                 ..
             } => {
-                let mut content = vec![Line::from(Span::styled(
-                    ast_summary,
-                    Style::default().fg(Color::Cyan),
-                ))];
+                let mut content: Vec<Line> = ast_summary
+                    .lines()
+                    .map(|line| Line::from(Span::styled(
+                        line.to_string(),
+                        Style::default().fg(Color::Cyan),
+                    )))
+                    .collect();
 
                 if depth == TraceDepth::Internals {
-                    if let Some(full) = ast_full {
-                        let formatted = serde_json::to_string_pretty(&full).unwrap_or_default();
-                        for line in formatted.lines().take(10) {
-                            content.push(Line::from(Span::styled(
-                                line.to_string(),
-                                Style::default().fg(Color::DarkGray),
-                            )));
+                    if let Some(ref full) = ast_full {
+                        let expand_indicator = if self.ast_expanded { "▼" } else { "▶" };
+                        content.push(Line::from(Span::styled(
+                            format!("{} Full AST (press 'e' to toggle)", expand_indicator),
+                            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                        )));
+                        
+                        if self.ast_expanded {
+                            let formatted = serde_json::to_string_pretty(full).unwrap_or_default();
+                            for line in formatted.lines() {
+                                content.push(Line::from(Span::styled(
+                                    format!("  {}", line),
+                                    Style::default().fg(Color::DarkGray),
+                                )));
+                            }
                         }
                     }
                 }
@@ -246,8 +281,14 @@ impl MagicPane {
                 values,
                 ..
             } => {
+                let loop_name = match loop_type {
+                    LoopType::For => "for",
+                    LoopType::While => "while",
+                    LoopType::Until => "until",
+                    LoopType::Select => "select",
+                };
                 let mut content = vec![Line::from(Span::styled(
-                    format!("  {:?} loop", loop_type),
+                    format!("  {} loop", loop_name),
                     Style::default().fg(Color::Yellow),
                 ))];
 
@@ -303,14 +344,22 @@ impl MagicPane {
                 result,
                 ..
             } => {
+                let branch_name = match branch_type {
+                    BranchType::If => "if",
+                    BranchType::Elif => "elif",
+                    BranchType::Else => "else",
+                    BranchType::Case => "case",
+                    BranchType::And => "&&",
+                    BranchType::Or => "||",
+                };
                 let result_color = if result { Color::Green } else { Color::Red };
                 let content = vec![
                     Line::from(Span::styled(
-                        format!("  {:?}: {}", branch_type, condition),
+                        format!("  {}: {}", branch_name, condition),
                         Style::default().fg(Color::Yellow),
                     )),
                     Line::from(Span::styled(
-                        format!("  → {} ({})", taken, if result { "true" } else { "false" }),
+                        format!("  -> {} ({})", taken, if result { "true" } else { "false" }),
                         Style::default().fg(result_color),
                     )),
                 ];
@@ -326,7 +375,7 @@ impl MagicPane {
         }
     }
 
-    pub fn render(&self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let mut all_lines: Vec<Line> = Vec::new();
 
         for section in &self.sections {
@@ -353,12 +402,26 @@ impl MagicPane {
             all_lines.push(Line::from(""));
         }
 
+        self.total_lines = all_lines.len() as u16;
+        self.viewport_height = area.height.saturating_sub(2);
+
+        let scroll_info = if self.total_lines > self.viewport_height {
+            let current_pos = self.scroll_offset + 1;
+            let max_pos = self.total_lines.saturating_sub(self.viewport_height) + 1;
+            format!(" Magic [{}/{}] ", current_pos, max_pos)
+        } else {
+            " Magic ".to_string()
+        };
+
         let block = Block::default()
-            .title(" Magic ")
+            .title(scroll_info)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Magenta));
 
-        let paragraph = Paragraph::new(all_lines).block(block).wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(all_lines)
+            .block(block)
+            .wrap(Wrap { trim: false })
+            .scroll((self.scroll_offset, 0));
 
         frame.render_widget(paragraph, area);
     }

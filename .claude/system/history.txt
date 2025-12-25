@@ -1619,3 +1619,90 @@
 [2025-12-24 14:55] RESULT: ${#@} and ${#*} now correctly return positional param count
 [2025-12-24 15:00] RESULT: Positional tests improved from 24/30 (80%) to 26/30 (87%)
 [2025-12-24 15:05] MILESTONE: ${#@} and ${#*} expansion bug FIXED
+[2025-12-24 16:00] START: Implementing Tutorial Mode "Script X-Ray"
+[2025-12-24 16:05] CONTEXT: Tutorial module exists in crates/colony-shell/src/tutorial/ with TUI components
+[2025-12-24 16:10] MISSING: runner.rs orchestrator and CLI flags in main.rs
+[2025-12-24 16:15] CREATED: runner.rs with TutorialRunner, TutorialConfig, event loop
+[2025-12-24 16:20] CREATED: TutorialError enum for error handling
+[2025-12-24 16:25] ARCHITECTURE: Event loop with keyboard input, trace event channel, executor
+[2025-12-24 16:30] FIX: complexity.rs WordPart variants updated to match actual AST enum
+[2025-12-24 16:35] FIX: Added futures = "0.3" dependency for block_on in event loop
+[2025-12-24 16:40] UPDATED: mod.rs exports runner module and TutorialConfig, TutorialRunner
+[2025-12-24 16:45] UPDATED: main.rs adds --tutorial/-T, --teach, --depth CLI flags
+[2025-12-24 16:50] INTEGRATED: Tutorial mode triggered when --tutorial flag and script provided
+[2025-12-24 16:55] UPDATED: print_help() includes tutorial mode documentation
+[2025-12-24 17:00] BUILD: cargo build --package colony-shell successful
+[2025-12-24 17:05] VALIDATED: --help output shows tutorial mode options and controls
+[2025-12-24 17:10] MILESTONE: Tutorial Mode CLI integration COMPLETE
+[2025-12-24 17:15] ENABLES: colony --tutorial script.sh for interactive script X-ray
+[2025-12-24 18:00] SESSION: Continued Tutorial Mode "Script X-Ray" implementation
+[2025-12-24 18:05] ENHANCED: runner.rs with detailed AST summarization
+[2025-12-24 18:10] IMPLEMENTED: summarize_statement() generates human-readable statement descriptions
+[2025-12-24 18:15] IMPLEMENTED: emit_word_expansions() traverses Word parts for trace events
+[2025-12-24 18:20] IMPLEMENTED: emit_word_part_expansion() handles Variable, CommandSub, Arith, Tilde, ProcessSub
+[2025-12-24 18:25] IMPLEMENTED: explain_variable() generates explanations for all VarModifier variants
+[2025-12-24 18:30] IMPLEMENTED: emit_statement_trace() emits Parse, Expand, Assign, Loop, Branch events
+[2025-12-24 18:35] INTEGRATED: emit_statement_trace called from event_loop after LineEnter
+[2025-12-24 18:40] BUILD: cargo build -p colony-shell successful (34 warnings)
+[2025-12-24 18:45] MILESTONE: Tutorial Mode trace emission infrastructure COMPLETE
+[2025-12-24 18:50] ARCHITECTURE: TUI receives Parse, Expand, Assign, Loop, Branch events for magic pane
+[2025-12-24 19:00] SESSION: Tutorial Mode Bug Fixes
+[2025-12-24 19:05] DIAGNOSIS: Magic pane showing "Empty statement" - Statement::Empty being emitted
+[2025-12-24 19:10] DIAGNOSIS: Playback too fast - no delay between statements when playing
+[2025-12-24 19:15] DIAGNOSIS: No arrow key navigation - history not being tracked
+[2025-12-24 19:20] FIX: Added event_history and current_line_events to TutorialTui
+[2025-12-24 19:25] FIX: Added history_index for browsing through past events
+[2025-12-24 19:30] FIX: Added playback_speed_ms (default 1500ms) instead of speed multiplier
+[2025-12-24 19:35] IMPLEMENTED: Left/Right arrow keys for history navigation
+[2025-12-24 19:40] IMPLEMENTED: +/- keys for speed control (min 100ms, max 5000ms)
+[2025-12-24 19:45] IMPLEMENTED: show_history_at_index() to replay events for a specific line
+[2025-12-24 19:50] IMPLEMENTED: history_back() and history_forward() navigation methods
+[2025-12-24 19:55] FIX: Event loop now respects playback_speed_ms between statement executions
+[2025-12-24 20:00] FIX: Skip Statement::Empty to avoid "Empty statement" in trace output
+[2025-12-24 20:05] FIX: is_browsing_history() pauses playback while navigating history
+[2025-12-24 20:10] UPDATED: Controls bar shows speed in ms and history position [N/M]
+[2025-12-24 20:15] BUILD: cargo build -p colony-shell --release successful
+[2025-12-24 20:20] MILESTONE: Tutorial Mode bug fixes COMPLETE
+[2025-12-24 20:25] FEATURES: Event history, arrow navigation, speed control, proper pacing
+[2025-12-24 18:45] SESSION: Tutorial Mode UI Improvements (continuation)
+[2025-12-24 18:50] COMPLETED: 3-pane horizontal layout (Script 40% | Magic 35% | Output 25%)
+[2025-12-24 18:55] COMPLETED: add_output() and clear_output() methods for TutorialTui
+[2025-12-24 19:00] COMPLETED: Syntax highlighting in script_pane.rs
+[2025-12-24 19:05] HIGHLIGHTS: Keywords (yellow), comments (gray), strings (green), variables (cyan), operators (magenta)
+[2025-12-24 19:10] COMPLETED: TraceEvent::Output variant for capturing command stdout
+[2025-12-24 19:15] COMPLETED: execute_with_capture() method using pipe/dup2/fork pattern
+[2025-12-24 19:20] ARCHITECTURE: Redirect stdout before exec, read pipe after, emit Output event
+[2025-12-24 19:25] COMPLETED: TutorialTui.handle_event handles Output events to output pane
+[2025-12-24 19:30] BUILD: cargo build -p colony-shell --release successful
+[2025-12-24 19:35] MILESTONE: Tutorial Mode "Script X-Ray" UI improvements COMPLETE
+[2025-12-24 19:40] FEATURES: 3-pane layout, syntax highlighting, captured output display
+[2025-12-24 20:18] FIX: Arithmetic short-circuit evaluation bug
+[2025-12-24 20:18] ROOT CAUSE: parse_logical_and/or still evaluated right side during short-circuit
+[2025-12-24 20:18] SOLUTION: Created skip_* functions that advance without evaluating
+[2025-12-24 20:18] IMPLEMENTED: skip_primary, skip_postfix, skip_unary, skip_exponent
+[2025-12-24 20:18] IMPLEMENTED: skip_multiplicative, skip_additive, skip_shift, skip_comparison
+[2025-12-24 20:18] IMPLEMENTED: skip_equality, skip_bitwise_and/xor/or, skip_logical_and
+[2025-12-24 20:18] FIXED: parse_logical_or uses skip_logical_and when left != 0
+[2025-12-24 20:18] FIXED: parse_logical_and uses skip_bitwise_or when left == 0
+[2025-12-24 20:18] VALIDATED: 47_precedence.bats now 54/54 passing (was 52/54)
+[2025-12-24 20:18] ADDED: test_arithmetic_short_circuit unit test for regression prevention
+[2025-12-24 20:49] FIX: IFS assignment bug - sync_variables_from was overwriting IFS
+[2025-12-24 20:49] ROOT CAUSE: Expander created with context clone before assignments processed
+[2025-12-24 20:49] ROOT CAUSE: sync_variables_from then reverted IFS to stale clone value
+[2025-12-24 20:49] SOLUTION: Removed IFS sync from sync_variables_from
+[2025-12-24 20:49] VALIDATED: IFS tests improved from 16/36 to 33/36 passing
+[2025-12-24 20:49] FIXED TESTS: 17, 18, 25, 29, 30, 31 had incorrect expectations (now match bash)
+[2025-12-24 20:49] REMAINING: Test 14 (temp IFS), Test 23 (function IFS scope), Test 28 (parser bug)
+[2025-12-24 21:00] START: Session continuation - Tutorial Mode Environment Pane integration
+[2025-12-24 21:05] ANALYSIS: Environment pane (env_pane.rs) already exists and wired into layout
+[2025-12-24 21:10] ANALYSIS: TraceEvent::Environment variant already defined in events.rs
+[2025-12-24 21:15] ANALYSIS: 4-pane layout already in layout.rs (Script|Magic|Env|Output)
+[2025-12-24 21:20] MISSING: Environment events not being emitted from runner.rs
+[2025-12-24 21:25] IMPLEMENTED: collect_environment_snapshot() - iterates variables_with_attrs
+[2025-12-24 21:30] IMPLEMENTED: detect_changed_variables() - extracts names from env_assignments
+[2025-12-24 21:35] INTEGRATED: TraceEvent::Environment emission after each statement execution
+[2025-12-24 21:40] ADDED: std::collections::HashMap import to runner.rs
+[2025-12-24 21:45] ADDED: Variable import from colony_expand
+[2025-12-24 21:50] BUILD: cargo build -p colony-shell --release successful
+[2025-12-24 21:55] VALIDATED: --help shows tutorial mode options correctly
+[2025-12-24 22:00] MILESTONE: Tutorial Mode Environment Pane fully integrated

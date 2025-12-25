@@ -200,6 +200,22 @@ pub enum TraceEvent {
         line: u32,
         message: String,
     },
+
+    /// Command output (stdout)
+    Output {
+        line: u32,
+        text: String,
+    },
+
+    /// Environment/variable state snapshot
+    Environment {
+        line: u32,
+        /// Shell variables (name -> value)
+        variables: HashMap<String, String>,
+        /// Recently changed variables (for highlighting)
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        changed: Vec<String>,
+    },
 }
 
 /// Expansion phases in order

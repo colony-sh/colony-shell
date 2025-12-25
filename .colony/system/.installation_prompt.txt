@@ -186,10 +186,6 @@ Analyze the project context below and generate the system files.
 
 ## Project Context
 
-### User Description
-
--c case test in test?(ing)) echo matched;; esac
-
 ### Directory Structure
 
 ```
@@ -226,6 +222,8 @@ Analyze the project context below and generate the system files.
 ./crates/colony-exec
 ./crates/colony-exec/examples
 ./crates/colony-exec/src
+./crates/colony-secure
+./crates/colony-secure/src
 ./target
 ./target/release
 ./target/release/.fingerprint
@@ -233,7 +231,6 @@ Analyze the project context below and generate the system files.
 ./target/release/examples
 ./target/release/deps
 ./target/release/build
-./target/audit
 ./target/debug
 ./target/debug/.fingerprint
 ./target/debug/incremental
@@ -573,6 +570,7 @@ members = [
     "crates/colony-tuple",
     "crates/colony-mcp",
     "crates/colony-focus",
+    "crates/colony-secure",
     "crates/colony-shell",
     "crates/colony-tree-sitter",
 ]
@@ -640,6 +638,7 @@ colony-memory = { path = "crates/colony-memory" }
 colony-tuple = { path = "crates/colony-tuple" }
 colony-mcp = { path = "crates/colony-mcp" }
 colony-focus = { path = "crates/colony-focus" }
+colony-secure = { path = "crates/colony-secure" }
 colony-tree-sitter = { path = "crates/colony-tree-sitter" }
 
 [profile.dev]
@@ -863,14 +862,18 @@ MIT OR Apache-2.0
 ### Recent Commits
 
 ```
-47a2040 Implement set -x (xtrace) debug tracing with full bash compatibility (Jesse McPherson, 7 hours ago)
-88c10ec Implement directory stack, system variables, startup files, and getopts (Jesse McPherson, 25 hours ago)
-f49279e Implement trap builtin with EXIT and ERR trap support (Jesse McPherson, 28 hours ago)
-081f0b3 Fix command substitution multi-line capture, add trap/printf/test tests (Jesse McPherson, 29 hours ago)
-05499d1 Fix inline environment variable passing to child processes (Jesse McPherson, 30 hours ago)
-4ff2155 Update session history and fix IFS test expectation (Jesse McPherson, 30 hours ago)
-78ef007 Fix positional parameter expansion for BATS compatibility (Jesse McPherson, 30 hours ago)
-cd30f9c Add secure environment variables design document (Jesse McPherson, 30 hours ago)
+f562979 Implement coproc support with {VAR}>&- redirect syntax and wait builtin (Jesse McPherson, 7 minutes ago)
+cc6a5a6 Add design docs for programmable TUI widgets and debugger support (Jesse McPherson, 44 minutes ago)
+b1cc72f Implement bash compatibility features: dynamic vars, namerefs, mapfile, shopt, completion, globstar (Jesse McPherson, 45 minutes ago)
+fad9631 Implement ANSI-C quoting, extended globs, case modification, and process substitution grammar (Jesse McPherson, 2 hours ago)
+47a2040 Implement set -x (xtrace) debug tracing with full bash compatibility (Jesse McPherson, 9 hours ago)
+88c10ec Implement directory stack, system variables, startup files, and getopts (Jesse McPherson, 28 hours ago)
+f49279e Implement trap builtin with EXIT and ERR trap support (Jesse McPherson, 31 hours ago)
+081f0b3 Fix command substitution multi-line capture, add trap/printf/test tests (Jesse McPherson, 32 hours ago)
+05499d1 Fix inline environment variable passing to child processes (Jesse McPherson, 33 hours ago)
+4ff2155 Update session history and fix IFS test expectation (Jesse McPherson, 33 hours ago)
+78ef007 Fix positional parameter expansion for BATS compatibility (Jesse McPherson, 33 hours ago)
+cd30f9c Add secure environment variables design document (Jesse McPherson, 33 hours ago)
 f16929f Implement source, local, set options, comments, "$@" expansion (Jesse McPherson, 2 days ago)
 11a70f4 Fix redirections and tilde expansion (Jesse McPherson, 2 days ago)
 3a0099c Fix IFS field splitting - POSIX compliance improvements (Jesse McPherson, 2 days ago)
@@ -890,7 +893,7 @@ d508c0d Update tracking: F038 complete with 100% test coverage (Jesse McPherson,
 1191dce F038: Fix case statement REPL integration - 95% test coverage (41/43) (Jesse McPherson, 4 days ago)
 5596028 F038: Improve case statement - 84% test coverage (+3pp) (Jesse McPherson, 4 days ago)
 58cc9dc F038: Case statement implementation - 81% test coverage (Jesse McPherson, 4 days ago)
-62c32fd F037: Complete POSIX function support - 100% test coverage (Jesse McPherson, 4 days ago)
+62c32fd F037: Complete POSIX function support - 100% test coverage (Jesse McPherson, 5 days ago)
 728e568 F037: Complete glob support with brace expansion - 100% test coverage (Jesse McPherson, 5 days ago)
 61a7c0c F037: Array support complete - 100% test coverage (Jesse McPherson, 5 days ago)
 ab54a64 Arrays: Fix unset to handle shell variables - 52% coverage (Jesse McPherson, 6 days ago)
@@ -909,10 +912,6 @@ d81b1f2 Arithmetic preprocessing - 100% arithmetic test coverage! 🎉 (Jesse Mc
 064291e Implement alias and unalias builtins - POSIX compliance feature (Jesse McPherson, 6 days ago)
 a0d4c10 Add MCP/tool use resource for F016-F018 (Jesse McPherson, 6 days ago)
 f28dd22 F023: Update tracking - 90% POSIX compliance milestone (Jesse McPherson, 6 days ago)
-2a27320 F023: Fix command substitution - 90% POSIX compliance achieved! (Jesse McPherson, 6 days ago)
-133c0a7 Update tracking: F024 complete (both phases) (Jesse McPherson, 6 days ago)
-e0871dd F024 Phase 2: Tuple space IPC for channel redirects (Jesse McPherson, 6 days ago)
-1bef792 Update F023 tracking - command substitution infrastructure session (Jesse McPherson, 6 days ago)
 ```
 
 ### Documentation

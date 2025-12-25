@@ -593,7 +593,6 @@ async fn main() -> Result<()> {
             let config = TutorialConfig {
                 depth,
                 teach_mode: opts.teach,
-                speed: 1.0,
                 pause_on_complex: true,
             };
             

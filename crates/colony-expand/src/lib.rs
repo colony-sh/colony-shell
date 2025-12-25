@@ -26,7 +26,7 @@ mod brace;
 pub use context::{ExpansionContext, ShellOptions, ShoptOptions, Variable, VarAttributes, TrapSignal, TrapAction, CompletionSpec, CompletionAction};
 pub use tilde::expand_tilde;
 pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
-pub use arithmetic::expand_arithmetic;
+pub use arithmetic::{expand_arithmetic, expand_arithmetic_immut};
 pub use field_split::split_fields;
 pub use pathname::{expand_pathname, expand_pathname_with_options};
 pub use brace::expand_braces;
@@ -141,6 +141,18 @@ impl Expander {
             command_executor: Some(Box::new(cmd_executor)),
             process_sub_executor: Some(Box::new(procsub_executor)),
         }
+    }
+    
+    pub fn into_context(self) -> ExpansionContext {
+        self.context
+    }
+    
+    pub fn context(&self) -> &ExpansionContext {
+        &self.context
+    }
+    
+    pub fn context_mut(&mut self) -> &mut ExpansionContext {
+        &mut self.context
     }
 
     pub fn expand_word(&mut self, word: &Word) -> Result<Vec<Field>> {
@@ -452,7 +464,7 @@ impl Expander {
             }
 
             WordPart::ArithRaw(expr_str) => {
-                let result = expand_arithmetic(expr_str, &self.context)?;
+                let result = expand_arithmetic(expr_str, &mut self.context)?;
                 if in_double_quote {
                     out.push_quoted(&result);
                 } else {

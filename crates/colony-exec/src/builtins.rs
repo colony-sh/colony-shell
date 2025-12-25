@@ -134,6 +134,8 @@ pub fn execute_builtin(
             args.push(field.text);
         }
     }
+    
+    context.sync_variables_from(expander.context());
 
     // Dispatch to specific builtin
     let result = match name.as_str() {

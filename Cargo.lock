@@ -893,6 +893,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "pretty_assertions",
+ "serde",
  "thiserror",
 ]
 

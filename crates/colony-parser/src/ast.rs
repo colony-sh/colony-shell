@@ -1,16 +1,17 @@
 //! Abstract syntax tree for Colony shell commands
 
 use crate::span::Span;
+use serde::Serialize;
 
 /// Root of the AST
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Program {
     pub statements: Vec<Statement>,
     pub span: Span,
 }
 
 /// A single statement
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum Statement {
     // === Commands ===
     /// Simple command: name arg1 arg2 ...
@@ -88,7 +89,7 @@ impl Statement {
 }
 
 /// A simple command: name [args] [redirects]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct SimpleCommand {
     /// Command name/path
     pub name: Word,
@@ -102,7 +103,7 @@ pub struct SimpleCommand {
 }
 
 /// An assignment: name=value or name=(array values) or name[index]=value
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Assignment {
     pub name: String,
     pub subscript: Option<ArraySubscript>,
@@ -112,14 +113,14 @@ pub struct Assignment {
 }
 
 /// Value in an assignment
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum AssignmentValue {
     Word(Word),
     Array(Vec<Word>),
     AssocArray(Vec<(String, String)>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum AssignOp {
     Assign,  // =
     Append,  // +=
@@ -128,14 +129,14 @@ pub enum AssignOp {
 }
 
 /// A pipeline: cmd1 | cmd2 -> cmd3
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Pipeline {
     pub elements: Vec<PipelineElement>,
     pub span: Span,
 }
 
 /// Element in a pipeline
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PipelineElement {
     /// The command
     pub command: Box<Statement>,
@@ -146,7 +147,7 @@ pub struct PipelineElement {
 }
 
 /// Pipeline operator
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum PipeOp {
     /// | - POSIX byte pipe
     Pipe,
@@ -161,14 +162,14 @@ pub enum PipeOp {
 }
 
 /// List of commands with operators
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CommandList {
     pub first: Box<Statement>,
     pub rest: Vec<(ListOp, Statement)>,
     pub span: Span,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum ListOp {
     /// && - Run if previous succeeded
     And,
@@ -181,7 +182,7 @@ pub enum ListOp {
 }
 
 /// I/O redirection
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Redirect {
     /// Source file descriptor (default based on type)
     pub fd: Option<i32>,
@@ -194,7 +195,7 @@ pub struct Redirect {
     pub span: Span,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum RedirectKind {
     /// < - Input
     Input,
@@ -218,7 +219,7 @@ pub enum RedirectKind {
     AndAppend,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum HereDocKind {
     /// << - Normal here-doc
     Normal,
@@ -228,7 +229,7 @@ pub enum HereDocKind {
     HereString,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum RedirectTarget {
     /// Filename
     File(Word),
@@ -245,7 +246,7 @@ pub enum RedirectTarget {
 }
 
 /// A shell word (may contain multiple parts)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Word {
     pub parts: Vec<WordPart>,
     pub span: Span,
@@ -276,7 +277,7 @@ impl Word {
 }
 
 /// Part of a word
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum WordPart {
     /// Plain text
     Literal(String),
@@ -317,7 +318,7 @@ pub enum WordPart {
 }
 
 /// Extended glob operator
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ExtGlobOp {
     /// ?(pattern-list) - Matches zero or one occurrence
     ZeroOrOne,
@@ -332,7 +333,7 @@ pub enum ExtGlobOp {
 }
 
 /// Direction of process substitution
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ProcessSubDirection {
     /// <(cmd) - input process substitution, command's stdout becomes readable file
     Input,
@@ -341,7 +342,7 @@ pub enum ProcessSubDirection {
 }
 
 /// Variable reference with optional prefix, subscript and modifier
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct VariableRef {
     pub name: String,
     pub prefix: Option<VarPrefix>,
@@ -351,7 +352,7 @@ pub struct VariableRef {
 }
 
 /// Prefix modifier (comes before variable name)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum VarPrefix {
     /// # - Length
     Length,
@@ -360,7 +361,7 @@ pub enum VarPrefix {
 }
 
 /// Array subscript
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum ArraySubscript {
     /// [index] - numeric or expression
     Index(Box<Expression>),
@@ -371,7 +372,7 @@ pub enum ArraySubscript {
 }
 
 /// Variable expansion modifier
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum VarModifier {
     /// ${var:-word} or ${var-word}
     Default {
@@ -426,7 +427,7 @@ pub enum VarModifier {
 }
 
 /// if/elif/else/fi
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct IfStatement {
     pub condition: Condition,
     pub then_body: Vec<Statement>,
@@ -435,14 +436,14 @@ pub struct IfStatement {
     pub span: Span,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ElifBranch {
     pub condition: Condition,
     pub body: Vec<Statement>,
 }
 
 /// Condition for if/while/until
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum Condition {
     /// Command exit status
     Command(Box<Statement>),
@@ -451,21 +452,21 @@ pub enum Condition {
 }
 
 /// case/esac
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CaseStatement {
     pub value: Word,
     pub arms: Vec<CaseArm>,
     pub span: Span,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CaseArm {
     pub patterns: Vec<Word>,
     pub body: Vec<Statement>,
     pub terminator: CaseTerminator,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum CaseTerminator {
     /// ;; - End arm
     Break,
@@ -476,7 +477,7 @@ pub enum CaseTerminator {
 }
 
 /// for loop (traditional: for var in words)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ForStatement {
     pub var: String,
     pub words: Vec<Word>,
@@ -486,7 +487,7 @@ pub struct ForStatement {
 }
 
 /// C-style for loop: for ((init; cond; update)); do body; done
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CStyleForStatement {
     /// Initialization expression (e.g., "i=0" or "i=0, j=10")
     pub init: Option<String>,
@@ -502,7 +503,7 @@ pub struct CStyleForStatement {
 }
 
 /// while loop
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct WhileStatement {
     pub condition: Condition,
     pub body: Vec<Statement>,
@@ -511,7 +512,7 @@ pub struct WhileStatement {
 }
 
 /// until loop
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct UntilStatement {
     pub condition: Condition,
     pub body: Vec<Statement>,
@@ -520,13 +521,13 @@ pub struct UntilStatement {
 }
 
 /// [[ expression ]] - Extended conditional command
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ConditionalCommand {
     pub expr: CondExpr,
     pub span: Span,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CoprocCommand {
     pub name: Option<String>,
     pub command: Box<Statement>,
@@ -534,7 +535,7 @@ pub struct CoprocCommand {
 }
 
 /// Conditional expression inside [[ ]]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum CondExpr {
     And(Box<CondExpr>, Box<CondExpr>),
     Or(Box<CondExpr>, Box<CondExpr>),
@@ -551,7 +552,7 @@ pub enum CondExpr {
     String(String),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum CondBinaryOp {
     /// == or = (string equality, supports glob patterns in [[ ]])
     Eq,
@@ -583,7 +584,7 @@ pub enum CondBinaryOp {
     SameFile,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum CondUnaryOp {
     /// -n (non-zero length)
     NonZeroLen,
@@ -626,14 +627,14 @@ pub enum CondUnaryOp {
 }
 
 /// (( expression )) - Arithmetic command
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ArithmeticCommand {
     pub expr: String,
     pub span: Span,
 }
 
 /// var/const declaration
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct VarDecl {
     pub kind: VarKind,
     pub name: String,
@@ -641,7 +642,7 @@ pub struct VarDecl {
     pub span: Span,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum VarKind {
     /// var - Mutable local
     Var,
@@ -652,7 +653,7 @@ pub enum VarKind {
 }
 
 /// POSIX function: name() { body }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FunctionDef {
     pub name: String,
     pub body: Vec<Statement>,
@@ -660,7 +661,7 @@ pub struct FunctionDef {
 }
 
 /// proc definition: proc name(...) { body }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProcDef {
     pub name: String,
     pub params: Vec<ProcParam>,
@@ -668,21 +669,21 @@ pub struct ProcDef {
     pub span: Span,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ProcParam {
     pub name: String,
     pub default: Option<Expression>,
 }
 
 /// return statement
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ReturnStatement {
     pub value: Option<Expression>,
     pub span: Span,
 }
 
 /// Brace group
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct BraceGroup {
     pub body: Vec<Statement>,
     pub redirects: Vec<Redirect>,
@@ -690,7 +691,7 @@ pub struct BraceGroup {
 }
 
 /// Subshell
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Subshell {
     pub body: Vec<Statement>,
     pub redirects: Vec<Redirect>,
@@ -698,7 +699,7 @@ pub struct Subshell {
 }
 
 /// Expression node
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum Expression {
     // === Literals ===
     Null(Span),
@@ -820,7 +821,7 @@ impl Expression {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum BinaryOp {
     // Arithmetic
     Add,
@@ -851,7 +852,7 @@ pub enum BinaryOp {
     Shr,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub enum UnaryOp {
     /// - (negation)
     Neg,
