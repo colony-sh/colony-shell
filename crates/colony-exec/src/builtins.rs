@@ -143,7 +143,7 @@ pub fn execute_builtin(
         "exit" => builtin_exit(&args),
         "pwd" => builtin_pwd(&args),
         "echo" => builtin_echo(&args),
-        "type" => builtin_type(&args),
+        "type" => builtin_type(&args, context),
         "alias" => builtin_alias(&args, context),
         "unalias" => builtin_unalias(&args, context),
         "." | "source" => builtin_source(&args, context),
@@ -151,7 +151,7 @@ pub fn execute_builtin(
         "bg" => builtin_bg(&args, jobs),
         "jobs" => builtin_jobs(&args, jobs),
         "wait" => builtin_wait(&args, jobs),
-        "[" | "test" => builtin_test(&args),
+        "[" | "test" => builtin_test(&args, name),
         ":" => builtin_noop(&args),
         "context" => builtin_context(&args, channels),
         "declare" => builtin_declare(&args, context),
@@ -678,31 +678,182 @@ fn set_option_by_name(context: &mut ExpansionContext, name: &str, enable: bool) 
     }
 }
 
+/// Shell reserved keywords
+const KEYWORDS: &[&str] = &[
+    "if", "then", "else", "elif", "fi",
+    "case", "esac", "for", "while", "until", "do", "done",
+    "in", "function", "select", "time", "coproc",
+    "!", "{", "}", "[[", "]]",
+];
+
+fn is_keyword(name: &str) -> bool {
+    KEYWORDS.contains(&name)
+}
+
 /// type - Check command type
 ///
-/// Usage: type command [command...]
-fn builtin_type(args: &[String]) -> Result<BuiltinResult> {
-    if args.is_empty() {
-        eprintln!("type: missing argument");
-        return Ok(BuiltinResult::Failure(1));
-    }
-
-    for cmd in args {
-        if is_builtin(cmd) {
-            println!("{} is a shell builtin", cmd);
-        } else {
-            // Check if it's in PATH
-            match crate::path::resolve_command(cmd, env::var("PATH").ok().as_deref()) {
-                Ok(path) => println!("{} is {}", cmd, path.display()),
-                Err(_) => {
-                    eprintln!("{}: not found", cmd);
-                    return Ok(BuiltinResult::Failure(1));
+/// Usage: type [-afptP] name [name...]
+///
+/// Options:
+///   -a  Display all locations (alias, function, builtin, file)
+///   -f  Suppress function lookup
+///   -p  Print path for external commands only
+///   -P  Force PATH search even if function/builtin exists
+///   -t  Print single word: alias, keyword, function, builtin, file
+fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinResult> {
+    // Parse options
+    let mut show_all = false;
+    let mut suppress_functions = false;
+    let mut path_only = false;
+    let mut force_path = false;
+    let mut type_only = false;
+    
+    let mut names: Vec<&String> = Vec::new();
+    let mut parsing_opts = true;
+    
+    for arg in args {
+        if parsing_opts && arg.starts_with('-') && arg.len() > 1 && arg != "--" {
+            if arg == "--" {
+                parsing_opts = false;
+                continue;
+            }
+            for ch in arg[1..].chars() {
+                match ch {
+                    'a' => show_all = true,
+                    'f' => suppress_functions = true,
+                    'p' => path_only = true,
+                    'P' => force_path = true,
+                    't' => type_only = true,
+                    _ => {
+                        eprintln!("type: -{}: invalid option", ch);
+                        return Ok(BuiltinResult::Failure(2));
+                    }
                 }
             }
+        } else {
+            parsing_opts = false;
+            names.push(arg);
         }
     }
-
-    Ok(BuiltinResult::Success(0))
+    
+    if names.is_empty() {
+        // No names provided is not an error, just return success
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    let mut exit_code = 0;
+    
+    for name in &names {
+        let mut found = false;
+        
+        // -P forces PATH search only
+        if force_path {
+            if let Ok(path) = crate::path::resolve_command(name, env::var("PATH").ok().as_deref()) {
+                if type_only {
+                    println!("file");
+                } else {
+                    println!("{}", path.display());
+                }
+                found = true;
+            }
+        } else {
+            // Check alias (unless -p which only shows paths)
+            if !path_only {
+                if let Some(value) = context.get_alias(name) {
+                    if type_only {
+                        println!("alias");
+                    } else {
+                        println!("{} is aliased to `{}'", name, value);
+                    }
+                    found = true;
+                    if !show_all {
+                        continue;
+                    }
+                }
+            }
+            
+            // Check keyword (unless -p)
+            if !path_only && is_keyword(name) {
+                if type_only {
+                    println!("keyword");
+                } else {
+                    println!("{} is a shell keyword", name);
+                }
+                found = true;
+                if !show_all {
+                    continue;
+                }
+            }
+            
+            // Check function (unless -f or -p)
+            if !suppress_functions && !path_only {
+                if context.get_function(name).is_some() {
+                    if type_only {
+                        println!("function");
+                    } else {
+                        // For -a we just say it's a function, for normal we show definition
+                        if show_all {
+                            println!("{} is a function", name);
+                        } else {
+                            // Show function definition
+                            println!("{} is a function", name);
+                            println!("{} ()", name);
+                            println!("{{");
+                            println!("    ...");
+                            println!("}}");
+                        }
+                    }
+                    found = true;
+                    if !show_all {
+                        continue;
+                    }
+                }
+            }
+            
+            // Check builtin (unless -p)
+            if !path_only && is_builtin(name) {
+                if type_only {
+                    println!("builtin");
+                } else {
+                    println!("{} is a shell builtin", name);
+                }
+                found = true;
+                if !show_all {
+                    continue;
+                }
+            }
+            
+            let is_alias_func_or_builtin = context.get_alias(name).is_some() 
+                || context.get_function(name).is_some() 
+                || is_builtin(name);
+            
+            if path_only && is_alias_func_or_builtin {
+                found = true;
+            } else if let Ok(path) = crate::path::resolve_command(name, env::var("PATH").ok().as_deref()) {
+                if type_only {
+                    println!("file");
+                } else if path_only {
+                    println!("{}", path.display());
+                } else {
+                    println!("{} is {}", name, path.display());
+                }
+                found = true;
+            }
+        }
+        
+        if !found {
+            if !type_only {
+                eprintln!("type: {}: not found", name);
+            }
+            exit_code = 1;
+        }
+    }
+    
+    if exit_code == 0 {
+        Ok(BuiltinResult::Success(0))
+    } else {
+        Ok(BuiltinResult::Failure(exit_code))
+    }
 }
 
 /// alias - Manage command aliases
@@ -967,107 +1118,265 @@ fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
 /// - [ -z string ] - true if empty
 /// - [ -f file ] - true if file exists
 /// - [ -d dir ] - true if directory exists
-fn builtin_test(args: &[String]) -> Result<BuiltinResult> {
-    // Remove trailing ] if present (for [ command)
+fn builtin_test(args: &[String], cmd_name: &str) -> Result<BuiltinResult> {
+    let is_bracket = cmd_name == "[";
+    
     let args = if args.last().map(|s| s.as_str()) == Some("]") {
         &args[..args.len() - 1]
+    } else if is_bracket {
+        eprintln!("[: missing `]'");
+        return Ok(BuiltinResult::Failure(2));
     } else {
         args
     };
 
     if args.is_empty() {
-        // Empty test is false
         return Ok(BuiltinResult::Failure(1));
     }
 
-    // Handle unary operators
-    if args.len() == 2 {
-        let op = &args[0];
-        let arg = &args[1];
+    let result = evaluate_test_expr(args)?;
+    Ok(if result {
+        BuiltinResult::Success(0)
+    } else {
+        BuiltinResult::Failure(1)
+    })
+}
 
-        let result = match op.as_str() {
-            "-n" => !arg.is_empty(),  // non-zero length
-            "-z" => arg.is_empty(),    // zero length
-            "-f" => std::path::Path::new(arg).is_file(),
-            "-d" => std::path::Path::new(arg).is_dir(),
-            "-e" => std::path::Path::new(arg).exists(),
-            _ => {
-                // Not a unary operator - maybe it's just a string test
-                !args[0].is_empty()
-            }
-        };
-
-        return Ok(if result {
-            BuiltinResult::Success(0)
-        } else {
-            BuiltinResult::Failure(1)
-        });
+fn evaluate_test_expr(args: &[String]) -> Result<bool> {
+    if args.is_empty() {
+        return Ok(false);
     }
+    
+    let mut idx = 0;
+    evaluate_test_or(&args, &mut idx)
+}
 
-    // Handle binary operators
-    if args.len() == 3 {
-        let left = &args[0];
-        let op = &args[1];
-        let right = &args[2];
-
-        let result = match op.as_str() {
-            "=" | "==" => left == right,
-            "!=" => left != right,
-            "-eq" => left.parse::<i64>().ok() == right.parse::<i64>().ok(),
-            "-ne" => left.parse::<i64>().ok() != right.parse::<i64>().ok(),
-            "-lt" => {
-                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
-                    l < r
-                } else {
-                    false
-                }
-            }
-            "-le" => {
-                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
-                    l <= r
-                } else {
-                    false
-                }
-            }
-            "-gt" => {
-                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
-                    l > r
-                } else {
-                    false
-                }
-            }
-            "-ge" => {
-                if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
-                    l >= r
-                } else {
-                    false
-                }
-            }
-            _ => {
-                eprintln!("test: unknown operator: {}", op);
-                return Ok(BuiltinResult::Failure(2));
-            }
-        };
-
-        return Ok(if result {
-            BuiltinResult::Success(0)
-        } else {
-            BuiltinResult::Failure(1)
-        });
+fn evaluate_test_or(args: &[String], idx: &mut usize) -> Result<bool> {
+    let mut result = evaluate_test_and(args, idx)?;
+    
+    while *idx < args.len() && args[*idx] == "-o" {
+        *idx += 1;
+        let right = evaluate_test_and(args, idx)?;
+        result = result || right;
     }
+    
+    Ok(result)
+}
 
-    // Single argument: test if non-empty
-    if args.len() == 1 {
-        return Ok(if !args[0].is_empty() {
-            BuiltinResult::Success(0)
-        } else {
-            BuiltinResult::Failure(1)
-        });
+fn evaluate_test_and(args: &[String], idx: &mut usize) -> Result<bool> {
+    let mut result = evaluate_test_unary(args, idx)?;
+    
+    while *idx < args.len() && args[*idx] == "-a" {
+        *idx += 1;
+        let right = evaluate_test_unary(args, idx)?;
+        result = result && right;
     }
+    
+    Ok(result)
+}
 
-    // Complex expressions not supported
-    eprintln!("test: complex expressions not yet supported");
-    Ok(BuiltinResult::Failure(2))
+fn evaluate_test_unary(args: &[String], idx: &mut usize) -> Result<bool> {
+    if *idx >= args.len() {
+        return Ok(false);
+    }
+    
+    if args[*idx] == "!" {
+        *idx += 1;
+        let result = evaluate_test_unary(args, idx)?;
+        return Ok(!result);
+    }
+    
+    if args[*idx] == "(" {
+        *idx += 1;
+        let result = evaluate_test_or(args, idx)?;
+        if *idx < args.len() && args[*idx] == ")" {
+            *idx += 1;
+        }
+        return Ok(result);
+    }
+    
+    evaluate_test_primary(args, idx)
+}
+
+fn evaluate_test_primary(args: &[String], idx: &mut usize) -> Result<bool> {
+    if *idx >= args.len() {
+        return Ok(false);
+    }
+    
+    let arg = &args[*idx];
+    
+    if arg.starts_with('-') && arg.len() == 2 {
+        let op = arg.as_str();
+        if *idx + 1 < args.len() {
+            let next = &args[*idx + 1];
+            
+            if *idx + 2 < args.len() {
+                let next_next = &args[*idx + 2];
+                if matches!(next_next.as_str(), "=" | "==" | "!=" | "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge" | "<" | ">") {
+                    let left = arg;
+                    *idx += 1;
+                    let op = &args[*idx];
+                    *idx += 1;
+                    let right = &args[*idx];
+                    *idx += 1;
+                    return evaluate_binary_op(left, op, right);
+                }
+            }
+            
+            let result = match op {
+                "-n" => !next.is_empty(),
+                "-z" => next.is_empty(),
+                "-f" => std::path::Path::new(next).is_file(),
+                "-d" => std::path::Path::new(next).is_dir(),
+                "-e" => std::path::Path::new(next).exists(),
+                "-r" => std::path::Path::new(next).exists(),
+                "-w" => std::path::Path::new(next).exists(),
+                "-x" => {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(meta) = std::fs::metadata(next) {
+                        meta.permissions().mode() & 0o111 != 0
+                    } else {
+                        false
+                    }
+                }
+                "-s" => {
+                    if let Ok(meta) = std::fs::metadata(next) {
+                        meta.len() > 0
+                    } else {
+                        false
+                    }
+                }
+                "-L" | "-h" => std::fs::symlink_metadata(next)
+                    .map(|m| m.file_type().is_symlink())
+                    .unwrap_or(false),
+                "-b" => {
+                    use std::os::unix::fs::FileTypeExt;
+                    std::fs::metadata(next)
+                        .map(|m| m.file_type().is_block_device())
+                        .unwrap_or(false)
+                }
+                "-c" => {
+                    use std::os::unix::fs::FileTypeExt;
+                    std::fs::metadata(next)
+                        .map(|m| m.file_type().is_char_device())
+                        .unwrap_or(false)
+                }
+                "-p" => {
+                    use std::os::unix::fs::FileTypeExt;
+                    std::fs::metadata(next)
+                        .map(|m| m.file_type().is_fifo())
+                        .unwrap_or(false)
+                }
+                "-S" => {
+                    use std::os::unix::fs::FileTypeExt;
+                    std::fs::metadata(next)
+                        .map(|m| m.file_type().is_socket())
+                        .unwrap_or(false)
+                }
+                "-t" => {
+                    if let Ok(fd) = next.parse::<i32>() {
+                        unsafe { libc::isatty(fd) != 0 }
+                    } else {
+                        false
+                    }
+                }
+                "-v" => {
+                    false
+                }
+                _ => {
+                    *idx += 1;
+                    let op2 = &args[*idx];
+                    *idx += 1;
+                    let right = &args[*idx];
+                    *idx += 1;
+                    return evaluate_binary_op(arg, op2, right);
+                }
+            };
+            *idx += 2;
+            return Ok(result);
+        }
+    }
+    
+    if *idx + 2 < args.len() {
+        let left = &args[*idx];
+        let op = &args[*idx + 1];
+        let right = &args[*idx + 2];
+        
+        if matches!(op.as_str(), "=" | "==" | "!=" | "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge" | "<" | ">" | "-nt" | "-ot" | "-ef") {
+            *idx += 3;
+            return evaluate_binary_op(left, op, right);
+        }
+    }
+    
+    let result = !arg.is_empty();
+    *idx += 1;
+    Ok(result)
+}
+
+fn evaluate_binary_op(left: &str, op: &str, right: &str) -> Result<bool> {
+    let result = match op {
+        "=" | "==" => left == right,
+        "!=" => left != right,
+        "<" => left < right,
+        ">" => left > right,
+        "-eq" => left.parse::<i64>().ok() == right.parse::<i64>().ok(),
+        "-ne" => left.parse::<i64>().ok() != right.parse::<i64>().ok(),
+        "-lt" => {
+            if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                l < r
+            } else {
+                false
+            }
+        }
+        "-le" => {
+            if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                l <= r
+            } else {
+                false
+            }
+        }
+        "-gt" => {
+            if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                l > r
+            } else {
+                false
+            }
+        }
+        "-ge" => {
+            if let (Ok(l), Ok(r)) = (left.parse::<i64>(), right.parse::<i64>()) {
+                l >= r
+            } else {
+                false
+            }
+        }
+        "-nt" => {
+            if let (Ok(m1), Ok(m2)) = (std::fs::metadata(left), std::fs::metadata(right)) {
+                m1.modified().ok() > m2.modified().ok()
+            } else {
+                false
+            }
+        }
+        "-ot" => {
+            if let (Ok(m1), Ok(m2)) = (std::fs::metadata(left), std::fs::metadata(right)) {
+                m1.modified().ok() < m2.modified().ok()
+            } else {
+                false
+            }
+        }
+        "-ef" => {
+            use std::os::unix::fs::MetadataExt;
+            if let (Ok(m1), Ok(m2)) = (std::fs::metadata(left), std::fs::metadata(right)) {
+                m1.dev() == m2.dev() && m1.ino() == m2.ino()
+            } else {
+                false
+            }
+        }
+        _ => {
+            eprintln!("test: unknown operator: {}", op);
+            return Ok(false);
+        }
+    };
+    Ok(result)
 }
 
 /// : - POSIX null utility
