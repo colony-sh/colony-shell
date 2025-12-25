@@ -859,14 +859,11 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
 /// alias - Manage command aliases
 ///
 /// Usage:
-/// - alias              - List all aliases
+/// - alias [-p]         - List all aliases
 /// - alias name         - Show specific alias
 /// - alias name='value' - Define alias
-///
-/// POSIX: Aliases substitute the command name before execution
 fn builtin_alias(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    if args.is_empty() {
-        // No args: list all aliases
+    if args.is_empty() || (args.len() == 1 && args[0] == "-p") {
         let mut aliases: Vec<_> = context.aliases().iter().collect();
         aliases.sort_by_key(|(name, _)| *name);
 
@@ -876,19 +873,22 @@ fn builtin_alias(args: &[String], context: &mut ExpansionContext) -> Result<Buil
         return Ok(BuiltinResult::Success(0));
     }
 
-    // Process each argument
     for arg in args {
+        if arg == "-p" {
+            continue;
+        }
         if let Some(eq_pos) = arg.find('=') {
-            // Define alias: name=value
             let (name, value) = arg.split_at(eq_pos);
-            let value = &value[1..]; // Skip the '='
-
-            // Remove surrounding quotes if present
+            let value = &value[1..];
             let value = value.trim_matches('\'').trim_matches('"');
+
+            if name.is_empty() {
+                eprintln!("alias: `={}': invalid alias name", value);
+                return Ok(BuiltinResult::Failure(1));
+            }
 
             context.set_alias(name.to_string(), value.to_string());
         } else {
-            // Show specific alias
             if let Some(value) = context.get_alias(arg) {
                 println!("alias {}='{}'", arg, value);
             } else {
@@ -903,16 +903,25 @@ fn builtin_alias(args: &[String], context: &mut ExpansionContext) -> Result<Buil
 
 /// unalias - Remove command aliases
 ///
-/// Usage: unalias name [name...]
+/// Usage: unalias [-a] name [name...]
 ///
 /// Removes the specified aliases from the alias table.
+/// -a removes all aliases.
 fn builtin_unalias(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     if args.is_empty() {
-        eprintln!("unalias: usage: unalias name [name ...]");
+        eprintln!("unalias: usage: unalias [-a] name [name ...]");
         return Ok(BuiltinResult::Failure(1));
     }
 
+    if args.len() == 1 && args[0] == "-a" {
+        context.clear_aliases();
+        return Ok(BuiltinResult::Success(0));
+    }
+
     for name in args {
+        if name == "-a" {
+            continue;
+        }
         if context.get_alias(name).is_some() {
             context.unset_alias(name);
         } else {

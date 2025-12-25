@@ -1216,6 +1216,11 @@ impl ExpansionContext {
         self.aliases.remove(name);
     }
 
+    /// Remove all aliases
+    pub fn clear_aliases(&mut self) {
+        self.aliases.clear();
+    }
+
     /// Get all aliases (for listing)
     pub fn aliases(&self) -> &HashMap<String, String> {
         &self.aliases
