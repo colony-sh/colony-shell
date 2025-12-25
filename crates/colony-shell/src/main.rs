@@ -1,5 +1,7 @@
 //! Colony Shell - POSIX-compliant shell for AI-native terminal
 
+mod tutorial;
+
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
 use colony_config::{discover_config, ColonyConfig, TrustManager, TrustStatus};
 use colony_exec::{Executor, ExecutionError};
@@ -250,6 +252,12 @@ struct ShellOptions {
     positional_args: Vec<String>,
     /// Verbose mode - show which files are sourced (--verbose)
     verbose: bool,
+    /// Tutorial mode - X-ray into script execution (--tutorial, -T)
+    tutorial: bool,
+    /// Teach mode - explain concepts on first occurrence (--teach)
+    teach: bool,
+    /// Trace depth level 2=mechanics, 3=internals (--depth)
+    depth: u8,
 }
 
 impl ShellOptions {
@@ -257,6 +265,7 @@ impl ShellOptions {
     fn parse() -> Self {
         let raw_args: Vec<String> = std::env::args().collect();
         let mut opts = ShellOptions::default();
+        opts.depth = 2;
         
         // Check if invoked as login shell (argv[0] starts with '-')
         if let Some(argv0) = raw_args.first() {
@@ -275,6 +284,14 @@ impl ShellOptions {
                 "--noprofile" => opts.noprofile = true,
                 "--norc" => opts.norc = true,
                 "--verbose" => opts.verbose = true,
+                "--tutorial" | "-T" => opts.tutorial = true,
+                "--teach" => opts.teach = true,
+                "--depth" => {
+                    i += 1;
+                    if i < raw_args.len() {
+                        opts.depth = raw_args[i].parse().unwrap_or(2);
+                    }
+                }
                 "--rcfile" | "--init-file" => {
                     i += 1;
                     if i < raw_args.len() {
@@ -379,6 +396,9 @@ fn print_help() {
     println!("  --rcfile FILE     Use FILE instead of ~/.bashrc");
     println!("  --init-file FILE  Same as --rcfile");
     println!("  --verbose         Show which startup files are sourced");
+    println!("  -T, --tutorial    Run in tutorial mode (Script X-Ray)");
+    println!("  --teach           Enable teach mode (explain concepts)");
+    println!("  --depth LEVEL     Trace depth: 2=mechanics, 3=internals");
     println!("  -h, --help        Show this help message");
     println!("  -V, --version     Show version information");
     println!();
@@ -389,6 +409,14 @@ fn print_help() {
     println!("Startup files (interactive non-login):");
     println!("  1. /etc/bash.bashrc (if exists)");
     println!("  2. ~/.bashrc");
+    println!();
+    println!("Tutorial mode controls:");
+    println!("  [space]  Pause/resume playback");
+    println!("  [enter]  Single step");
+    println!("  [d]      Toggle depth level");
+    println!("  [t]      Toggle teach mode");
+    println!("  [m]      Mark current line");
+    println!("  [q]      Quit");
     println!();
     println!("Environment variables:");
     println!("  BASH_ENV  File to source for non-interactive shells");
@@ -553,6 +581,39 @@ async fn main() -> Result<()> {
     
     // Handle script execution mode
     if let Some(ref script) = opts.script {
+        if opts.tutorial {
+            use tutorial::{TutorialConfig, TutorialRunner};
+            use tutorial::tracer::TraceDepth;
+            
+            let depth = match opts.depth {
+                3 => TraceDepth::Internals,
+                _ => TraceDepth::Mechanics,
+            };
+            
+            let config = TutorialConfig {
+                depth,
+                teach_mode: opts.teach,
+                speed: 1.0,
+                pause_on_complex: true,
+            };
+            
+            let mut runner = match TutorialRunner::new(script, config) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("colony: tutorial error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            match runner.run() {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("colony: tutorial error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
         let mut context = ExpansionContext::new();
         load_exported_functions(&mut context);
         context.set_shell_name(script.display().to_string());
