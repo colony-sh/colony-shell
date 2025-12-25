@@ -22,6 +22,8 @@ use colony_parser::{Statement, Word, WordPart};
 
 use crate::tutorial::complexity::ComplexityScorer;
 use crate::tutorial::events::{BranchType, ComplexityLevel, ExpansionPhase, LoopType, TraceEvent};
+use crate::tutorial::explain::CommandExplainer;
+use crate::tutorial::teach::{Concept, ConceptTracker};
 use crate::tutorial::tracer::{TraceDepth, TracerConfig};
 use crate::tutorial::tui::TutorialTui;
 
@@ -92,6 +94,10 @@ pub struct TutorialRunner {
     source: String,
     /// Tutorial configuration
     config: TutorialConfig,
+    /// Tracks which concepts have been explained (for teach mode)
+    concept_tracker: ConceptTracker,
+    /// Provides hints for external commands
+    command_explainer: CommandExplainer,
 }
 
 impl TutorialRunner {
@@ -103,6 +109,8 @@ impl TutorialRunner {
             script_path: script_path.to_path_buf(),
             source,
             config,
+            concept_tracker: ConceptTracker::new(),
+            command_explainer: CommandExplainer::new(),
         })
     }
 
@@ -217,15 +225,13 @@ impl TutorialRunner {
         }
     }
 
-    /// Emit trace events for expansions in a word
-    fn emit_word_expansions(word: &Word, line: u32, tx: &Sender<TraceEvent>) {
+    fn emit_word_expansions(word: &Word, line: u32, tx: &Sender<TraceEvent>, ctx: &ExpansionContext) {
         for part in &word.parts {
-            Self::emit_word_part_expansion(part, line, tx);
+            Self::emit_word_part_expansion(part, line, tx, ctx);
         }
     }
 
-    /// Emit trace event for a word part expansion
-    fn emit_word_part_expansion(part: &WordPart, line: u32, tx: &Sender<TraceEvent>) {
+    fn emit_word_part_expansion(part: &WordPart, line: u32, tx: &Sender<TraceEvent>, ctx: &ExpansionContext) {
         use colony_parser::VarModifier;
         
         match part {
@@ -237,11 +243,16 @@ impl TutorialRunner {
                 } else {
                     format!("${}", var_ref.name)
                 };
+                
+                let output = ctx.get_var_or_env(&var_ref.name)
+                    .map(|v| format!("\"{}\"", v))
+                    .unwrap_or_else(|| "(unset)".to_string());
+                    
                 tx.send(TraceEvent::Expand {
                     line,
                     phase: ExpansionPhase::Parameter,
                     input,
-                    output: "<expanded at runtime>".to_string(),
+                    output,
                     explanation: Self::explain_variable(var_ref),
                 }).ok();
             }
@@ -250,7 +261,7 @@ impl TutorialRunner {
                     line,
                     phase: ExpansionPhase::Command,
                     input: format!("$({})", cmd),
-                    output: "<executed at runtime>".to_string(),
+                    output: "(command executed)".to_string(),
                     explanation: "Executes command and substitutes its stdout".to_string(),
                 }).ok();
             }
@@ -259,7 +270,7 @@ impl TutorialRunner {
                     line,
                     phase: ExpansionPhase::Arithmetic,
                     input: format!("$(({}))", expr),
-                    output: "<computed at runtime>".to_string(),
+                    output: "(arithmetic evaluated)".to_string(),
                     explanation: "Evaluates arithmetic expression".to_string(),
                 }).ok();
             }
@@ -269,17 +280,20 @@ impl TutorialRunner {
                 } else {
                     "~".to_string()
                 };
+                let output = ctx.home()
+                    .map(|h| format!("\"{}\"", h.display()))
+                    .unwrap_or_else(|| "(unknown)".to_string());
                 tx.send(TraceEvent::Expand {
                     line,
                     phase: ExpansionPhase::Tilde,
                     input,
-                    output: "<home directory>".to_string(),
+                    output,
                     explanation: "Expands to home directory".to_string(),
                 }).ok();
             }
             WordPart::DoubleQuoted(parts) => {
                 for p in parts {
-                    Self::emit_word_part_expansion(p, line, tx);
+                    Self::emit_word_part_expansion(p, line, tx, ctx);
                 }
             }
             WordPart::ProcessSub { direction, command } => {
@@ -292,7 +306,7 @@ impl TutorialRunner {
                     line,
                     phase: ExpansionPhase::Command,
                     input: format!("{}({})", dir_str, command),
-                    output: "<process substitution>".to_string(),
+                    output: "(process substitution)".to_string(),
                     explanation: "Creates a file descriptor for process I/O".to_string(),
                 }).ok();
             }
@@ -349,30 +363,54 @@ impl TutorialRunner {
         }
     }
 
-    /// Emit detailed trace events for a statement before execution
-    fn emit_statement_trace(&self, stmt: &Statement, line: u32, tx: &Sender<TraceEvent>) {
-        // Emit parse summary
+    fn emit_statement_trace(&mut self, stmt: &Statement, line: u32, tx: &Sender<TraceEvent>, ctx: &ExpansionContext) {
         let summary = Self::summarize_statement(stmt);
         tx.send(TraceEvent::Parse {
             line,
             ast_summary: summary,
-            ast_full: None, // Could add JSON AST here for Level 3
+            ast_full: None,
         }).ok();
 
-        // Emit expansion events for words in the statement
+        if self.config.teach_mode {
+            self.emit_concepts_for_statement(stmt, line, tx);
+        }
+
         match stmt {
             Statement::SimpleCommand(cmd) => {
-                Self::emit_word_expansions(&cmd.name, line, tx);
-                for arg in &cmd.args {
-                    Self::emit_word_expansions(arg, line, tx);
+                if self.config.teach_mode {
+                    if let Some(name) = cmd.name.as_literal() {
+                        let args: Vec<String> = cmd.args.iter()
+                            .filter_map(|w| w.as_literal().map(String::from))
+                            .collect();
+                        if let Some(hint) = self.command_explainer.format_hint(name, &args) {
+                            tx.send(TraceEvent::CommandHint {
+                                line,
+                                command: name.to_string(),
+                                hint,
+                            }).ok();
+                        }
+                    }
                 }
-                // Emit assignment info
+                
+                Self::emit_word_expansions(&cmd.name, line, tx, ctx);
+                for arg in &cmd.args {
+                    Self::emit_word_expansions(arg, line, tx, ctx);
+                }
                 for assign in &cmd.env_assignments {
+                    use colony_parser::AssignmentValue;
+                    let value = match &assign.value {
+                        AssignmentValue::Word(w) => w.as_literal()
+                            .map(|s| format!("\"{}\"", s))
+                            .unwrap_or_else(|| "(complex word)".to_string()),
+                        AssignmentValue::Array(arr) => format!("({} elements)", arr.len()),
+                        AssignmentValue::AssocArray(arr) => format!("(assoc: {} entries)", arr.len()),
+                    };
+                    let previous = ctx.get_var_or_env(&assign.name).map(String::from);
                     tx.send(TraceEvent::Assign {
                         line,
                         name: assign.name.clone(),
-                        value: "<assigned at runtime>".to_string(),
-                        previous: None,
+                        value,
+                        previous,
                     }).ok();
                 }
             }
@@ -381,7 +419,7 @@ impl TutorialRunner {
                     line,
                     loop_type: LoopType::For,
                     variable: Some(for_stmt.var.clone()),
-                    values: None, // Will be expanded at runtime
+                    values: None,
                 }).ok();
             }
             Statement::While(_) => {
@@ -421,8 +459,185 @@ impl TutorialRunner {
             _ => {}
         }
     }
+    
+    /// Emit concept explanations for constructs in a statement (teach mode)
+    fn emit_concepts_for_statement(&mut self, stmt: &Statement, line: u32, tx: &Sender<TraceEvent>) {
+        // Detect concepts used in this statement and emit explanations for first occurrences
+        let concepts = self.detect_concepts_in_statement(stmt);
+        
+        for concept in concepts {
+            if self.concept_tracker.mark_seen(concept) {
+                // First occurrence - emit full explanation
+                tx.send(TraceEvent::Concept {
+                    id: concept.id().to_string(),
+                    name: concept.name().to_string(),
+                    explanation: concept.explanation().to_string(),
+                    related: concept.related().iter().map(|c| c.name().to_string()).collect(),
+                }).ok();
+            }
+        }
+    }
+    
+    fn detect_concepts_in_statement(&self, stmt: &Statement) -> Vec<Concept> {
+        let mut concepts = Vec::new();
+        
+        match stmt {
+            Statement::SimpleCommand(cmd) => {
+                if let Some(name) = cmd.name.as_literal() {
+                    if name == "[" || name == "test" {
+                        concepts.push(Concept::TestBuiltin);
+                    }
+                }
+                
+                self.detect_concepts_in_word(&cmd.name, &mut concepts);
+                for arg in &cmd.args {
+                    self.detect_concepts_in_word(arg, &mut concepts);
+                }
+                
+                for redirect in &cmd.redirects {
+                    use colony_parser::RedirectKind;
+                    match &redirect.kind {
+                        RedirectKind::Output | RedirectKind::Clobber => concepts.push(Concept::OutputRedirect),
+                        RedirectKind::Append | RedirectKind::AndAppend => concepts.push(Concept::AppendRedirect),
+                        RedirectKind::Input | RedirectKind::ReadWrite => concepts.push(Concept::InputRedirect),
+                        RedirectKind::HereDoc(kind) => {
+                            use colony_parser::HereDocKind;
+                            match kind {
+                                HereDocKind::HereString => concepts.push(Concept::HereString),
+                                _ => concepts.push(Concept::HereDoc),
+                            }
+                        }
+                        RedirectKind::DupFd | RedirectKind::DupFdInput => {
+                            concepts.push(Concept::FdDup);
+                        }
+                        RedirectKind::AndOutput => concepts.push(Concept::OutputRedirect),
+                    }
+                }
+            }
+            Statement::Pipeline(pipeline) => {
+                if pipeline.elements.len() > 1 {
+                    concepts.push(Concept::Pipeline);
+                }
+            }
+            Statement::List(list) => {
+                for (op, _) in &list.rest {
+                    match op {
+                        colony_parser::ListOp::And => concepts.push(Concept::AndList),
+                        colony_parser::ListOp::Or => concepts.push(Concept::OrList),
+                        colony_parser::ListOp::Background => concepts.push(Concept::Background),
+                        _ => {}
+                    }
+                }
+            }
+            Statement::If(_) => concepts.push(Concept::IfStatement),
+            Statement::Case(_) => concepts.push(Concept::CaseStatement),
+            Statement::For(_) => concepts.push(Concept::ForLoop),
+            Statement::While(_) => concepts.push(Concept::WhileLoop),
+            Statement::Until(_) => concepts.push(Concept::UntilLoop),
+            Statement::FunctionDef(_) => concepts.push(Concept::FunctionDefinition),
+            Statement::Subshell(_) => concepts.push(Concept::Subshell),
+            Statement::BraceGroup(_) => concepts.push(Concept::BraceGroup),
+            Statement::Coproc(_) => concepts.push(Concept::Coprocess),
+            Statement::Conditional(_) => concepts.push(Concept::TestBracket),
+            Statement::Arithmetic(_) => concepts.push(Concept::ArithmeticCommand),
+            _ => {}
+        }
+        
+        concepts
+    }
+    
+    fn detect_concepts_in_word(&self, word: &Word, concepts: &mut Vec<Concept>) {
+        for part in &word.parts {
+            match part {
+                WordPart::Variable(var_ref) => {
+                    match var_ref.name.as_str() {
+                        "?" => concepts.push(Concept::LastExitCode),
+                        "$" => concepts.push(Concept::CurrentPid),
+                        "!" => concepts.push(Concept::LastBackgroundPid),
+                        "#" => concepts.push(Concept::ParamCount),
+                        "@" | "*" => concepts.push(Concept::AllParams),
+                        "-" => concepts.push(Concept::ShellOptions),
+                        n if n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty() => {
+                            concepts.push(Concept::PositionalParams);
+                        }
+                        _ => {}
+                    }
+                    
+                    if let Some(ref modifier) = var_ref.modifier {
+                        use colony_parser::VarModifier;
+                        match modifier {
+                            VarModifier::Default { .. } => concepts.push(Concept::ParameterDefault),
+                            VarModifier::Assign { .. } => concepts.push(Concept::ParameterAssignDefault),
+                            VarModifier::Error { .. } => concepts.push(Concept::ParameterError),
+                            VarModifier::Alternate { .. } => concepts.push(Concept::ParameterAlternate),
+                            VarModifier::Length => concepts.push(Concept::ParameterLength),
+                            VarModifier::Slice { .. } => concepts.push(Concept::ParameterSubstring),
+                            VarModifier::StripPrefix { .. } | VarModifier::StripPrefixGreedy { .. }
+                            | VarModifier::StripSuffix { .. } | VarModifier::StripSuffixGreedy { .. } => {
+                                concepts.push(Concept::ParameterPattern);
+                            }
+                            _ => {}
+                        }
+                    }
+                    
+                    if var_ref.subscript.is_some() {
+                        concepts.push(Concept::IndexedArray);
+                    }
+                }
+                WordPart::CommandSubRaw(_) => concepts.push(Concept::DollarParenSub),
+                WordPart::ArithRaw(_) => concepts.push(Concept::ArithmeticExpansion),
+                WordPart::Tilde(_) => {}
+                WordPart::SingleQuoted(_) => concepts.push(Concept::SingleQuote),
+                WordPart::DoubleQuoted(parts) => {
+                    concepts.push(Concept::DoubleQuote);
+                    for inner in parts {
+                        self.detect_concepts_in_word_part(inner, concepts);
+                    }
+                }
+                WordPart::AnsiCQuoted(_) => concepts.push(Concept::AnsiCQuote),
+                WordPart::ProcessSub { direction, .. } => {
+                    match direction {
+                        colony_parser::ProcessSubDirection::Input => concepts.push(Concept::ProcessSubInput),
+                        colony_parser::ProcessSubDirection::Output => concepts.push(Concept::ProcessSubOutput),
+                    }
+                }
+                WordPart::ExtGlob { .. } => concepts.push(Concept::ExtGlob),
+                WordPart::Literal(s) => {
+                    if s.contains('*') && s.contains("**") {
+                        concepts.push(Concept::GlobStar2);
+                    } else if s.contains('*') {
+                        concepts.push(Concept::GlobStar);
+                    } else if s.contains('?') {
+                        concepts.push(Concept::GlobQuestion);
+                    } else if s.contains('[') {
+                        concepts.push(Concept::GlobBracket);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    fn detect_concepts_in_word_part(&self, part: &WordPart, concepts: &mut Vec<Concept>) {
+        match part {
+            WordPart::Variable(var_ref) => {
+                if let Some(ref modifier) = var_ref.modifier {
+                    use colony_parser::VarModifier;
+                    match modifier {
+                        VarModifier::Default { .. } => concepts.push(Concept::ParameterDefault),
+                        VarModifier::Assign { .. } => concepts.push(Concept::ParameterAssignDefault),
+                        VarModifier::Error { .. } => concepts.push(Concept::ParameterError),
+                        VarModifier::Alternate { .. } => concepts.push(Concept::ParameterAlternate),
+                        _ => {}
+                    }
+                }
+            }
+            WordPart::CommandSubRaw(_) => concepts.push(Concept::DollarParenSub),
+            WordPart::ArithRaw(_) => concepts.push(Concept::ArithmeticExpansion),
+            _ => {}
+        }
+    }
 
-    /// Main event loop
     fn event_loop(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -431,32 +646,27 @@ impl TutorialRunner {
         tx: &Sender<TraceEvent>,
         program: &colony_parser::Program,
     ) -> TutorialResult<i32> {
-        let lines: Vec<&str> = self.source.lines().collect();
+        let source_clone = self.source.clone();
+        let lines: Vec<&str> = source_clone.lines().collect();
         let mut current_stmt_idx = 0;
         let mut exit_code = 0;
 
-        // Create executor context
         let context = ExpansionContext::new();
         let mut executor = Executor::new(context);
 
         loop {
-            // Draw UI
             terminal.draw(|f| tui.render(f))?;
 
-            // Check for quit
             if tui.should_quit() {
                 break;
             }
 
-            // Process trace events from channel
             while let Ok(event) = rx.try_recv() {
                 tui.handle_event(event);
             }
 
-            // Handle keyboard input (non-blocking with timeout)
             if event::poll(Duration::from_millis(50))? {
                 if let Event::Key(key) = event::read()? {
-                    // Handle Ctrl+C
                     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                         break;
                     }
@@ -465,29 +675,24 @@ impl TutorialRunner {
                 }
             }
 
-            // If playing or stepping, execute next statement
             if (tui.is_playing() || tui.is_stepping()) && current_stmt_idx < program.statements.len() {
                 let stmt = &program.statements[current_stmt_idx];
                 
-                // Get line number (approximate - from statement index)
-                let line_num = (current_stmt_idx + 1) as u32;
-                let line_source = lines.get(current_stmt_idx)
+                let line_num = stmt.span().start.line;
+                let line_idx = if line_num > 0 { (line_num - 1) as usize } else { current_stmt_idx };
+                let line_source = lines.get(line_idx)
                     .map(|s| s.to_string())
                     .unwrap_or_default();
 
-                // Emit line enter
                 tx.send(TraceEvent::LineEnter {
                     line: line_num,
                     source: line_source.clone(),
                 }).ok();
 
-                // Emit detailed trace events for the statement
-                self.emit_statement_trace(stmt, line_num, tx);
+                self.emit_statement_trace(stmt, line_num, tx, executor.context());
 
-                // Compute complexity
                 let complexity = ComplexityScorer::score(stmt);
                 
-                // Execute statement
                 let result = futures::executor::block_on(async {
                     executor.execute_statement_recursive(stmt).await
                 });
@@ -495,7 +700,6 @@ impl TutorialRunner {
                 match result {
                     Ok(code) => {
                         exit_code = code;
-                        // Emit exit status
                         tx.send(TraceEvent::ExitStatus {
                             line: line_num,
                             code,
@@ -510,10 +714,9 @@ impl TutorialRunner {
                     }
                 }
 
-                // Emit line exit
                 tx.send(TraceEvent::LineExit {
                     line: line_num,
-                    duration_us: 0, // TODO: measure actual duration
+                    duration_us: 0,
                 }).ok();
 
                 current_stmt_idx += 1;
