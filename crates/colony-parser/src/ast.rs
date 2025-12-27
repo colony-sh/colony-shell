@@ -544,6 +544,8 @@ pub enum CondExpr {
         left: String,
         op: CondBinaryOp,
         right: String,
+        /// Whether the right operand was quoted (affects glob matching in == and !=)
+        right_quoted: bool,
     },
     Unary {
         op: CondUnaryOp,

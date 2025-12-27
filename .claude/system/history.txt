@@ -1817,3 +1817,21 @@
 [2025-12-27 15:50] RESULT: 45_cond.bats improved from 45/52 (86.5%) to 49/52 (94.2%)
 [2025-12-27 15:55] REMAINING: 3 failures - quoted pattern matching, BASH_REMATCH capture groups
 
+[2025-12-27 16:00] START: Session continuation - fixing remaining [[ ]] conditional test failures
+[2025-12-27 16:05] DIAGNOSIS: Test 15 - quoted patterns being treated as globs (should be literal)
+[2025-12-27 16:10] ROOT CAUSE: CondExpr::Binary only stores String, loses quote information
+[2025-12-27 16:15] FIX: Added right_quoted: bool field to CondExpr::Binary in ast.rs
+[2025-12-27 16:20] FIX: Builder detects if right operand raw text is quoted
+[2025-12-27 16:25] FIX: evaluate_conditional uses literal comparison when right_quoted=true
+[2025-12-27 16:30] RESULT: Test 15 now passing - quoted patterns don't glob
+[2025-12-27 16:35] DIAGNOSIS: Tests 19-20 - BASH_REMATCH not being populated after =~ match
+[2025-12-27 16:40] FIX: Changed evaluate_conditional to take &mut Executor
+[2025-12-27 16:45] FIX: After regex match, populate BASH_REMATCH array with captures
+[2025-12-27 16:50] BLOCKED: Unquoted parentheses in regex like ([0-9]+) causing parse errors
+[2025-12-27 16:55] ROOT CAUSE: CondOperandPart excluded "(" and ")" from allowed characters
+[2025-12-27 17:00] FIX: Added CondParenContent rule for balanced parentheses in operands
+[2025-12-27 17:05] FIX: CondOperandPart now allows "(" ~ CondParenContent ~ ")"
+[2025-12-27 17:10] RESULT: Tests 19-20 now passing - BASH_REMATCH populated correctly
+[2025-12-27 17:15] MILESTONE: 45_cond.bats now 52/52 (100%) - all conditional tests passing!
+[2025-12-27 17:20] VALIDATED: Existing cargo tests unchanged (3 pre-existing alias test failures)
+

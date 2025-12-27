@@ -814,9 +814,13 @@ impl AstBuilder {
                 let left = inner.next().ok_or(BuildError::MissingOperand)?.as_str().to_string();
                 let op_pair = inner.next().ok_or(BuildError::MissingOperator)?;
                 let op = Self::build_cond_binary_op(op_pair)?;
-                let right = inner.next().ok_or(BuildError::MissingOperand)?.as_str().to_string();
+                let right_pair = inner.next().ok_or(BuildError::MissingOperand)?;
+                let right_raw = right_pair.as_str();
+                let right_quoted = (right_raw.starts_with('"') && right_raw.ends_with('"'))
+                    || (right_raw.starts_with('\'') && right_raw.ends_with('\''));
+                let right = right_raw.to_string();
                 
-                Ok(CondExpr::Binary { left, op, right })
+                Ok(CondExpr::Binary { left, op, right, right_quoted })
             }
             Rule::CondUnaryTest => {
                 let mut inner = pair.into_inner();

@@ -246,8 +246,22 @@ CondOperandPart = @{
     // Handle quoted strings
   | "\"" ~ (!"\"" ~ ANY)* ~ "\""
   | "'" ~ (!"'" ~ ANY)* ~ "'"
+    // Handle parentheses (for regex capture groups) - consume balanced parens
+  | "(" ~ CondParenContent ~ ")"
     // Handle regular characters
   | !(WHITESPACE | "]]" | "&&" | "||" | "(" | ")" | "!" | "[" | "\"" | "'") ~ ANY
+}
+
+// Content inside parentheses in conditional operand - allows nested parens and brackets
+CondParenContent = @{
+    (
+        // Nested parens
+        "(" ~ CondParenContent ~ ")"
+        // Bracket expressions inside parens
+      | "[" ~ CondBracketContent ~ "]"
+        // Any char except unbalanced paren
+      | !("(" | ")" | "[") ~ ANY
+    )*
 }
 
 // Content inside a bracket expression [...]

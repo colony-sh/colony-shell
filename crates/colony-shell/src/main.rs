@@ -1143,7 +1143,7 @@ async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &m
 }
 
 /// Evaluate a [[ ]] conditional expression
-fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &Executor) -> bool {
+fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor) -> bool {
     use colony_parser::{CondExpr, CondBinaryOp, CondUnaryOp};
     
     match expr {
@@ -1156,20 +1156,46 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &Executor) -> 
         CondExpr::Not(inner) => {
             !evaluate_conditional(inner, executor)
         }
-        CondExpr::Binary { left, op, right } => {
+        CondExpr::Binary { left, op, right, right_quoted } => {
             let left_expanded = expand_cond_operand(left, executor);
             let right_expanded = expand_cond_operand(right, executor);
             
             match op {
                 CondBinaryOp::Eq => {
-                    glob_match(&right_expanded, &left_expanded)
+                    if *right_quoted {
+                        left_expanded == right_expanded
+                    } else {
+                        glob_match(&right_expanded, &left_expanded)
+                    }
                 }
                 CondBinaryOp::Ne => {
-                    !glob_match(&right_expanded, &left_expanded)
+                    if *right_quoted {
+                        left_expanded != right_expanded
+                    } else {
+                        !glob_match(&right_expanded, &left_expanded)
+                    }
                 }
                 CondBinaryOp::Match => {
                     match regex::Regex::new(&right_expanded) {
-                        Ok(re) => re.is_match(&left_expanded),
+                        Ok(re) => {
+                            if let Some(caps) = re.captures(&left_expanded) {
+                                let mut bash_rematch = Vec::new();
+                                for i in 0..caps.len() {
+                                    bash_rematch.push(caps.get(i).map(|m| m.as_str()).unwrap_or("").to_string());
+                                }
+                                executor.context_mut().set_variable(
+                                    "BASH_REMATCH".to_string(),
+                                    colony_expand::Variable::Array(bash_rematch),
+                                );
+                                true
+                            } else {
+                                executor.context_mut().set_variable(
+                                    "BASH_REMATCH".to_string(),
+                                    colony_expand::Variable::Array(vec![]),
+                                );
+                                false
+                            }
+                        }
                         Err(_) => false,
                     }
                 }
