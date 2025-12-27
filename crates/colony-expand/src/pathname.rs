@@ -60,6 +60,102 @@ fn contains_glob_chars(s: &str) -> bool {
     contains_extglob(s)
 }
 
+fn posix_class_to_regex(class_name: &str) -> Option<&'static str> {
+    match class_name {
+        "alnum" => Some("a-zA-Z0-9"),
+        "alpha" => Some("a-zA-Z"),
+        "blank" => Some(" \\t"),
+        "cntrl" => Some("\\x00-\\x1f\\x7f"),
+        "digit" => Some("0-9"),
+        "graph" => Some("!-~"),
+        "lower" => Some("a-z"),
+        "print" => Some(" -~"),
+        "punct" => Some("!-/:-@\\[-`{-~"),
+        "space" => Some(" \\t\\n\\r\\x0b\\x0c"),
+        "upper" => Some("A-Z"),
+        "xdigit" => Some("0-9A-Fa-f"),
+        "word" => Some("a-zA-Z0-9_"),
+        "ascii" => Some("\\x00-\\x7f"),
+        _ => None,
+    }
+}
+
+fn posix_class_to_glob(class_name: &str) -> Option<&'static str> {
+    match class_name {
+        "alnum" => Some("a-zA-Z0-9"),
+        "alpha" => Some("a-zA-Z"),
+        "digit" => Some("0-9"),
+        "lower" => Some("a-z"),
+        "upper" => Some("A-Z"),
+        "xdigit" => Some("0-9A-Fa-f"),
+        _ => None,
+    }
+}
+
+fn expand_posix_classes(pattern: &str) -> String {
+    let mut result = String::with_capacity(pattern.len());
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] == '[' {
+            let bracket_start = i;
+            let mut bracket_content = String::new();
+            i += 1;
+            
+            let negated = i < chars.len() && (chars[i] == '!' || chars[i] == '^');
+            if negated {
+                i += 1;
+            }
+            
+            while i < chars.len() && chars[i] != ']' {
+                if chars[i] == '[' && i + 1 < chars.len() && chars[i + 1] == ':' {
+                    let class_start = i + 2;
+                    i += 2;
+                    while i + 1 < chars.len() && !(chars[i] == ':' && chars[i + 1] == ']') {
+                        i += 1;
+                    }
+                    if i + 1 < chars.len() && chars[i] == ':' && chars[i + 1] == ']' {
+                        let class_name: String = chars[class_start..i].iter().collect();
+                        if let Some(expanded) = posix_class_to_glob(&class_name) {
+                            bracket_content.push_str(expanded);
+                        } else {
+                            bracket_content.push_str(&format!("[:{}:]", class_name));
+                        }
+                        i += 2;
+                    } else {
+                        bracket_content.push_str(&chars[class_start - 2..=i].iter().collect::<String>());
+                        i += 1;
+                    }
+                } else {
+                    bracket_content.push(chars[i]);
+                    i += 1;
+                }
+            }
+            
+            if i < chars.len() && chars[i] == ']' {
+                result.push('[');
+                if negated {
+                    result.push('!');
+                }
+                result.push_str(&bracket_content);
+                result.push(']');
+                i += 1;
+            } else {
+                for c in &chars[bracket_start..=i.min(chars.len() - 1)] {
+                    result.push(*c);
+                }
+                i += 1;
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
 fn glob_to_regex_part(glob_part: &str) -> String {
     let mut regex = String::new();
     let chars: Vec<char> = glob_part.chars().collect();
@@ -81,6 +177,29 @@ fn glob_to_regex_part(glob_part: &str) -> String {
                         regex.push('\\');
                         i += 1;
                         regex.push(chars[i]);
+                    } else if chars[i] == '[' && i + 1 < chars.len() && chars[i + 1] == ':' {
+                        // POSIX character class [:digit:], [:alpha:], etc.
+                        let start = i;
+                        i += 2;
+                        let class_start = i;
+                        while i + 1 < chars.len() && !(chars[i] == ':' && chars[i + 1] == ']') {
+                            i += 1;
+                        }
+                        if i + 1 < chars.len() && chars[i] == ':' && chars[i + 1] == ']' {
+                            let class_name: String = chars[class_start..i].iter().collect();
+                            if let Some(equivalent) = posix_class_to_regex(&class_name) {
+                                regex.push_str(equivalent);
+                            } else {
+                                for j in start..=i + 1 {
+                                    regex.push(chars[j]);
+                                }
+                            }
+                            i += 1;
+                        } else {
+                            for j in start..=i {
+                                regex.push(chars[j]);
+                            }
+                        }
                     } else {
                         let c = chars[i];
                         if c == '-' || c == '^' || c == ']' || c == '\\' {
@@ -604,6 +723,7 @@ pub fn expand_pathname_with_options(pattern: &str, options: &ShoptOptions) -> Re
     }
 
     let mut normalized = normalize_pattern(pattern);
+    normalized = expand_posix_classes(&normalized);
     
     if !options.globstar && contains_globstar(&normalized) {
         normalized = normalized.replace("**", "*");
