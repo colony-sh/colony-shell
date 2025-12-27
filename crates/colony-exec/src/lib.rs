@@ -272,7 +272,9 @@ impl Executor {
                                                 self.context.get_var_or_env(name).unwrap_or_else(|| name.clone())
                                             }
                                         }
-                                        colony_parser::Expression::Str(s, _) => s.clone(),
+                                        colony_parser::Expression::Str(s, _) => {
+                                            self.expand_subscript_string(s)
+                                        }
                                         colony_parser::Expression::Int(n, _) => n.to_string(),
                                         _ => String::new()
                                     }
@@ -774,6 +776,15 @@ impl Executor {
             Err(ExecutionError::Errexit(code))
         } else {
             Ok(code)
+        }
+    }
+
+    fn expand_subscript_string(&self, s: &str) -> String {
+        if s.starts_with('$') {
+            let var_name = s.trim_start_matches('$');
+            self.context.get_var_or_env(var_name).unwrap_or_else(|| s.to_string())
+        } else {
+            s.to_string()
         }
     }
 

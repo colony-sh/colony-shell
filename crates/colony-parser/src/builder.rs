@@ -1912,7 +1912,11 @@ impl AstBuilder {
                 Rule::UnquotedEscape => {
                     if text.len() >= 2 {
                         let escaped_char = text.chars().nth(1).unwrap();
-                        WordPart::Literal(escaped_char.to_string())
+                        if matches!(escaped_char, '*' | '?' | '[' | ']') {
+                            WordPart::SingleQuoted(escaped_char.to_string())
+                        } else {
+                            WordPart::Literal(escaped_char.to_string())
+                        }
                     } else {
                         WordPart::Literal(text)
                     }
