@@ -1799,4 +1799,9 @@
 [2025-12-27 11:00] DECISION: Keep execution-time alias.rs for runtime alias expansion
 [2025-12-27 11:05] DECISION: Parse-time expansion works for pre-existing aliases
 [2025-12-27 11:10] STATUS: Alias expansion complete - both parse-time and execution-time working
+[2025-12-27 13:15] COMMIT: baee920 - Enhanced alias expansion, eval builtin, and execution improvements
+[2025-12-27 13:15] FEATURES: Parse-time alias expansion, eval builtin, echo fd fix, read improvements
+[2025-12-27 13:15] FEATURES: Wait builtin PID waiting, noclobber option, EXIT trap in subshells
+[2025-12-27 13:15] FEATURES: Command substitution exit status tracking, return in sourced files
+[2025-12-27 13:20] STATUS: 16 commits ahead of origin/main, all changes committed
 

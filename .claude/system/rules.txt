@@ -97,3 +97,18 @@
 62. For capturing command output: pipe() → fork → dup2(pipe_write, 1) → exec → read pipe_read
 63. Set O_NONBLOCK on read end to avoid blocking after child completes
 64. Terminal clear after output capture prevents display corruption
+
+## Alias Expansion
+
+65. Aliases should expand at parse-time for pre-existing aliases (POSIX 2.3.1)
+66. Aliases defined in same line (alias foo=bar; foo) need execution-time expansion
+67. Use AliasContext with expanding_aliases set to detect cycles
+68. Alias expansion can produce multiple statements (foo='ls; pwd' → two statements)
+69. Don't expand aliases when expanding_aliases set contains the alias name (cycle)
+
+## POSIX Prefix Assignments
+
+70. Prefix assignments (VAR=val cmd) only affect child process environment
+71. Don't apply prefix assignments to shell context before argument expansion
+72. Assignment-only commands (VAR=val without cmd) DO modify shell context
+73. sync_variables_from should skip IFS to avoid overwriting intentional changes

@@ -146,7 +146,13 @@
         "2025-12-21: execute_source_file() runs in current context (vars/funcs persist)",
         "2025-12-21: Positional parameters set from source args, restored after",
         "2025-12-21: exit in sourced file properly exits shell (ExecutionError::Exit)",
-        "2025-12-21: Critical for BATS compatibility - now fully functional"
+        "2025-12-21: Critical for BATS compatibility - now fully functional",
+        "2025-12-27: Implemented eval builtin with BuiltinResult::Eval variant",
+        "2025-12-27: Enhanced echo to write directly to fd 1 for redirect compatibility",
+        "2025-12-27: Improved read builtin: backslash processing, IFS splitting, last var",
+        "2025-12-27: Fixed wait builtin to properly wait for PIDs and return exit status",
+        "2025-12-27: Added noclobber (set -C) shell option support",
+        "2025-12-27: return builtin now works in sourced files (not just functions)"
       ]
     },
     {
