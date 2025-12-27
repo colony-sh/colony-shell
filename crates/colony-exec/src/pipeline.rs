@@ -38,7 +38,7 @@ async fn execute_pipeline_with_lastpipe(
     context: &mut ExpansionContext,
 ) -> Result<ExitStatus> {
     let num_commands = pipeline.elements.len();
-    let is_negated = pipeline.elements.last().map_or(false, |e| e.negated);
+    let is_negated = pipeline.elements.first().map_or(false, |e| e.negated);
     
     let pipeline_clone = pipeline.clone();
     let context_clone = context.clone();
@@ -192,7 +192,7 @@ fn execute_pipeline_blocking(pipeline: &Pipeline, context: &ExpansionContext) ->
         return Ok(ExitStatus::success());
     }
 
-    let is_negated = pipeline.elements.last().map_or(false, |e| e.negated);
+    let is_negated = pipeline.elements.first().map_or(false, |e| e.negated);
 
     if num_commands == 1 {
         let element = &pipeline.elements[0];
