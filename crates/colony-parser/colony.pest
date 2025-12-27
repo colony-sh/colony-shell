@@ -235,8 +235,30 @@ CondUnaryOp = {
 CondStringTest = { CondOperand }
 
 // Operand in conditional - can be a word (with expansions)
+// Must handle bracket expressions [abc], [a-z], [[:alpha:]] to avoid ]] being parsed as end of conditional
 CondOperand = @{
-    (!(WHITESPACE | "]]" | "&&" | "||" | "(" | ")" | "!") ~ ANY)+
+    CondOperandPart+
+}
+
+CondOperandPart = @{
+    // Handle bracket expressions (glob patterns) - consume until matching ]
+    "[" ~ CondBracketContent ~ "]"
+    // Handle quoted strings
+  | "\"" ~ (!"\"" ~ ANY)* ~ "\""
+  | "'" ~ (!"'" ~ ANY)* ~ "'"
+    // Handle regular characters
+  | !(WHITESPACE | "]]" | "&&" | "||" | "(" | ")" | "!" | "[" | "\"" | "'") ~ ANY
+}
+
+// Content inside a bracket expression [...]
+// Must handle nested [:class:] patterns
+CondBracketContent = @{
+    (
+        // POSIX character class [:alpha:], [:digit:], etc
+        "[:" ~ (ASCII_ALPHA)+ ~ ":]"
+        // Any char except unescaped ]
+      | !"]" ~ ANY
+    )*
 }
 
 // (( expression )) - Arithmetic command

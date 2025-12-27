@@ -1,0 +1,2518 @@
+1..2348
+ok 1 echo builtin - simple output
+ok 2 echo builtin - multiple arguments
+ok 3 pwd builtin - current directory
+ok 4 export builtin - set environment variable
+ok 5 export builtin - multiple variables
+ok 6 cd builtin - change directory
+ok 7 cd builtin - invalid directory
+ok 8 type builtin - identify builtin
+ok 9 type builtin - identify external command
+ok 10 exit builtin - explicit exit code
+ok 11 exit builtin - default exit code 0
+ok 12 compare echo output with bash
+ok 13 compare pwd output with bash
+ok 14 compare variable expansion with bash
+ok 15 break in for loop
+ok 16 continue in for loop
+ok 17 nested loops with break
+ok 18 command substitution in echo
+ok 19 pipeline with builtins
+ok 20 redirection with echo
+ok 21 arithmetic: simple addition
+ok 22 arithmetic: simple subtraction
+ok 23 arithmetic: simple multiplication
+ok 24 arithmetic: simple division
+ok 25 arithmetic: modulo
+ok 26 arithmetic: precedence - multiplication before addition
+ok 27 arithmetic: precedence - parentheses override
+ok 28 arithmetic: precedence - division before subtraction
+ok 29 arithmetic: unary minus
+ok 30 arithmetic: unary minus on expression
+ok 31 arithmetic: variable expansion
+ok 32 arithmetic: multiple variables
+ok 33 arithmetic: undefined variable is zero
+ok 34 arithmetic: complex expression
+ok 35 arithmetic: nested parentheses
+ok 36 arithmetic: spaces don't matter
+ok 37 arithmetic: multiple in one line
+ok 38 arithmetic: in command substitution
+ok 39 compare arithmetic with bash
+ok 40 compare complex arithmetic with bash
+ok 41 array: declare indexed array
+ok 42 array: access array elements by index
+ok 43 array: last element with negative index
+ok 44 array: array length
+ok 45 array: empty array length
+ok 46 array: all elements with @
+ok 47 array: all elements with *
+ok 48 array: sparse array
+ok 49 array: assign individual elements
+ok 50 array: append with +=
+ok 51 array: slice with offset
+ok 52 array: slice with offset and length
+ok 53 array: quoted expansion preserves spaces
+ok 54 array: unquoted expansion splits on IFS
+ok 55 array: indices with !arr[@]
+ok 56 array: for loop over elements
+ok 57 array: for loop with indices
+not ok 58 array: modify elements in loop
+# (in test file 03_arrays.bats, line 138)
+#   `[ "$output" = "X X X" ]' failed
+ok 59 array: pass array elements as command arguments
+ok 60 array: array from command substitution
+ok 61 array: array length after modification
+ok 62 associative array: declare with -A
+ok 63 associative array: assign multiple keys
+ok 64 associative array: all keys
+ok 65 associative array: all values
+ok 66 associative array: length
+ok 67 compare indexed array with bash
+ok 68 compare array length with bash
+ok 69 compare array slice with bash
+ok 70 compare array iteration with bash
+ok 71 array: undefined element is empty
+ok 72 array: element with spaces
+ok 73 array: empty array iteration
+ok 74 array: unset element
+ok 75 array: unset entire array
+ok 76 glob: * matches all files in directory
+ok 77 glob: * does not match hidden files
+ok 78 glob: * matches empty when no files match
+ok 79 glob: multiple * patterns in one command
+ok 80 glob: * in middle of pattern
+ok 81 glob: prefix and suffix with *
+ok 82 glob: ? matches single character
+ok 83 glob: multiple ? in pattern
+ok 84 glob: ? does not match slash
+ok 85 glob: [abc] matches one of the characters
+ok 86 glob: [a-z] matches range
+ok 87 glob: [!abc] negated character class
+ok 88 glob: [^abc] alternative negation syntax
+ok 89 glob: {a,b,c} brace expansion
+ok 90 glob: {1..5} numeric range
+ok 91 glob: {a..e} alphabetic range
+ok 92 glob: nested braces
+ok 93 glob: brace with prefix/suffix
+ok 94 glob: */ matches directories
+ok 95 glob: **/ recursive (if supported) # skip Recursive glob (**) is not standard POSIX
+ok 96 glob: dir/* matches files in subdirectory
+ok 97 glob: quoted glob is literal
+not ok 98 glob: escaped * is literal
+# (in test file 04_glob.bats, line 211)
+#   `[ "$output" = "*.txt" ]' failed
+ok 99 glob: no match returns literal pattern
+ok 100 glob: dotglob disabled by default
+ok 101 glob: case sensitive matching
+ok 102 glob: * in for loop
+ok 103 glob: * with command arguments
+ok 104 glob: * in variable assignment
+ok 105 glob: * in array assignment
+ok 106 glob: *(pattern) - zero or more matches # skip Extended glob (extglob) not yet supported
+ok 107 glob: +(pattern) - one or more matches # skip Extended glob (extglob) not yet supported
+ok 108 glob: ?(pattern) - zero or one match # skip Extended glob (extglob) not yet supported
+ok 109 glob: @(pattern) - exactly one match # skip Extended glob (extglob) not yet supported
+ok 110 glob: !(pattern) - anything except pattern # skip Extended glob (extglob) not yet supported
+ok 111 compare glob * with bash
+ok 112 compare glob ? with bash
+ok 113 compare glob [...] with bash
+ok 114 compare glob no-match with bash
+ok 115 glob: empty directory returns pattern
+ok 116 glob: pattern with no special chars stays literal
+ok 117 glob: mixed glob and literals
+ok 118 glob: glob in subdirectory path
+ok 119 glob: multiple globs in single pattern
+ok 120 glob: glob pattern in variable expands
+ok 121 glob: quoted variable with glob stays literal
+ok 122 glob: nullglob option (empty on no match) # skip shopt -s nullglob not yet supported
+ok 123 glob: failglob option (error on no match) # skip shopt -s failglob not yet supported
+ok 124 glob: large directory with many files
+ok 125 glob: glob result is sorted
+ok 126 function: POSIX syntax - name() { body }
+ok 127 function: bash syntax - function name { body }
+ok 128 function: bash syntax with parens - function name() { body }
+ok 129 function: call after definition
+ok 130 function: multiple calls
+ok 131 function: positional parameter $1
+ok 132 function: multiple positional parameters
+ok 133 function: $@ expands to all arguments
+ok 134 function: $* expands to all arguments
+ok 135 function: $# is argument count
+ok 136 function: $0 is shell name, not function name # skip Positional parameter $0 needs implementation
+ok 137 function: no arguments gives empty $@
+ok 138 function: explicit return 0
+ok 139 function: explicit return non-zero
+ok 140 function: return without value defaults to 0
+ok 141 function: implicit return uses last command exit
+ok 142 function: return exits function immediately
+ok 143 function: can access global variables
+ok 144 function: can modify global variables
+ok 145 function: local variables (if supported)
+ok 146 function: define function inside function
+ok 147 function: recursive function # skip Recursion needs careful testing for stack limits
+ok 148 function: multiline body
+ok 149 function: empty body
+ok 150 function: body with pipeline
+ok 151 function: body with command list
+ok 152 function: body with control flow
+ok 153 function: body with loop
+ok 154 function: redefine function
+ok 155 function: unset function # skip unset -f not yet implemented
+ok 156 function: redirect function output
+ok 157 function: redirect inside function
+ok 158 function: redirect function input
+ok 159 function: function in pipeline
+ok 160 function: pipeline into function
+ok 161 function: function between pipeline stages
+ok 162 function: function name with underscore
+ok 163 function: function name with numbers
+ok 164 function: cannot start with number
+ok 165 function: function shadows builtin
+ok 166 function: function shadows external command
+ok 167 compare function definition with bash
+ok 168 compare function with args with bash
+ok 169 compare function return with bash
+ok 170 compare $@ in function with bash
+ok 171 function: function name same as variable
+ok 172 function: export function (not standard) # skip Function export not standard POSIX
+ok 173 function: function with same name as alias
+ok 174 function: dollar sign in function body
+ok 175 function: quotes in function body
+ok 176 function: calling undefined function fails
+ok 177 function: syntax error in function body
+ok 178 function: missing closing brace
+ok 179 function: empty function name
+ok 180 case: simple exact match
+ok 181 case: no match uses default
+ok 182 case: first match wins
+ok 183 case: empty case no output
+ok 184 case: wildcard * matches anything
+ok 185 case: wildcard ? matches single char
+ok 186 case: pattern prefix match
+ok 187 case: pattern suffix match
+ok 188 case: pattern contains match
+ok 189 case: bracket pattern
+ok 190 case: bracket range pattern
+ok 191 case: bracket negation pattern
+ok 192 case: multiple patterns with |
+ok 193 case: multiple patterns second match
+ok 194 case: multiple patterns no match
+ok 195 case: ;; terminates normally
+ok 196 case: ;; stops at first match
+ok 197 case: ;& falls through to next arm
+ok 198 case: ;& fallthrough chain
+ok 199 case: ;& stops at ;;
+ok 200 case: ;;& continues pattern testing
+ok 201 case: ;;& skips non-matching arms
+ok 202 case: ;;& stops at ;
+ok 203 case: variable in value
+ok 204 case: variable in pattern
+ok 205 case: empty variable matches empty string
+ok 206 case: multiple commands in arm
+ok 207 case: command list in arm
+ok 208 case: pipeline in arm
+ok 209 case: reserved word as pattern
+ok 210 case: special chars in value
+ok 211 case: space in pattern
+ok 212 case: empty arm body
+ok 213 case: numeric value
+ok 214 case: case inside case
+ok 215 case: exit status 0 on match
+ok 216 case: exit status from last command
+ok 217 case: exit status 0 on no match
+ok 218 compare: basic case with bash
+ok 219 compare: fallthrough with bash
+ok 220 compare: continue with bash
+ok 221 compare: multiple patterns with bash
+ok 222 compare: wildcard patterns with bash
+ok 223 heredoc: basic cat
+ok 224 heredoc: read with heredoc
+ok 225 heredoc: quoted delimiter no expansion
+ok 226 heredoc: unquoted delimiter with expansion
+ok 227 heredoc: empty heredoc
+ok 228 heredoc: empty heredoc quoted delimiter
+ok 229 heredoc: empty variable expansion in heredoc
+ok 230 heredoc: <<- strips leading tabs
+ok 231 heredoc: <<- does not strip spaces
+ok 232 heredoc: multiple heredocs on same line
+ok 233 heredoc: multiple heredocs with different fds # skip Complex - multiple heredocs to different FDs causes tokio Bad file descriptor panic
+not ok 234 heredoc: single quoted delimiter protects content
+# (in test file 07_heredoc.bats, line 147)
+#   `[ "${lines[0]}" = 'hi\' ]' failed
+not ok 235 heredoc: quoted delimiter preserves backslash-newline
+# (in test file 07_heredoc.bats, line 159)
+#   `[ "$status" -eq 0 ]' failed
+ok 236 heredoc: unquoted removes backslash-newline
+ok 237 heredoc: backslash-newline at start of heredoc # skip Requires parser-level line continuation in heredoc delimiter - not implemented
+ok 238 heredoc: backslash-newline in delimiter # skip Requires parser-level line continuation in delimiter terminator - not implemented
+ok 239 heredoc: backslash-newline before delimiter # skip Requires parser-level line continuation before delimiter - not implemented
+ok 240 heredoc: write to file
+ok 241 heredoc: append to file
+ok 242 heredoc: double quote in heredoc
+ok 243 heredoc: escaped double quote in heredoc
+ok 244 heredoc: in pipeline
+ok 245 heredoc: in command substitution
+ok 246 heredoc: delimiter with numbers
+ok 247 heredoc: delimiter with underscores
+ok 248 heredoc: very long delimiter
+ok 249 heredoc: content with delimiter-like text
+ok 250 heredoc: multiple blank lines # skip BATS lines array doesn't capture empty lines - bash also fails this test pattern
+ok 251 compare: basic heredoc with bash
+ok 252 compare: heredoc expansion with bash
+ok 253 compare: quoted heredoc with bash
+ok 254 compare: <<- with bash
+ok 255 quote: single quote preserves literal text
+ok 256 quote: single quote preserves multiple newlines
+not ok 257 quote: single quote preserves backslash literally
+# (in test file 08_quote.bats, line 33)
+#   `[ "${lines[0]}" = 'foo\' ]' failed
+ok 258 quote: double quote preserves newlines
+ok 259 quote: double quote preserves multiple spaces in newlines
+ok 260 quote: double quote with backslash-newline joins lines
+ok 261 quote: backquote with single quote newline collapses to space
+ok 262 quote: backquote with single quote preserves multiple spaces
+ok 263 quote: backquote with single quote and backslash joins
+ok 264 quote: backquote with double quote newline collapses
+ok 265 quote: backquote with double quote multiple spaces
+ok 266 quote: backquote with double quote backslash-newline
+ok 267 quote: double quote around backquote with single quote preserves newline
+ok 268 quote: double quote around backquote with single quote multiple newlines
+ok 269 quote: double quote around backquote with single quote and backslash
+ok 270 quote: dollar paren with single quote newline collapses
+ok 271 quote: dollar paren with single quote multiple spaces
+not ok 272 quote: dollar paren with single quote and backslash
+# (in test file 08_quote.bats, line 163)
+#   `[ "$output" = 'foo\ bar' ]' failed
+ok 273 quote: dollar paren with double quote newline collapses
+ok 274 quote: dollar paren with double quote multiple spaces
+ok 275 quote: dollar paren with double quote backslash-newline
+ok 276 quote: double quote around dollar paren with single quote preserves newline
+ok 277 quote: double quote around dollar paren with single quote multiple newlines
+not ok 278 quote: double quote around dollar paren with single quote and backslash
+# (in test file 08_quote.bats, line 215)
+#   `[ "${lines[0]}" = 'foo\' ]' failed
+ok 279 quote: single quote preserves trailing backslash
+ok 280 quote: double quote preserves trailing backslash
+ok 281 quote: unquoted trailing backslash
+ok 282 quote: parameter expansion with single quote and trailing backslash
+not ok 283 quote: parameter expansion with double quote and trailing backslash
+# (in test file 08_quote.bats, line 250)
+#   `[ "$output" = 'string \' ]' failed
+not ok 284 quote: parameter expansion with backslash and brace
+# (in test file 08_quote.bats, line 255)
+#   `[ "$status" -eq 0 ]' failed
+ok 285 quote: backquote inside double quotes
+ok 286 quote: dollar sign in single quotes stays literal
+ok 287 quote: dollar sign in double quotes allows expansion
+ok 288 quote: escaped dollar in double quotes stays literal
+ok 289 quote: empty single quotes
+ok 290 quote: empty double quotes
+ok 291 quote: single space in single quotes
+ok 292 quote: single space in double quotes
+ok 293 quote: multiple spaces in single quotes preserved
+ok 294 quote: multiple spaces in double quotes preserved
+ok 295 quote: adjacent single and double quotes
+ok 296 quote: single quote with unquoted text
+ok 297 quote: double quote with unquoted text
+ok 298 quote: alternating quotes
+ok 299 quote: escaped single quote outside quotes
+ok 300 quote: backslash before double quote in double quotes
+ok 301 quote: backslash before dollar in double quotes
+ok 302 quote: backslash before backslash in double quotes
+not ok 303 quote: backslash before other char in double quotes preserved
+# (in test file 08_quote.bats, line 386)
+#   `[ "$output" = 'test\ning' ]' failed
+ok 304 compare: basic single quote with bash
+ok 305 compare: basic double quote with bash
+ok 306 compare: variable expansion in double quotes with bash
+ok 307 compare: escaped characters in double quotes with bash
+ok 308 comsub: dollar paren basic echo
+ok 309 comsub: dollar paren with multiple words
+ok 310 comsub: dollar paren inline with text
+ok 311 comsub: dollar paren with semicolon
+ok 312 comsub: dollar paren in variable assignment
+ok 313 comsub: dollar paren with pipeline
+ok 314 comsub: backtick basic echo
+ok 315 comsub: backtick with multiple words
+ok 316 comsub: backtick inline with text
+ok 317 comsub: backtick with newline and comment
+ok 318 comsub: backtick in variable assignment
+ok 319 comsub: dollar paren with single quotes
+ok 320 comsub: dollar paren with double quotes
+ok 321 comsub: backtick with single quotes
+ok 322 comsub: backtick with double quotes
+ok 323 comsub: dollar paren preserves escaped dollar
+ok 324 comsub: backtick with escaped dollar in single quote
+ok 325 comsub: backtick with escaped backtick
+ok 326 comsub: backtick with escaped backslash
+ok 327 comsub: nested dollar paren two levels
+ok 328 comsub: nested dollar paren three levels
+ok 329 comsub: nested dollar paren four levels
+ok 330 comsub: nested dollar paren with newlines
+ok 331 comsub: dollar paren nested in backtick
+ok 332 comsub: backtick nested in dollar paren
+ok 333 comsub: empty dollar paren
+ok 334 comsub: empty dollar paren with newline
+ok 335 comsub: empty backtick
+ok 336 comsub: in parameter expansion default value
+ok 337 comsub: in parameter expansion with brace expansion
+ok 338 comsub: in double quoted parameter expansion
+ok 339 comsub: dollar paren in arithmetic expression
+ok 340 comsub: arithmetic in for loop with comsub
+ok 341 comsub: in if condition
+ok 342 comsub: in while condition
+ok 343 comsub: in case pattern
+ok 344 comsub: call function in comsub
+ok 345 comsub: return in comsub aborts comsub
+ok 346 comsub: trailing newline removed
+ok 347 comsub: multiple trailing newlines removed
+ok 348 comsub: internal newlines become spaces
+ok 349 comsub: preserve internal newlines when quoted
+ok 350 comsub: with exit status
+ok 351 comsub: failed command exit status
+not ok 352 comsub: with redirections
+# (in test file 09_comsub.bats, line 339)
+#   `[ "$output" = "hello" ]' failed
+ok 353 comsub: with background job # skip Background jobs in comsub - complex test
+ok 354 comsub: preserve spaces in quoted context
+ok 355 comsub: dollar paren with backslash-newline in quotes
+ok 356 comsub: backtick with backslash-newline in single quotes
+ok 357 compare: basic dollar paren with bash
+ok 358 compare: basic backtick with bash
+ok 359 compare: nested comsub with bash
+ok 360 compare: comsub with quotes with bash
+ok 361 compare: empty comsub with bash
+ok 362 redir: basic output redirect
+ok 363 redir: output redirect overwrites existing file
+ok 364 redir: output redirect to /dev/null
+ok 365 redir: output redirect with variable expansion
+ok 366 redir: append redirect creates file
+ok 367 redir: append redirect appends to file
+ok 368 redir: multiple appends
+ok 369 redir: basic input redirect
+ok 370 redir: input redirect with command
+ok 371 redir: input from /dev/null
+ok 372 redir: input and output together
+ok 373 redir: redirect both stdin and stdout
+ok 374 redir: redirect stderr to file
+ok 375 redir: redirect stderr to /dev/null
+ok 376 redir: append stderr
+ok 377 redir: redirect stderr to stdout with 2>&1
+ok 378 redir: redirect both to file with 2>&1
+ok 379 redir: shorthand both redirect &>
+ok 380 redir: &> append variant &>>
+ok 381 redir: explicit fd 1 output
+ok 382 redir: explicit fd 0 input
+ok 383 redir: fd 3 output
+ok 384 redir: fd 4 output
+ok 385 redir: duplicate stdout to stderr
+ok 386 redir: save and restore stdout
+ok 387 redir: close stdout with >&-
+ok 388 redir: close stdin with <&-
+ok 389 redir: open file read-write
+ok 390 redir: read-write with fd
+ok 391 redir: noclobber prevents overwrite
+ok 392 redir: force overwrite with >| in noclobber
+ok 393 redir: noclobber allows new files
+ok 394 redir: null redirect creates empty file
+ok 395 redir: null redirect in subshell
+ok 396 redir: redirect in pipeline
+ok 397 redir: multiple redirects in pipeline
+ok 398 redir: stderr redirect in pipeline
+ok 399 redir: redirect builtin output
+ok 400 redir: redirect pwd output
+ok 401 redir: redirect export (no output)
+ok 402 redir: order matters - stdout then stderr
+ok 403 redir: order matters - stderr then stdout
+ok 404 redir: input from nonexistent file fails
+ok 405 redir: output to directory fails
+ok 406 redir: invalid fd number
+ok 407 compare: basic output redirect with bash
+ok 408 compare: append redirect with bash
+ok 409 compare: stderr redirect with bash
+ok 410 compare: combined redirect with bash
+ok 411 ifs: default splitting on spaces
+ok 412 ifs: default splitting on tabs
+ok 413 ifs: default splitting on newlines
+ok 414 ifs: default splitting with mixed whitespace
+ok 415 ifs: leading and trailing whitespace stripped
+ok 416 ifs: custom IFS colon
+ok 417 ifs: custom IFS comma
+ok 418 ifs: custom IFS preserves other characters
+ok 419 ifs: custom IFS with dollar paren comsub
+ok 420 ifs: custom IFS with backtick comsub
+ok 421 ifs: IFS affects comsub word splitting
+ok 422 ifs: save and restore IFS
+ok 423 ifs: IFS change affects subsequent operations
+ok 424 ifs: temporary IFS for single command
+ok 425 ifs: empty field at start
+ok 426 ifs: empty field in middle
+ok 427 ifs: empty field at end
+ok 428 ifs: only delimiter
+ok 429 ifs: empty string splits to nothing
+ok 430 ifs: IFS with multiple delimiters
+ok 431 ifs: IFS with colon and space
+ok 432 ifs: local IFS in function
+ok 433 ifs: function IFS doesn't affect caller
+ok 434 ifs: quoted variable prevents splitting
+ok 435 ifs: unquoted vs quoted in for loop
+ok 436 ifs: empty IFS disables splitting
+ok 437 ifs: IFS with newline character
+ok 438 ifs: IFS affects parameter expansion word splitting
+ok 439 ifs: IFS with default parameter expansion
+ok 440 ifs: IFS in array context
+ok 441 ifs: IFS with read builtin
+ok 442 ifs: IFS doesn't affect glob expansion
+ok 443 compare: default IFS with bash
+ok 444 compare: custom IFS with bash
+ok 445 compare: empty fields with bash
+ok 446 compare: quoted variable with bash
+ok 447 read: basic read into single variable
+ok 448 read: read with leading/trailing whitespace trimmed
+ok 449 read: read into multiple variables
+ok 450 read: extra words go into last variable
+ok 451 read: fewer words than variables - extras set to empty
+ok 452 read: no variable name uses REPLY
+ok 453 read: REPLY preserves leading whitespace
+ok 454 read: leading whitespace stripped from first variable
+ok 455 read: internal whitespace preserved in last variable
+ok 456 read: backslash-space preserved in value
+ok 457 read: trailing backslash continues to next line
+ok 458 read: backslash-newline continuation
+ok 459 read -r: backslash not treated specially
+ok 460 read -r: trailing backslash preserved
+ok 461 read -r: multiple variables with backslash
+ok 462 read -r: leading backslash preserved
+ok 463 read: custom IFS colon delimiter
+ok 464 read: IFS empty reads entire line
+ok 465 read: IFS unset uses default whitespace
+ok 466 read: IFS newline only
+ok 467 read: IFS with non-whitespace delimiter
+ok 468 read: multiple consecutive IFS delimiters create empty fields
+ok 469 read: leading IFS delimiter creates empty first field
+ok 470 read: from file via redirection
+ok 471 read: multiple reads from same file
+ok 472 read: returns 1 on EOF
+ok 473 read: empty input sets variable to empty
+ok 474 read: no input returns failure
+ok 475 read -p: prompt option (output goes to stderr) # skip read -p not yet implemented
+ok 476 read -s: silent mode (no echo) # skip read -s not yet implemented
+ok 477 read -n: read specific number of characters # skip read -n not yet implemented
+ok 478 read -n: fewer chars available than requested # skip read -n not yet implemented
+ok 479 read -n 1: read single character # skip read -n not yet implemented
+ok 480 read -N: read exactly N characters # skip read -N not yet implemented
+ok 481 read -d: custom delimiter # skip read -d not yet implemented
+ok 482 read -d: space as delimiter # skip read -d not yet implemented
+ok 483 read -d: null delimiter for NUL-separated input # skip read -d not yet implemented
+ok 484 read -t: timeout with available input succeeds # skip read -t not yet implemented
+ok 485 read -t 0: poll for available input # skip read -t not yet implemented
+ok 486 read -u: read from file descriptor # skip read -u not yet implemented
+ok 487 read -a: read into array # skip read -a not yet implemented
+ok 488 read -a: array with custom IFS # skip read -a not yet implemented
+ok 489 read -e: readline mode (basic test) # skip read -e not yet implemented
+ok 490 read: while loop pattern
+ok 491 read: while loop with multiple variables
+ok 492 read: process /etc/passwd style colon-separated
+ok 493 read: empty variable name list with REPLY
+ok 494 read: variable already has value - gets overwritten
+ok 495 read: handle carriage return in input
+ok 496 read: very long line
+ok 497 read: line with only whitespace
+ok 498 read: tabs as whitespace
+ok 499 read: from here-string # skip here-strings (<<<) not yet fully implemented
+ok 500 read: here-string with variable expansion # skip here-strings (<<<) not yet fully implemented
+ok 501 read -r with custom IFS
+ok 502 read: invalid option returns error # skip read option validation not yet implemented
+ok 503 read: in subshell doesn't affect parent
+ok 504 read: using process substitution preserves variable # skip process substitution not yet implemented
+ok 505 expansion: empty double quotes in middle of word
+ok 506 expansion: empty single quotes in middle of word
+ok 507 expansion: empty double quotes at start of word
+ok 508 expansion: empty single quotes at start of word
+ok 509 expansion: empty double quotes at end of word
+ok 510 expansion: empty single quotes at end of word
+ok 511 expansion: unset var with trailing empty quotes
+ok 512 expansion: unset var with leading empty quotes
+ok 513 expansion: unset var with trailing empty single quotes
+ok 514 expansion: unset var with leading empty single quotes
+ok 515 expansion: two unset vars with empty quotes between
+ok 516 expansion: set var with trailing empty quotes
+ok 517 expansion: set var with leading empty quotes
+ok 518 expansion: set var with trailing empty single quotes
+ok 519 expansion: set var with leading empty single quotes
+ok 520 expansion: two set vars with empty quotes between
+ok 521 expansion: unquoted unset variable produces nothing
+ok 522 expansion: quoted unset variable produces empty string
+ok 523 expansion: empty double quoted string
+ok 524 expansion: empty single quoted string
+ok 525 expansion: escaped backtick
+ok 526 expansion: escaped double quote
+ok 527 expansion: escaped dollar becomes literal backslash-dollar
+ok 528 expansion: double escaped backslash
+ok 529 expansion: quoted star followed by unquoted star
+ok 530 expansion: default value with command substitution - quoted
+ok 531 expansion: default value with command substitution - unquoted
+ok 532 expansion: assign default value
+ok 533 expansion: use alternative value
+ok 534 expansion: string length
+ok 535 expansion: remove shortest trailing match
+ok 536 expansion: remove longest trailing match
+ok 537 expansion: remove shortest leading match
+ok 538 expansion: remove longest leading match
+ok 539 expansion: non-matching prefix removal - short
+ok 540 expansion: non-matching prefix removal - long
+ok 541 expansion: non-matching suffix removal - short
+ok 542 expansion: non-matching suffix removal - long
+ok 543 expansion: backslash in single quotes with echo
+ok 544 expansion: dollar paren preserves backslash-dollar
+ok 545 expansion: unquoted star splits on whitespace
+ok 546 expansion: quoted star joins with space
+ok 547 expansion: quoted at preserves arguments
+ok 548 expansion: prefix and suffix around quoted at
+ok 549 expansion: double quoted at concatenation
+ok 550 expansion: two quoted vars concatenated
+ok 551 expansion: positional params 1 3 5 with unset 8 9
+ok 552 expansion: length of positional params count
+ok 553 expansion: length of first positional param
+ok 554 expansion: length of param count var
+ok 555 expansion: length of at
+ok 556 expansion: length of star
+ok 557 expansion: arithmetic addition
+ok 558 expansion: quoted tilde is literal
+ok 559 expansion: bang with no background jobs is empty
+ok 560 expansion: braced bang with no background jobs is empty
+ok 561 expansion: case with newline in variable
+ok 562 expansion: case with quoted question mark
+ok 563 expansion: case with escaped question mark
+ok 564 expansion: deferred dollar variable
+ok 565 expansion: eval deferred variable
+ok 566 expansion: quoted star with custom IFS
+ok 567 expansion: set with empty string and unset var
+ok 568 tilde: ~ expands to HOME
+ok 569 tilde: ~/foo expands to HOME/foo
+ok 570 tilde: ~/path with quotes around path part
+ok 571 tilde: expands in unquoted assignment
+ok 572 tilde: expands in path-style assignment
+ok 573 tilde: expands after colon in assignment
+ok 574 tilde: no expansion in double quotes
+ok 575 tilde: no expansion in quoted assignment value
+ok 576 tilde: no expansion when escaped
+ok 577 tilde: no expansion with escaped char in path
+ok 578 tilde: ~+ expands to PWD
+ok 579 tilde: ~- expands to OLDPWD
+ok 580 tilde: ~root expands to root's home # skip ~user expansion not yet implemented
+ok 581 tilde: ~$USER expands variable then user # skip ~$USER expansion not yet implemented
+ok 582 tilde: expands in unquoted parameter default
+ok 583 tilde: no expansion in quoted parameter default
+ok 584 tilde: expands in parameter alternate value # skip Parameter expansion alternate not fully implemented
+ok 585 tilde: expands in case pattern
+ok 586 tilde: expands in case word and pattern
+ok 587 tilde: no expansion in heredoc
+ok 588 tilde: not expanded in middle of word
+ok 589 tilde: not expanded after colon in middle of word
+ok 590 tilde: NOT expanded after colon in regular command argument
+ok 591 tilde: empty username treated as HOME
+ok 592 tilde: with trailing slash
+ok 593 tilde: expands in export assignment
+ok 594 tilde: no expansion in quoted export
+ok 595 tilde: expands in declare assignment # skip declare not fully implemented
+ok 596 tilde: multiple tildes in colon-separated value
+ok 597 tilde: tilde in default value assignment
+ok 598 tilde: case with tilde in variable comparison
+ok 599 tilde: literal tilde preserved when needed
+ok 600 cstyle-for: simple counter 0 to 2
+ok 601 cstyle-for: countdown with decrement
+ok 602 cstyle-for: infinite loop with break
+ok 603 cstyle-for: counter 1 to 5
+ok 604 cstyle-for: multiplication step
+ok 605 cstyle-for: pre-decrement
+ok 606 cstyle-for: post-increment with compound statements
+ok 607 cstyle-for: empty init
+ok 608 cstyle-for: empty update # skip Body-based increment (i=$((i+1))) relies on scoping fix for bash assignments
+ok 609 cstyle-for: empty condition (always true)
+ok 610 cstyle-for: comparison operators <=
+ok 611 cstyle-for: comparison operators >=
+ok 612 cstyle-for: comparison operators ==
+ok 613 cstyle-for: multiple statements in init
+ok 614 cstyle-for: negative start
+ok 615 cstyle-for: nested loops
+ok 616 cstyle-for: with continue
+ok 617 cstyle-for: semicolon before do
+ok 618 cstyle-for: no semicolon before do
+ok 619 compare cstyle-for with bash: basic
+ok 620 compare cstyle-for with bash: countdown
+ok 621 comment: simple line comment
+ok 622 comment: shebang line
+ok 623 comment: shebang followed by command
+ok 624 comment: inline comment after command
+ok 625 comment: # in middle of word is not a comment
+ok 626 comment: quoted # is not a comment
+ok 627 comment: single quoted # is not a comment
+ok 628 comment: multiple comments in script
+ok 629 comment: 8 variable still works
+ok 630 compare comment with bash: inline
+ok 631 compare comment with bash: # in middle of word
+ok 632 positional: $0 basic
+ok 633 positional: $1 with argument
+ok 634 positional: $@ basic
+ok 635 positional: $* basic
+ok 636 positional: $# count
+ok 637 positional: ${1:-default} when unset
+ok 638 positional: ${1:-default} when set
+ok 639 positional: ${1-default} when unset
+ok 640 positional: ${2:-fallback} with only one arg
+ok 641 positional: ${0##*/} strip path prefix
+ok 642 positional: ${1##*/} strip path from arg
+ok 643 positional: ${1#*/} strip first path component
+ok 644 positional: ${1%%.*} strip extension greedy
+ok 645 positional: ${1%.*} strip extension
+ok 646 positional: ${#1} length of first arg
+ok 647 positional: ${#@} count of all args
+ok 648 positional: ${#*} count of all args
+ok 649 positional: ${@:2} all args from second
+ok 650 positional: ${@:2:2} two args from second
+ok 651 positional: ${*:1:3} first three args
+ok 652 positional: ${?:-0} exit status with default
+ok 653 positional: ${#:-0} param count with default
+ok 654 positional: ${1/old/new} substitution
+ok 655 positional: ${@/a/X} substitute in all args
+ok 656 positional: ${1^^} uppercase
+ok 657 positional: ${1,,} lowercase
+ok 658 compare positional with bash: ${1:-default}
+ok 659 compare positional with bash: ${1##*/} # skip Grammar fix needed first
+ok 660 compare positional with bash: ${#1}
+ok 661 compare positional with bash: ${@:2:2}
+ok 662 trap: basic syntax - trap 'cmd' SIGNAL
+ok 663 trap: trap with double quotes
+ok 664 trap: trap with multiple commands
+ok 665 trap: trap with variable in command
+ok 666 trap: trap command with single quotes preserves literal
+ok 667 trap: EXIT runs on normal exit
+ok 668 trap: EXIT runs on explicit exit 0
+ok 669 trap: EXIT runs on explicit exit non-zero
+ok 670 trap: EXIT preserves exit code
+ok 671 trap: EXIT runs after script completion
+ok 672 trap: EXIT can write to temp file
+ok 673 trap: ERR runs on command failure
+ok 674 trap: ERR does not run on success
+ok 675 trap: ERR with set -e # skip set -e not yet implemented
+ok 676 trap: ERR multiple failures
+ok 677 trap: DEBUG runs before each command # skip trap DEBUG not yet implemented
+ok 678 trap: DEBUG shows command about to run # skip trap DEBUG not yet implemented
+ok 679 trap: RETURN runs after function returns # skip trap RETURN not yet implemented
+ok 680 trap: INT signal handler can be set
+ok 681 trap: TERM signal handler can be set
+ok 682 trap: HUP signal handler can be set
+ok 683 trap: QUIT signal handler can be set
+ok 684 trap: USR1 signal handler can be set
+ok 685 trap: USR2 signal handler can be set
+ok 686 trap: signal by number (2 = INT)
+ok 687 trap: signal with SIG prefix (SIGINT)
+ok 688 trap: reset trap with dash
+ok 689 trap: reset trap restores default action
+ok 690 trap: reset multiple signals
+ok 691 trap: reset with empty string (different from dash)
+ok 692 trap: ignore signal with empty string
+ok 693 trap: list traps with no arguments
+ok 694 trap: list shows all set traps
+ok 695 trap: list with -p flag
+ok 696 trap: list specific signal with -p
+ok 697 trap: list shows nothing when no traps set
+ok 698 trap: list output can be re-executed
+ok 699 trap: subshell does not inherit trap
+ok 700 trap: subshell can set its own trap
+ok 701 trap: ignored signals inherited by subshell
+ok 702 trap: command substitution inherits ignored signals
+ok 703 trap: pipeline components and trap inheritance
+ok 704 trap: function can set trap
+ok 705 trap: trap set in function persists after return
+ok 706 trap: local trap in function
+ok 707 trap: function return triggers RETURN trap # skip trap RETURN not yet implemented
+ok 708 trap: set same handler for multiple signals
+ok 709 trap: multiple signals in trap -p
+ok 710 trap: reset multiple signals at once
+ok 711 trap: EXIT and ERR together
+ok 712 trap: trap in loop
+ok 713 trap: trap in conditional
+ok 714 trap: trap command can fail
+ok 715 trap: trap with complex command
+ok 716 trap: trap accesses shell variables
+ok 717 trap: nested trap commands
+ok 718 trap: trap with redirection
+ok 719 trap: trap with pipeline
+ok 720 trap: invalid signal name fails
+ok 721 trap: invalid signal number fails
+ok 722 trap: cannot trap SIGKILL
+ok 723 trap: cannot trap SIGSTOP
+ok 724 trap: trap -l lists signals
+ok 725 compare: EXIT trap with bash
+ok 726 compare: trap list format with bash
+ok 727 compare: trap reset with bash
+ok 728 compare: multiple signal trap with bash
+ok 729 compare: subshell trap inheritance with bash
+ok 730 compare: function trap with bash
+ok 731 trap: $? available in EXIT trap
+ok 732 trap: $LINENO in DEBUG trap # skip trap DEBUG not yet implemented
+ok 733 trap: $BASH_COMMAND in DEBUG trap # skip trap DEBUG not yet implemented
+ok 734 trap: trap with background job # skip background jobs (&) not yet implemented
+ok 735 trap: SIGCHLD trap # skip trap SIGCHLD not yet implemented
+ok 736 printf - basic string format %s
+ok 737 printf - multiple string arguments
+ok 738 printf - literal text without format specifiers
+not ok 739 printf - no newline without \n
+# (in test file 18_printf.bats, line 64)
+#   `[ "$output" = "hello world" ]' failed
+ok 740 printf - empty format string
+ok 741 printf - decimal format %d
+ok 742 printf - decimal format %i (alias for %d)
+ok 743 printf - negative decimal
+ok 744 printf - unsigned decimal %u
+ok 745 printf - octal format %o
+ok 746 printf - hexadecimal lowercase %x
+ok 747 printf - hexadecimal uppercase %X
+ok 748 printf - hex and octal together
+ok 749 printf - non-numeric string as integer defaults to 0
+ok 750 printf - right-aligned string with width
+ok 751 printf - left-aligned string with width
+ok 752 printf - right-aligned integer with width
+ok 753 printf - left-aligned integer with width
+ok 754 printf - zero-padded integer
+ok 755 printf - zero-padded with negative number
+ok 756 printf - zero-padded hex
+ok 757 printf - string precision truncation
+ok 758 printf - string precision longer than string
+ok 759 printf - width and precision combined
+ok 760 printf - left align with width and precision
+ok 761 printf - literal percent %%
+ok 762 printf - character format %c
+ok 763 printf - single character from string
+ok 764 printf - %b expands escape sequences in argument
+ok 765 printf - %b with newline escape
+ok 766 printf - %q quotes for shell reuse
+ok 767 printf - %q with simple string (no quoting needed)
+ok 768 printf - newline escape \n
+ok 769 printf - tab escape \t
+ok 770 printf - carriage return escape \r
+ok 771 printf - backslash escape \\
+ok 772 printf - double quote escape \"
+ok 773 printf - single quote escape
+ok 774 printf - octal escape \0nnn
+ok 775 printf - hex escape \xHH
+ok 776 printf - bell escape \a
+ok 777 printf - alternate form octal %#o
+ok 778 printf - alternate form hex %#x
+ok 779 printf - alternate form hex uppercase %#X
+ok 780 printf - alternate form for zero doesn't add prefix
+ok 781 printf - plus sign flag for positive
+ok 782 printf - plus sign flag for negative
+ok 783 printf - space flag for positive
+ok 784 printf - space flag for negative
+ok 785 printf -v stores result in variable
+ok 786 printf -v with format string
+ok 787 printf -v with multiple arguments
+ok 788 printf -v without variable name returns error
+ok 789 printf - more format specifiers than arguments
+ok 790 printf - fewer format specifiers uses empty string
+ok 791 printf - missing format string returns error
+ok 792 printf - format reuse with extra arguments # skip Format reuse not implemented - bash repeats format for extra args
+ok 793 printf - compare basic string with bash
+ok 794 printf - compare integer with bash
+ok 795 printf - compare hex with bash
+ok 796 printf - compare width with bash
+ok 797 printf - compare left-align with bash
+ok 798 printf - compare precision with bash
+ok 799 printf - compare zero-pad with bash
+ok 800 printf - compare escape sequences with bash
+ok 801 printf - empty string argument
+ok 802 printf - string with spaces
+ok 803 printf - integer zero
+ok 804 printf - large integer
+ok 805 printf - format with no conversion
+ok 806 printf - multiple newlines
+ok 807 printf - table formatting
+ok 808 printf - build string with multiple parts
+ok 809 printf - hex color code
+ok 810 printf - math expression result
+ok 811 printf - aligned columns
+ok 812 test -e: regular file exists
+ok 813 test -e: directory exists
+ok 814 test -e: nonexistent file
+ok 815 [ -e ]: file exists with bracket syntax
+ok 816 [ -e ]: nonexistent file with bracket syntax
+ok 817 test -f: regular file
+ok 818 test -f: directory is not regular file
+ok 819 test -f: symlink to regular file
+ok 820 [ -f ]: regular file with bracket syntax
+ok 821 test -d: directory
+ok 822 test -d: regular file is not directory
+ok 823 [ -d ]: directory with bracket syntax
+ok 824 test -r: readable file
+ok 825 [ -r ]: readable file with bracket syntax
+ok 826 test -w: writable file
+ok 827 [ -w ]: writable file with bracket syntax
+ok 828 test -x: executable file
+ok 829 test -x: non-executable file
+ok 830 [ -x ]: executable file with bracket syntax
+ok 831 test -s: non-empty file
+ok 832 test -s: empty file
+ok 833 [ -s ]: non-empty file with bracket syntax
+ok 834 test -L: symlink
+ok 835 test -L: regular file is not symlink
+ok 836 test -h: symlink (alternate form)
+ok 837 test -L: broken symlink still detected
+ok 838 [ -L ]: symlink with bracket syntax
+ok 839 test -z: empty string
+ok 840 test -z: non-empty string
+ok 841 test -z: unset variable
+ok 842 [ -z ]: empty string with bracket syntax
+ok 843 test -n: non-empty string
+ok 844 test -n: empty string
+ok 845 [ -n ]: non-empty string with bracket syntax
+ok 846 test: non-empty string is true
+ok 847 test: empty string is false
+ok 848 [ STRING ]: non-empty with bracket syntax
+ok 849 test =: equal strings
+ok 850 test =: unequal strings
+ok 851 test =: empty strings are equal
+ok 852 [ = ]: equal strings with bracket syntax
+ok 853 test !=: unequal strings
+ok 854 test !=: equal strings
+ok 855 [ != ]: unequal strings with bracket syntax
+ok 856 test <: lexicographically less
+ok 857 test <: lexicographically greater
+ok 858 test <: equal strings not less
+ok 859 [ < ]: lexicographic comparison with bracket syntax
+ok 860 test >: lexicographically greater
+ok 861 test >: lexicographically less
+ok 862 [ > ]: lexicographic comparison with bracket syntax
+ok 863 test -eq: equal integers
+ok 864 test -eq: unequal integers
+ok 865 test -eq: negative integers
+ok 866 [ -eq ]: equal integers with bracket syntax
+ok 867 test -ne: unequal integers
+ok 868 test -ne: equal integers
+ok 869 [ -ne ]: unequal integers with bracket syntax
+ok 870 test -lt: less than
+ok 871 test -lt: not less than
+ok 872 test -lt: equal not less
+ok 873 test -lt: negative numbers
+ok 874 [ -lt ]: less than with bracket syntax
+ok 875 test -le: less than
+ok 876 test -le: equal
+ok 877 test -le: greater than
+ok 878 [ -le ]: less or equal with bracket syntax
+ok 879 test -gt: greater than
+ok 880 test -gt: not greater than
+ok 881 test -gt: equal not greater
+ok 882 test -gt: negative numbers
+ok 883 [ -gt ]: greater than with bracket syntax
+ok 884 test -ge: greater than
+ok 885 test -ge: equal
+ok 886 test -ge: less than
+ok 887 [ -ge ]: greater or equal with bracket syntax
+ok 888 test !: negate true
+ok 889 test !: negate false
+ok 890 test !: negate string equality
+ok 891 [ ! ]: negation with bracket syntax
+ok 892 test -a: both true
+ok 893 test -a: first false
+ok 894 test -a: second false
+ok 895 test -a: both false
+ok 896 [ -a ]: and with bracket syntax
+ok 897 test -o: both true
+ok 898 test -o: first true
+ok 899 test -o: second true
+ok 900 test -o: both false
+ok 901 [ -o ]: or with bracket syntax
+ok 902 test: grouping changes evaluation
+ok 903 test: nested grouping
+ok 904 [ ( ) ]: grouping with bracket syntax
+ok 905 test: no arguments returns false
+ok 906 []: empty brackets error
+ok 907 test: string with spaces
+ok 908 test: string containing equals sign
+ok 909 test: string starting with dash
+ok 910 test: zero integer
+ok 911 test: large integers
+ok 912 test: integer with leading zeros
+ok 913 []: missing closing bracket
+ok 914 test: special characters in string
+ok 915 test: newline in string comparison
+ok 916 test: variable in string comparison
+ok 917 test: variable in integer comparison
+ok 918 test: unset variable in comparison
+ok 919 test: arithmetic expansion in comparison
+ok 920 compare: file test with bash
+ok 921 compare: string equality with bash
+ok 922 compare: integer comparison with bash
+ok 923 compare: negation with bash
+ok 924 compare: complex expression with bash
+ok 925 compare: bracket syntax with bash
+ok 926 test in if statement
+ok 927 [ ] in if statement
+ok 928 test with && operator
+ok 929 test with || operator
+ok 930 [ ] in while loop condition
+ok 931 getopts - no arguments should fail
+ok 932 getopts - missing variable name should fail
+ok 933 getopts - single option no argument
+ok 934 getopts - multiple separate options
+ok 935 getopts - combined options (-abc)
+ok 936 getopts - option with separate argument
+ok 937 getopts - option with attached argument (-bvalue)
+ok 938 getopts - mixed options with and without arguments
+ok 939 getopts - option argument with spaces
+ok 940 getopts - OPTIND starts at 1
+ok 941 getopts - OPTIND after all options
+ok 942 getopts - OPTIND reset for reparsing
+ok 943 getopts - invalid option in verbose mode
+ok 944 getopts - missing argument in verbose mode
+ok 945 getopts - invalid option in silent mode
+ok 946 getopts - missing argument in silent mode
+ok 947 getopts - double dash ends option processing
+ok 948 getopts - returns 0 when option found
+ok 949 getopts - returns 1 when no more options
+ok 950 getopts - returns 1 for non-option argument
+ok 951 getopts - custom args instead of positional params
+ok 952 compare getopts basic with bash
+ok 953 compare getopts combined options with bash
+ok 954 compare getopts attached argument with bash
+ok 955 compare getopts silent mode invalid with bash
+ok 956 compare getopts silent mode missing arg with bash
+ok 957 getopts - empty positional params returns 1
+ok 958 getopts - option after non-option stops processing
+ok 959 getopts - multiple calls share state via OPTIND
+ok 960 getopts - more than 9 positional params
+ok 961 getopts - OPTERR=0 suppresses error messages
+ok 962 dirs: default output shows current directory
+ok 963 dirs -c: clears directory stack
+ok 964 dirs -l: long listing (no tilde abbreviation)
+ok 965 dirs -p: one entry per line
+ok 966 dirs -v: indexed entries per line
+ok 967 dirs +0: shows top of stack (current dir)
+ok 968 dirs +1: shows second entry
+ok 969 dirs -0: shows bottom of stack
+ok 970 dirs: invalid index returns error
+ok 971 dirs: invalid option returns error
+ok 972 pushd dir: pushes directory and changes to it
+ok 973 pushd dir: prints stack after push
+ok 974 pushd (no args): swaps top two entries
+ok 975 pushd: two consecutive pushds restore original order
+ok 976 pushd -n dir: adds to stack without changing directory
+ok 977 pushd -n dir: directory appears in stack
+ok 978 pushd +1: rotates stack
+ok 979 pushd: non-existent directory returns error
+ok 980 pushd: empty stack (no swap target) returns error
+ok 981 pushd: out of range index returns error
+ok 982 popd: removes top and changes to new top
+ok 983 popd: prints stack after pop
+ok 984 popd -n: removes entry without changing directory
+ok 985 popd +1: removes second entry
+ok 986 popd: empty stack returns error
+ok 987 popd: out of range index returns error
+ok 988 pushd/popd preserve PWD and OLDPWD
+ok 989 directory stack works across multiple operations
+ok 990 pushd/popd cycle returns to original directory
+ok 991 dirs -c then pushd works correctly
+ok 992 multiple subdirectory navigation
+ok 993 bash-compat: dirs output format matches bash
+ok 994 bash-compat: pushd changes directory
+ok 995 bash-compat: popd returns to previous directory
+ok 996 UID - real user ID
+ok 997 EUID - effective user ID
+ok 998 PPID - parent process ID
+ok 999 HOSTNAME - machine hostname
+ok 1000 HOSTTYPE - CPU architecture
+ok 1001 OSTYPE - OS type with version
+ok 1002 MACHTYPE - full machine type
+ok 1003 USER - current username
+ok 1004 SHELL - shell path from environment
+ok 1005 UID is readonly - cannot be assigned
+ok 1006 EUID is readonly - cannot be assigned
+ok 1007 PPID is readonly - cannot be assigned
+ok 1008 HOSTNAME is readonly - cannot be assigned
+ok 1009 all system vars in single command
+ok 1010 startup: --help shows usage
+ok 1011 startup: --version shows version
+ok 1012 startup: -h is same as --help
+ok 1013 startup: -V is same as --version
+ok 1014 startup: BASH_ENV sourced for -c command
+ok 1015 startup: ENV sourced as fallback (POSIX)
+ok 1016 startup: BASH_ENV takes precedence over ENV
+ok 1017 startup: BASH_ENV not sourced if empty
+ok 1018 startup: --rcfile sources custom file
+ok 1019 startup: --init-file is alias for --rcfile
+ok 1020 startup: --login flag recognized
+ok 1021 startup: -l is shorthand for --login
+ok 1022 startup: --noprofile skips profile files
+ok 1023 startup: --norc is recognized
+ok 1024 startup: --verbose shows login state
+ok 1025 startup: --verbose shows sourced files
+ok 1026 startup: -lc combined option works
+ok 1027 startup: script mode sets /opt/homebrew/Cellar/bats-core/1.13.0/libexec/bats-core/bats-exec-test correctly
+ok 1028 startup: script mode sets positional params
+ok 1029 startup: script mode sources BASH_ENV
+ok 1030 startup: missing rcfile argument shows error
+ok 1031 startup: missing -c argument shows error
+ok 1032 startup: invalid option shows error
+ok 1033 startup: nonexistent script shows error
+ok 1034 startup: COLONY_STARTUP_SOURCED is set after startup
+ok 1035 job-control: $$ expands to current shell PID
+ok 1036 job-control: $$ is consistent within same shell
+ok 1037 job-control: $$ in subshell is parent's PID
+ok 1038 job-control: compare $$ with bash
+ok 1039 job-control: $! is empty before any background job
+ok 1040 job-control: $! is set after background job
+ok 1041 job-control: $! persists after background job completes
+ok 1042 job-control: $! updated by subsequent background job
+ok 1043 job-control: background command syntax parsed
+ok 1044 job-control: background command runs asynchronously
+ok 1045 job-control: background command output appears
+ok 1046 job-control: multiple background commands
+ok 1047 job-control: background pipeline
+ok 1048 job-control: background job creates job entry # skip Background execution (&) not yet implemented
+ok 1049 job-control: background job shows in job notification # skip Background execution (&) not yet implemented
+ok 1050 job-control: background with redirection
+ok 1051 job-control: background exit status available via wait
+ok 1052 job-control: jobs with no jobs prints nothing
+ok 1053 job-control: jobs -l shows PIDs # skip Background execution (&) not yet implemented
+ok 1054 job-control: jobs -p shows only PIDs # skip Background execution (&) not yet implemented
+ok 1055 job-control: jobs -r shows running jobs only # skip Background execution (&) not yet implemented - job filtering
+ok 1056 job-control: jobs -s shows stopped jobs only # skip Background execution (&) not yet implemented - job filtering
+ok 1057 job-control: jobs shows job status
+ok 1058 job-control: jobs shows command
+ok 1059 job-control: jobs current job marked with + # skip Background execution (&) not yet implemented
+ok 1060 job-control: jobs previous job marked with - # skip Background execution (&) not yet implemented
+ok 1061 job-control: jobs shows Done for completed jobs # skip Background execution (&) not yet implemented
+ok 1062 job-control: jobs specific job number # skip Background execution (&) not yet implemented
+ok 1063 job-control: jobs invalid job number # skip Background execution (&) not yet implemented
+ok 1064 job-control: wait with no jobs returns immediately
+ok 1065 job-control: wait for specific PID
+ok 1066 job-control: wait for job ID # skip Background execution (&) not yet implemented
+ok 1067 job-control: wait returns exit status of job
+ok 1068 job-control: wait for all background jobs
+ok 1069 job-control: wait -n waits for any job # skip Background execution (&) not yet implemented - wait -n
+ok 1070 job-control: wait invalid PID
+ok 1071 job-control: wait invalid job spec # skip Background execution (&) not yet implemented
+ok 1072 job-control: wait for pipeline # skip Background execution (&) not yet implemented
+ok 1073 job-control: wait returns immediately for completed job # skip Background execution (&) not yet implemented
+ok 1074 job-control: fg with no jobs fails
+ok 1075 job-control: fg brings job to foreground # skip Background execution (&) not yet implemented
+ok 1076 job-control: fg specific job number # skip Background execution (&) not yet implemented
+ok 1077 job-control: fg %% # skip Background execution (&) not yet implemented
+ok 1078 job-control: fg %+ # skip Background execution (&) not yet implemented
+ok 1079 job-control: fg %- # skip Background execution (&) not yet implemented
+ok 1080 job-control: fg invalid job spec # skip Background execution (&) not yet implemented
+ok 1081 job-control: fg shows job command # skip Background execution (&) not yet implemented
+ok 1082 job-control: fg returns job exit status # skip Background execution (&) not yet implemented
+ok 1083 job-control: fg resumes stopped job # skip Background execution (&) not yet implemented - SIGTSTP handling
+ok 1084 job-control: bg with no jobs fails
+ok 1085 job-control: bg resumes stopped job in background # skip Background execution (&) not yet implemented - SIGTSTP handling
+ok 1086 job-control: bg specific job number # skip Background execution (&) not yet implemented - SIGTSTP handling
+ok 1087 job-control: bg shows job command # skip Background execution (&) not yet implemented - SIGTSTP handling
+ok 1088 job-control: bg invalid job spec # skip Background execution (&) not yet implemented
+ok 1089 job-control: bg on running job (no-op or error) # skip Background execution (&) not yet implemented
+ok 1090 job-control: %1 references first job # skip Background execution (&) not yet implemented
+ok 1091 job-control: %2 references second job # skip Background execution (&) not yet implemented
+ok 1092 job-control: %% references current job # skip Background execution (&) not yet implemented
+ok 1093 job-control: %+ references current job # skip Background execution (&) not yet implemented
+ok 1094 job-control: %- references previous job # skip Background execution (&) not yet implemented
+ok 1095 job-control: %?string matches job containing string # skip Background execution (&) not yet implemented - job string matching
+ok 1096 job-control: %string matches job starting with string # skip Background execution (&) not yet implemented - job string matching
+ok 1097 job-control: SIGTSTP stops foreground job # skip Background execution (&) not yet implemented - SIGTSTP handling
+ok 1098 job-control: SIGCONT resumes stopped job # skip Background execution (&) not yet implemented - SIGCONT handling
+ok 1099 job-control: stopped job status in jobs # skip Background execution (&) not yet implemented - SIGTSTP handling
+ok 1100 job-control: shell ignores SIGTSTP
+ok 1101 job-control: shell ignores SIGINT during job control
+ok 1102 job-control: completed job notified before next prompt # skip Background execution (&) not yet implemented
+ok 1103 job-control: exit status of failed background job # skip Background execution (&) not yet implemented
+ok 1104 job-control: exit status 128+signal for signaled job # skip Background execution (&) not yet implemented
+ok 1105 job-control: background job has its own process group # skip Background execution (&) not yet implemented
+ok 1106 job-control: pipeline members share process group # skip Background execution (&) not yet implemented
+ok 1107 job-control: subshell inherits job control settings # skip Background execution (&) not yet implemented
+ok 1108 job-control: background in pipeline # skip Background execution (&) not yet implemented
+ok 1109 job-control: command substitution with background # skip Background execution (&) not yet implemented
+ok 1110 job-control: background in brace group # skip Background execution (&) not yet implemented
+ok 1111 job-control: background in subshell # skip Background execution (&) not yet implemented
+ok 1112 job-control: nested background jobs # skip Background execution (&) not yet implemented
+ok 1113 job-control: kill background job # skip Background execution (&) not yet implemented
+ok 1114 job-control: kill background job by job spec # skip Background execution (&) not yet implemented
+ok 1115 job-control: disown removes job from table # skip disown not yet implemented
+ok 1116 job-control: disown -h keeps job but no HUP # skip disown not yet implemented
+ok 1117 compare: $$ format matches bash
+ok 1118 compare: jobs with no jobs matches bash
+ok 1119 compare: fg error message similar to bash
+ok 1120 compare: bg error message similar to bash
+ok 1121 compare: wait with no jobs matches bash
+ok 1122 job-control: Ctrl-C sends SIGINT to foreground job # skip Interactive terminal tests not supported in BATS
+ok 1123 job-control: Ctrl-Z sends SIGTSTP to foreground job # skip Interactive terminal tests not supported in BATS
+ok 1124 job-control: job control disabled in non-interactive shell # skip Interactive terminal tests not supported in BATS
+ok 1125 job-control: set -m enables job control # skip set -m not yet implemented
+ok 1126 job-control: set +m disables job control # skip set +m not yet implemented
+ok 1127 job-control: SIGCHLD triggers job status update # skip Background execution (&) not yet implemented
+ok 1128 job-control: trap SIGCHLD handler # skip trap CHLD not yet implemented
+ok 1129 job-control: background command appears in history # skip History integration with job control not tested
+ok 1130 job-control: exit with running background jobs # skip Background execution (&) not yet implemented
+ok 1131 job-control: exit with stopped jobs # skip Background execution (&) not yet implemented - SIGTSTP handling
+ok 1132 set -e: enables errexit mode
+ok 1133 set +e: disables errexit mode
+ok 1134 set -o errexit: enables errexit mode via long option # skip set -o option parsing not yet implemented
+ok 1135 set +o errexit: disables errexit mode via long option # skip set -o option parsing not yet implemented
+ok 1136 set -e: combined with other options -ex
+ok 1137 set -e: exits on simple command failure
+ok 1138 set -e: continues on simple command success
+ok 1139 set -e: exits with failed command's exit code
+ok 1140 set -e: propagates non-zero exit from external command
+ok 1141 set -e: preserves $? from failed command
+ok 1142 set -e: command not found triggers errexit
+ok 1143 set -e: does NOT exit on failure in if condition
+ok 1144 set -e: does NOT exit on failure in if test command
+ok 1145 set -e: does NOT exit on failure in elif condition
+ok 1146 set -e: exits on failure in if body (then clause)
+ok 1147 set -e: exits on failure in if body (else clause)
+ok 1148 set -e: does NOT exit on failure in while condition
+ok 1149 set -e: does NOT exit when while condition becomes false
+ok 1150 set -e: exits on failure in while body
+ok 1151 set -e: does NOT exit on failure in until condition
+ok 1152 set -e: exits on failure in until body
+ok 1153 set -e: does NOT exit on failure before &&
+ok 1154 set -e: does NOT exit on failure before ||
+ok 1155 set -e: exits on failure after final &&
+ok 1156 set -e: exits on failure after final ||
+ok 1157 set -e: complex && || chain - failure in middle
+ok 1158 set -e: chain with multiple && - all succeed
+ok 1159 set -e: chain with multiple && - middle fails
+ok 1160 set -e: does NOT exit on ! negated failure
+ok 1161 set -e: exits on ! negated success (inverts to failure)
+ok 1162 set -e: ! with pipeline
+ok 1163 set -e: ! false with complex command
+ok 1164 set -e: subshell inherits errexit
+ok 1165 set -e: subshell exit does not affect parent # skip subshell execution with exit does not work correctly yet - commands after subshell not executed
+ok 1166 set -e: subshell can disable errexit
+ok 1167 set -e: nested subshells
+ok 1168 set -e: command substitution inherits errexit
+ok 1169 set -e: command substitution success
+ok 1170 set -e: function called with errexit
+ok 1171 set -e: function return value
+ok 1172 set -e: function with set +e internally
+ok 1173 set -e: function in if condition does not trigger errexit
+ok 1174 set -e: nested function calls
+ok 1175 set -e: function with successful commands
+ok 1176 set -e: pipeline - last command exit status matters
+ok 1177 set -e: pipeline - last command fails
+ok 1178 set -e: pipeline with multiple stages - last succeeds
+ok 1179 set -e: pipeline with multiple stages - last fails
+ok 1180 set -o pipefail: any pipeline failure causes errexit # skip pipefail not yet implemented
+ok 1181 set -o pipefail: all succeed - no exit # skip pipefail not yet implemented
+ok 1182 set -o pipefail: first of three fails # skip pipefail not yet implemented
+ok 1183 set -o pipefail: middle of three fails # skip pipefail not yet implemented
+ok 1184 set -e: brace group - failure exits
+ok 1185 set -e: brace group - success continues
+ok 1186 set -e: for loop - failure in body exits
+ok 1187 set -e: case statement - failure in body exits
+ok 1188 set -e: case statement - success continues
+ok 1189 set -e: ERR trap runs before exit
+ok 1190 set -e: ERR trap with exit code
+ok 1191 set -e: ERR and EXIT traps both run
+ok 1192 set -e: ERR trap does not prevent exit
+ok 1193 set -e: empty command list
+ok 1194 set -e: true command
+ok 1195 set -e: assignment with command substitution failure
+ok 1196 set -e: assignment itself does not fail
+ok 1197 set -e: export with failed command sub
+ok 1198 set -e: local in function with failed command sub
+ok 1199 set -e: arithmetic expansion failure
+ok 1200 set -e: test builtin failure in normal context
+ok 1201 set -e: read builtin with no input
+ok 1202 set -e: toggle on-off-on
+ok 1203 set -e: multiple failures with set +e
+ok 1204 set -e: re-enable after safe section
+ok 1205 set -e: function body where -e is ignored inherits ignore
+ok 1206 set -e: nested if conditions
+ok 1207 set -e: while in if condition # skip pre-existing bug: while loop inside if condition variable scoping
+ok 1208 compare: set -e simple failure with bash
+ok 1209 compare: set -e with if condition with bash
+ok 1210 compare: set -e with && chain with bash
+ok 1211 compare: set -e with || chain with bash
+ok 1212 compare: set -e with negation with bash
+ok 1213 compare: set -e subshell with bash
+ok 1214 compare: set -e function with bash
+ok 1215 compare: set -e pipeline with bash
+ok 1216 compare: set -e while loop with bash
+ok 1217 compare: set -e for loop with bash
+ok 1218 set -e: script-like sequence
+ok 1219 set -e: cleanup pattern with trap
+ok 1220 set -e: error handling pattern
+ok 1221 set -e: conditional execution pattern
+ok 1222 set -x: enable xtrace mode
+ok 1223 set -x: disable xtrace with set +x
+ok 1224 set -x: set -o xtrace equivalent
+ok 1225 set -x: set +o xtrace disables
+ok 1226 set -x: default PS4 is '+ '
+ok 1227 set -x: trace shows expanded command
+ok 1228 set -x: trace shows expanded variables
+ok 1229 set -x: trace shows quoted strings correctly
+ok 1230 set -x: trace shows double quoted strings
+ok 1231 set -x: custom PS4 changes trace prefix
+ok 1232 set -x: PS4 with variable expansion # skip PS4 variable expansion not yet implemented
+ok 1233 set -x: PS4 with command substitution # skip PS4 command substitution not yet implemented
+ok 1234 set -x: PS4 empty string
+ok 1235 set -x: PS4 with newline
+ok 1236 set -x: trace output goes to stderr
+ok 1237 set -x: stdout and stderr separation
+ok 1238 set -x: redirect stderr hides trace
+ok 1239 set -x: BASH_XTRACEFD redirects trace to fd # skip BASH_XTRACEFD not yet implemented
+ok 1240 set -x: BASH_XTRACEFD invalid fd # skip BASH_XTRACEFD not yet implemented
+ok 1241 set -x: unset BASH_XTRACEFD restores stderr # skip BASH_XTRACEFD not yet implemented
+ok 1242 set -x: trace simple assignment
+ok 1243 set -x: trace export assignment
+ok 1244 set -x: trace assignment with expansion
+ok 1245 set -x: trace readonly assignment # skip readonly builtin not yet implemented
+ok 1246 set -x: trace local assignment in function
+ok 1247 set -x: trace command substitution
+ok 1248 set -x: trace nested command substitution
+ok 1249 set -x: trace backtick substitution # skip Backtick command substitution not yet implemented
+ok 1250 set -x: trace function definition
+ok 1251 set -x: trace function call
+ok 1252 set -x: trace commands inside function
+ok 1253 set -x: trace function with arguments
+ok 1254 set -x: trace recursive function
+ok 1255 set -x: trace simple pipeline
+ok 1256 set -x: trace multi-stage pipeline
+ok 1257 set -x: trace pipeline with variables
+ok 1258 set -x: trace subshell commands
+ok 1259 set -x: trace brace group commands
+ok 1260 set -x: xtrace inherited in subshell
+ok 1261 set -x: xtrace can be disabled in subshell
+ok 1262 set -x: trace for loop
+ok 1263 set -x: trace while loop
+ok 1264 set -x: trace if statement
+ok 1265 set -x: trace if-else statement
+ok 1266 set -x: trace case statement
+ok 1267 set -x: trace arithmetic expansion
+ok 1268 set -x: trace arithmetic for loop # skip C-style for loop may not be fully implemented
+ok 1269 set -x: trace array assignment # skip Array assignment tracing not yet implemented
+ok 1270 set -x: trace append operator # skip Append operator (+=) not yet implemented
+ok 1271 set -x: trace with inline env vars
+ok 1272 set -x: trace redirections
+ok 1273 set -x: trace with stderr redirect
+ok 1274 set -x: trace read builtin
+ok 1275 set -x: trace cd builtin
+ok 1276 set -x: trace source command
+ok 1277 set -x: trace test command
+ok 1278 set -x: empty command
+ok 1279 set -x: comment not traced
+ok 1280 set -x: multiple set -x is idempotent
+ok 1281 set -x: toggle on and off
+ok 1282 set -x: trace multiline command
+ok 1283 set -x: xtrace shows in $-
+ok 1284 set -x: xtrace removed from $- when off
+ok 1285 set -x: nested depth shown with extra + # skip Nested depth indication (++) not yet implemented
+ok 1286 compare: basic set -x with bash
+ok 1287 compare: set +x disables trace with bash
+ok 1288 compare: for loop trace with bash
+ok 1289 compare: PS4 custom prefix with bash
+ok 1290 compare: variable expansion trace with bash
+ok 1291 compare: function trace with bash
+ok 1292 compare: stderr trace with bash
+ok 1293 set -x: with set -e (errexit) # skip set -e not yet implemented
+ok 1294 set -x: with set -v (verbose) # skip set -v not yet implemented
+ok 1295 set -x: with set -u (nounset) # skip set -u not yet implemented
+ok 1296 set -x: with trap
+ok 1297 set -x: script file execution
+ok 1298 error: command not found returns exit code 127 # skip POSIX exit code 127 for command not found not yet implemented - returns 1
+ok 1299 error: command not found error message mentions command name
+ok 1300 error: empty PATH causes command not found # skip PATH= inline environment not passing correctly to child commands
+ok 1301 error: command not found in pipeline propagates
+ok 1302 error: command not found does not affect subsequent commands with semicolon
+ok 1303 error: command not found with && stops execution
+ok 1304 error: command not found with || continues execution
+ok 1305 compare: command not found exit code matches bash # skip POSIX exit code 127 for command not found not yet implemented
+ok 1306 error: non-executable file returns exit code 126 # skip POSIX exit code 126 for permission denied not yet implemented
+ok 1307 error: permission denied produces non-zero exit
+ok 1308 error: directory as command returns error
+ok 1309 compare: permission denied exit code matches bash # skip POSIX exit code 126 for permission denied not yet implemented
+ok 1310 error: unclosed single quote is syntax error
+ok 1311 error: unclosed double quote is syntax error
+ok 1312 error: unclosed parenthesis is syntax error
+ok 1313 error: unclosed brace is syntax error
+ok 1314 error: missing then in if statement is syntax error
+ok 1315 error: missing fi in if statement is syntax error
+ok 1316 error: missing done in for loop is syntax error
+ok 1317 error: missing done in while loop is syntax error
+ok 1318 error: missing esac in case statement is syntax error
+ok 1319 error: misplaced then keyword is syntax error
+ok 1320 error: misplaced else keyword is syntax error
+ok 1321 error: misplaced fi keyword is syntax error
+ok 1322 error: misplaced do keyword is syntax error
+ok 1323 error: misplaced done keyword is syntax error
+ok 1324 error: empty pipeline element is syntax error
+ok 1325 error: trailing pipe is syntax error
+ok 1326 error: leading pipe is syntax error
+ok 1327 error: invalid option to builtin produces error
+ok 1328 error: invalid option to export # skip export invalid option handling not yet implemented
+ok 1329 error: invalid option to read # skip read invalid option handling not yet implemented
+ok 1330 error: invalid option error message is helpful
+ok 1331 error: division by zero in arithmetic expansion
+ok 1332 error: modulo by zero in arithmetic expansion
+ok 1333 error: division by zero with variable
+ok 1334 error: division by zero error message
+ok 1335 compare: division by zero exit code matches bash
+ok 1336 error: assignment to readonly variable fails # skip readonly builtin not yet implemented
+ok 1337 error: unset readonly variable fails # skip readonly builtin not yet implemented
+ok 1338 error: readonly error message mentions variable name # skip readonly builtin not yet implemented
+ok 1339 error: export readonly then assign fails # skip readonly builtin not yet implemented
+ok 1340 error: readonly in for loop # skip readonly builtin not yet implemented
+ok 1341 compare: readonly assignment error matches bash # skip readonly builtin not yet implemented
+ok 1342 error: invalid variable name in assignment
+ok 1343 error: invalid variable name with hyphen
+ok 1344 error: invalid variable name in export # skip export invalid variable name validation not yet implemented
+ok 1345 error: invalid variable name in read # skip read invalid variable name validation not yet implemented
+ok 1346 error: invalid variable name in for loop
+ok 1347 error: redirect to nonexistent directory fails
+ok 1348 error: input redirect from nonexistent file fails
+ok 1349 error: redirect error message mentions file
+ok 1350 error: append redirect to nonexistent directory fails
+ok 1351 error: redirect with invalid fd number # skip invalid fd handling may vary
+ok 1352 error: heredoc with missing delimiter # skip heredoc missing delimiter detection varies by shell
+ok 1353 error: read from closed fd fails # skip fd close not yet fully implemented
+ok 1354 error: write to closed fd fails # skip fd close not yet fully implemented
+ok 1355 error: dup to invalid fd # skip invalid fd dup behavior varies
+ok 1356 error: subshell exit code propagates
+ok 1357 error: failed command in subshell propagates
+ok 1358 error: command not found in subshell returns non-zero
+ok 1359 error: syntax error in subshell
+ok 1360 error: subshell errors don't affect parent after semicolon # skip subshell exit status in $? not yet preserved
+ok 1361 error: function return value propagates
+ok 1362 error: function with failed command
+ok 1363 error: function command not found
+ok 1364 error: function return out of range wraps # skip return value wrapping at 256 not yet implemented - Colony returns actual value
+ok 1365 error: function return 255 preserved
+ok 1366 error: SIGTERM produces exit code 143 (128+15) # skip signal handling in -c mode complex
+ok 1367 error: SIGINT exit code is 130 (128+2) # skip signal handling in -c mode complex
+ok 1368 error: trap can modify signal behavior
+ok 1369 error: error messages go to stderr
+ok 1370 error: error message includes command name
+ok 1371 error: $? is 0 after successful command
+ok 1372 error: $? reflects last command exit code
+ok 1373 error: $? reflects exit builtin value # skip exit status tracking in command substitution needs work
+ok 1374 error: $? reflects command not found # skip POSIX exit code 127 for command not found not yet implemented
+ok 1375 error: break outside loop # skip break outside loop error checking not yet implemented
+ok 1376 error: continue outside loop # skip continue outside loop error checking not yet implemented
+ok 1377 error: break with invalid argument # skip break argument validation not implemented
+ok 1378 error: break 0 is error # skip break 0 validation not implemented
+ok 1379 error: continue 0 is error # skip continue 0 validation not implemented
+ok 1380 error: return outside function # skip return outside function error checking not yet implemented
+ok 1381 error: return error message # skip return outside function error checking not yet implemented
+ok 1382 error: local outside function
+ok 1383 error: local outside function error message
+ok 1384 error: local inside function succeeds
+ok 1385 error: unalias nonexistent alias
+ok 1386 error: alias without argument lists aliases
+ok 1387 error: shift more than available args
+ok 1388 error: shift negative number # skip shift negative validation varies by shell
+ok 1389 error: cd to nonexistent directory
+ok 1390 error: cd to file fails
+ok 1391 error: cd error message mentions path
+ok 1392 error: cd with too many arguments # skip cd argument count check varies
+ok 1393 compare: cd error behavior matches bash
+ok 1394 error: source nonexistent file
+ok 1395 error: dot nonexistent file
+ok 1396 error: source without argument
+ok 1397 error: dot without argument
+ok 1398 error: hash nonexistent command # skip hash builtin not yet implemented
+ok 1399 error: exec nonexistent command # skip exec with command not yet fully implemented
+ok 1400 error: exec non-executable file # skip exec with command not yet fully implemented
+ok 1401 error: command substitution propagates exit code # skip command substitution exit status tracking not yet implemented
+ok 1402 error: command substitution with failed command # skip command substitution exit status tracking not yet implemented
+ok 1403 error: command substitution with command not found # skip command substitution exit status tracking not yet implemented
+ok 1404 error: nested command substitution error propagates # skip command substitution exit status tracking not yet implemented
+ok 1405 error: invalid arithmetic expression # skip invalid arithmetic expression detection varies
+ok 1406 error: arithmetic with non-numeric variable
+ok 1407 error: unclosed arithmetic expansion
+ok 1408 error: last command in pipeline determines exit code
+ok 1409 error: pipeline with all failures
+ok 1410 error: pipeline preserves last command exit code
+ok 1411 error: test missing closing bracket
+not ok 1412 error: test invalid operator
+# (in test file 27_errors.bats, line 809)
+#   `[ "$status" -ne 0 ]' failed
+ok 1413 error: test with wrong number of args
+ok 1414 error: trap invalid signal name
+ok 1415 error: trap invalid signal number
+ok 1416 error: trap SIGKILL fails
+ok 1417 error: trap SIGSTOP fails
+ok 1418 error: printf invalid format
+ok 1419 error: printf missing format argument
+ok 1420 compare: error exit codes consistent with bash # skip POSIX exit code 127 for command not found not yet implemented
+ok 1421 compare: readonly error consistent with bash # skip readonly builtin not yet implemented
+ok 1422 compare: subshell exit propagation matches bash
+ok 1423 compare: function return matches bash
+ok 1424 compare: division by zero matches bash
+ok 1425 varenv: simple variable assignment
+ok 1426 varenv: variable assignment with spaces in value
+ok 1427 varenv: multiple variable assignments
+ok 1428 varenv: variable assignment on same line
+ok 1429 varenv: empty variable assignment
+ok 1430 varenv: variable reassignment
+ok 1431 varenv: variable with numbers in name
+ok 1432 varenv: variable with underscore in name
+ok 1433 varenv: variable starting with underscore
+ok 1434 varenv: unset variable expands to empty
+ok 1435 varenv: quoted unset variable expands to empty string
+ok 1436 varenv: export variable
+ok 1437 varenv: export existing variable
+ok 1438 varenv: export multiple variables
+ok 1439 varenv: exported var visible to child
+ok 1440 varenv: non-exported var not visible to child
+ok 1441 varenv: export without value # skip export VAR (without value) to mark as exported not yet implemented
+ok 1442 varenv: export -p lists exported variables # skip export -p not yet implemented
+ok 1443 varenv: export -n removes export attribute # skip export -n not yet implemented
+ok 1444 varenv: inline env for command
+ok 1445 varenv: inline env multiple vars
+ok 1446 varenv: inline env does not persist # skip Inline env vars currently persist in shell - POSIX requires they only affect the command
+ok 1447 varenv: inline env overrides existing
+ok 1448 varenv: inline env with builtin
+ok 1449 varenv: unset removes variable
+ok 1450 varenv: unset multiple variables
+ok 1451 varenv: unset exported variable
+ok 1452 varenv: unset non-existent variable succeeds
+ok 1453 varenv: unset -v for variable # skip unset -v not yet implemented
+ok 1454 varenv: readonly variable # skip readonly builtin not yet implemented
+ok 1455 varenv: readonly prevents assignment # skip readonly builtin not yet implemented
+ok 1456 varenv: readonly prevents unset # skip readonly builtin not yet implemented
+ok 1457 varenv: readonly existing variable # skip readonly builtin not yet implemented
+ok 1458 varenv: readonly -p lists readonly variables # skip readonly -p not yet implemented
+ok 1459 varenv: readonly without value # skip readonly builtin not yet implemented
+ok 1460 varenv: declare variable
+ok 1461 varenv: declare -x exports variable # skip declare -x export not yet implemented
+ok 1462 varenv: declare -r makes readonly # skip declare -r readonly not yet implemented
+ok 1463 varenv: declare -i integer variable # skip declare -i not yet implemented
+ok 1464 varenv: declare -a array variable # skip declare -a arrays not yet implemented
+ok 1465 varenv: declare -A associative array # skip declare -A associative arrays not yet implemented
+ok 1466 varenv: declare -p prints variable # skip declare -p not yet implemented
+ok 1467 varenv: declare +x removes export # skip declare +x not yet implemented
+ok 1468 varenv: subshell inherits variables
+ok 1469 varenv: subshell changes don't affect parent # skip Subshell variable isolation not yet implemented - subshells share context
+ok 1470 varenv: subshell new var doesn't affect parent # skip Subshell variable isolation not yet implemented - subshells share context
+ok 1471 varenv: nested subshells inherit # skip Nested subshells ((cmd)) syntax not yet implemented
+ok 1472 varenv: subshell export doesn't affect parent # skip Subshell variable isolation not yet implemented - subshells share context
+ok 1473 varenv: command substitution is subshell
+ok 1474 varenv: pipeline runs in subshell
+ok 1475 varenv: function can access global variables
+ok 1476 varenv: function can modify global variables
+ok 1477 varenv: local variable in function
+ok 1478 varenv: local hides global
+ok 1479 varenv: local without value
+ok 1480 varenv: multiple local declarations
+ok 1481 varenv: local in nested function
+ok 1482 varenv: function positional parameters are local
+ok 1483 varenv: function can export variable
+ok 1484 varenv: for loop variable persists
+ok 1485 varenv: while loop variable persists
+ok 1486 varenv: variable in loop body persists
+ok 1487 varenv: loop in subshell doesn't persist # skip Subshell variable isolation not yet implemented - subshells share context
+ok 1488 varenv: loop with local in function
+ok 1489 varenv: HOME variable
+ok 1490 varenv: PATH variable
+ok 1491 varenv: PWD variable
+ok 1492 varenv: OLDPWD set by cd
+ok 1493 varenv: OLDPWD used by cd - # skip cd - (return to previous directory) not yet implemented
+ok 1494 varenv: SHLVL increments in subshell # skip SHLVL not yet implemented
+ok 1495 varenv: RANDOM is different each time # skip RANDOM not yet implemented
+ok 1496 varenv: SECONDS increases # skip SECONDS not yet implemented
+ok 1497 varenv: LINENO in script # skip LINENO not yet implemented
+ok 1498 varenv: BASH_ENV sourced for non-interactive
+ok 1499 varenv: ENV sourced for sh compatibility
+ok 1500 varenv: BASH_ENV function available
+ok 1501 varenv: variable in double quotes
+ok 1502 varenv: variable in single quotes is literal
+ok 1503 varenv: variable in here document
+ok 1504 varenv: variable in quoted here document delimiter
+ok 1505 varenv: variable in arithmetic expansion
+ok 1506 varenv: variable in case pattern
+ok 1507 varenv: variable in array index # skip Arrays not yet implemented
+ok 1508 varenv: env shows exported variables
+ok 1509 varenv: env -i clears environment
+ok 1510 varenv: env sets variable for command
+ok 1511 varenv: env variable doesn't persist
+ok 1512 varenv: variable with newline in value
+ok 1513 varenv: variable with special chars
+ok 1514 varenv: variable with equals sign in value
+ok 1515 varenv: variable name cannot start with digit
+ok 1516 varenv: empty variable name is error
+ok 1517 varenv: typeset is alias for declare # skip typeset not yet implemented as declare alias
+ok 1518 varenv: child inherits exported vars only
+ok 1519 varenv: grandchild inherits exported vars
+ok 1520 varenv: modified export visible to child # skip Modifying already-exported variable should update child env - not yet implemented
+ok 1521 varenv: export after assignment makes visible # skip export VAR (without value) to mark as exported not yet implemented
+ok 1522 compare: basic assignment with bash
+ok 1523 compare: export with bash
+ok 1524 compare: unset with bash
+ok 1525 compare: inline env with bash
+ok 1526 compare: local in function with bash
+ok 1527 compare: subshell isolation with bash # skip Subshell variable isolation not yet implemented
+ok 1528 compare: for loop var persistence with bash
+ok 1529 compare: readonly with bash # skip readonly builtin not yet implemented
+ok 1530 compare: HOME variable with bash
+ok 1531 compare: PWD variable with bash
+ok 1532 varenv: variable in command substitution result
+ok 1533 varenv: nested variable expansion # skip eval builtin not yet implemented
+ok 1534 varenv: variable in prompt string PS1 # skip PS1 prompt handling not tested here
+ok 1535 varenv: IFS affects word splitting
+ok 1536 varenv: default IFS behavior
+ok 1537 varenv: quoted prevents IFS splitting
+ok 1538 varenv: unset IFS restores default
+ok 1539 procsub: basic <(echo) with cat
+ok 1540 procsub: <(cmd) returns /dev/fd path
+ok 1541 procsub: <(cmd) with multi-word output
+ok 1542 procsub: <(cmd) with multi-line output
+ok 1543 procsub: <(cmd) with printf
+ok 1544 procsub: basic >(cat) with echo
+ok 1545 procsub: >(cmd) with grep filter
+ok 1546 procsub: >(cmd) writes to file
+ok 1547 procsub: two <(cmd) with diff
+ok 1548 procsub: diff with different <(cmd)
+ok 1549 procsub: three <(cmd) arguments
+ok 1550 procsub: mixed <(cmd) and regular args
+ok 1551 procsub: <(pipeline) with multiple commands
+ok 1552 procsub: <(cmd) piped to another command
+ok 1553 procsub: complex pipeline inside <()
+ok 1554 procsub: variable expansion inside <()
+ok 1555 procsub: quoted variable inside <()
+ok 1556 procsub: assign procsub path to variable
+ok 1557 procsub: nested <(cat <(echo))
+ok 1558 procsub: double nested
+ok 1559 procsub: <() inside command substitution
+ok 1560 procsub: command substitution inside <()
+ok 1561 procsub: <() in while loop
+ok 1562 procsub: <() in for loop
+ok 1563 procsub: <() in if condition (file test)
+ok 1564 procsub: redirect stdin from <()
+ok 1565 procsub: tee with >()
+ok 1566 procsub: <() not expanded inside single quotes
+ok 1567 procsub: <() expanded inside double quotes
+ok 1568 procsub: space in <() command
+ok 1569 procsub: command failure inside <() still works
+ok 1570 procsub: non-existent command inside <()
+ok 1571 compare: basic <(echo) with bash
+ok 1572 compare: diff <() <() with bash
+ok 1573 compare: <() path format with bash
+ok 1574 compare: nested <() with bash
+ok 1575 compare: while read < <() with bash
+ok 1576 procsub: empty command in <()
+ok 1577 procsub: large output in <()
+ok 1578 procsub: binary-safe data through <()
+ok 1579 procsub: special characters in <() output
+ok 1580 procsub: newlines preserved in <()
+ok 1581 procsub: grep with <() as pattern file
+ok 1582 procsub: paste with two <()
+ok 1583 procsub: sort with <() containing unsorted data
+ok 1584 procsub: comm with two sorted <()
+ok 1585 procsub: wc with <()
+ok 1586 extglob @(): exact match single pattern
+ok 1587 extglob @(): match one of multiple patterns
+ok 1588 extglob @(): match three alternatives
+ok 1589 extglob @(): no match returns literal
+ok 1590 extglob @(): with extension alternatives
+ok 1591 extglob @(): combined with regular glob *
+ok 1592 extglob ?(): zero occurrence match
+ok 1593 extglob ?(): one occurrence match
+ok 1594 extglob ?(): multiple alternatives
+ok 1595 extglob ?(): with suffix
+ok 1596 extglob *(): zero occurrences
+ok 1597 extglob *(): multiple occurrences
+ok 1598 extglob *(): repeated pattern in name
+ok 1599 extglob *(): with multiple pattern alternatives
+ok 1600 extglob +(): one occurrence required
+ok 1601 extglob +(): at least one pattern match
+ok 1602 extglob +(): repeated single pattern
+ok 1603 extglob !(): exclude single pattern
+ok 1604 extglob !(): exclude multiple patterns
+not ok 1605 extglob !(): exclude by extension
+# (in test file 30_extglob.bats, line 208)
+#   `[[ "$output" =~ "test.sh" ]]' failed
+ok 1606 extglob !(): match all except backup files
+ok 1607 extglob case: @() exact match
+ok 1608 extglob case: @() second alternative
+ok 1609 extglob case: @() no match
+ok 1610 extglob case: ?() zero match
+ok 1611 extglob case: ?() one match
+ok 1612 extglob case: *() zero occurrences
+ok 1613 extglob case: *() multiple occurrences
+ok 1614 extglob case: +() requires at least one
+ok 1615 extglob case: +() one occurrence
+ok 1616 extglob case: !() negation
+ok 1617 extglob case: !() negation no match
+ok 1618 extglob nested: @() inside +()
+ok 1619 extglob nested: ?()*() combination
+ok 1620 extglob combined: @() with * wildcard
+ok 1621 extglob combined: @() with ? single char
+ok 1622 extglob combined: @() with [abc] class
+not ok 1623 extglob combined: !() with *
+# (in test file 30_extglob.bats, line 347)
+#   `[[ ! "$output" =~ ".bak" ]]' failed
+ok 1624 compare extglob @() with bash
+ok 1625 compare extglob ?() with bash
+ok 1626 compare extglob *() with bash
+ok 1627 compare extglob +() with bash
+ok 1628 compare extglob !() with bash
+ok 1629 compare extglob case @() with bash
+ok 1630 compare extglob case !() with bash
+ok 1631 extglob: empty pattern list in @()
+ok 1632 extglob: single pattern in @() same as literal
+ok 1633 extglob: quoted extglob is literal
+not ok 1634 extglob: escaped extglob is literal
+# (in test file 30_extglob.bats, line 451)
+#   `[ "$output" = "@(foo).txt" ]' failed
+ok 1635 extglob: pattern with spaces in alternatives
+ok 1636 extglob: @() in middle of pattern
+ok 1637 extglob: multiple extglob patterns in one word
+ok 1638 extglob: !(pattern) with no files matching
+ok 1639 extglob: variable contains extglob pattern
+ok 1640 extglob: variable in pattern alternatives
+ok 1641 extglob: @() in for loop
+ok 1642 extglob: !() in for loop
+ok 1643 extglob: @() with many files
+ok 1644 extglob: !() excludes specific files from many
+ok 1645 casemod: uppercase first character with ^
+ok 1646 casemod: uppercase all characters with ^^
+ok 1647 casemod: uppercase first - already uppercase
+ok 1648 casemod: uppercase all - already uppercase
+ok 1649 casemod: uppercase first - mixed case
+ok 1650 casemod: lowercase first character with ,
+ok 1651 casemod: lowercase all characters with ,,
+ok 1652 casemod: lowercase first - already lowercase
+ok 1653 casemod: lowercase all - already lowercase
+ok 1654 casemod: lowercase first - mixed case
+ok 1655 casemod: toggle first character with ~
+ok 1656 casemod: toggle first character uppercase to lowercase
+ok 1657 casemod: toggle all characters with ~~
+ok 1658 casemod: toggle all - all lowercase
+ok 1659 casemod: toggle all - all uppercase
+ok 1660 casemod: uppercase first - empty string
+ok 1661 casemod: uppercase all - empty string
+ok 1662 casemod: lowercase first - empty string
+ok 1663 casemod: lowercase all - empty string
+ok 1664 casemod: toggle first - empty string
+ok 1665 casemod: toggle all - empty string
+ok 1666 casemod: single character uppercase
+ok 1667 casemod: single character lowercase
+ok 1668 casemod: single character toggle
+ok 1669 casemod: uppercase first - starts with number
+ok 1670 casemod: uppercase all - with numbers
+ok 1671 casemod: special characters unchanged
+ok 1672 casemod: toggle with punctuation
+ok 1673 casemod: uppercase first - unset myvariable
+ok 1674 casemod: uppercase all - unset myvariable
+ok 1675 casemod: uppercase all array elements
+ok 1676 casemod: uppercase first in each array element
+ok 1677 casemod: lowercase all array elements
+ok 1678 casemod: lowercase first in each array element
+ok 1679 casemod: toggle all in array elements
+ok 1680 casemod: single array element
+ok 1681 casemod: array with * subscript
+ok 1682 compare uppercase first with bash
+ok 1683 compare uppercase all with bash
+ok 1684 compare lowercase first with bash
+ok 1685 compare lowercase all with bash
+ok 1686 compare toggle first with bash
+ok 1687 compare toggle all with bash
+ok 1688 compare array uppercase with bash
+ok 1689 casemod: with default value
+ok 1690 casemod: uppercase in double quotes
+ok 1691 casemod: in command substitution
+ok 1692 casemod: in for loop
+ok 1693 casemod: multiple variables
+ok 1694 casemod: basic ASCII only
+ok 1695 ansi-c: newline escape \n
+ok 1696 ansi-c: tab escape \t
+ok 1697 ansi-c: carriage return escape \r
+ok 1698 ansi-c: backslash escape \\
+ok 1699 ansi-c: single quote escape \'
+ok 1700 ansi-c: double quote escape \"
+ok 1701 ansi-c: alert/bell escape \a
+ok 1702 ansi-c: backspace escape \b
+ok 1703 ansi-c: form feed escape \f
+ok 1704 ansi-c: vertical tab escape \v
+ok 1705 ansi-c: escape character \e
+ok 1706 ansi-c: escape character \E (capital)
+ok 1707 ansi-c: octal escape \nnn - letter A (101)
+ok 1708 ansi-c: octal escape \nnn - letter B (102)
+ok 1709 ansi-c: octal escape \nnn - letter C (103)
+ok 1710 ansi-c: octal escape - newline (012)
+ok 1711 ansi-c: octal escape - two digits (41 = !)
+ok 1712 ansi-c: octal escape - one digit (7 = bell)
+ok 1713 ansi-c: octal escape - null (0)
+ok 1714 ansi-c: hex escape \xHH - letter A (41)
+ok 1715 ansi-c: hex escape \xHH - letter B (42)
+ok 1716 ansi-c: hex escape \xHH - lowercase hex (4a = J)
+ok 1717 ansi-c: hex escape \xHH - uppercase hex (4A = J)
+ok 1718 ansi-c: hex escape \xHH - newline (0a)
+ok 1719 ansi-c: hex escape - single hex digit (\x9 = tab)
+ok 1720 ansi-c: hex escape sequence ABC
+ok 1721 ansi-c: unicode escape \uHHHH - letter A (0041)
+ok 1722 ansi-c: unicode escape \uHHHH - euro sign (20AC)
+ok 1723 ansi-c: unicode escape \uHHHH - smiley (263A)
+ok 1724 ansi-c: unicode escape \UHHHHHHHH - letter A
+ok 1725 ansi-c: unicode escape \UHHHHHHHH - emoji (1F600)
+ok 1726 ansi-c: unicode sequence Hi (\u0048\u0069)
+ok 1727 ansi-c: control char \cA (ctrl-A, ASCII 1)
+ok 1728 ansi-c: control char \cG (bell, ctrl-G)
+ok 1729 ansi-c: control char \cI (tab, ctrl-I)
+ok 1730 ansi-c: control char \cJ (newline, ctrl-J)
+ok 1731 ansi-c: control char \cM (carriage return, ctrl-M)
+ok 1732 ansi-c: control char \c[ (escape, ctrl-[)
+ok 1733 ansi-c: mixed literal and escape
+ok 1734 ansi-c: ANSI color code sequence
+ok 1735 ansi-c: multiple escapes in sequence
+ok 1736 ansi-c: mixed hex and octal
+ok 1737 ansi-c: concatenation with regular single quote
+ok 1738 ansi-c: concatenation with double quote
+ok 1739 ansi-c: concatenation of two ANSI-C strings
+ok 1740 ansi-c: concatenation with unquoted text
+ok 1741 ansi-c: complex concatenation
+ok 1742 ansi-c: empty string
+ok 1743 ansi-c: unknown escape preserved with backslash
+ok 1744 ansi-c: literal dollar at end
+ok 1745 ansi-c: literal percent
+ok 1746 ansi-c: question mark preserved
+ok 1747 ansi-c: asterisk preserved
+ok 1748 compare: basic ANSI-C newline with bash
+ok 1749 compare: ANSI-C tab with bash
+ok 1750 compare: ANSI-C hex escape with bash
+ok 1751 compare: ANSI-C octal escape with bash
+ok 1752 compare: ANSI-C backslash escape with bash
+ok 1753 compare: ANSI-C single quote escape with bash
+ok 1754 compare: ANSI-C escape char with bash
+ok 1755 compare: ANSI-C unicode with bash
+ok 1756 compare: ANSI-C color code with bash
+ok 1757 ansi-c: assign to variable
+ok 1758 ansi-c: use in array assignment
+ok 1759 ansi-c: use in function argument
+ok 1760 ansi-c: printf %q quotes escape char
+ok 1761 ! true: negates successful command
+ok 1762 ! false: negates failed command
+ok 1763 ! echo: successful command negated
+ok 1764 negation preserves output
+ok 1765 ! with successful external command
+ok 1766 ! with failing external command
+ok 1767 ! with exit 0 command
+ok 1768 ! with exit 1 command
+ok 1769 ! with exit 42 command
+not ok 1770 ! negates entire pipeline (success)
+# (in test file 33_negate.bats, line 72)
+#   `[ "$status" -eq 1 ]' failed
+not ok 1771 ! negates entire pipeline (failure at end)
+# (in test file 33_negate.bats, line 77)
+#   `[ "$status" -eq 0 ]' failed
+not ok 1772 ! negates pipeline - uses last command status
+# (in test file 33_negate.bats, line 82)
+#   `[ "$status" -eq 1 ]' failed
+not ok 1773 ! negates pipeline - three commands
+# (in test file 33_negate.bats, line 87)
+#   `[ "$status" -eq 1 ]' failed
+not ok 1774 ! negates pipeline - last command fails
+# (in test file 33_negate.bats, line 92)
+#   `[ "$status" -eq 0 ]' failed
+ok 1775 !! true: double negation of success
+not ok 1776 !! false: double negation of failure
+# (in test file 33_negate.bats, line 106)
+#   `[ "$status" -eq 1 ]' failed
+not ok 1777 !!! true: triple negation
+# (in test file 33_negate.bats, line 111)
+#   `[ "$status" -eq 1 ]' failed
+ok 1778 if ! true: then branch not taken
+ok 1779 if ! false: then branch taken
+ok 1780 while ! false: loop executes
+ok 1781 until ! true: loop executes
+ok 1782 ! true && echo: second command not executed
+ok 1783 ! false && echo: second command executed
+ok 1784 ! true || echo: second command executed
+ok 1785 ! false || echo: second command not executed
+ok 1786 ! with brace group
+ok 1787 ! with failing brace group
+ok 1788 ! with subshell
+ok 1789 ! with failing subshell
+ok 1790 ! with complex brace group
+ok 1791 ! test: negate test success
+ok 1792 ! test: negate test failure
+ok 1793 ! [ ]: negate bracket success
+ok 1794 ! [ ]: negate bracket failure
+ok 1795 compare: ! true matches bash
+ok 1796 compare: ! false matches bash
+not ok 1797 compare: ! pipeline matches bash
+# (in test file 33_negate.bats, line 246)
+#   `[ "$colony_out" = "$bash_out" ]' failed
+ok 1798 negation with grep # skip non-standard syntax
+ok 1799 ! with function call
+ok 1800 ! with failing function call
+ok 1801 ! with exit status variable
+ok 1802 ! preserves last command exit for 0
+ok 1803 ! requires space before command
+ok 1804 negation in list context
+ok 1805 multiple negations in list
+ok 1806 RANDOM returns a number
+ok 1807 RANDOM returns value in range 0-32767
+ok 1808 RANDOM returns different values on consecutive access
+ok 1809 RANDOM can be seeded
+ok 1810 different seeds produce different sequences
+ok 1811 SRANDOM returns a number
+ok 1812 SRANDOM returns 32-bit value
+ok 1813 SRANDOM returns different values
+ok 1814 SECONDS returns a number
+ok 1815 SECONDS starts at 0 for new shell
+ok 1816 SECONDS can be assigned
+ok 1817 SECONDS continues from assigned value
+ok 1818 EPOCHSECONDS returns a number
+ok 1819 EPOCHSECONDS is close to current time
+ok 1820 EPOCHSECONDS matches bash
+ok 1821 EPOCHREALTIME returns a decimal number
+ok 1822 EPOCHREALTIME has microsecond precision
+ok 1823 EPOCHREALTIME is close to current time
+ok 1824 BASHPID returns a number
+ok 1825 BASHPID equals dollar-dollar in main shell # skip BASHPID == 71213 test - implementation specific
+ok 1826 BASHPID is different in subshell # skip Subshell BASHPID test requires subshell support
+ok 1827 LINENO returns a number
+ok 1828 LINENO is 1 for single line command
+ok 1829 LINENO increments in multiline script # skip Multiline LINENO tracking requires script execution
+ok 1830 multiple dynamic vars in one command
+ok 1831 dynamic vars in arithmetic
+ok 1832 dynamic vars in comparison
+ok 1833 dynamic vars in variable assignment
+ok 1834 nameref: basic declare -n creates reference
+ok 1835 nameref: reading through nameref gets target value
+ok 1836 nameref: writing through nameref sets target
+ok 1837 nameref: multiple namerefs to same target
+ok 1838 nameref: changing target reflects in nameref
+ok 1839 nameref: reassigning nameref target
+ok 1840 nameref: unset through nameref unsets target
+ok 1841 nameref: unset -n unsets nameref itself, not target
+ok 1842 nameref: nameref chain (ref to ref)
+ok 1843 nameref: circular reference detection
+ok 1844 nameref: self-reference detection
+ok 1845 nameref: declare -n without value
+ok 1846 nameref: nameref to undefined variable
+ok 1847 nameref: setting undefined target through nameref
+ok 1848 nameref: nameref with combined flags declare -n
+ok 1849 nameref: empty nameref assignment
+ok 1850 nameref: nameref preserves target type for strings
+ok 1851 nameref: matches bash behavior for basic read
+ok 1852 nameref: matches bash behavior for basic write
+ok 1853 mapfile: basic read into default MAPFILE array
+ok 1854 mapfile: basic read with -t strips newlines
+ok 1855 mapfile: readarray alias works same as mapfile
+ok 1856 mapfile: read from file via redirection
+ok 1857 mapfile: custom array name
+ok 1858 mapfile -n: read only first 2 lines
+ok 1859 mapfile -n: read only first line
+ok 1860 mapfile -n 0: read all lines (unlimited)
+ok 1861 mapfile -s: skip first line
+ok 1862 mapfile -s: skip first 2 lines
+ok 1863 mapfile -s -n: skip and limit combined
+ok 1864 mapfile -O: start at index 2
+ok 1865 mapfile -O: preserve existing array elements
+ok 1866 mapfile -O: fills gaps with empty strings
+ok 1867 mapfile -d: colon delimiter
+ok 1868 mapfile -d: space delimiter
+ok 1869 mapfile -d: NUL delimiter (empty string)
+ok 1870 mapfile: array length
+ok 1871 mapfile: iterate over array
+ok 1872 mapfile: array indices
+ok 1873 mapfile: empty input creates empty array
+ok 1874 mapfile: single line without trailing newline
+ok 1875 mapfile: preserves whitespace in lines
+ok 1876 mapfile: handles blank lines
+ok 1877 mapfile: blank line content is empty string
+ok 1878 mapfile: -n requires argument
+ok 1879 mapfile: -s requires argument
+ok 1880 mapfile: -O requires argument
+ok 1881 mapfile: -d requires argument
+ok 1882 mapfile: invalid option
+ok 1883 mapfile: -t -n -s combined
+ok 1884 mapfile: all options combined
+ok 1885 mapfile: matches bash behavior - basic
+ok 1886 mapfile: matches bash behavior - skip and limit
+ok 1887 coproc: anonymous coprocess sets COPROC array
+ok 1888 coproc: anonymous coprocess sets COPROC_PID
+ok 1889 coproc: read from coprocess stdout
+ok 1890 coproc: write to coprocess stdin
+ok 1891 coproc: named coprocess sets NAME array
+ok 1892 coproc: named coprocess sets NAME_PID
+ok 1893 coproc: read from named coprocess
+ok 1894 coproc: bidirectional communication
+ok 1895 coproc: simple command form uses COPROC name
+ok 1896 coproc: wait for coprocess
+ok 1897 coproc: multiple reads from coprocess
+ok 1898 coproc: subshell as coprocess
+ok 1899 coproc: array element 0 is read fd
+ok 1900 coproc: array element 1 is write fd
+ok 1901 coproc: coprocess in pipeline reads
+ok 1902 declare -i: basic integer variable
+ok 1903 declare -i: arithmetic on assignment
+ok 1904 declare -i: arithmetic expression with variables
+ok 1905 declare -i: string assigned to integer becomes 0
+ok 1906 declare -i: complex arithmetic expression
+ok 1907 declare -i: negative numbers
+ok 1908 declare -i: arithmetic with parentheses
+ok 1909 declare -i: increment
+ok 1910 compare declare -i with bash
+ok 1911 declare -l: basic lowercase
+ok 1912 declare -l: mixed case
+ok 1913 declare -l: subsequent assignments also lowercase
+ok 1914 declare -l: already lowercase
+ok 1915 compare declare -l with bash
+ok 1916 declare -u: basic uppercase
+ok 1917 declare -u: mixed case
+ok 1918 declare -u: subsequent assignments also uppercase
+ok 1919 declare -u: already uppercase
+ok 1920 compare declare -u with bash
+ok 1921 declare -r: basic readonly
+not ok 1922 declare -r: cannot modify readonly
+# (in test file 39_varattr.bats, line 160)
+#   `[ "$status" -ne 0 ]' failed
+not ok 1923 declare -r: cannot unset readonly
+# (in test file 39_varattr.bats, line 165)
+#   `[ "$status" -ne 0 ]' failed
+not ok 1924 readonly builtin: same as declare -r
+# (in test file 39_varattr.bats, line 171)
+#   `[ "$output" = "constant" ]' failed
+ok 1925 readonly builtin: cannot modify
+ok 1926 declare -x: export variable
+not ok 1927 declare -x: child inherits exported variable
+# (in test file 39_varattr.bats, line 192)
+#   `[ "$output" = "inherited" ]' failed
+ok 1928 export builtin: same as declare -x
+ok 1929 declare -a: indexed array
+ok 1930 declare -A: associative array
+ok 1931 declare -ir: readonly integer
+ok 1932 declare -ir: cannot modify readonly integer
+ok 1933 declare -lx: lowercase and export
+ok 1934 declare -ux: uppercase and export
+ok 1935 declare -p: print variable with attributes
+ok 1936 declare -p: print readonly variable
+ok 1937 declare -p: print exported variable
+ok 1938 declare -p: print all declared variables
+not ok 1939 typeset: alias for declare
+# (in test file 39_varattr.bats, line 280)
+#   `[ "$output" = "10" ]' failed
+not ok 1940 typeset -l: lowercase
+# (in test file 39_varattr.bats, line 286)
+#   `[ "$output" = "hello" ]' failed
+not ok 1941 local -i: local integer in function
+# (in test file 39_varattr.bats, line 296)
+#   `[ "$output" = "8" ]' failed
+ok 1942 local -r: local readonly in function
+ok 1943 integer variable: division
+ok 1944 integer variable: modulo
+ok 1945 integer variable: bitwise
+ok 1946 lowercase: special characters unchanged
+ok 1947 uppercase: special characters unchanged
+not ok 1948 unset removes attributes
+# (in test file 39_varattr.bats, line 342)
+#   `[ "$output" = "hello" ]' failed
+ok 1949 compare integer arithmetic with bash
+ok 1950 compare lowercase with bash
+ok 1951 compare uppercase with bash
+ok 1952 complete: builtin exists
+ok 1953 complete -W: word list completion
+ok 1954 complete -F: function completion
+ok 1955 complete -f: file completion
+ok 1956 complete -d: directory completion
+ok 1957 compgen -W: generate word completions
+ok 1958 compgen -f: generate file completions
+ok 1959 compgen -d: generate directory completions
+ok 1960 compgen -c: generate command completions
+ok 1961 compgen -v: generate variable completions
+ok 1962 parser: nested quotes - double containing single
+ok 1963 parser: nested quotes - single containing double (as literal)
+ok 1964 parser: mixed quote concatenation
+ok 1965 parser: complex quote concatenation a'b"c'd
+ok 1966 parser: alternating quotes preserve content
+ok 1967 parser: empty quotes concatenation
+ok 1968 parser: quotes with spaces concatenation
+ok 1969 compare: nested quotes match bash
+ok 1970 parser: escaped single quote outside quotes
+ok 1971 parser: escaped double quote outside quotes
+ok 1972 parser: escaped dollar sign outside quotes
+ok 1973 parser: escaped backslash outside quotes
+ok 1974 parser: escaped space outside quotes
+ok 1975 parser: backslash in double quotes - special chars
+ok 1976 parser: backslash in double quotes - double quote
+ok 1977 parser: backslash in double quotes - backslash
+ok 1978 parser: backslash in double quotes - non-special preserved
+ok 1979 parser: backslash-newline in double quotes joins
+ok 1980 parser: single quote preserves backslash
+ok 1981 parser: trailing backslash unquoted
+ok 1982 compare: backslash escapes match bash
+ok 1983 parser: empty command - single semicolon
+ok 1984 parser: empty command - multiple semicolons
+ok 1985 parser: leading semicolons before command
+ok 1986 parser: trailing semicolons after command
+ok 1987 parser: semicolons between commands
+ok 1988 parser: newlines and semicolons mixed
+ok 1989 parser: empty commands preserve exit status
+ok 1990 compare: empty commands match bash # skip Colony is more lenient than bash - allows empty ; ; ;
+ok 1991 parser: comment at start of line
+ok 1992 parser: comment after command
+ok 1993 parser: comment after command with semicolon
+ok 1994 parser: multiple comments
+ok 1995 parser: hash in single quotes is literal
+ok 1996 parser: hash in double quotes is literal
+ok 1997 parser: hash after variable expansion
+ok 1998 parser: comment only preserves previous exit
+ok 1999 compare: comments match bash
+ok 2000 parser: continuation in command name
+ok 2001 parser: continuation in argument
+ok 2002 parser: continuation between words
+ok 2003 parser: multiple continuations
+ok 2004 parser: continuation in variable assignment
+ok 2005 parser: continuation before operator
+ok 2006 parser: continuation after operator
+ok 2007 parser: backslash-newline in single quotes preserved
+ok 2008 compare: line continuation matches bash
+ok 2009 parser: basic here-string
+ok 2010 parser: here-string with variable
+ok 2011 parser: here-string with double-quoted variable
+ok 2012 parser: here-string with single quotes
+ok 2013 parser: here-string with ANSI-C quoting
+ok 2014 parser: here-string with spaces
+ok 2015 parser: here-string in pipeline
+ok 2016 parser: here-string adds trailing newline
+ok 2017 compare: here-string matches bash
+ok 2018 parser: arithmetic expansion basic
+ok 2019 parser: arithmetic expansion with variables
+ok 2020 parser: arithmetic expansion with spaces
+ok 2021 parser: arithmetic expansion nested parens
+ok 2022 parser: arithmetic expansion in string
+ok 2023 parser: arithmetic command (( ))
+ok 2024 parser: arithmetic command with increment
+ok 2025 parser: arithmetic in for loop
+ok 2026 parser: arithmetic with comparison
+ok 2027 parser: arithmetic negative result
+ok 2028 compare: arithmetic matches bash
+ok 2029 parser: empty subshell
+ok 2030 parser: empty brace group
+ok 2031 parser: nested subshells
+ok 2032 parser: command substitution with special chars
+ok 2033 parser: command substitution with quotes
+ok 2034 parser: variable in brace with default
+ok 2035 parser: array subscript in expansion
+ok 2036 parser: parameter length
+ok 2037 parser: word with multiple expansions
+ok 2038 parser: word with mixed content
+ok 2039 parser: glob in assignment
+ok 2040 parser: reserved word as argument
+ok 2041 parser: colon command
+ok 2042 parser: colon with arguments (ignored)
+ok 2043 parser: pipeline with redirections
+ok 2044 parser: multiple pipes
+ok 2045 parser: pipeline with braces
+ok 2046 parser: pipeline with subshell
+ok 2047 parser: negated pipeline
+ok 2048 parser: if with command list condition
+ok 2049 parser: while with empty body
+ok 2050 parser: for in with special chars
+ok 2051 parser: case with pipe pattern
+ok 2052 parser: case with glob pattern
+ok 2053 parser: function with keyword syntax
+ok 2054 parser: function with posix syntax
+ok 2055 parser: function name with numbers
+ok 2056 parser: function overwrite
+ok 2057 compare: complex quoting
+ok 2058 compare: empty commands exit status # skip Colony is more lenient than bash - allows empty ; ; ;
+ok 2059 compare: comment preservation
+ok 2060 compare: arithmetic precedence
+ok 2061 compare: here-string newline
+ok 2062 globstar: shopt shows globstar off by default
+ok 2063 globstar: shopt -s globstar enables globstar
+ok 2064 globstar: shopt -u globstar disables globstar
+ok 2065 globstar: shopt -p shows proper format
+ok 2066 globstar disabled: **/*.txt matches only one level deep
+ok 2067 globstar disabled: **/file pattern matches one level
+ok 2068 globstar enabled: **/*.rs matches all .rs files recursively
+ok 2069 globstar enabled: **/*.txt matches all .txt files recursively
+ok 2070 globstar enabled: ** matches everything recursively
+ok 2071 globstar enabled: **/ matches directories only
+ok 2072 globstar enabled: dir1/** matches everything under dir1
+ok 2073 globstar enabled: ** does not match hidden by default
+ok 2074 globstar enabled with dotglob: ** matches hidden dirs
+ok 2075 globstar: matches bash output for **/*.rs
+ok 2076 globstar: matches bash output for dir1/**
+ok 2077 globstar: no match returns pattern with nullglob off
+ok 2078 globstar: no match returns empty with nullglob on
+ok 2079 globstar: symlinks not followed
+ok 2080 alias: define simple alias
+ok 2081 alias: expand simple alias
+ok 2082 alias: alias with arguments
+ok 2083 alias: alias with options
+ok 2084 alias: list all aliases
+ok 2085 alias: alias with no arguments shows all
+ok 2086 alias: single quoted value
+ok 2087 alias: double quoted value
+ok 2088 alias: value with spaces
+ok 2089 alias: value with semicolon
+ok 2090 alias: value with pipe # skip Requires parse-time alias expansion (see POSIX 2.3.1)
+ok 2091 alias: name with underscore
+ok 2092 alias: name with numbers
+ok 2093 alias: value with redirection
+ok 2094 unalias: remove single alias
+ok 2095 unalias: remove multiple aliases
+ok 2096 unalias: -a removes all aliases
+ok 2097 unalias: nonexistent alias returns error
+ok 2098 alias: not expanded in single quotes
+ok 2099 alias: not expanded in double quotes
+ok 2100 alias: expanded at command position only
+ok 2101 alias: expanded after semicolon
+ok 2102 alias: expanded after pipe
+ok 2103 alias: expanded after &&
+ok 2104 alias: expanded after ||
+ok 2105 alias: defined in function
+ok 2106 alias: used in function
+ok 2107 alias: trailing space causes next word expansion
+ok 2108 alias: -p prints in reusable format
+ok 2109 alias: empty alias name is error
+ok 2110 alias: redefine existing alias
+ok 2111 alias: alias to itself
+ok 2112 alias: check specific alias exists
+not ok 2113 compare alias with bash: simple expansion
+# (in test file 44_alias.bats, line 250)
+#   `bash_out=$(bash -c 'shopt -s expand_aliases; alias e=echo; e hello' 2>&1)' failed with status 127
+ok 2114 compare alias with bash: alias list format
+ok 2115 cond: string equality ==
+ok 2116 cond: string inequality !=
+ok 2117 cond: string equality = (single)
+ok 2118 cond: string less than <
+ok 2119 cond: string greater than >
+ok 2120 cond: -z empty string
+ok 2121 cond: -z non-empty string
+ok 2122 cond: -n non-empty string
+ok 2123 cond: -n empty string
+ok 2124 cond: pattern matching == with *
+ok 2125 cond: pattern matching == with ?
+not ok 2126 cond: pattern matching == with [...]
+# (in test file 45_cond.bats, line 88)
+#   `[ "$output" = "yes" ]' failed
+ok 2127 cond: pattern matching fails
+ok 2128 cond: quoted pattern is literal
+not ok 2129 cond: quoted pattern does not glob
+# (in test file 45_cond.bats, line 106)
+#   `[ "$output" = "no" ]' failed
+ok 2130 cond: regex match =~
+ok 2131 cond: regex match full
+ok 2132 cond: regex no match
+not ok 2133 cond: regex with BASH_REMATCH
+# (in test file 45_cond.bats, line 133)
+#   `[ "$status" -eq 0 ]' failed
+not ok 2134 cond: regex BASH_REMATCH full match
+# (in test file 45_cond.bats, line 139)
+#   `[ "$status" -eq 0 ]' failed
+ok 2135 cond: && both true
+ok 2136 cond: && one false
+ok 2137 cond: || first true
+ok 2138 cond: || both false
+not ok 2139 cond: ! negation true becomes false
+# (in test file 45_cond.bats, line 174)
+#   `[ "$output" = "no" ]' failed
+not ok 2140 cond: ! negation false becomes true
+# (in test file 45_cond.bats, line 180)
+#   `[ "$output" = "yes" ]' failed
+ok 2141 cond: parentheses grouping
+ok 2142 cond: complex grouping
+ok 2143 cond: grouping changes precedence
+ok 2144 cond: -e file exists
+ok 2145 cond: -e file not exists
+ok 2146 cond: -f regular file
+ok 2147 cond: -d directory
+ok 2148 cond: -r readable
+not ok 2149 cond: -w writable
+# (in test file 45_cond.bats, line 242)
+#   `[ "$output" = "yes" ]' failed
+ok 2150 cond: -x executable
+ok 2151 cond: -s non-empty file
+ok 2152 cond: -L symlink
+ok 2153 cond: -eq equal
+ok 2154 cond: -ne not equal
+ok 2155 cond: -lt less than
+ok 2156 cond: -le less or equal
+ok 2157 cond: -gt greater than
+ok 2158 cond: -ge greater or equal
+ok 2159 cond: variable comparison
+ok 2160 cond: unset variable is empty
+not ok 2161 cond: variable with spaces
+# (in test file 45_cond.bats, line 322)
+#   `[ "$output" = "yes" ]' failed
+not ok 2162 cond: no word splitting in [[
+# (in test file 45_cond.bats, line 328)
+#   `[ "$output" = "yes" ]' failed
+ok 2163 compare cond with bash: string equality
+ok 2164 compare cond with bash: pattern match
+ok 2165 compare cond with bash: -z empty
+ok 2166 compare cond with bash: file test
+ok 2167 vredir: {fd}>file allocates fd
+ok 2168 vredir: allocated fd is >= 10
+ok 2169 vredir: multiple fd allocations
+ok 2170 vredir: {fd}<file for reading
+ok 2171 vredir: read line from allocated fd
+ok 2172 vredir: {fd}>>file append mode
+ok 2173 vredir: {fd}<>file read/write mode
+ok 2174 vredir: close output fd with {fd}>&-
+ok 2175 vredir: close input fd with {fd}<&-
+ok 2176 vredir: underscore in variable name
+ok 2177 vredir: variable name with numbers
+ok 2178 vredir: {fd}> in simple command
+ok 2179 vredir: allocated fd available after command
+ok 2180 vredir: invalid variable name
+ok 2181 vredir: empty variable name
+ok 2182 vredir: {fd}< with here document
+ok 2183 vredir: fd available in subshell
+ok 2184 vredir: allocation in subshell doesn't affect parent
+ok 2185 vredir: fd available in function
+ok 2186 vredir: use allocated fd with process substitution # skip Process substitution with vredir may not be supported
+ok 2187 compare vredir with bash: basic allocation
+ok 2188 compare vredir with bash: write via fd
+ok 2189 precedence: multiplication before addition
+ok 2190 precedence: division before subtraction
+ok 2191 precedence: parentheses override
+ok 2192 precedence: modulo same as multiply/divide
+ok 2193 precedence: exponentiation before multiply
+ok 2194 precedence: exponentiation right associative
+ok 2195 precedence: unary minus before multiply
+ok 2196 precedence: unary plus
+ok 2197 precedence: logical not
+ok 2198 precedence: bitwise not
+ok 2199 precedence: comparison before logical and
+ok 2200 precedence: equality before logical or
+ok 2201 precedence: less than
+ok 2202 precedence: greater than
+ok 2203 precedence: less than or equal
+ok 2204 precedence: greater than or equal
+ok 2205 precedence: equality
+ok 2206 precedence: inequality
+ok 2207 precedence: bitwise and before bitwise or
+ok 2208 precedence: bitwise xor between and and or
+ok 2209 precedence: shift before comparison
+ok 2210 precedence: left shift
+ok 2211 precedence: right shift
+ok 2212 precedence: logical and before logical or
+ok 2213 precedence: logical and short circuit
+ok 2214 precedence: logical or short circuit
+ok 2215 precedence: ternary operator
+ok 2216 precedence: ternary false branch
+ok 2217 precedence: ternary with expressions
+ok 2218 precedence: nested ternary
+ok 2219 precedence: assignment lowest precedence
+ok 2220 precedence: compound assignment +=
+ok 2221 precedence: compound assignment -=
+ok 2222 precedence: compound assignment *=
+ok 2223 precedence: compound assignment /=
+ok 2224 precedence: compound assignment %=
+ok 2225 precedence: pre-increment
+ok 2226 precedence: post-increment
+ok 2227 precedence: pre-decrement
+ok 2228 precedence: post-decrement
+ok 2229 precedence: comma operator
+ok 2230 precedence: comma with assignments
+ok 2231 precedence: complex expression 1
+ok 2232 precedence: complex expression 2
+ok 2233 precedence: complex expression 3
+ok 2234 precedence: complex expression 4
+ok 2235 precedence: command && before ||
+ok 2236 precedence: command || after &&
+ok 2237 precedence: multiple && chained
+ok 2238 precedence: multiple || chained
+ok 2239 compare precedence with bash: multiply add
+ok 2240 compare precedence with bash: exponent
+ok 2241 compare precedence with bash: ternary
+ok 2242 compare precedence with bash: logical
+ok 2243 bracket: [abc] matches single char
+ok 2244 bracket: [xyz] matches specific chars
+ok 2245 bracket: [123] matches digits
+ok 2246 bracket: [a-c] range
+ok 2247 bracket: [x-z] range
+ok 2248 bracket: [1-3] digit range
+not ok 2249 bracket: [A-C] uppercase range
+# (in test file 48_bracket_glob.bats, line 82)
+#   `[[ "$output" == *"B"* ]]' failed
+ok 2250 bracket: [!abc] negation
+ok 2251 bracket: [^abc] negation (alternate syntax)
+ok 2252 bracket: [!a-c] negated range
+ok 2253 bracket: [[:alpha:]] alphabetic
+not ok 2254 bracket: [[:digit:]] digits
+# (in test file 48_bracket_glob.bats, line 121)
+#   `[[ "$output" == *"1"* ]]' failed
+not ok 2255 bracket: [[:lower:]] lowercase
+# (in test file 48_bracket_glob.bats, line 127)
+#   `[[ "$output" == *"a"* ]]' failed
+not ok 2256 bracket: [[:upper:]] uppercase
+# (in test file 48_bracket_glob.bats, line 134)
+#   `[[ "$output" == *"A"* ]]' failed
+ok 2257 bracket: [[:alnum:]] alphanumeric
+ok 2258 bracket: file[123] pattern
+ok 2259 bracket: [abc]* with wildcard
+ok 2260 bracket: *[123] suffix pattern
+ok 2261 bracket: dir[0-9] directory matching
+ok 2262 bracket: literal dash at start [-abc]
+ok 2263 bracket: literal dash at end [abc-]
+ok 2264 bracket: literal ] at start []abc]
+ok 2265 bracket: literal ^ not at start [a^bc]
+ok 2266 bracket: no match returns pattern (nullglob off)
+ok 2267 bracket: no match with nullglob returns nothing
+ok 2268 bracket: case sensitive by default
+ok 2269 bracket: nocaseglob makes case insensitive
+not ok 2270 bracket: pattern in [[ == ]]
+# (in test file 48_bracket_glob.bats, line 245)
+#   `[ "$output" = "yes" ]' failed
+not ok 2271 bracket: range in [[ == ]]
+# (in test file 48_bracket_glob.bats, line 251)
+#   `[ "$output" = "yes" ]' failed
+not ok 2272 bracket: negation in [[ == ]]
+# (in test file 48_bracket_glob.bats, line 257)
+#   `[ "$output" = "yes" ]' failed
+ok 2273 bracket: pattern in case
+ok 2274 bracket: range in case
+ok 2275 bracket: negation in case
+ok 2276 compare bracket with bash: [abc]
+ok 2277 compare bracket with bash: [a-c]
+ok 2278 compare bracket with bash: file[123]
+ok 2279 type: builtin command
+ok 2280 type: external command
+ok 2281 type: function
+ok 2282 type: alias
+ok 2283 type: keyword
+ok 2284 type: not found
+ok 2285 type: -t builtin
+ok 2286 type: -t external
+ok 2287 type: -t function
+ok 2288 type: -t alias
+ok 2289 type: -t keyword
+ok 2290 type: -t not found returns nothing
+ok 2291 type: -p external command
+ok 2292 type: -p builtin returns nothing
+ok 2293 type: -p function returns nothing
+ok 2294 type: -p alias returns nothing
+ok 2295 type: -p not found
+ok 2296 type: -P searches PATH
+ok 2297 type: -P ignores builtins
+ok 2298 type: -P ignores functions
+ok 2299 type: -a shows all
+ok 2300 type: -a shows function and builtin
+ok 2301 type: -a shows alias and external
+ok 2302 type: -f ignores function
+ok 2303 type: -f with no function
+ok 2304 type: multiple commands
+ok 2305 type: multiple with one not found
+ok 2306 type: -at shows all types
+ok 2307 type: -ap shows all paths
+ok 2308 type: if keyword
+ok 2309 type: then keyword
+ok 2310 type: while keyword
+ok 2311 type: for keyword
+ok 2312 type: case keyword
+ok 2313 type: function keyword
+ok 2314 type: cd builtin
+ok 2315 type: pwd builtin
+ok 2316 type: export builtin
+ok 2317 type: read builtin
+ok 2318 type: type builtin
+ok 2319 compare type with bash: builtin
+ok 2320 compare type with bash: -t builtin
+ok 2321 compare type with bash: -t keyword
+ok 2322 compare type with bash: not found
+ok 2323 lastpipe: disabled by default
+ok 2324 lastpipe: enabled allows variable to persist
+ok 2325 lastpipe: works with multiple pipeline stages
+ok 2326 lastpipe: can be disabled
+ok 2327 lastpipe: array assignment
+ok 2328 lastpipe: counter increment
+ok 2329 lastpipe: mapfile in pipeline
+ok 2330 lastpipe: exit status from last command
+ok 2331 lastpipe: exit status success
+not ok 2332 lastpipe: pipefail interaction
+# (in test file 50_lastpipe.bats, line 76)
+#   `[ "$output" = "1" ]' failed
+ok 2333 lastpipe: requires job control off in interactive shell # skip Interactive shell test
+ok 2334 lastpipe: three stage pipeline
+ok 2335 lastpipe: pipeline with grep
+ok 2336 lastpipe: pipeline with awk
+ok 2337 lastpipe: while loop reads all lines
+not ok 2338 lastpipe: while loop with break
+# (in test file 50_lastpipe.bats, line 125)
+#   `[ "$output" = "yes" ]' failed
+ok 2339 lastpipe: function modifies variable
+ok 2340 lastpipe: function return value
+ok 2341 lastpipe: brace group
+ok 2342 lastpipe: brace group variable persists
+ok 2343 lastpipe: subshell still isolated
+ok 2344 lastpipe: query when off
+ok 2345 lastpipe: query when on
+ok 2346 compare lastpipe with bash: basic
+ok 2347 compare lastpipe with bash: counter
+ok 2348 compare lastpipe with bash: disabled
+
+The following warnings were encountered during tests:
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c undefined_function` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 05_functions.bats, line 400)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c cat <<'EOF'
+hi\
+there
+EO\
+F
+EOF` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 07_heredoc.bats, line 153)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony /nonexistent/script.sh` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 23_startup.bats, line 214)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c wait 99999999` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 24_jobs.bats, line 287)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c set -e; nonexistent_command_xyz; echo unreachable` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 25_set_e.bats, line 92)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c nonexistent_command_xyz123` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 38)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c nonexistent_xyz && echo should-not-print` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 61)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c /var/folders/y2/kvd26vd56mjghdpzt9mt7f1w0000gn/T/tmp.DjebJJlZbw` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 100)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c 123var=value` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 321)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c my-var=value` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 326)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c (nonexistent_command_xyz)` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 422)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c fail() { nonexistent_xyz; }; fail` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 453)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c nonexistent_command_xyz 2>&1` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 495)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c nonexistent_xyz123` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 27_errors.bats, line 502)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c 1VAR=test 2>&1` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 28_varenv.bats, line 663)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c =test 2>&1` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 28_varenv.bats, line 668)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c echo hello | ! grep goodbye` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 33_negate.bats, line 254)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c readonly myconst="constant"; myconst="changed"` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 39_varattr.bats, line 175)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c [[ "hello123world" =~ ([0-9]+) ]] && echo "${BASH_REMATCH[1]}"` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 45_cond.bats, line 132)
+BW01: `run`'s command `/Users/mcfearsome/src/github.com/mcfearsome/colony-shell/target/release/colony -c [[ "abc123def" =~ ([a-z]+)([0-9]+)([a-z]+) ]] && echo "${BASH_REMATCH[0]}"` exited with code 127, indicating 'Command not found'. Use run's return code checks, e.g. `run -127`, to fix this message.
+      (from function `run' in file /opt/homebrew/Cellar/bats-core/1.13.0/lib/bats-core/test_functions.bash, line 420,
+       in test file 45_cond.bats, line 138)

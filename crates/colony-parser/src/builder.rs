@@ -791,22 +791,17 @@ impl AstBuilder {
                 Ok(result)
             }
             Rule::CondUnaryExpr => {
+                let pair_text = pair.as_str().trim();
                 let mut inner = pair.into_inner();
-                let first = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
+                let inner_expr = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
                 
-                match first.as_str() {
-                    "!" => {
-                        let operand = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
-                        let expr = Self::build_cond_expr(operand)?;
-                        Ok(CondExpr::Not(Box::new(expr)))
-                    }
-                    "(" => {
-                        let inner_expr = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
-                        Self::build_cond_expr(inner_expr)
-                    }
-                    _ => {
-                        Self::build_cond_expr(first)
-                    }
+                if pair_text.starts_with('!') {
+                    let expr = Self::build_cond_expr(inner_expr)?;
+                    Ok(CondExpr::Not(Box::new(expr)))
+                } else if pair_text.starts_with('(') {
+                    Self::build_cond_expr(inner_expr)
+                } else {
+                    Self::build_cond_expr(inner_expr)
                 }
             }
             Rule::CondPrimary => {

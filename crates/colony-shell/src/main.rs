@@ -1239,10 +1239,15 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &Executor) -> 
                 CondUnaryOp::IsFile => path.is_file(),
                 CondUnaryOp::IsDir => path.is_dir(),
                 CondUnaryOp::Exists => path.exists(),
-                CondUnaryOp::Readable => path.exists() && std::fs::File::open(path).is_ok(),
+                CondUnaryOp::Readable => {
+                    use nix::unistd::access;
+                    use nix::unistd::AccessFlags;
+                    access(path, AccessFlags::R_OK).is_ok()
+                }
                 CondUnaryOp::Writable => {
-                    use std::fs::OpenOptions;
-                    path.exists() && OpenOptions::new().write(true).open(path).is_ok()
+                    use nix::unistd::access;
+                    use nix::unistd::AccessFlags;
+                    access(path, AccessFlags::W_OK).is_ok()
                 }
                 CondUnaryOp::Executable => {
                     use std::os::unix::fs::PermissionsExt;
@@ -1416,6 +1421,95 @@ fn glob_match(pattern: &str, text: &str) -> bool {
             '?' => {
                 if text_chars.next().is_none() {
                     return false;
+                }
+            }
+            '[' => {
+                let text_char = match text_chars.next() {
+                    Some(c) => c,
+                    None => return false,
+                };
+                
+                let negated = pattern_chars.peek() == Some(&'!') || pattern_chars.peek() == Some(&'^');
+                if negated {
+                    pattern_chars.next();
+                }
+                
+                let mut matches = false;
+                let mut prev_char: Option<char> = None;
+                let mut first_char = true;
+                
+                loop {
+                    match pattern_chars.next() {
+                        Some(']') if !first_char => break,
+                        Some('[') if pattern_chars.peek() == Some(&':') => {
+                            first_char = false;
+                            pattern_chars.next();
+                            let mut class_name = String::new();
+                            while let Some(&c) = pattern_chars.peek() {
+                                if c == ':' {
+                                    pattern_chars.next();
+                                    if pattern_chars.peek() == Some(&']') {
+                                        pattern_chars.next();
+                                        break;
+                                    }
+                                    class_name.push(':');
+                                } else {
+                                    class_name.push(pattern_chars.next().unwrap());
+                                }
+                            }
+                            matches = matches || match class_name.as_str() {
+                                "alpha" => text_char.is_alphabetic(),
+                                "digit" => text_char.is_ascii_digit(),
+                                "alnum" => text_char.is_alphanumeric(),
+                                "space" => text_char.is_whitespace(),
+                                "lower" => text_char.is_lowercase(),
+                                "upper" => text_char.is_uppercase(),
+                                "punct" => text_char.is_ascii_punctuation(),
+                                "xdigit" => text_char.is_ascii_hexdigit(),
+                                "blank" => text_char == ' ' || text_char == '\t',
+                                "cntrl" => text_char.is_ascii_control(),
+                                "graph" => text_char.is_ascii_graphic(),
+                                "print" => !text_char.is_ascii_control() || text_char == ' ',
+                                _ => false,
+                            };
+                            prev_char = None;
+                        }
+                        Some('-') if prev_char.is_some() && pattern_chars.peek() != Some(&']') => {
+                            if let Some(end_char) = pattern_chars.next() {
+                                if let (Some(start), end) = (prev_char, end_char) {
+                                    matches = matches || (text_char >= start && text_char <= end);
+                                }
+                            }
+                            prev_char = None;
+                        }
+                        Some(c) => {
+                            first_char = false;
+                            if let Some(pc) = prev_char {
+                                matches = matches || text_char == pc;
+                            }
+                            prev_char = Some(c);
+                        }
+                        None => return false,
+                    }
+                }
+                
+                if let Some(pc) = prev_char {
+                    matches = matches || text_char == pc;
+                }
+                
+                if negated {
+                    matches = !matches;
+                }
+                
+                if !matches {
+                    return false;
+                }
+            }
+            '\\' => {
+                if let Some(next) = pattern_chars.next() {
+                    if text_chars.next() != Some(next) {
+                        return false;
+                    }
                 }
             }
             c => {

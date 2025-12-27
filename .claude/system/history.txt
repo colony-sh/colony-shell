@@ -1804,4 +1804,16 @@
 [2025-12-27 13:15] FEATURES: Wait builtin PID waiting, noclobber option, EXIT trap in subshells
 [2025-12-27 13:15] FEATURES: Command substitution exit status tracking, return in sourced files
 [2025-12-27 13:20] STATUS: 16 commits ahead of origin/main, all changes committed
+[2025-12-27 15:00] START: Fixing [[ ]] conditional test failures
+[2025-12-27 15:05] DIAGNOSIS: POSIX character classes [[:digit:]] not working - ]] parsed as conditional end
+[2025-12-27 15:10] FIX: Grammar - CondOperand now handles bracket expressions [abc], [a-z], [[:alpha:]]
+[2025-12-27 15:15] IMPLEMENTED: CondOperandPart rule with bracket content handling
+[2025-12-27 15:20] IMPLEMENTED: CondBracketContent rule for POSIX character classes
+[2025-12-27 15:25] DIAGNOSIS: Negation ! operator not working in [[ ]]
+[2025-12-27 15:30] ROOT CAUSE: Builder checking first.as_str() for "!" but literal isn't a child node
+[2025-12-27 15:35] FIX: Check pair_text.starts_with('!') instead of child text
+[2025-12-27 15:40] DIAGNOSIS: -w /tmp failing - directories can't be opened with write mode
+[2025-12-27 15:45] FIX: Use nix::unistd::access() with AccessFlags for readable/writable tests
+[2025-12-27 15:50] RESULT: 45_cond.bats improved from 45/52 (86.5%) to 49/52 (94.2%)
+[2025-12-27 15:55] REMAINING: 3 failures - quoted pattern matching, BASH_REMATCH capture groups
 
