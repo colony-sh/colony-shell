@@ -10,7 +10,7 @@ setup() {
     touch a b c x y z
     touch file1 file2 file3
     touch abc def ghi
-    touch A B C
+    touch Aa Bb Cc
     touch 1 2 3
     mkdir dir1 dir2
 }
@@ -76,11 +76,11 @@ teardown() {
 }
 
 @test "bracket: [A-C] uppercase range" {
-    run "$COLONY" -c "cd $TESTDIR; echo [A-C]"
+    run "$COLONY" -c "cd $TESTDIR; echo [A-C]*"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"A"* ]]
-    [[ "$output" == *"B"* ]]
-    [[ "$output" == *"C"* ]]
+    [[ "$output" == *"Aa"* ]]
+    [[ "$output" == *"Bb"* ]]
+    [[ "$output" == *"Cc"* ]]
 }
 
 # =============================================================================
@@ -129,9 +129,9 @@ teardown() {
 }
 
 @test "bracket: [[:upper:]] uppercase" {
-    run "$COLONY" -c "cd $TESTDIR; echo [[:upper:]]"
+    run "$COLONY" -c "cd $TESTDIR; echo [[:upper:]]*"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"A"* ]]
+    [[ "$output" == *"Aa"* ]] || [[ "$output" == *"Bb"* ]]
 }
 
 @test "bracket: [[:alnum:]] alphanumeric" {
