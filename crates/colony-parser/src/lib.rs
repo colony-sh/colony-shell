@@ -26,15 +26,17 @@ pub mod builder;
 pub mod pest_api;
 pub mod heredoc;
 pub mod arith_preprocess;
+pub mod alias_expand;
 
 pub use span::{Position, Span};
 pub use token::{Token, TokenKind, TokenValue, InterpolatedPart};
 pub use lexer::{Lexer, LexerMode};
 pub use parser::Parser;
 pub use ast::*;
+pub use alias_expand::{AliasContext, preprocess_aliases};
 
 // Primary API - Pure PEG parsing
-pub use pest_api::{parse, parse_statement, parse_expression, ParseError as PestParseError};
+pub use pest_api::{parse, parse_statement, parse_statement_with_aliases, parse_expression, parse_with_aliases, ParseError as PestParseError};
 
 /// Lexer error types
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]

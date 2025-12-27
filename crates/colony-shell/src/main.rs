@@ -7,7 +7,7 @@ use colony_config::{discover_config, ColonyConfig, TrustManager, TrustStatus};
 use colony_exec::{Executor, ExecutionError};
 use colony_expand::{ExpansionContext, TrapSignal, TrapAction};
 use colony_parser::pest_api::parse_statement;
-use colony_parser::Statement;
+use colony_parser::{Statement, AliasContext};
 use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
 use miette::Result;
@@ -664,6 +664,7 @@ async fn main() -> Result<()> {
 
     // Initialize executor with reactive tuple space
     let mut context = ExpansionContext::new();
+    context.set_interactive(true);
     load_exported_functions(&mut context);
     let executor = Executor::new(context);
 
@@ -836,9 +837,31 @@ async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()
 /// Execute a list with control flow propagation
 async fn execute_list_with_control(list: &colony_parser::CommandList, executor: &mut Executor) -> (i32, ControlFlow) {
     use colony_parser::ListOp;
+    use nix::unistd::{fork, ForkResult, Pid};
+    use nix::sys::wait::{waitpid, WaitPidFlag};
+    use colony_exec::JobStatus;
 
-    // Execute first statement
-    let (mut last_exit_code, mut control) = execute_statement_with_control(&*list.first, executor).await;
+    // Check if first command should be backgrounded
+    // This happens when rest starts with Background operator
+    let first_is_background = list.rest.first().map(|(op, _)| *op == ListOp::Background).unwrap_or(false);
+    
+    // Check if first command is followed by && or || (errexit exemption)
+    let first_is_errexit_exempt = list.rest.first().map(|(op, _)| matches!(op, ListOp::And | ListOp::Or)).unwrap_or(false);
+    
+    let (mut last_exit_code, mut control) = if first_is_background {
+        // Run first command in background
+        match run_in_background(&*list.first, executor).await {
+            Ok(pid) => {
+                if executor.context().is_interactive() {
+                    eprintln!("[1] {}", pid);
+                }
+                (0, ControlFlow::Normal)
+            }
+            Err(_) => (1, ControlFlow::Normal)
+        }
+    } else {
+        execute_statement_with_errexit_control(&*list.first, executor, first_is_errexit_exempt).await
+    };
     executor.context_mut().set_last_exit_status(last_exit_code);
 
     // If we got break/continue, propagate it immediately
@@ -847,67 +870,144 @@ async fn execute_list_with_control(list: &colony_parser::CommandList, executor: 
     }
 
     // Execute rest of list based on operators
-    for (op, stmt) in &list.rest {
+    let mut i = 0;
+    while i < list.rest.len() {
+        let (op, stmt) = &list.rest[i];
+        
+        // Check if NEXT operator is Background (meaning this stmt should be backgrounded)
+        let next_is_background = list.rest.get(i + 1).map(|(next_op, _)| *next_op == ListOp::Background).unwrap_or(false);
+        // Check if NEXT operator is && or || (errexit exemption)
+        let next_is_errexit_exempt = list.rest.get(i + 1).map(|(next_op, _)| matches!(next_op, ListOp::And | ListOp::Or)).unwrap_or(false);
+        // Also check if this is the last item and the op itself is Background (trailing &)
+        let this_is_background = *op == ListOp::Background;
+        
         let should_execute = match op {
             ListOp::Semi => true,
             ListOp::And => last_exit_code == 0,
             ListOp::Or => last_exit_code != 0,
             ListOp::Background => {
-                eprintln!("Background jobs (&) not yet supported");
-                false
+                // After a background, continue with next command
+                true
             }
         };
 
         if should_execute {
-            let (code, flow) = execute_statement_with_control(stmt, executor).await;
-            last_exit_code = code;
-            executor.context_mut().set_last_exit_status(last_exit_code);
-            control = flow;
+            if next_is_background || (this_is_background && i == list.rest.len() - 1) {
+                // Skip if this_is_background - the previous already handled it
+                if !this_is_background {
+                    // Run in background
+                    match run_in_background(stmt, executor).await {
+                        Ok(pid) => {
+                            if executor.context().is_interactive() {
+                                let job_id = executor.jobs().list_jobs().len();
+                                eprintln!("[{}] {}", job_id, pid);
+                            }
+                            last_exit_code = 0;
+                        }
+                        Err(_) => {
+                            last_exit_code = 1;
+                        }
+                    }
+                }
+            } else if !this_is_background {
+                // Run in foreground
+                let (code, flow) = execute_statement_with_errexit_control(stmt, executor, next_is_errexit_exempt).await;
+                last_exit_code = code;
+                executor.context_mut().set_last_exit_status(last_exit_code);
+                control = flow;
 
-            // Propagate break/continue
-            if control != ControlFlow::Normal {
-                return (last_exit_code, control);
+                // Propagate break/continue
+                if control != ControlFlow::Normal {
+                    return (last_exit_code, control);
+                }
             }
         }
+        
+        i += 1;
     }
 
     (last_exit_code, control)
+}
+
+async fn run_in_background(stmt: &colony_parser::Statement, executor: &mut Executor) -> std::result::Result<u32, ()> {
+    use nix::unistd::{fork, ForkResult, Pid};
+    use nix::sys::signal::{SigHandler, Signal, signal};
+    use colony_exec::JobStatus;
+    
+    let cmd_string = statement_to_shell_string(stmt);
+    let stmt_clone = stmt.clone();
+    let context_clone = executor.context().clone();
+    
+    match unsafe { fork() } {
+        Ok(ForkResult::Parent { child }) => {
+            let pid = child.as_raw() as u32;
+            executor.context().set_last_bg_pid(pid);
+            
+            executor.jobs().add_job(
+                child,
+                vec![child],
+                cmd_string,
+            );
+            executor.jobs().update_status(
+                executor.jobs().list_jobs().len(),
+                JobStatus::Background,
+            );
+            
+            Ok(pid)
+        }
+        Ok(ForkResult::Child) => {
+            unsafe {
+                let _ = signal(Signal::SIGINT, SigHandler::SigDfl);
+                let _ = signal(Signal::SIGQUIT, SigHandler::SigDfl);
+                let _ = signal(Signal::SIGTSTP, SigHandler::SigDfl);
+            }
+            
+            let _ = nix::unistd::setpgid(Pid::from_raw(0), Pid::from_raw(0));
+            
+            let exit_code = colony_exec::execute_statement_for_process_sub(&stmt_clone, &mut context_clone.clone());
+            
+            std::process::exit(exit_code);
+        }
+        Err(_) => Err(())
+    }
 }
 
 /// Execute if with control flow propagation
 async fn execute_if_with_control(if_stmt: &colony_parser::IfStatement, executor: &mut Executor) -> (i32, ControlFlow) {
     use colony_parser::Condition;
 
-    // Evaluate the condition
+    let saved_errexit = executor.context().shell_options().errexit;
+    executor.context_mut().shell_options_mut().errexit = false;
     let (condition_exit, _) = match &if_stmt.condition {
-        Condition::Command(cmd) => execute_statement_with_control(cmd, executor).await,
+        Condition::Command(cmd) => execute_statement_with_errexit_control(cmd, executor, true).await,
         Condition::Expression(_expr) => {
             eprintln!("Expression conditions not yet supported");
             (1, ControlFlow::Normal)
         }
     };
+    executor.context_mut().shell_options_mut().errexit = saved_errexit;
 
     let condition_result = condition_exit == 0;
 
-    // Execute appropriate branch
     if condition_result {
-        // Execute then body
         let mut last_exit = 0;
         for stmt in &if_stmt.then_body {
             let (code, flow) = execute_statement_with_control(stmt, executor).await;
             last_exit = code;
             if flow != ControlFlow::Normal {
-                return (last_exit, flow);  // Propagate break/continue
+                return (last_exit, flow);
             }
         }
         (last_exit, ControlFlow::Normal)
     } else {
-        // Check elif branches
         for elif in &if_stmt.elif_branches {
+            let saved_errexit = executor.context().shell_options().errexit;
+            executor.context_mut().shell_options_mut().errexit = false;
             let (elif_exit, _) = match &elif.condition {
-                Condition::Command(cmd) => execute_statement_with_control(cmd, executor).await,
+                Condition::Command(cmd) => execute_statement_with_errexit_control(cmd, executor, true).await,
                 Condition::Expression(_) => (1, ControlFlow::Normal),
             };
+            executor.context_mut().shell_options_mut().errexit = saved_errexit;
 
             if elif_exit == 0 {
                 let mut last_exit = 0;
@@ -940,7 +1040,7 @@ async fn execute_if_with_control(if_stmt: &colony_parser::IfStatement, executor:
 }
 
 /// Execute for loop with control flow returns
-async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
+async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> (i32, ControlFlow) {
     use colony_expand::Expander;
 
     // Expand the word list (with command substitution support)
@@ -956,7 +1056,7 @@ async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, e
             }
             Err(e) => {
                 eprintln!("expansion error: {}", e);
-                return 1;
+                return (1, ControlFlow::Normal);
             }
         }
     }
@@ -973,14 +1073,16 @@ async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, e
             last_exit = code;
 
             match flow {
-                ControlFlow::Break => return last_exit,
-                ControlFlow::Continue => break,  // Skip to next iteration
-                _ => {}
+                ControlFlow::Break => return (last_exit, ControlFlow::Normal),
+                ControlFlow::Continue => break,
+                ControlFlow::Exit => return (last_exit, ControlFlow::Exit),
+                ControlFlow::Return => return (last_exit, ControlFlow::Return),
+                ControlFlow::Normal => {}
             }
         }
     }
 
-    last_exit
+    (last_exit, ControlFlow::Normal)
 }
 
 /// Execute an if statement (old version for compatibility)
@@ -1336,55 +1438,74 @@ fn evaluate_arithmetic_command(expr: &str, executor: &mut Executor) -> i64 {
 
 fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
     let mut result = String::new();
-    let mut chars = expr.chars().peekable();
+    let chars_vec: Vec<char> = expr.chars().collect();
+    let mut i = 0;
     
-    while let Some(c) = chars.next() {
-        if c == '$' {
-            let mut var_name = String::new();
-            if chars.peek() == Some(&'{') {
-                chars.next();
-                while let Some(&c) = chars.peek() {
-                    if c == '}' {
-                        chars.next();
-                        break;
+    while i < chars_vec.len() {
+        let c = chars_vec[i];
+        if c == '$' && i + 1 < chars_vec.len() && chars_vec[i+1] == '(' {
+            i += 2;
+            let start = i;
+            let mut paren_depth = 1;
+            while i < chars_vec.len() && paren_depth > 0 {
+                if chars_vec[i] == '(' { paren_depth += 1; }
+                else if chars_vec[i] == ')' { paren_depth -= 1; }
+                if paren_depth > 0 { i += 1; }
+            }
+            let cmd_str: String = chars_vec[start..i].iter().collect();
+            if i < chars_vec.len() { i += 1; }
+            
+            if let Ok(program) = colony_parser::pest_api::parse(&cmd_str) {
+                let mut ctx = executor.context().clone();
+                let mut output = String::new();
+                for stmt in &program.statements {
+                    if let Ok(out) = colony_exec::execute_and_capture(stmt, &mut ctx) {
+                        output.push_str(&out);
                     }
-                    var_name.push(chars.next().unwrap());
                 }
+                result.push_str(output.trim_end_matches('\n'));
+            }
+        } else if c == '$' {
+            i += 1;
+            let mut var_name = String::new();
+            if i < chars_vec.len() && chars_vec[i] == '{' {
+                i += 1;
+                while i < chars_vec.len() && chars_vec[i] != '}' {
+                    var_name.push(chars_vec[i]);
+                    i += 1;
+                }
+                if i < chars_vec.len() { i += 1; }
             } else {
-                while let Some(&c) = chars.peek() {
-                    if c.is_alphanumeric() || c == '_' {
-                        var_name.push(chars.next().unwrap());
-                    } else {
-                        break;
-                    }
+                while i < chars_vec.len() && (chars_vec[i].is_alphanumeric() || chars_vec[i] == '_') {
+                    var_name.push(chars_vec[i]);
+                    i += 1;
                 }
             }
             let val = executor.context().get_var_or_env(&var_name).unwrap_or_default();
             result.push_str(&val);
         } else if c.is_alphabetic() || c == '_' {
             let mut var_name = String::from(c);
-            while let Some(&c) = chars.peek() {
-                if c.is_alphanumeric() || c == '_' {
-                    var_name.push(chars.next().unwrap());
-                } else {
-                    break;
-                }
+            i += 1;
+            while i < chars_vec.len() && (chars_vec[i].is_alphanumeric() || chars_vec[i] == '_') {
+                var_name.push(chars_vec[i]);
+                i += 1;
             }
-            if chars.peek() == Some(&'[') {
-                chars.next();
+            if i < chars_vec.len() && chars_vec[i] == '[' {
+                i += 1;
                 let mut index = String::new();
                 let mut bracket_depth = 1;
-                while let Some(&c) = chars.peek() {
-                    if c == '[' {
+                while i < chars_vec.len() && bracket_depth > 0 {
+                    if chars_vec[i] == '[' {
                         bracket_depth += 1;
-                    } else if c == ']' {
+                    } else if chars_vec[i] == ']' {
                         bracket_depth -= 1;
                         if bracket_depth == 0 {
-                            chars.next();
+                            i += 1;
                             break;
                         }
                     }
-                    index.push(chars.next().unwrap());
+                    index.push(chars_vec[i]);
+                    i += 1;
                 }
                 let expanded_index = expand_arithmetic_vars(&index, executor);
                 let idx: usize = evaluate_arithmetic_expr(&expanded_index) as usize;
@@ -1407,6 +1528,7 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
             }
         } else {
             result.push(c);
+            i += 1;
         }
     }
     
@@ -1784,10 +1906,17 @@ fn execute_statement_with_control<'a>(
     stmt: &'a Statement,
     executor: &'a mut Executor,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = (i32, ControlFlow)> + 'a>> {
+    execute_statement_with_errexit_control(stmt, executor, false)
+}
+
+fn execute_statement_with_errexit_control<'a>(
+    stmt: &'a Statement,
+    executor: &'a mut Executor,
+    errexit_exempt: bool,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = (i32, ControlFlow)> + 'a>> {
     Box::pin(async move {
     match stmt {
         Statement::SimpleCommand(cmd) => {
-            // Check for break/continue
             if let Some(literal) = cmd.name.as_literal() {
                 match literal {
                     "break" => return (0, ControlFlow::Break),
@@ -1797,31 +1926,62 @@ fn execute_statement_with_control<'a>(
             }
 
             let result = match executor.execute_simple_command(cmd).await {
-                Ok(status) => (status.code(), ControlFlow::Normal),
+                Ok(status) => {
+                    let code = status.code();
+                    if !errexit_exempt && executor.context().shell_options().errexit && code != 0 {
+                        (code, ControlFlow::Exit)
+                    } else {
+                        (code, ControlFlow::Normal)
+                    }
+                }
                 Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
-                Err(e) => {
+                Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
+                Err(ref e) => {
                     eprintln!("execution error: {}", e);
-                    (1, ControlFlow::Normal)
+                    let exit_code = match e {
+                        ExecutionError::CommandNotFound(_) => 127,
+                        ExecutionError::PermissionDenied(_) => 126,
+                        _ => 1,
+                    };
+                    if !errexit_exempt && executor.context().shell_options().errexit {
+                        (exit_code, ControlFlow::Exit)
+                    } else {
+                        (exit_code, ControlFlow::Normal)
+                    }
                 }
             };
-            if result.0 != 0 && result.1 == ControlFlow::Normal {
+            if result.0 != 0 {
                 execute_err_trap(executor).await;
             }
             result
         }
         Statement::Pipeline(pipeline) => {
+            let pipeline_has_negation = pipeline.elements.first().map(|e| e.negated).unwrap_or(false);
             if pipeline.elements.len() == 1 {
                 let element = &pipeline.elements[0];
-                let (mut code, flow) = execute_statement_with_control(&element.command, executor).await;
+                let saved_errexit = executor.context().shell_options().errexit;
                 if element.negated {
+                    executor.context_mut().shell_options_mut().errexit = false;
+                }
+                let (mut code, flow) = execute_statement_with_errexit_control(&element.command, executor, errexit_exempt || element.negated).await;
+                if element.negated {
+                    executor.context_mut().shell_options_mut().errexit = saved_errexit;
                     code = if code == 0 { 1 } else { 0 };
                 }
                 executor.context_mut().set_last_exit_status(code);
                 return (code, flow);
             }
             let result = match executor.execute_pipeline(&pipeline).await {
-                Ok(status) => (status.code(), ControlFlow::Normal),
+                Ok(status) => {
+                    let code = status.code();
+                    if !errexit_exempt && !pipeline_has_negation && executor.context().shell_options().errexit && code != 0 {
+                        (code, ControlFlow::Exit)
+                    } else {
+                        (code, ControlFlow::Normal)
+                    }
+                }
                 Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
+                Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
                 Err(e) => {
                     eprintln!("execution error: {}", e);
                     (1, ControlFlow::Normal)
@@ -1836,7 +1996,7 @@ fn execute_statement_with_control<'a>(
             execute_list_with_control(list, executor).await
         }
         Statement::For(for_stmt) => {
-            (execute_for_loop_with_control(for_stmt, executor).await, ControlFlow::Normal)
+            execute_for_loop_with_control(for_stmt, executor).await
         }
         Statement::CStyleFor(cstyle_for) => {
             (execute_cstyle_for_loop_with_control(cstyle_for, executor).await, ControlFlow::Normal)
@@ -1850,9 +2010,19 @@ fn execute_statement_with_control<'a>(
                 Err(ExecutionError::Break) => (0, ControlFlow::Break),
                 Err(ExecutionError::Continue) => (0, ControlFlow::Continue),
                 Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
+                Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
                 Err(e) => {
-                    eprintln!("{}", e);
-                    (1, ControlFlow::Normal)
+                    eprintln!("execution error: {}", e);
+                    let exit_code = match &e {
+                        ExecutionError::CommandNotFound(_) => 127,
+                        ExecutionError::PermissionDenied(_) => 126,
+                        _ => 1,
+                    };
+                    if !errexit_exempt && executor.context().shell_options().errexit {
+                        (exit_code, ControlFlow::Exit)
+                    } else {
+                        (exit_code, ControlFlow::Normal)
+                    }
                 }
             }
         }
@@ -1879,6 +2049,7 @@ fn execute_statement_with_control<'a>(
         Statement::Subshell(subshell) => {
             use colony_exec::builtin_redirect::BuiltinRedirectGuard;
             let mut subshell_executor = Executor::new(executor.context().clone());
+            subshell_executor.context_mut().clear_non_ignored_traps();
             let _redirect_guard = match BuiltinRedirectGuard::apply(&subshell.redirects, subshell_executor.context_mut()) {
                 Ok(guard) => guard,
                 Err(e) => {
@@ -1898,6 +2069,7 @@ fn execute_statement_with_control<'a>(
                     ControlFlow::Exit => return (last_exit, ControlFlow::Exit),
                 }
             }
+            subshell_executor.run_exit_trap().await;
             (last_exit, ControlFlow::Normal)
         }
         Statement::FunctionDef(func_def) => {
@@ -2117,9 +2289,10 @@ fn _old_execute_statement_for_code<'a>(
 
 /// Execute a shell command and return its exit code (for -c mode)
 async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32 {
-    use colony_parser::pest_api::parse;
+    use colony_parser::pest_api::parse_with_aliases;
 
-    let program = match parse(line) {
+    let mut alias_ctx = AliasContext::from_map(executor.context().aliases().clone());
+    let program = match parse_with_aliases(line, &mut alias_ctx) {
         Ok(program) => program,
         Err(e) => {
             eprintln!("parse error: {}", e);
@@ -2437,7 +2610,8 @@ async fn execute_coproc(coproc: &colony_parser::CoprocCommand, executor: &mut Ex
 }
 
 async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {
-    let stmt = parse_statement(line)
+    let mut alias_ctx = AliasContext::from_map(executor.context().aliases().clone());
+    let stmt = colony_parser::pest_api::parse_statement_with_aliases(line, &mut alias_ctx)
         .map_err(|e| miette::miette!("parse error: {}", e))?;
 
     let exit_code = execute_statement_for_code(&stmt, executor).await;

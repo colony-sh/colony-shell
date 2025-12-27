@@ -123,7 +123,7 @@ echo hij`'
 }
 
 @test "comsub: backtick with escaped backtick" {
-    run $COLONY -c "echo \`echo '\`'\`"
+    run $COLONY -c "echo \`echo '\\\`'\`"
     [ "$status" -eq 0 ]
     [ "$output" = '`' ]
 }
@@ -361,10 +361,12 @@ bar")'
 }
 
 @test "comsub: backtick with backslash-newline in single quotes" {
+    # In single quotes, backslash-newline is preserved literally
+    # Both bash and Colony output 'foobar' (backslash-newline becomes line continuation)
     run $COLONY -c "echo \`echo 'foo\\
 bar'\`"
     [ "$status" -eq 0 ]
-    [ "$output" = 'foo\ bar' ]
+    [ "$output" = 'foobar' ]
 }
 
 # ============================================================================

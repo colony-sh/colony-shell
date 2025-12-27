@@ -75,7 +75,7 @@ pub fn preprocess_heredocs(source: &str) -> Result<(String, HashMap<usize, Hered
 }
 
 /// Find all heredoc markers (<<DELIM and <<-DELIM) in source
-/// Skips heredocs that appear inside $() since they'll be handled when the comsub is parsed
+/// Skips heredocs that appear inside $() or inside quotes since they'll be handled elsewhere
 fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
     let mut markers = Vec::new();
     let bytes = source.as_bytes();
@@ -83,8 +83,39 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
     let mut current_line_end = None;
     let mut paren_depth = 0;
     let mut in_comsub = false;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
 
     while i < bytes.len() {
+        // Handle single quotes (no escaping inside)
+        if !in_double_quote && bytes[i] == b'\'' {
+            in_single_quote = !in_single_quote;
+            i += 1;
+            continue;
+        }
+        
+        // Handle double quotes
+        if !in_single_quote && bytes[i] == b'"' {
+            in_double_quote = !in_double_quote;
+            i += 1;
+            continue;
+        }
+        
+        // Handle backslash escape in double quotes
+        if in_double_quote && bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;  // Skip escaped character
+            continue;
+        }
+        
+        // Skip everything inside quotes
+        if in_single_quote || in_double_quote {
+            if bytes[i] == b'\n' {
+                current_line_end = None;
+            }
+            i += 1;
+            continue;
+        }
+        
         if i + 1 < bytes.len() && bytes[i] == b'$' && bytes[i + 1] == b'(' {
             i += 2;
             paren_depth += 1;

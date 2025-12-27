@@ -333,17 +333,20 @@ impl AstBuilder {
         // Parse elements
         let mut current_element: Option<Box<Statement>> = None;
         let mut current_pipe_op: Option<PipeOp> = None;
+        let mut is_first_element = true;
 
         for part in inner {
             match part.as_rule() {
                 Rule::PipelineElement => {
                     let stmt = Self::build_pipeline_element(part)?;
                     if let Some(prev) = current_element {
+                        // Push the previous element - first element gets negation flag
                         elements.push(PipelineElement {
                             command: prev,
                             pipe_op: current_pipe_op,
-                            negated: false,  // Only first element can be negated
+                            negated: is_first_element && negated,
                         });
+                        is_first_element = false;
                     }
                     current_element = Some(Box::new(stmt));
                     current_pipe_op = None;
@@ -355,12 +358,12 @@ impl AstBuilder {
             }
         }
 
-        // Add final element
+        // Add final element - if it's also the first (single command pipeline), it gets negation
         if let Some(last) = current_element {
             elements.push(PipelineElement {
                 command: last,
                 pipe_op: None,
-                negated,
+                negated: is_first_element && negated,
             });
         }
 
@@ -391,9 +394,10 @@ impl AstBuilder {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
 
-        // CommandList = AndOrList ~ (ListOp ~ AndOrList)*
+        // CommandList = AndOrList ~ (ListOp ~ AndOrList)* ~ TrailingBackground?
         let mut lists = Vec::new();
         let mut ops = Vec::new();
+        let mut has_trailing_background = false;
 
         for part in inner {
             match part.as_rule() {
@@ -402,6 +406,9 @@ impl AstBuilder {
                 }
                 Rule::ListOp => {
                     ops.push(Self::build_list_op(part)?);
+                }
+                Rule::TrailingBackground => {
+                    has_trailing_background = true;
                 }
                 _ => {}
             }
@@ -413,9 +420,14 @@ impl AstBuilder {
 
         // Convert to CommandList format: first + rest
         let first = Box::new(lists.remove(0));
-        let rest: Vec<(ListOp, Statement)> = ops.into_iter()
+        let mut rest: Vec<(ListOp, Statement)> = ops.into_iter()
             .zip(lists.into_iter())
             .collect();
+        
+        // If trailing &, add Background op with Empty statement
+        if has_trailing_background {
+            rest.push((ListOp::Background, Statement::Empty));
+        }
 
         Ok(CommandList { first, rest, span })
     }
@@ -1911,7 +1923,13 @@ impl AstBuilder {
                 }
                 Rule::BacktickCommandSub => {
                     let inner = &text[1..text.len()-1];
-                    let unescaped = inner.replace("\\`", "`");
+                    // POSIX: Inside backticks, these escapes are processed:
+                    // \` -> `
+                    // \\ -> \
+                    // \$ -> $
+                    // \" -> "
+                    // \newline -> (removed, line continuation)
+                    let unescaped = unescape_backtick_content(inner);
                     WordPart::CommandSubRaw(unescaped)
                 }
                 Rule::ProcessSub => {
@@ -1967,8 +1985,14 @@ impl AstBuilder {
         //                 | ("$(" ~ CommandList ~ ")")  // command sub
         //                 | ("${" ~ VariableRef ~ "}")  // parameter
         //                 | ("$" ~ Identifier)          // simple var
+        //                 | LiteralDollar               // lone $ (literal)
 
-        let pair_text = pair.as_str().to_string();  // Capture before consuming
+        let pair_text = pair.as_str().to_string();
+        
+        if pair_text == "$" {
+            return Ok(WordPart::Literal("$".to_string()));
+        }
+        
         let inner = pair.into_inner().next()
             .ok_or(BuildError::EmptyDollarExpansion)?;
 
@@ -2305,7 +2329,7 @@ impl AstBuilder {
                 Rule::BacktickCommandSub => {
                     let text = inner.as_str();
                     let content = text.trim_start_matches('`').trim_end_matches('`');
-                    parts.push(WordPart::CommandSubRaw(content.to_string()));
+                    parts.push(WordPart::CommandSubRaw(unescape_backtick_content(content)));
                 }
                 Rule::UnquotedEscape => {
                     let text = inner.as_str();
@@ -2383,8 +2407,7 @@ impl AstBuilder {
                     flush_literal(&mut literal_buffer, &mut parts);
                     let text = actual_content.as_str();
                     let inner = &text[1..text.len()-1];
-                    let unescaped = inner.replace("\\`", "`");
-                    parts.push(WordPart::CommandSubRaw(unescaped));
+                    parts.push(WordPart::CommandSubRaw(unescape_backtick_content(inner)));
                 }
                 Rule::EscapeSequence => {
                     // POSIX: Inside double quotes, only $ ` " \ and newline are special after backslash
@@ -2645,6 +2668,27 @@ impl AstBuilder {
 }
 
 /// Convert pest Pair to our Span type
+fn unescape_backtick_content(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('`') => { chars.next(); result.push('`'); }
+                Some('\\') => { chars.next(); result.push('\\'); }
+                Some('$') => { chars.next(); result.push('$'); }
+                Some('"') => { chars.next(); result.push('"'); }
+                Some('\n') => { chars.next(); } // line continuation
+                _ => result.push(c),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 fn span_from_pair(pair: &Pair<Rule>) -> Span {
     let span = pair.as_span();
     let (start_line, start_col) = span.start_pos().line_col();

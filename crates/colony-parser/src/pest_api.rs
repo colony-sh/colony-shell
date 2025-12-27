@@ -97,6 +97,38 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     Ok(program)
 }
 
+/// Parse with alias expansion (POSIX 2.3.1)
+///
+/// This function performs parse-time alias expansion before parsing.
+/// Aliases are expanded at command positions (after ;, |, &&, ||, etc.)
+pub fn parse_with_aliases(
+    source: &str, 
+    alias_ctx: &mut crate::alias_expand::AliasContext
+) -> Result<Program, ParseError> {
+    let source = preprocess_line_continuations(source);
+    let source = crate::alias_expand::preprocess_aliases(&source, alias_ctx);
+    
+    let (arith_normalized, arith_map) = if source.contains("$((") {
+        crate::arith_preprocess::preprocess_arithmetic(&source)
+    } else {
+        (source.to_string(), Vec::new())
+    };
+    
+    let mut program = if arith_normalized.contains("<<") {
+        parse_with_heredocs(&arith_normalized)?
+    } else {
+        parse_direct(&arith_normalized)?
+    };
+    
+    if !arith_map.is_empty() {
+        for stmt in &mut program.statements {
+            inject_arithmetic(stmt, &arith_map);
+        }
+    }
+    
+    Ok(program)
+}
+
 /// Parse source directly with pest (no heredocs)
 fn parse_direct(source: &str) -> Result<Program, ParseError> {
     // Parse source directly with pest
@@ -151,6 +183,64 @@ fn parse_with_heredocs(source: &str) -> Result<Program, ParseError> {
 pub fn parse_statement(source: &str) -> Result<crate::ast::Statement, ParseError> {
     let (normalized_arith, _arith_map) = if source.contains("$((") {
         crate::arith_preprocess::preprocess_arithmetic(source)
+    } else {
+        (source.to_string(), Vec::new())
+    };
+
+    let (normalized, heredoc_contents) = if normalized_arith.contains("<<") {
+        preprocess_heredocs(&normalized_arith)
+            .map_err(|e| ParseError::HeredocPreprocessing(e))?
+    } else {
+        (normalized_arith, std::collections::HashMap::new())
+    };
+
+    let pairs = ColonyParser::parse(Rule::Statement, &normalized)
+        .map_err(|e| {
+            let (line, column) = match e.line_col {
+                pest::error::LineColLocation::Pos((l, c)) => (l, c),
+                pest::error::LineColLocation::Span((l, c), _) => (l, c),
+            };
+            ParseError::Syntax {
+                message: e.to_string(),
+                line,
+                column,
+            }
+        })?;
+
+    let pair = pairs.into_iter().next()
+        .ok_or(ParseError::EmptyInput)?;
+
+    let inner = pair.into_inner().next()
+        .ok_or(ParseError::EmptyInput)?;
+
+    let mut stmt = AstBuilder::build_statement(inner)
+        .map_err(ParseError::Build)?;
+
+    if !_arith_map.is_empty() {
+        inject_arithmetic(&mut stmt, &_arith_map);
+    }
+
+    if !heredoc_contents.is_empty() {
+        let mut heredoc_index = 0;
+        inject_heredoc_contents(&mut stmt, &heredoc_contents, &mut heredoc_index);
+    }
+
+    Ok(stmt)
+}
+
+/// Parse a single statement with alias expansion (POSIX 2.3.1)
+///
+/// This function performs parse-time alias expansion before parsing.
+/// Aliases are expanded at command positions (after ;, |, &&, ||, etc.)
+pub fn parse_statement_with_aliases(
+    source: &str,
+    alias_ctx: &mut crate::alias_expand::AliasContext,
+) -> Result<crate::ast::Statement, ParseError> {
+    let source = preprocess_line_continuations(source);
+    let source = crate::alias_expand::preprocess_aliases(&source, alias_ctx);
+    
+    let (normalized_arith, _arith_map) = if source.contains("$((") {
+        crate::arith_preprocess::preprocess_arithmetic(&source)
     } else {
         (source.to_string(), Vec::new())
     };

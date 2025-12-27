@@ -552,10 +552,17 @@ fn apply_file_redirect(
     // Determine open flags based on redirect type
     let (flags, mode) = match kind {
         RedirectKind::Input => (OFlag::O_RDONLY, Mode::empty()),
-        RedirectKind::Output => (
-            OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC,
-            Mode::from_bits_truncate(0o666),
-        ),
+        RedirectKind::Output => {
+            if context.shell_options().noclobber && std::path::Path::new(filename).exists() {
+                return Err(ExecutionError::RedirectError(
+                    format!("cannot overwrite existing file: {}", filename)
+                ));
+            }
+            (
+                OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC,
+                Mode::from_bits_truncate(0o666),
+            )
+        }
         RedirectKind::Append => (
             OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_APPEND,
             Mode::from_bits_truncate(0o666),

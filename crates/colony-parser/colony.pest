@@ -43,7 +43,9 @@ Terminator = { NEWLINE | ";" }
 // Commands and Pipelines
 // ============================================================================
 
-CommandList = { AndOrList ~ (ListOp ~ AndOrList)* }
+CommandList = { AndOrList ~ (ListOp ~ AndOrList)* ~ TrailingBackground? }
+
+TrailingBackground = { "&" }
 
 AndOrList = { Pipeline ~ (AndOrOp ~ Pipeline)* }
 
@@ -982,7 +984,12 @@ DollarExpansion = {
   | ("${" ~ VariableRef ~ "}")           // ${var}   - parsed inline
   | ("$" ~ PositionalParam)              // $1, $@, $#, etc. - positional parameters
   | ("$" ~ VariableName)                 // $var     - parsed inline (allows reserved words)
+  | LiteralDollar                        // $ not followed by valid expansion (literal)
 }
+
+// Literal dollar sign - $ not followed by anything that forms a valid expansion
+// This must be checked AFTER all valid expansion forms
+LiteralDollar = @{ "$" }
 
 // Variable name - can be any identifier including reserved words (bash allows $var)
 VariableName = @{
@@ -1059,8 +1066,8 @@ VariableRefName = {
 // ${#var} = length of var, but ${#:-0} = $# with default modifier
 // Use negative lookahead to prevent # from being prefix when followed by :, -, =, ?, +, etc
 VarPrefix = {
-    "#" ~ &(VariableName | ASCII_DIGIT | "@" | "*")   // Length - only if followed by var name
-  | "!" ~ &(VariableName | ASCII_DIGIT | "@" | "*")   // Indices - only if followed by var name
+    "#" ~ &(VariableName | ASCII_DIGIT | "@" | "*" | "#")   // Length - only if followed by var name or special
+  | "!" ~ &(VariableName | ASCII_DIGIT | "@" | "*" | "#")   // Indices - only if followed by var name or special
 }
 
 // Array subscript: [index], [@], [*], [$var]

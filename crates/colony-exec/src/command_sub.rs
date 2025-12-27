@@ -82,19 +82,14 @@ pub fn execute_and_capture(
                     // Convert output to string
                     let output_str = String::from_utf8_lossy(&output).to_string();
 
-                    // Check if command failed (non-zero exit code)
+                    // Update $? with the exit status
                     use nix::sys::wait::WaitStatus;
-                    let failed = match status {
-                        WaitStatus::Exited(_, code) => code != 0,
-                        _ => true, // Signaled or stopped = failure
+                    let exit_code = match status {
+                        WaitStatus::Exited(_, code) => code,
+                        WaitStatus::Signaled(_, sig, _) => 128 + sig as i32,
+                        _ => 1,
                     };
-
-                    if failed {
-                        return Err(format!(
-                            "command substitution failed with status: {:?}",
-                            status
-                        ));
-                    }
+                    context.set_last_exit_status(exit_code);
 
                     Ok(output_str)
                 }
@@ -104,18 +99,47 @@ pub fn execute_and_capture(
     }
 }
 
+/// Result type for execute_statement_in_child_with_return - tracks return vs normal exit
+enum ChildExitResult {
+    /// Normal exit with code
+    Exit(i32),
+    /// Return statement encountered with code (should exit subshell)
+    Return(i32),
+}
+
 /// Execute a statement in the child process (for command substitution)
 ///
 /// This is called after fork() in the child, so it doesn't return.
 /// Returns an exit code which the child should exit with.
 fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) -> i32 {
+    match execute_statement_in_child_with_return(stmt, context) {
+        ChildExitResult::Exit(code) => code,
+        ChildExitResult::Return(code) => code,
+    }
+}
+
+/// Execute a statement tracking return vs normal exit
+fn execute_statement_in_child_with_return(stmt: &Statement, context: &mut ExpansionContext) -> ChildExitResult {
     use crate::JobTable;
     use colony_expand::Expander;
     use std::io::Write;
 
     match stmt {
         Statement::Empty => {
-            0
+            ChildExitResult::Exit(context.last_exit_status())
+        }
+
+        Statement::Return(ret_stmt) => {
+            let code = if let Some(ref expr) = ret_stmt.value {
+                use colony_parser::Expression;
+                match expr {
+                    Expression::Int(n, _) => *n as i32,
+                    _ => 0
+                }
+            } else {
+                context.last_exit_status()
+            };
+            ChildExitResult::Return(code)
         }
 
         Statement::SimpleCommand(cmd) => {
@@ -125,7 +149,7 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
             
             let name_fields = match expander.expand_word(&cmd.name) {
                 Ok(fields) if !fields.is_empty() => fields,
-                _ => return 1,
+                _ => return ChildExitResult::Exit(1),
             };
             let command_name = &name_fields[0].text;
             let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
@@ -144,15 +168,28 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
                 
                 let mut last_exit = 0;
                 for body_stmt in &func_def.body {
-                    last_exit = execute_statement_in_child(body_stmt, context);
-                    context.set_last_exit_status(last_exit);
+                    match execute_statement_in_child_with_return(body_stmt, context) {
+                        ChildExitResult::Exit(code) => {
+                            last_exit = code;
+                            context.set_last_exit_status(last_exit);
+                        }
+                        ChildExitResult::Return(code) => {
+                            // Return from function - just exit with code, don't propagate
+                            return ChildExitResult::Exit(code);
+                        }
+                    }
                 }
-                return last_exit;
+                return ChildExitResult::Exit(last_exit);
             }
 
             let jobs = JobTable::new();
             let tuple_space = TupleSpace::new();
             let mut channels = ChannelManager::new();
+            
+            if let Err(e) = crate::apply_redirects(&cmd.redirects, context) {
+                eprintln!("redirect error: {}", e);
+                return ChildExitResult::Exit(1);
+            }
 
             if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels)
             {
@@ -160,19 +197,22 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
 
                 match result {
                     Ok(builtin_result) => {
-                        builtin_result.exit_code()
+                        ChildExitResult::Exit(builtin_result.exit_code())
+                    }
+                    Err(crate::ExecutionError::Return(code)) => {
+                        ChildExitResult::Return(code)
                     }
                     Err(_e) => {
-                        1
+                        ChildExitResult::Exit(1)
                     }
                 }
             } else {
                 match execute_command_in_child_blocking(cmd, context) {
                     Ok(status) => {
-                        status.code()
+                        ChildExitResult::Exit(status.code())
                     }
                     Err(_e) => {
-                        1
+                        ChildExitResult::Exit(1)
                     }
                 }
             }
@@ -180,13 +220,18 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
 
         Statement::Pipeline(pipeline) => {
             match execute_pipeline_in_child_blocking(pipeline, context) {
-                Ok(status) => status.code(),
-                Err(_) => 1,
+                Ok(status) => ChildExitResult::Exit(status.code()),
+                Err(crate::ExecutionError::Return(code)) => ChildExitResult::Return(code),
+                Err(_) => ChildExitResult::Exit(1),
             }
         }
 
         Statement::List(list) => {
-            let mut last_code = execute_statement_in_child(&list.first, context);
+            let first_result = execute_statement_in_child_with_return(&list.first, context);
+            let mut last_code = match first_result {
+                ChildExitResult::Exit(code) => code,
+                ChildExitResult::Return(code) => return ChildExitResult::Return(code),
+            };
 
             for (op, stmt) in &list.rest {
                 use colony_parser::ListOp;
@@ -198,15 +243,38 @@ fn execute_statement_in_child(stmt: &Statement, context: &mut ExpansionContext) 
                 };
 
                 if should_run {
-                    last_code = execute_statement_in_child(stmt, context);
+                    match execute_statement_in_child_with_return(stmt, context) {
+                        ChildExitResult::Exit(code) => {
+                            last_code = code;
+                        }
+                        ChildExitResult::Return(code) => {
+                            return ChildExitResult::Return(code);
+                        }
+                    }
                 }
             }
 
-            last_code
+            ChildExitResult::Exit(last_code)
         }
 
-        other => {
-            1
+        Statement::BraceGroup(brace_group) => {
+            let mut last_exit = 0;
+            for stmt in &brace_group.body {
+                match execute_statement_in_child_with_return(stmt, context) {
+                    ChildExitResult::Exit(code) => {
+                        last_exit = code;
+                        context.set_last_exit_status(last_exit);
+                    }
+                    ChildExitResult::Return(code) => {
+                        return ChildExitResult::Return(code);
+                    }
+                }
+            }
+            ChildExitResult::Exit(last_exit)
+        }
+
+        _other => {
+            ChildExitResult::Exit(1)
         }
     }
 }
@@ -417,6 +485,11 @@ fn execute_single_element_blocking(
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
         let mut channels = ChannelManager::new();
+
+        if let Err(e) = crate::apply_redirects(&cmd.redirects, context) {
+            eprintln!("redirect error: {}", e);
+            return Ok(crate::ExitStatus::new(1));
+        }
 
         if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels) {
             let _ = std::io::stdout().flush();

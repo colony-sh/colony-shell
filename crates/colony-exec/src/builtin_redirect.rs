@@ -51,6 +51,7 @@ impl BuiltinRedirectGuard {
 
         // Save affected FDs by duplicating them to high fd numbers (>= 100)
         // This avoids conflicts with user-allocated fds like exec {fd}>file
+        // Only save FDs that currently exist (don't try to save fd 3 if it will be created)
         for &fd in &affected_fds {
             match fcntl(fd, FcntlArg::F_DUPFD(SAVED_FD_MIN)) {
                 Ok(saved_fd) => {
@@ -59,6 +60,9 @@ impl BuiltinRedirectGuard {
                         original_fd: fd,
                         saved_fd,
                     });
+                }
+                Err(nix::errno::Errno::EBADF) => {
+                    tracing::debug!("BuiltinRedirectGuard: fd {} doesn't exist, will be created by redirect", fd);
                 }
                 Err(e) => {
                     // Clean up any FDs we've already saved

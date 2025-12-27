@@ -31,7 +31,6 @@ teardown() {
 # ============================================================================
 
 @test "job-control: \$\$ expands to current shell PID" {
-    skip "\$\$ special variable not yet implemented"
     run "$COLONY" -c 'echo $$'
     [ "$status" -eq 0 ]
     # Should be a positive integer
@@ -40,14 +39,12 @@ teardown() {
 }
 
 @test "job-control: \$\$ is consistent within same shell" {
-    skip "\$\$ special variable not yet implemented"
     run "$COLONY" -c 'A=$$; B=$$; [ "$A" = "$B" ] && echo same'
     [ "$status" -eq 0 ]
     [ "$output" = "same" ]
 }
 
 @test "job-control: \$\$ in subshell is parent's PID" {
-    skip "\$\$ special variable not yet implemented"
     # POSIX: $$ in subshell should be the parent shell's PID
     run "$COLONY" -c 'PARENT=$$; CHILD=$(echo $$); [ "$PARENT" = "$CHILD" ] && echo same'
     [ "$status" -eq 0 ]
@@ -55,7 +52,6 @@ teardown() {
 }
 
 @test "job-control: compare \$\$ with bash" {
-    skip "\$\$ special variable not yet implemented"
     run bash -c 'echo $$'
     [ "$status" -eq 0 ]
     [[ "$output" =~ ^[0-9]+$ ]]
@@ -70,7 +66,6 @@ teardown() {
 }
 
 @test "job-control: \$! is empty before any background job" {
-    skip "\$! special variable not yet implemented"
     run "$COLONY" -c 'echo ">>$!<<"'
     [ "$status" -eq 0 ]
     # Should be empty or not set
@@ -78,7 +73,6 @@ teardown() {
 }
 
 @test "job-control: \$! is set after background job" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sleep 0.1 &; echo $!'
     [ "$status" -eq 0 ]
     [[ "$output" =~ ^[0-9]+$ ]]
@@ -86,14 +80,12 @@ teardown() {
 }
 
 @test "job-control: \$! persists after background job completes" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'true &; PID=$!; wait; echo $!'
     [ "$status" -eq 0 ]
     [[ "$output" =~ ^[0-9]+$ ]]
 }
 
 @test "job-control: \$! updated by subsequent background job" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sleep 0.1 &; PID1=$!; sleep 0.1 &; PID2=$!; [ "$PID1" != "$PID2" ] && echo different'
     [ "$status" -eq 0 ]
     [ "$output" = "different" ]
@@ -104,27 +96,23 @@ teardown() {
 # ============================================================================
 
 @test "job-control: background command syntax parsed" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'echo hello &'
     [ "$status" -eq 0 ]
 }
 
 @test "job-control: background command runs asynchronously" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sleep 0.5 &; echo done'
     [ "$status" -eq 0 ]
     [ "$output" = "done" ]
 }
 
 @test "job-control: background command output appears" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'echo hello &; sleep 0.1'
     [ "$status" -eq 0 ]
     [[ "$output" == *"hello"* ]]
 }
 
 @test "job-control: multiple background commands" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'echo one &; echo two &; echo three &; wait'
     [ "$status" -eq 0 ]
     [[ "$output" == *"one"* ]]
@@ -133,7 +121,6 @@ teardown() {
 }
 
 @test "job-control: background pipeline" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'echo hello | cat &; wait; echo done'
     [ "$status" -eq 0 ]
     [[ "$output" == *"hello"* ]]
@@ -156,14 +143,12 @@ teardown() {
 }
 
 @test "job-control: background with redirection" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c "echo hello > $TEST_TEMP/bg.txt &; wait; cat $TEST_TEMP/bg.txt"
     [ "$status" -eq 0 ]
     [ "$output" = "hello" ]
 }
 
 @test "job-control: background exit status available via wait" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'false &; wait $!; echo $?'
     [ "$status" -eq 0 ]
     [ "$output" = "1" ]
@@ -210,7 +195,6 @@ teardown() {
 }
 
 @test "job-control: jobs shows job status" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sleep 1 &; jobs'
     [ "$status" -eq 0 ]
     # Should show Running status
@@ -218,7 +202,6 @@ teardown() {
 }
 
 @test "job-control: jobs shows command" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sleep 100 &; jobs'
     [ "$status" -eq 0 ]
     [[ "$output" == *"sleep"* ]]
@@ -269,7 +252,6 @@ teardown() {
 }
 
 @test "job-control: wait for specific PID" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sleep 0.1 &; PID=$!; wait $PID; echo done'
     [ "$status" -eq 0 ]
     [ "$output" = "done" ]
@@ -283,14 +265,12 @@ teardown() {
 }
 
 @test "job-control: wait returns exit status of job" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sh -c "exit 42" &; wait $!; echo $?'
     [ "$status" -eq 0 ]
     [ "$output" = "42" ]
 }
 
 @test "job-control: wait for all background jobs" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'sleep 0.1 &; sleep 0.1 &; wait; echo done'
     [ "$status" -eq 0 ]
     [ "$output" = "done" ]
@@ -304,7 +284,6 @@ teardown() {
 }
 
 @test "job-control: wait invalid PID" {
-    skip "Background execution (&) not yet implemented"
     run "$COLONY" -c 'wait 99999999'
     [ "$status" -ne 0 ]
 }
@@ -660,7 +639,6 @@ teardown() {
 # ============================================================================
 
 @test "compare: \$\$ format matches bash" {
-    skip "\$\$ special variable not yet implemented"
     run bash -c 'echo $$'
     [[ "$output" =~ ^[0-9]+$ ]]
     

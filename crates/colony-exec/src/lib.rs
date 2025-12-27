@@ -7,6 +7,7 @@
 //! - Exit status capture
 //! - Signal handling (future: job control)
 
+mod alias;
 pub mod builtin_redirect;
 mod builtins;
 mod command;
@@ -19,6 +20,8 @@ mod pipeline;
 mod process;
 mod redirect;
 mod xtrace;
+
+pub use alias::{expand_alias, AliasExpansionResult};
 
 pub use builtins::{execute_builtin, is_builtin, BuiltinResult};
 pub use command::execute_command;
@@ -82,6 +85,35 @@ impl Executor {
     /// Consume the executor and return the context (for lastpipe variable persistence)
     pub fn into_context(self) -> ExpansionContext {
         self.context
+    }
+
+    /// Run EXIT trap if one is set
+    /// 
+    /// This is called when a subshell exits to ensure any EXIT trap set within
+    /// the subshell is executed before the subshell completes.
+    pub async fn run_exit_trap(&mut self) -> i32 {
+        use colony_expand::TrapAction;
+        use colony_expand::TrapSignal;
+        use colony_parser::pest_api::parse;
+        
+        let exit_trap = self.context.get_trap(&TrapSignal::Exit).cloned();
+        
+        if let Some(TrapAction::Command(cmd)) = exit_trap {
+            if let Ok(program) = parse(&cmd) {
+                let mut last = 0;
+                for stmt in &program.statements {
+                    match self.execute_statement_recursive(stmt).await {
+                        Ok(code) => {
+                            last = code;
+                            self.context.set_last_exit_status(code);
+                        }
+                        Err(_) => break,
+                    }
+                }
+                return last;
+            }
+        }
+        0
     }
 
     pub async fn execute_function(
@@ -340,15 +372,22 @@ impl Executor {
         }
 
         // For assignment-only commands, we've already applied changes to self.context directly.
-        // Don't sync from expander's stale copy.
+        // Don't sync from expander's stale copy. But DO sync the exit status from command substitutions.
         if !is_assignment_only {
             self.context.sync_variables_from(expander.context());
+        } else {
+            // POSIX: For bare assignments (no command), the exit status is from the last
+            // command substitution, or 0 if there were none. Return immediately - don't
+            // execute the synthetic ":" command which would overwrite the exit status.
+            let exit_status = expander.context().last_exit_status();
+            self.context.set_last_exit_status(exit_status);
+            return Ok(ExitStatus::new(exit_status));
         }
 
         let name_fields = expander.expand_word(&cmd.name)?;
         if name_fields.is_empty() {
             if cmd.args.is_empty() {
-                return Ok(ExitStatus::success());
+                return Ok(ExitStatus::new(self.context.last_exit_status()));
             }
             return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
         }
@@ -373,23 +412,79 @@ impl Executor {
             return self.execute_function(&func_def, args).await;
         }
 
-        if let Some(alias_value) = self.context.get_alias(command_name) {
-            let alias_words: Vec<String> = alias_value.split_whitespace()
-                .map(|s| s.to_string())
-                .collect();
-
-            if !alias_words.is_empty() {
+        // Alias expansion with cycle detection and re-parsing support
+        let mut expanding_aliases = std::collections::HashSet::new();
+        match alias::expand_alias(command_name, &self.context, &expanding_aliases) {
+            alias::AliasExpansionResult::Reparsed(statements) => {
+                let mut last_exit = 0;
+                for (i, stmt) in statements.iter().enumerate() {
+                    if i == statements.len() - 1 {
+                        if let colony_parser::Statement::SimpleCommand(mut last_cmd) = stmt.clone() {
+                            last_cmd.args.extend(cmd.args.clone());
+                            last_cmd.redirects.extend(cmd.redirects.clone());
+                            last_exit = self.execute_statement_recursive(&colony_parser::Statement::SimpleCommand(last_cmd)).await?;
+                        } else {
+                            last_exit = self.execute_statement_recursive(stmt).await?;
+                        }
+                    } else {
+                        last_exit = self.execute_statement_recursive(stmt).await?;
+                    }
+                    self.context.set_last_exit_status(last_exit);
+                }
+                return Ok(ExitStatus::new(last_exit));
+            }
+            alias::AliasExpansionResult::SimpleExpansion { new_command, alias_args, expand_next } => {
+                expanding_aliases.insert(command_name.to_string());
+                
                 let mut new_cmd = cmd.clone();
-                new_cmd.name = colony_parser::Word::literal(&alias_words[0], cmd.span.clone());
-
-                let mut new_args = vec![];
-                for alias_arg in &alias_words[1..] {
+                new_cmd.name = colony_parser::Word::literal(&new_command, cmd.span.clone());
+                
+                let mut new_args = Vec::new();
+                for alias_arg in &alias_args {
                     new_args.push(colony_parser::Word::literal(alias_arg, cmd.span.clone()));
                 }
-                new_args.extend(cmd.args.clone());
+                
+                // Handle trailing space expansion (e.g., alias sudo="sudo ")
+                let mut skip_first_arg = false;
+                if expand_next && !cmd.args.is_empty() {
+                    if let Some(first_arg) = cmd.args.first() {
+                        if let Some(arg_name) = first_arg.as_literal() {
+                            if !expanding_aliases.contains(arg_name) {
+                                if let alias::AliasExpansionResult::SimpleExpansion { 
+                                    new_command: arg_cmd, 
+                                    alias_args: arg_alias_args, 
+                                    .. 
+                                } = alias::expand_alias(arg_name, &self.context, &expanding_aliases) {
+                                    new_args.push(colony_parser::Word::literal(&arg_cmd, first_arg.span.clone()));
+                                    for arg in &arg_alias_args {
+                                        new_args.push(colony_parser::Word::literal(arg, first_arg.span.clone()));
+                                    }
+                                    skip_first_arg = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                let args_to_add = if skip_first_arg { &cmd.args[1..] } else { &cmd.args[..] };
+                new_args.extend(args_to_add.iter().cloned());
                 new_cmd.args = new_args;
-
-                return Box::pin(self.execute_simple_command(&new_cmd)).await;
+                
+                // Recursively execute but avoid infinite loop by checking if command changed
+                if new_command != *command_name {
+                    return Box::pin(self.execute_simple_command(&new_cmd)).await;
+                }
+                // If command name didn't change (alias ls=ls), fall through to normal execution
+                // with the new_cmd that has alias_args prepended
+                return Box::pin(async move {
+                    // Execute with the expanded command (avoiding alias lookup)
+                    let status = self.execute_external_command_with_channels(&new_cmd).await?;
+                    self.sync_channels_from_tuple_space();
+                    Ok(status)
+                }).await;
+            }
+            alias::AliasExpansionResult::CycleDetected | alias::AliasExpansionResult::NoAlias => {
+                // No alias or cycle detected - continue with normal execution
             }
         }
 
@@ -433,6 +528,10 @@ impl Executor {
                 
                 if let BuiltinResult::Source(file_path, source_args) = result {
                     return self.execute_source_file(&file_path, source_args).await;
+                }
+                
+                if let BuiltinResult::Eval(eval_string) = result {
+                    return self.execute_eval_string(&eval_string).await;
                 }
 
                 return Ok(ExitStatus::new(result.exit_code()));
@@ -625,6 +724,40 @@ impl Executor {
         self.context.set_positional_params(saved_positional);
         Ok(ExitStatus::new(last_exit))
     }
+    
+    pub async fn execute_eval_string(&mut self, eval_string: &str) -> Result<ExitStatus> {
+        use colony_parser::pest_api::parse;
+        
+        let program = parse(eval_string).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("eval: parse error: {}", e),
+            ))
+        })?;
+        
+        let mut last_exit = 0;
+        for stmt in &program.statements {
+            match self.execute_statement_recursive(stmt).await {
+                Ok(code) => {
+                    last_exit = code;
+                    self.context.set_last_exit_status(code);
+                }
+                Err(ExecutionError::Return(code)) => {
+                    last_exit = code;
+                    self.context.set_last_exit_status(code);
+                    break;
+                }
+                Err(ExecutionError::Exit(code)) => {
+                    return Err(ExecutionError::Exit(code));
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+        
+        Ok(ExitStatus::new(last_exit))
+    }
 
     /// Get mutable reference to expansion context
     pub fn context_mut(&mut self) -> &mut ExpansionContext {
@@ -634,6 +767,14 @@ impl Executor {
     /// Get reference to expansion context
     pub fn context(&self) -> &ExpansionContext {
         &self.context
+    }
+    
+    fn check_errexit(&self, code: i32) -> Result<i32> {
+        if self.context.shell_options().errexit && code != 0 {
+            Err(ExecutionError::Errexit(code))
+        } else {
+            Ok(code)
+        }
     }
 
     /// Execute a statement recursively (for function bodies)
@@ -652,7 +793,7 @@ impl Executor {
                     let status = Box::pin(self.execute_simple_command(cmd)).await?;
                     let code = status.code();
                     self.context.set_last_exit_status(code);
-                    Ok(code)
+                    self.check_errexit(code)
                 }
                 Statement::Pipeline(pipeline) => {
                     if pipeline.elements.len() == 1 && !pipeline.elements[0].negated {
@@ -725,11 +866,14 @@ impl Executor {
                     Ok(last)
                 }
                 Statement::Subshell(subshell) => {
-                    let mut subshell_executor = Executor::new(self.context.clone());
+                    let mut subshell_context = self.context.clone();
+                    subshell_context.clear_non_ignored_traps();
+                    let mut subshell_executor = Executor::new(subshell_context);
                     let mut last = 0;
                     for stmt in &subshell.body {
                         last = subshell_executor.execute_statement_recursive(stmt).await?;
                     }
+                    subshell_executor.run_exit_trap().await;
                     Ok(last)
                 }
                 Statement::FunctionDef(func_def) => {
@@ -820,14 +964,20 @@ impl Executor {
     }
     
     async fn execute_condition_internal(&mut self, condition: &colony_parser::Condition) -> Result<i32> {
-        match condition {
+        let saved_errexit = self.context.shell_options().errexit;
+        self.context.shell_options_mut().errexit = false;
+        
+        let result = match condition {
             colony_parser::Condition::Command(cmd) => {
                 self.execute_statement_recursive(cmd).await
             }
             colony_parser::Condition::Expression(_) => {
                 Ok(1)
             }
-        }
+        };
+        
+        self.context.shell_options_mut().errexit = saved_errexit;
+        result
     }
     
     async fn execute_while_internal(&mut self, while_stmt: &colony_parser::WhileStatement) -> Result<i32> {

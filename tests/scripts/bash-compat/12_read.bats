@@ -84,13 +84,13 @@ run_colony() {
 }
 
 @test "read: trailing backslash continues to next line" {
-    run_colony 'printf "abc\\\ndef" | { read x; echo "[$x]"; }'
+    run_colony 'printf "abc\\\\\ndef" | { read x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[abcdef]" ]
 }
 
 @test "read: backslash-newline continuation" {
-    run_colony 'printf "ab\\\ncd" | { read; echo "[$REPLY]"; }'
+    run_colony 'printf "ab\\\\\ncd" | { read; echo "[$REPLY]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[abcd]" ]
 }

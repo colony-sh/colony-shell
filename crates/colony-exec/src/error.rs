@@ -48,6 +48,9 @@ pub enum ExecutionError {
     
     #[error("Exit with code {0}")]
     Exit(i32),
+    
+    #[error("errexit triggered with code {0}")]
+    Errexit(i32),
 }
 
 pub type Result<T> = std::result::Result<T, ExecutionError>;

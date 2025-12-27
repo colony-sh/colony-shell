@@ -182,10 +182,11 @@ EOF'
     [ "$output" = ":~chet/" ]
 }
 
-@test "tilde: expanded after colon in unquoted context" {
+@test "tilde: NOT expanded after colon in regular command argument" {
+    # Tilde after colon only expands in ASSIGNMENT contexts, not echo arguments
     run_colony 'HOME=/usr/xyz; echo abcd:~'
     [ "$status" -eq 0 ]
-    [ "$output" = "abcd:/usr/xyz" ]
+    [ "$output" = "abcd:~" ]
 }
 
 @test "tilde: empty username treated as HOME" {

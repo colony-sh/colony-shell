@@ -154,6 +154,217 @@ impl Expander {
     pub fn context_mut(&mut self) -> &mut ExpansionContext {
         &mut self.context
     }
+    
+    fn expand_modifier_word(&mut self, word: &Word, in_double_quote: bool) -> Result<String> {
+        let mut result = String::new();
+        for part in &word.parts {
+            match part {
+                WordPart::Literal(s) | WordPart::SingleQuoted(s) => result.push_str(s),
+                WordPart::Tilde(user) => {
+                    if in_double_quote {
+                        result.push('~');
+                        if let Some(u) = user {
+                            result.push_str(u);
+                        }
+                    } else if let Ok(expanded) = expand_tilde(user.as_deref(), &self.context) {
+                        result.push_str(&expanded);
+                    }
+                }
+                WordPart::Variable(var_ref) => {
+                    if let Ok(val) = expand_parameter(var_ref, &self.context) {
+                        result.push_str(&val);
+                    }
+                }
+                WordPart::CommandSubRaw(cmd_str) => {
+                    let trimmed_cmd = cmd_str.trim();
+                    if !trimmed_cmd.is_empty() {
+                        if let Some(ref executor) = self.command_executor {
+                            if let Ok(program) = colony_parser::pest_api::parse(trimmed_cmd) {
+                                for stmt in &program.statements {
+                                    if let Ok(output) = executor(stmt, &mut self.context) {
+                                        result.push_str(output.trim_end_matches('\n'));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                WordPart::ArithRaw(expr_str) => {
+                    if let Ok(val) = expand_arithmetic(expr_str, &mut self.context) {
+                        result.push_str(&val);
+                    }
+                }
+                WordPart::DoubleQuoted(inner) => {
+                    for inner_part in inner {
+                        match inner_part {
+                            WordPart::Literal(s) => result.push_str(s),
+                            WordPart::Variable(var_ref) => {
+                                if let Ok(val) = expand_parameter(var_ref, &self.context) {
+                                    result.push_str(&val);
+                                }
+                            }
+                            WordPart::CommandSubRaw(cmd_str) => {
+                                let trimmed_cmd = cmd_str.trim();
+                                if !trimmed_cmd.is_empty() {
+                                    if let Some(ref executor) = self.command_executor {
+                                        if let Ok(program) = colony_parser::pest_api::parse(trimmed_cmd) {
+                                            for stmt in &program.statements {
+                                                if let Ok(output) = executor(stmt, &mut self.context) {
+                                                    result.push_str(output.trim_end_matches('\n'));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(result)
+    }
+    
+    fn expand_variable_with_modifier(&mut self, var_ref: &colony_parser::VariableRef, in_double_quote: bool) -> Result<String> {
+        use colony_parser::VarModifier;
+        
+        let has_assign_modifier = matches!(var_ref.modifier, Some(VarModifier::Assign { .. }));
+        let modifier_needs_quoting_context = in_double_quote && self.modifier_has_tilde(&var_ref.modifier);
+        
+        if var_ref.modifier.is_none() || (!has_assign_modifier && !modifier_needs_quoting_context && !self.modifier_has_command_sub(&var_ref.modifier)) {
+            return expand_parameter(var_ref, &self.context);
+        }
+        
+        let var_value = self.context.get_var_or_env(&var_ref.name);
+        
+        match &var_ref.modifier {
+            Some(VarModifier::Default { word, check_null }) => {
+                let should_use_default = if *check_null {
+                    var_value.as_ref().map(|s| s.is_empty()).unwrap_or(true)
+                } else {
+                    var_value.is_none()
+                };
+                if should_use_default {
+                    self.expand_modifier_word(word, in_double_quote)
+                } else {
+                    Ok(var_value.unwrap())
+                }
+            }
+            Some(VarModifier::Assign { word, check_null }) => {
+                let should_assign = if *check_null {
+                    var_value.as_ref().map(|s| s.is_empty()).unwrap_or(true)
+                } else {
+                    var_value.is_none()
+                };
+                if should_assign {
+                    let expanded = self.expand_modifier_word(word, in_double_quote)?;
+                    self.context.set_var(var_ref.name.clone(), expanded.clone());
+                    Ok(expanded)
+                } else {
+                    Ok(var_value.unwrap())
+                }
+            }
+            Some(VarModifier::Alternate { word, check_null }) => {
+                let should_use_alternate = if *check_null {
+                    var_value.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+                } else {
+                    var_value.is_some()
+                };
+                if should_use_alternate {
+                    self.expand_modifier_word(word, in_double_quote)
+                } else {
+                    Ok(String::new())
+                }
+            }
+            Some(VarModifier::Error { word, check_null }) => {
+                let should_error = if *check_null {
+                    var_value.as_ref().map(|s| s.is_empty()).unwrap_or(true)
+                } else {
+                    var_value.is_none()
+                };
+                if should_error {
+                    let msg = self.expand_modifier_word(word, in_double_quote)?;
+                    Err(ExpansionError::UndefinedVariable(msg))
+                } else {
+                    Ok(var_value.unwrap())
+                }
+            }
+            _ => expand_parameter(var_ref, &self.context),
+        }
+    }
+    
+    fn modifier_has_command_sub(&self, modifier: &Option<colony_parser::VarModifier>) -> bool {
+        use colony_parser::VarModifier;
+        match modifier {
+            Some(VarModifier::Default { word, .. })
+            | Some(VarModifier::Assign { word, .. })
+            | Some(VarModifier::Alternate { word, .. })
+            | Some(VarModifier::Error { word, .. }) => {
+                self.word_has_command_sub(word)
+            }
+            _ => false,
+        }
+    }
+    
+    fn modifier_has_tilde(&self, modifier: &Option<colony_parser::VarModifier>) -> bool {
+        use colony_parser::VarModifier;
+        match modifier {
+            Some(VarModifier::Default { word, .. })
+            | Some(VarModifier::Assign { word, .. })
+            | Some(VarModifier::Alternate { word, .. })
+            | Some(VarModifier::Error { word, .. }) => {
+                word.parts.iter().any(|part| matches!(part, WordPart::Tilde(_)))
+            }
+            _ => false,
+        }
+    }
+    
+    fn word_has_command_sub(&self, word: &Word) -> bool {
+        word.parts.iter().any(|part| match part {
+            WordPart::CommandSubRaw(_) | WordPart::CommandSub(_) => true,
+            WordPart::DoubleQuoted(inner) => inner.iter().any(|p| matches!(p, WordPart::CommandSubRaw(_) | WordPart::CommandSub(_))),
+            _ => false,
+        })
+    }
+    
+    fn pre_expand_command_subs_in_arith(&mut self, expr: &str) -> Result<String> {
+        let mut result = String::new();
+        let chars: Vec<char> = expr.chars().collect();
+        let mut i = 0;
+        
+        while i < chars.len() {
+            if i + 1 < chars.len() && chars[i] == '$' && chars[i+1] == '(' {
+                i += 2;
+                let start = i;
+                let mut paren_depth = 1;
+                while i < chars.len() && paren_depth > 0 {
+                    if chars[i] == '(' { paren_depth += 1; }
+                    else if chars[i] == ')' { paren_depth -= 1; }
+                    if paren_depth > 0 { i += 1; }
+                }
+                let cmd_str: String = chars[start..i].iter().collect();
+                if i < chars.len() { i += 1; }
+                
+                if let Some(ref executor) = self.command_executor {
+                    if let Ok(program) = colony_parser::pest_api::parse(&cmd_str) {
+                        let mut output = String::new();
+                        for stmt in &program.statements {
+                            if let Ok(out) = executor(stmt, &mut self.context) {
+                                output.push_str(&out);
+                            }
+                        }
+                        result.push_str(output.trim_end_matches('\n'));
+                    }
+                }
+            } else {
+                result.push(chars[i]);
+                i += 1;
+            }
+        }
+        Ok(result)
+    }
 
     pub fn expand_word(&mut self, word: &Word) -> Result<Vec<Field>> {
         if let Some(fields) = self.try_expand_array_at_word(word)? {
@@ -223,7 +434,7 @@ impl Expander {
                         match inner_part {
                             WordPart::Literal(s) => inner_result.push_str(s),
                             WordPart::Variable(var_ref) => {
-                                let expanded = expand_parameter(var_ref, &self.context)?;
+                                let expanded = self.expand_variable_with_modifier(var_ref, true)?;
                                 inner_result.push_str(&expanded);
                             }
                             WordPart::Tilde(user) => {
@@ -246,7 +457,7 @@ impl Expander {
                     segments.push((expanded, false));
                 }
                 WordPart::Variable(var_ref) => {
-                    let expanded = expand_parameter(var_ref, &self.context)?;
+                    let expanded = self.expand_variable_with_modifier(var_ref, false)?;
                     segments.push((expanded, true));
                 }
                 _ => {
@@ -287,57 +498,164 @@ impl Expander {
         Ok(result)
     }
     
-    fn try_expand_array_at_word(&self, word: &Word) -> Result<Option<Vec<Field>>> {
+    fn try_expand_array_at_word(&mut self, word: &Word) -> Result<Option<Vec<Field>>> {
         use colony_parser::ArraySubscript;
         
+        // Only handle single double-quoted word parts for now
         if word.parts.len() != 1 {
             return Ok(None);
         }
         
         if let WordPart::DoubleQuoted(inner_parts) = &word.parts[0] {
-            if inner_parts.len() != 1 {
+            // Check if there's any $@ in this double-quoted content
+            let at_positions: Vec<usize> = inner_parts.iter().enumerate()
+                .filter_map(|(i, part)| {
+                    if let WordPart::Variable(var_ref) = part {
+                        if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                            return Some(i);
+                        }
+                    }
+                    None
+                })
+                .collect();
+            
+            // No $@ found - fall through to normal expansion
+            if at_positions.is_empty() {
+                // Check for $* handling
+                if inner_parts.len() == 1 {
+                    if let WordPart::Variable(var_ref) = &inner_parts[0] {
+                        // Handle "$*" - join with first char of IFS
+                        if var_ref.name == "*" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                            let params = self.context.get_all_positional_params();
+                            let ifs = self.context.ifs();
+                            let sep = ifs.chars().next().unwrap_or(' ');
+                            let joined: String = params.iter()
+                                .map(|s| s.as_str())
+                                .collect::<Vec<_>>()
+                                .join(&sep.to_string());
+                            return Ok(Some(vec![Field::quoted(joined)]));
+                        }
+                        
+                        // Handle "${array[@]}" - each element becomes separate quoted field  
+                        let has_no_modifier = var_ref.modifier.is_none();
+                        let has_no_prefix = var_ref.prefix.is_none();
+                        if matches!(var_ref.subscript, Some(ArraySubscript::All)) && has_no_modifier && has_no_prefix {
+                            if let Some(Variable::Array(arr)) = self.context.get_variable(&var_ref.name) {
+                                let fields: Vec<Field> = arr.iter().map(|s| Field::quoted(s.clone())).collect();
+                                return Ok(Some(fields));
+                            }
+                        }
+                    }
+                }
                 return Ok(None);
             }
-            if let WordPart::Variable(var_ref) = &inner_parts[0] {
-                // Handle "$@" - special: each positional param becomes separate quoted field
-                // But NOT if there's a prefix like # (length) - ${#@} should return count
-                if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
-                    let params = self.context.get_all_positional_params();
-                    if params.is_empty() {
-                        // "$@" with no params expands to nothing (not even empty string)
-                        return Ok(Some(Vec::new()));
+            
+            // POSIX $@ word splitting: "xx$@yy" → xxfirst, middle..., lastyy
+            let params: Vec<String> = self.context.get_all_positional_params().to_vec();
+            if params.is_empty() {
+                // "$@" with no params expands to nothing (not even empty string)
+                // But we still need to handle any prefix/suffix text
+                let mut prefix_text = String::new();
+                for part in inner_parts {
+                    if let WordPart::Variable(var_ref) = part {
+                        if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                            continue; // Skip $@ - it expands to nothing
+                        }
                     }
-                    let fields: Vec<Field> = params.iter().map(|s| Field::quoted(s.clone())).collect();
-                    return Ok(Some(fields));
+                    // Expand other parts
+                    let expanded = self.expand_part_to_string(part)?;
+                    prefix_text.push_str(&expanded);
                 }
-                
-                // Handle "$*" - join with first char of IFS
-                // But NOT if there's a prefix like # (length) - ${#*} should return count
-                if var_ref.name == "*" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
-                    let params = self.context.get_all_positional_params();
-                    let ifs = self.context.ifs();
-                    let sep = ifs.chars().next().unwrap_or(' ');
-                    let joined: String = params.iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join(&sep.to_string());
-                    return Ok(Some(vec![Field::quoted(joined)]));
-                }
-                
-                // Handle "${array[@]}" - each element becomes separate quoted field  
-                // But NOT if there's a prefix like # (length) or ! (indices)
-                let has_no_modifier = var_ref.modifier.is_none();
-                let has_no_prefix = var_ref.prefix.is_none();
-                if matches!(var_ref.subscript, Some(ArraySubscript::All)) && has_no_modifier && has_no_prefix {
-                    if let Some(Variable::Array(arr)) = self.context.get_variable(&var_ref.name) {
-                        let fields: Vec<Field> = arr.iter().map(|s| Field::quoted(s.clone())).collect();
-                        return Ok(Some(fields));
-                    }
+                if prefix_text.is_empty() {
+                    return Ok(Some(Vec::new()));
+                } else {
+                    return Ok(Some(vec![Field::quoted(prefix_text)]));
                 }
             }
+            
+            // Build the result by processing parts in order
+            // We need to track: prefix text, multiple $@ expansions, and suffix text
+            let mut result_fields: Vec<Field> = Vec::new();
+            let mut current_text = String::new();
+            
+            for (i, part) in inner_parts.iter().enumerate() {
+                if let WordPart::Variable(var_ref) = part {
+                    if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                        // This is a $@ - expand to multiple fields
+                        // current_text is the prefix for the first param
+                        // After $@, any remaining text is suffix for last param (unless another $@ follows)
+                        
+                        // Check if this is the last $@ and if there's suffix text after it
+                        let is_last_at = !at_positions.iter().any(|&pos| pos > i);
+                        let mut suffix_text = String::new();
+                        
+                        if is_last_at {
+                            // Collect suffix text from remaining parts
+                            for remaining_part in inner_parts.iter().skip(i + 1) {
+                                let expanded = self.expand_part_to_string(remaining_part)?;
+                                suffix_text.push_str(&expanded);
+                            }
+                        }
+                        
+                        // Expand $@ with prefix and suffix
+                        for (param_idx, param) in params.iter().enumerate() {
+                            let mut field_text = String::new();
+                            
+                            // First param gets the accumulated prefix
+                            if param_idx == 0 {
+                                field_text.push_str(&current_text);
+                                current_text.clear();
+                            }
+                            
+                            field_text.push_str(param);
+                            
+                            // Last param gets the suffix (if this is the last $@)
+                            if param_idx == params.len() - 1 && is_last_at {
+                                field_text.push_str(&suffix_text);
+                            }
+                            
+                            result_fields.push(Field::quoted(field_text));
+                        }
+                        
+                        // If there's text between $@ expansions, it goes to the prefix for the next $@
+                        // After processing, if this is the last $@, we're done with this double-quoted section
+                        if is_last_at {
+                            break;
+                        } else {
+                            // Not the last $@, prepare for next $@ 
+                            // The last field will receive any text between $@ expansions as suffix,
+                            // then that text also becomes prefix for next $@
+                            // Actually, for "$@$@", last of first $@ joins with first of second $@
+                            // so we need to pop the last field and make it the new prefix
+                            if let Some(last_field) = result_fields.pop() {
+                                current_text = last_field.text;
+                            }
+                        }
+                        continue;
+                    }
+                }
+                
+                // Regular part - accumulate text
+                let expanded = self.expand_part_to_string(part)?;
+                current_text.push_str(&expanded);
+            }
+            
+            // Any remaining text (shouldn't happen if we handled correctly)
+            if !current_text.is_empty() {
+                result_fields.push(Field::quoted(current_text));
+            }
+            
+            return Ok(Some(result_fields));
         }
         
         Ok(None)
+    }
+    
+    /// Helper to expand a single part to a string (for use in $@ expansion)
+    fn expand_part_to_string(&mut self, part: &WordPart) -> Result<String> {
+        let mut temp = IntermediateWord::new();
+        self.expand_part_with_quoted(part, &mut temp, true)?;
+        Ok(temp.as_single_string())
     }
     
     fn try_expand_brace_word(&mut self, word: &Word) -> Result<Option<Vec<Field>>> {
@@ -455,7 +773,7 @@ impl Expander {
             }
 
             WordPart::Variable(var_ref) => {
-                let expanded = expand_parameter(var_ref, &self.context)?;
+                let expanded = self.expand_variable_with_modifier(var_ref, in_double_quote)?;
                 if in_double_quote {
                     out.push_quoted(&expanded);
                 } else {
@@ -464,7 +782,8 @@ impl Expander {
             }
 
             WordPart::ArithRaw(expr_str) => {
-                let result = expand_arithmetic(expr_str, &mut self.context)?;
+                let expanded_expr = self.pre_expand_command_subs_in_arith(expr_str)?;
+                let result = expand_arithmetic(&expanded_expr, &mut self.context)?;
                 if in_double_quote {
                     out.push_quoted(&result);
                 } else {
@@ -478,22 +797,32 @@ impl Expander {
                 } else if let Some(ref executor) = self.command_executor {
                     match colony_parser::pest_api::parse(trimmed_cmd) {
                         Ok(program) => {
-                            let mut combined_output = String::new();
-                            for stmt in &program.statements {
-                                match executor(stmt, &mut self.context) {
-                                    Ok(output) => {
-                                        combined_output.push_str(&output);
-                                    }
-                                    Err(e) => {
-                                        return Err(ExpansionError::CommandFailed(e));
+                            // If there are multiple statements, wrap them in a BraceGroup
+                            // so that return/exit in the middle properly aborts the command sub
+                            let stmt = if program.statements.len() == 1 {
+                                program.statements[0].clone()
+                            } else {
+                                // Create a synthetic BraceGroup to wrap all statements
+                                use colony_parser::{Statement, BraceGroup, Span};
+                                Statement::BraceGroup(BraceGroup {
+                                    body: program.statements.clone(),
+                                    redirects: vec![],
+                                    span: Span::DUMMY,
+                                })
+                            };
+                            
+                            match executor(&stmt, &mut self.context) {
+                                Ok(output) => {
+                                    let trimmed = output.trim_end_matches('\n');
+                                    if in_double_quote {
+                                        out.push_quoted(trimmed);
+                                    } else {
+                                        out.push_expanded(trimmed);
                                     }
                                 }
-                            }
-                            let trimmed = combined_output.trim_end_matches('\n');
-                            if in_double_quote {
-                                out.push_quoted(trimmed);
-                            } else {
-                                out.push_expanded(trimmed);
+                                Err(e) => {
+                                    return Err(ExpansionError::CommandFailed(e));
+                                }
                             }
                         }
                         Err(e) => {

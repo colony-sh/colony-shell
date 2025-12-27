@@ -1,0 +1,51 @@
+# BATS Test Results - 2025-12-26 00:02:54
+
+| Category | Passed | Total | Pass Rate |
+|----------|--------|-------|-----------|
+| 01_builtins.bats               |  20 |  20 | 100% |
+| 02_arithmetic.bats             |  20 |  20 | 100% |
+| 03_arrays.bats                 |  34 |  35 |  97% |
+| 04_glob.bats                   |  49 |  50 |  98% |
+| 05_functions.bats              |  54 |  54 | 100% |
+| 06_case.bats                   |  43 |  43 | 100% |
+| 07_heredoc.bats                |  30 |  32 |  93% |
+| 08_quote.bats                  |  46 |  53 |  86% |
+| 09_comsub.bats                 |  45 |  54 |  83% |
+| 10_redir.bats                  |  42 |  49 |  85% |
+| 11_ifs.bats                    |  36 |  36 | 100% |
+| 12_read.bats                   |  46 |  58 |  79% |
+| 13_expansion.bats              |  54 |  63 |  85% |
+| 13_tilde.bats                  |  28 |  32 |  87% |
+| 14_cstyle_for.bats             |  21 |  21 | 100% |
+| 15_comments.bats               |  11 |  11 | 100% |
+| 16_positional.bats             |  30 |  30 | 100% |
+| 17_trap.bats                   |  73 |  74 |  98% |
+| 19_test.bats                   | 119 | 119 | 100% |
+| 20_getopts.bats                |  31 |  31 | 100% |
+| 21_dstack.bats                 |  34 |  34 | 100% |
+| 22_system_vars.bats            |  14 |  14 | 100% |
+| 23_startup.bats                |  25 |  25 | 100% |
+| 24_jobs.bats                   |  97 |  97 | 100% |
+| 25_set_e.bats                  |  90 |  90 | 100% |
+| 26_set_x.bats                  |  76 |  76 | 100% |
+| 27_errors.bats                 | 126 | 127 |  99% |
+| 28_varenv.bats                 | 114 | 114 | 100% |
+| 29_procsub.bats                |  47 |  47 | 100% |
+| 30_extglob.bats                |  56 |  59 |  94% |
+| 31_casemod.bats                |  50 |  50 | 100% |
+| 33_negate.bats                 |  43 |  45 |  95% |
+| 34_dynamic_vars.bats           |  28 |  28 | 100% |
+| 35_nameref.bats                |  19 |  19 | 100% |
+| 36_mapfile.bats                |  34 |  34 | 100% |
+| 37_coproc.bats                 |  15 |  15 | 100% |
+| 39_varattr.bats                |  41 |  50 |  82% |
+| 41_complete.bats               |  10 |  10 | 100% |
+| 42_parser.bats                 | 100 | 100 | 100% |
+| 43_globstar.bats               |  18 |  18 | 100% |
+| 44_alias.bats                  |  28 |  35 |  80% |
+| 45_cond.bats                   |  43 |  52 |  82% |
+| 46_vredir.bats                 |  22 |  22 | 100% |
+| 47_precedence.bats             |  54 |  54 | 100% |
+| 48_bracket_glob.bats           |  29 |  36 |  80% |
+| 49_type.bats                   |  44 |  44 | 100% |
+| 50_lastpipe.bats               |  24 |  26 |  92% |

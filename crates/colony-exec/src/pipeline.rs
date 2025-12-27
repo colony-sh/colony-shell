@@ -170,11 +170,14 @@ async fn execute_single_pipeline_element_in_current_shell(
             Ok(ExitStatus::new(last))
         }
         Statement::Subshell(subshell) => {
-            let mut executor = crate::Executor::new(context.clone());
+            let mut subshell_context = context.clone();
+            subshell_context.clear_non_ignored_traps();
+            let mut executor = crate::Executor::new(subshell_context);
             let mut last = 0;
             for stmt in &subshell.body {
                 last = executor.execute_statement_recursive(stmt).await.unwrap_or(1);
             }
+            executor.run_exit_trap().await;
             Ok(ExitStatus::new(last))
         }
         _ => Err(ExecutionError::CommandNotFound("<complex>".to_string())),
@@ -311,6 +314,7 @@ fn execute_statement_in_child_blocking(
         Statement::List(list) => {
             use colony_parser::ListOp;
             let mut last_code = execute_statement_in_child_blocking(&list.first, context)?;
+            context.set_last_exit_status(last_code);
             
             for (op, stmt) in &list.rest {
                 let should_exec = match op {
@@ -322,6 +326,7 @@ fn execute_statement_in_child_blocking(
                 
                 if should_exec {
                     last_code = execute_statement_in_child_blocking(stmt, context)?;
+                    context.set_last_exit_status(last_code);
                 }
             }
             Ok(last_code)
@@ -351,7 +356,10 @@ fn execute_statement_in_child_blocking(
             let mut last = 0;
             for stmt in &brace.body {
                 match execute_statement_in_child_blocking(stmt, context) {
-                    Ok(code) => last = code,
+                    Ok(code) => {
+                        last = code;
+                        context.set_last_exit_status(code);
+                    }
                     Err(crate::ExecutionError::Return(code)) => return Err(crate::ExecutionError::Return(code)),
                     Err(e) => return Err(e),
                 }
@@ -362,7 +370,10 @@ fn execute_statement_in_child_blocking(
             let mut last = 0;
             for stmt in &subshell.body {
                 match execute_statement_in_child_blocking(stmt, context) {
-                    Ok(code) => last = code,
+                    Ok(code) => {
+                        last = code;
+                        context.set_last_exit_status(code);
+                    }
                     Err(crate::ExecutionError::Return(code)) => return Err(crate::ExecutionError::Return(code)),
                     Err(e) => return Err(e),
                 }
@@ -385,9 +396,55 @@ fn execute_simple_command_in_child_blocking(
     cmd: &colony_parser::SimpleCommand,
     context: &mut ExpansionContext,
 ) -> Result<i32> {
+    use colony_parser::AssignmentValue;
+    
     let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
         crate::execute_and_capture(stmt, ctx)
     });
+    
+    let is_assignment_only = cmd.name.as_literal() == Some(":")
+        && cmd.args.is_empty()
+        && !cmd.env_assignments.is_empty();
+    
+    if is_assignment_only {
+        for assignment in &cmd.env_assignments {
+            if assignment.subscript.is_none() {
+                match &assignment.value {
+                    AssignmentValue::Word(word) => {
+                        let value = expander.expand_word_for_assignment(word)
+                            .unwrap_or_default();
+                        if assignment.op == colony_parser::AssignOp::Append {
+                            let existing = context.get_var_or_env(&assignment.name).unwrap_or_default();
+                            context.set_var(assignment.name.clone(), existing + &value);
+                        } else {
+                            context.set_var(assignment.name.clone(), value);
+                        }
+                    }
+                    AssignmentValue::Array(words) => {
+                        let mut values = Vec::new();
+                        for word in words {
+                            if let Ok(fields) = expander.expand_word(word) {
+                                for field in fields {
+                                    values.push(field.text);
+                                }
+                            }
+                        }
+                        context.set_variable(assignment.name.clone(), colony_expand::Variable::Array(values));
+                    }
+                    AssignmentValue::AssocArray(entries) => {
+                        let mut map = std::collections::HashMap::new();
+                        for (k, v) in entries {
+                            map.insert(k.clone(), v.clone());
+                        }
+                        context.set_variable(assignment.name.clone(), colony_expand::Variable::AssocArray(map));
+                    }
+                }
+            }
+        }
+        let exit_from_expansion = expander.context().last_exit_status();
+        context.set_last_exit_status(exit_from_expansion);
+        return Ok(exit_from_expansion);
+    }
     
     let name_fields = match expander.expand_word(&cmd.name) {
         Ok(fields) if !fields.is_empty() => fields,
@@ -423,6 +480,70 @@ fn execute_simple_command_in_child_blocking(
             }
         }
         return Ok(last_exit);
+    }
+    
+    // Check for alias expansion in pipeline context
+    let expanding_aliases = std::collections::HashSet::new();
+    match crate::alias::expand_alias(command_name, context, &expanding_aliases) {
+        crate::alias::AliasExpansionResult::Reparsed(statements) => {
+            let mut last_exit = 0;
+            for (i, stmt) in statements.iter().enumerate() {
+                if i == statements.len() - 1 {
+                    if let colony_parser::Statement::SimpleCommand(mut last_cmd) = stmt.clone() {
+                        last_cmd.args.extend(cmd.args.clone());
+                        last_cmd.redirects.extend(cmd.redirects.clone());
+                        last_exit = execute_statement_in_child_blocking(
+                            &colony_parser::Statement::SimpleCommand(last_cmd), 
+                            context
+                        )?;
+                    } else {
+                        last_exit = execute_statement_in_child_blocking(stmt, context)?;
+                    }
+                } else {
+                    last_exit = execute_statement_in_child_blocking(stmt, context)?;
+                }
+                context.set_last_exit_status(last_exit);
+            }
+            return Ok(last_exit);
+        }
+        crate::alias::AliasExpansionResult::SimpleExpansion { new_command, alias_args, expand_next } => {
+            let mut new_cmd = cmd.clone();
+            new_cmd.name = colony_parser::Word::literal(&new_command, cmd.span.clone());
+            
+            let mut new_args = Vec::new();
+            for alias_arg in &alias_args {
+                new_args.push(colony_parser::Word::literal(alias_arg, cmd.span.clone()));
+            }
+            
+            // Handle trailing space expansion
+            let mut skip_first_arg = false;
+            if expand_next && !cmd.args.is_empty() {
+                if let Some(first_arg) = cmd.args.first() {
+                    if let Some(arg_name) = first_arg.as_literal() {
+                        let mut exp_set = expanding_aliases.clone();
+                        exp_set.insert(command_name.to_string());
+                        if let crate::alias::AliasExpansionResult::SimpleExpansion { 
+                            new_command: arg_cmd, 
+                            alias_args: arg_alias_args, 
+                            .. 
+                        } = crate::alias::expand_alias(arg_name, context, &exp_set) {
+                            new_args.push(colony_parser::Word::literal(&arg_cmd, first_arg.span.clone()));
+                            for arg in &arg_alias_args {
+                                new_args.push(colony_parser::Word::literal(arg, first_arg.span.clone()));
+                            }
+                            skip_first_arg = true;
+                        }
+                    }
+                }
+            }
+            
+            let args_to_add = if skip_first_arg { &cmd.args[1..] } else { &cmd.args[..] };
+            new_args.extend(args_to_add.iter().cloned());
+            new_cmd.args = new_args;
+            
+            return execute_simple_command_in_child_blocking(&new_cmd, context);
+        }
+        crate::alias::AliasExpansionResult::CycleDetected | crate::alias::AliasExpansionResult::NoAlias => {}
     }
     
     if crate::builtins::is_builtin(command_name) {
@@ -730,6 +851,82 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         std::process::exit(last_exit);
     }
 
+    // Check for alias expansion in pipeline child
+    let expanding_aliases = std::collections::HashSet::new();
+    match crate::alias::expand_alias(command_name, &context, &expanding_aliases) {
+        crate::alias::AliasExpansionResult::Reparsed(statements) => {
+            let mut last_exit = 0;
+            for (i, stmt) in statements.iter().enumerate() {
+                let mut ctx = context.clone();
+                if i == statements.len() - 1 {
+                    if let colony_parser::Statement::SimpleCommand(mut last_cmd) = stmt.clone() {
+                        last_cmd.args.extend(simple_cmd.args.clone());
+                        last_cmd.redirects.extend(simple_cmd.redirects.clone());
+                        match execute_statement_in_child_blocking(
+                            &colony_parser::Statement::SimpleCommand(last_cmd), 
+                            &mut ctx
+                        ) {
+                            Ok(code) => last_exit = code,
+                            Err(_) => std::process::exit(1),
+                        }
+                    } else {
+                        match execute_statement_in_child_blocking(stmt, &mut ctx) {
+                            Ok(code) => last_exit = code,
+                            Err(_) => std::process::exit(1),
+                        }
+                    }
+                } else {
+                    match execute_statement_in_child_blocking(stmt, &mut ctx) {
+                        Ok(code) => last_exit = code,
+                        Err(_) => std::process::exit(1),
+                    }
+                }
+            }
+            std::process::exit(last_exit);
+        }
+        crate::alias::AliasExpansionResult::SimpleExpansion { new_command, alias_args, expand_next } => {
+            let mut new_cmd = simple_cmd.clone();
+            new_cmd.name = colony_parser::Word::literal(&new_command, simple_cmd.span.clone());
+            
+            let mut new_args = Vec::new();
+            for alias_arg in &alias_args {
+                new_args.push(colony_parser::Word::literal(alias_arg, simple_cmd.span.clone()));
+            }
+            
+            let mut skip_first_arg = false;
+            if expand_next && !simple_cmd.args.is_empty() {
+                if let Some(first_arg) = simple_cmd.args.first() {
+                    if let Some(arg_name) = first_arg.as_literal() {
+                        let mut exp_set = expanding_aliases.clone();
+                        exp_set.insert(command_name.to_string());
+                        if let crate::alias::AliasExpansionResult::SimpleExpansion { 
+                            new_command: arg_cmd, 
+                            alias_args: arg_alias_args, 
+                            .. 
+                        } = crate::alias::expand_alias(arg_name, &context, &exp_set) {
+                            new_args.push(colony_parser::Word::literal(&arg_cmd, first_arg.span.clone()));
+                            for arg in &arg_alias_args {
+                                new_args.push(colony_parser::Word::literal(arg, first_arg.span.clone()));
+                            }
+                            skip_first_arg = true;
+                        }
+                    }
+                }
+            }
+            
+            let args_to_add = if skip_first_arg { &simple_cmd.args[1..] } else { &simple_cmd.args[..] };
+            new_args.extend(args_to_add.iter().cloned());
+            new_cmd.args = new_args;
+            
+            let mut ctx = context.clone();
+            match execute_simple_command_in_child_blocking(&new_cmd, &mut ctx) {
+                Ok(code) => std::process::exit(code),
+                Err(_) => std::process::exit(1),
+            }
+        }
+        crate::alias::AliasExpansionResult::CycleDetected | crate::alias::AliasExpansionResult::NoAlias => {}
+    }
+
     if crate::builtins::is_builtin(command_name) {
         let mut context = context.clone();
         let jobs = crate::JobTable::new();
@@ -863,12 +1060,14 @@ fn execute_single_pipeline_element(
         }
         Statement::Subshell(subshell) => {
             let mut context_mut = context.clone();
+            context_mut.clear_non_ignored_traps();
             tokio::runtime::Handle::current().block_on(async {
                 let mut executor = crate::Executor::new(context_mut);
                 let mut last = 0;
                 for stmt in &subshell.body {
                     last = executor.execute_statement_recursive(stmt).await.unwrap_or(1);
                 }
+                executor.run_exit_trap().await;
                 Ok(ExitStatus::new(last))
             })
         }

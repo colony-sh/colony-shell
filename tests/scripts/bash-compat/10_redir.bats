@@ -121,7 +121,10 @@ teardown() {
 }
 
 @test "redir: redirect stderr to /dev/null" {
-    run $COLONY -c "echo visible; echo hidden >&2 2>/dev/null"
+    # Note: redirect order matters. ">&2 2>/dev/null" duplicates fd1 to fd2's
+    # current target FIRST, then redirects fd2. So fd1 still goes to terminal.
+    # Use "2>/dev/null >&2" to properly suppress (redirect fd2 first, then dup).
+    run $COLONY -c "echo visible; echo hidden 2>/dev/null >&2"
     [ "$status" -eq 0 ]
     [ "$output" = "visible" ]
 }
@@ -183,15 +186,19 @@ teardown() {
 }
 
 @test "redir: fd 3 output" {
-    run $COLONY -c "echo to-fd-3 1>&3 3> $TEST_DIR/fd3.txt; cat $TEST_DIR/fd3.txt"
+    # Note: Colony reserves fds 3-6 for channels, so we use fd 7 for this test
+    # Must open fd 7 BEFORE duplicating to it (7>file must come before 1>&7)
+    run $COLONY -c "echo to-fd-7 7>$TEST_DIR/fd7.txt 1>&7; cat $TEST_DIR/fd7.txt"
     [ "$status" -eq 0 ]
-    [ "$output" = "to-fd-3" ]
+    [ "$output" = "to-fd-7" ]
 }
 
 @test "redir: fd 4 output" {
-    run $COLONY -c "echo to-fd-4 1>&4 4> $TEST_DIR/fd4.txt; cat $TEST_DIR/fd4.txt"
+    # Note: Colony reserves fds 3-6 for channels, so we use fd 8 for this test
+    # Must open fd 8 BEFORE duplicating to it (8>file must come before 1>&8)
+    run $COLONY -c "echo to-fd-8 8>$TEST_DIR/fd8.txt 1>&8; cat $TEST_DIR/fd8.txt"
     [ "$status" -eq 0 ]
-    [ "$output" = "to-fd-4" ]
+    [ "$output" = "to-fd-8" ]
 }
 
 # ============================================================================
@@ -223,7 +230,7 @@ teardown() {
 }
 
 @test "redir: close stdin with <&-" {
-    run $COLONY -c "echo before; cat <&-; echo after"
+    run $COLONY -c "echo before; cat <&- 2>/dev/null; echo after"
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "before" ]
     [ "${lines[1]}" = "after" ]
@@ -241,7 +248,8 @@ teardown() {
 }
 
 @test "redir: read-write with fd" {
-    run $COLONY -c "exec 5<> $TEST_DIR/rw-fd.txt; echo test >&5; exec 5<&-; cat $TEST_DIR/rw-fd.txt"
+    # Note: Colony reserves fds 3-6 for channels, so we use fd 7
+    run $COLONY -c "exec 7<> $TEST_DIR/rw-fd.txt; echo test >&7; exec 7<&-; cat $TEST_DIR/rw-fd.txt"
     [ "$status" -eq 0 ]
     [ "$output" = "test" ]
 }
@@ -325,9 +333,10 @@ teardown() {
 }
 
 @test "redir: redirect export (no output)" {
-    run $COLONY -c "export VAR=value > $TEST_DIR/export.txt; test -f $TEST_DIR/export.txt && wc -c < $TEST_DIR/export.txt"
+    run $COLONY -c "export VAR=value > $TEST_DIR/export.txt; test -f $TEST_DIR/export.txt && cat $TEST_DIR/export.txt | wc -c"
     [ "$status" -eq 0 ]
-    [ "$output" = "0" ]
+    # wc -c outputs with leading spaces on some systems
+    [[ "$output" =~ ^[[:space:]]*0[[:space:]]*$ ]]
 }
 
 # ============================================================================

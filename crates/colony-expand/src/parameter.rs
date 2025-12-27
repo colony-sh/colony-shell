@@ -473,27 +473,27 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
         }
 
         Some(VarModifier::StripPrefix { pattern }) => {
-            let pat = pattern.as_literal().unwrap_or("");
+            let pat = expand_simple_word(pattern, context);
             let value = var_value.unwrap_or_default();
-            Ok(strip_prefix_shortest(&value, pat))
+            Ok(strip_prefix_shortest(&value, &pat))
         }
 
         Some(VarModifier::StripPrefixGreedy { pattern }) => {
-            let pat = pattern.as_literal().unwrap_or("");
+            let pat = expand_simple_word(pattern, context);
             let value = var_value.unwrap_or_default();
-            Ok(strip_prefix_longest(&value, pat))
+            Ok(strip_prefix_longest(&value, &pat))
         }
 
         Some(VarModifier::StripSuffix { pattern }) => {
-            let pat = pattern.as_literal().unwrap_or("");
+            let pat = expand_simple_word(pattern, context);
             let value = var_value.unwrap_or_default();
-            Ok(strip_suffix_shortest(&value, pat))
+            Ok(strip_suffix_shortest(&value, &pat))
         }
 
         Some(VarModifier::StripSuffixGreedy { pattern }) => {
-            let pat = pattern.as_literal().unwrap_or("");
+            let pat = expand_simple_word(pattern, context);
             let value = var_value.unwrap_or_default();
-            Ok(strip_suffix_longest(&value, pat))
+            Ok(strip_suffix_longest(&value, &pat))
         }
 
         Some(VarModifier::UpperCase { all }) => {

@@ -31,6 +31,7 @@ pub enum BuiltinResult {
     Failure(i32),
     Exit(i32),
     Source(PathBuf, Vec<String>),
+    Eval(String),
 }
 
 impl BuiltinResult {
@@ -40,6 +41,7 @@ impl BuiltinResult {
             | BuiltinResult::Failure(code) 
             | BuiltinResult::Exit(code) => *code,
             BuiltinResult::Source(_, _) => 0,
+            BuiltinResult::Eval(_) => 0,
         }
     }
 
@@ -53,6 +55,10 @@ impl BuiltinResult {
     
     pub fn is_source(&self) -> bool {
         matches!(self, BuiltinResult::Source(_, _))
+    }
+    
+    pub fn is_eval(&self) -> bool {
+        matches!(self, BuiltinResult::Eval(_))
     }
 }
 
@@ -81,6 +87,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "dirs" | "pushd" | "popd"
         | "complete" | "compgen"
         | "mapfile" | "readarray"
+        | "eval"
     )
 }
 
@@ -102,7 +109,6 @@ pub fn execute_builtin(
     tuple_space: &TupleSpace,
     channels: &mut ChannelManager,
 ) -> Option<Result<BuiltinResult>> {
-    // Expand command name (with command substitution support)
     let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
         crate::execute_and_capture(stmt, ctx)
     });
@@ -123,21 +129,37 @@ pub fn execute_builtin(
 
     // Expand arguments - include extra fields from name expansion (e.g., "$@" -> multiple fields)
     let mut args: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
+    let is_assignment_builtin = matches!(name.as_str(), "export" | "declare" | "local" | "readonly" | "typeset");
+    
     for (i, arg_word) in cmd.args.iter().enumerate() {
-        let fields = match expander.expand_word(arg_word) {
-            Ok(fields) => {
-                fields
+        // For assignment builtins, check if this arg looks like an assignment
+        let use_assignment_expansion = is_assignment_builtin && 
+            arg_word.parts.iter().any(|p| {
+                if let colony_parser::WordPart::Literal(s) = p {
+                    s.contains('=')
+                } else {
+                    false
+                }
+            });
+        
+        if use_assignment_expansion {
+            match expander.expand_word_for_assignment(arg_word) {
+                Ok(text) => args.push(text),
+                Err(e) => return Some(Err(e.into())),
             }
-            Err(e) => return Some(Err(e.into())),
-        };
-        for field in fields {
-            args.push(field.text);
+        } else {
+            let fields = match expander.expand_word(arg_word) {
+                Ok(fields) => fields,
+                Err(e) => return Some(Err(e.into())),
+            };
+            for field in fields {
+                args.push(field.text);
+            }
         }
     }
     
     context.sync_variables_from(expander.context());
 
-    // Dispatch to specific builtin
     let result = match name.as_str() {
         "cd" => builtin_cd(&args, context, tuple_space),
         "export" => builtin_export(&args, context, tuple_space),
@@ -176,6 +198,7 @@ pub fn execute_builtin(
         "complete" => builtin_complete(&args, context),
         "compgen" => builtin_compgen(&args, context),
         "mapfile" | "readarray" => builtin_mapfile(&args, context),
+        "eval" => builtin_eval(&args),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -459,15 +482,21 @@ fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
         (text, false)
     };
     
+    use std::os::unix::io::FromRawFd;
     use std::io::Write;
+    
+    // SAFETY: borrowing fd 1 to write, using forget() to avoid closing on drop
+    let mut stdout = unsafe { std::fs::File::from_raw_fd(1) };
+    
     if output.1 {
-        let _ = std::io::stdout().write_all(output.0.as_bytes());
+        let _ = stdout.write_all(output.0.as_bytes());
     } else if no_newline {
-        let _ = std::io::stdout().write_all(output.0.as_bytes());
+        let _ = stdout.write_all(output.0.as_bytes());
     } else {
-        let _ = writeln!(std::io::stdout(), "{}", output.0);
+        let _ = writeln!(stdout, "{}", output.0);
     }
-    let _ = std::io::stdout().flush();
+    let _ = stdout.flush();
+    std::mem::forget(stdout);
 
     Ok(BuiltinResult::Success(0))
 }
@@ -626,6 +655,7 @@ fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<Builti
             } else {
                 for c in arg[1..].chars() {
                     match c {
+                        'C' => context.shell_options_mut().noclobber = true,
                         'e' => context.shell_options_mut().errexit = true,
                         'u' => context.shell_options_mut().nounset = true,
                         'x' => context.shell_options_mut().xtrace = true,
@@ -643,6 +673,7 @@ fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<Builti
             } else {
                 for c in arg[1..].chars() {
                     match c {
+                        'C' => context.shell_options_mut().noclobber = false,
                         'e' => context.shell_options_mut().errexit = false,
                         'u' => context.shell_options_mut().nounset = false,
                         'x' => context.shell_options_mut().xtrace = false,
@@ -671,6 +702,7 @@ fn set_option_by_name(context: &mut ExpansionContext, name: &str, enable: bool) 
     let opts = context.shell_options_mut();
     match name {
         "errexit" => opts.errexit = enable,
+        "noclobber" => opts.noclobber = enable,
         "nounset" => opts.nounset = enable,
         "xtrace" => opts.xtrace = enable,
         "noglob" => opts.noglob = enable,
@@ -982,6 +1014,14 @@ fn builtin_source(args: &[String], context: &mut ExpansionContext) -> Result<Bui
     Ok(BuiltinResult::Source(file_path, source_args))
 }
 
+fn builtin_eval(args: &[String]) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        return Ok(BuiltinResult::Success(0));
+    }
+    let eval_string = args.join(" ");
+    Ok(BuiltinResult::Eval(eval_string))
+}
+
 /// fg - Bring job to foreground
 ///
 /// Usage: fg [%job_id]
@@ -1057,16 +1097,30 @@ fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
     use nix::sys::wait::{waitpid, WaitStatus};
     use nix::unistd::Pid;
     
-    // No arguments: wait for all children
+    // No arguments: wait for all children (blocking)
     if args.is_empty() {
-        // Try to reap any zombie children
+        let mut last_status = 0;
         loop {
-            match waitpid(Pid::from_raw(-1), Some(nix::sys::wait::WaitPidFlag::WNOHANG)) {
-                Ok(WaitStatus::StillAlive) | Err(_) => break,
-                Ok(_) => continue, // Reaped one, try for more
+            match waitpid(Pid::from_raw(-1), None) {
+                Ok(WaitStatus::Exited(_, code)) => {
+                    last_status = code;
+                }
+                Ok(WaitStatus::Signaled(_, signal, _)) => {
+                    last_status = 128 + signal as i32;
+                }
+                Ok(_) => {
+                    // continue waiting
+                }
+                Err(nix::errno::Errno::ECHILD) => {
+                    // No more children
+                    break;
+                }
+                Err(_) => {
+                    break;
+                }
             }
         }
-        return Ok(BuiltinResult::Success(0));
+        return Ok(BuiltinResult::Success(last_status));
     }
     
     // Process each PID argument
@@ -1891,6 +1945,24 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         line.pop();
     }
     
+    if !raw_mode {
+        let mut processed = String::with_capacity(line.len());
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    chars.next();
+                    processed.push(next);
+                } else {
+                    processed.push(c);
+                }
+            } else {
+                processed.push(c);
+            }
+        }
+        line = processed;
+    }
+    
     let ifs = context.ifs();
     let ifs_chars: Vec<char> = ifs.chars().collect();
     let ifs_whitespace: Vec<char> = ifs_chars.iter()
@@ -1903,37 +1975,56 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         return Ok(BuiltinResult::Success(0));
     }
     
+    if var_names.len() == 1 {
+        let trimmed = line.trim_matches(|c: char| ifs_whitespace.contains(&c));
+        context.set_var(var_names[0].to_string(), trimmed.to_string());
+        return Ok(BuiltinResult::Success(0));
+    }
+    
     let trimmed = line.trim_start_matches(|c: char| ifs_whitespace.contains(&c));
     
+    let mut field_starts: Vec<usize> = Vec::new();
     let mut fields: Vec<String> = Vec::new();
     let mut current = String::new();
+    let mut current_start = 0;
     let chars: Vec<char> = trimmed.chars().collect();
     let mut j = 0;
+    let mut char_pos = 0;
     
     while j < chars.len() {
         let c = chars[j];
         if ifs_chars.contains(&c) {
             if !current.is_empty() || !ifs_whitespace.contains(&c) {
+                field_starts.push(current_start);
                 fields.push(current);
                 current = String::new();
             }
             while j + 1 < chars.len() && ifs_whitespace.contains(&chars[j + 1]) {
                 j += 1;
+                char_pos += chars[j].len_utf8();
             }
+            char_pos += c.len_utf8();
+            current_start = char_pos;
         } else {
+            if current.is_empty() {
+                current_start = char_pos;
+            }
             current.push(c);
+            char_pos += c.len_utf8();
         }
         j += 1;
     }
     if !current.is_empty() {
+        field_starts.push(current_start);
         fields.push(current);
     }
     
     for (idx, name) in var_names.iter().enumerate() {
         if idx < fields.len() {
             if idx == var_names.len() - 1 && idx + 1 < fields.len() {
-                let rest: Vec<&str> = fields[idx..].iter().map(|s| s.as_str()).collect();
-                context.set_var(name.to_string(), rest.join(" "));
+                let start_pos = field_starts[idx];
+                let rest = &trimmed[start_pos..].trim_end_matches(|c: char| ifs_whitespace.contains(&c));
+                context.set_var(name.to_string(), rest.to_string());
             } else {
                 context.set_var(name.to_string(), fields[idx].clone());
             }
@@ -2984,11 +3075,6 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
 }
 
 fn builtin_return(args: &[String], context: &ExpansionContext) -> Result<BuiltinResult> {
-    if !context.in_function() {
-        eprintln!("return: can only be used in a function");
-        return Ok(BuiltinResult::Failure(1));
-    }
-    
     let code = if args.is_empty() {
         context.last_exit_status()
     } else {

@@ -163,6 +163,8 @@ pub struct ShellOptions {
     pub noglob: bool,
     pub noexec: bool,
     pub verbose: bool,
+    pub noclobber: bool,
+    pub pipefail: bool,
 }
 
 impl ShellOptions {
@@ -174,6 +176,7 @@ impl ShellOptions {
 impl fmt::Display for ShellOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut flags = String::new();
+        if self.noclobber { flags.push('C'); }
         if self.errexit { flags.push('e'); }
         if self.noglob { flags.push('f'); }
         if self.noexec { flags.push('n'); }
@@ -734,6 +737,9 @@ pub struct ExpansionContext {
     seconds_offset: Cell<i64>,
     rng: Cell<Option<StdRng>>,
     current_lineno: Cell<u32>,
+    shell_pid: u32,
+    last_bg_pid: Cell<Option<u32>>,
+    interactive: bool,
     #[cfg(feature = "secure")]
     current_script_path: Option<PathBuf>,
 }
@@ -797,6 +803,9 @@ impl Clone for ExpansionContext {
             seconds_offset: Cell::new(self.seconds_offset.get()),
             rng: Cell::new(cloned_rng),
             current_lineno: Cell::new(self.current_lineno.get()),
+            shell_pid: self.shell_pid,
+            last_bg_pid: Cell::new(self.last_bg_pid.get()),
+            interactive: self.interactive,
             #[cfg(feature = "secure")]
             current_script_path: self.current_script_path.clone(),
         }
@@ -836,6 +845,9 @@ impl ExpansionContext {
             seconds_offset: Cell::new(0),
             rng: Cell::new(None),
             current_lineno: Cell::new(1),
+            shell_pid: std::process::id(),
+            last_bg_pid: Cell::new(None),
+            interactive: false,
             #[cfg(feature = "secure")]
             current_script_path: None,
         };
@@ -929,6 +941,8 @@ impl ExpansionContext {
             "#" => return Some(self.positional_params.len().to_string()),
             "@" | "*" => return Some(self.positional_params.join(" ")),
             "?" => return Some(self.last_exit_status.to_string()),
+            "$" => return Some(self.shell_pid.to_string()),
+            "!" => return self.last_bg_pid.get().map(|p| p.to_string()),
             "-" => return Some(self.shell_options.to_string()),
             "BASH_VERSION" => return Some("5.2.0(1)-colony".to_string()),
             "BASH_VERSINFO" => return Some("5".to_string()),
@@ -1314,6 +1328,26 @@ impl ExpansionContext {
         self.last_exit_status
     }
 
+    pub fn shell_pid(&self) -> u32 {
+        self.shell_pid
+    }
+
+    pub fn last_bg_pid(&self) -> Option<u32> {
+        self.last_bg_pid.get()
+    }
+
+    pub fn set_last_bg_pid(&self, pid: u32) {
+        self.last_bg_pid.set(Some(pid));
+    }
+
+    pub fn is_interactive(&self) -> bool {
+        self.interactive
+    }
+
+    pub fn set_interactive(&mut self, interactive: bool) {
+        self.interactive = interactive;
+    }
+
     pub fn shell_options(&self) -> &ShellOptions {
         &self.shell_options
     }
@@ -1400,6 +1434,10 @@ impl ExpansionContext {
 
     pub fn traps(&self) -> &HashMap<TrapSignal, TrapAction> {
         &self.traps
+    }
+
+    pub fn clear_non_ignored_traps(&mut self) {
+        self.traps.retain(|_, action| matches!(action, TrapAction::Ignore));
     }
 
     pub fn dir_stack(&self) -> &[PathBuf] {
