@@ -2,12 +2,12 @@
 # Test Colony shell builtins for POSIX compliance
 # Compare behavior against bash
 
-# Path to colony binary (use absolute path set by runner)
-# Don't use $(pwd) here - BATS will try to execute it
-COLONY="${COLONY_BIN}"
-
 setup() {
-    # Create temp directory for test files
+    if [[ "${COLONY_BIN}" == ./* ]]; then
+        COLONY="$(pwd)/${COLONY_BIN#./}"
+    else
+        COLONY="${COLONY_BIN}"
+    fi
     TEST_TEMP="$(mktemp -d)"
     export TEST_TEMP
 }
