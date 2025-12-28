@@ -2414,7 +2414,6 @@ impl AstBuilder {
                 }
                 Rule::EscapeSequence => {
                     // POSIX: Inside double quotes, only $ ` " \ and newline are special after backslash
-                    // For all other characters, the backslash is preserved
                     let text = actual_content.as_str();
                     if text.len() >= 2 {
                         let escaped_char = text.chars().nth(1).unwrap();
@@ -2423,26 +2422,18 @@ impl AstBuilder {
                             '`' => "`",
                             '"' => "\"",
                             '\\' => "\\",
-                            '\n' => "", // backslash-newline is line continuation (removed)
-                            // These are Colony/C-style extensions, keep for convenience
-                            'n' => "\n",
-                            't' => "\t",
-                            'r' => "\r",
-                            '0' => "\0",
-                            // POSIX: all other characters preserve the backslash
+                            '\n' => "",
                             _ => {
-                                literal_buffer.push_str(text); // preserve \a as \a
+                                literal_buffer.push_str(text);
                                 continue;
                             }
                         };
                         literal_buffer.push_str(expanded);
                     } else {
-                        // Just a backslash at end - preserve it
                         literal_buffer.push_str(text);
                     }
                 }
                 Rule::DoubleQuotedChar => {
-                    // Regular character inside double quotes - accumulate
                     literal_buffer.push_str(actual_content.as_str());
                 }
                 _ => {}
