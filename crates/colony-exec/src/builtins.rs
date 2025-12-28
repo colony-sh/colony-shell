@@ -374,6 +374,11 @@ fn builtin_unset(args: &[String], context: &mut ExpansionContext, tuple_space: &
             continue;
         }
         
+        if context.is_readonly(var_name) {
+            eprintln!("colony: unset: {}: cannot unset: readonly variable", var_name);
+            return Ok(BuiltinResult::Success(1));
+        }
+        
         let old_value = context.get_var_or_env(var_name).unwrap_or_default();
 
         context.unset_variable(var_name);

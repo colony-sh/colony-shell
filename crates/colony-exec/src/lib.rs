@@ -322,19 +322,19 @@ impl Executor {
                                     let result = (existing + addend).to_string();
                                     if !self.context.set_var(assignment.name.clone(), result) {
                                         eprintln!("colony: {}: readonly variable", &assignment.name);
-                                        return Ok(ExitStatus::new(1));
+                                        return Err(ExecutionError::Errexit(1));
                                     }
                                 } else {
                                     let existing = self.context.get_var_or_env(&assignment.name).unwrap_or_default();
                                     if !self.context.set_var(assignment.name.clone(), existing + &value) {
                                         eprintln!("colony: {}: readonly variable", &assignment.name);
-                                        return Ok(ExitStatus::new(1));
+                                        return Err(ExecutionError::Errexit(1));
                                     }
                                 }
                             } else {
                                 if !self.context.set_var(assignment.name.clone(), value) {
                                     eprintln!("colony: {}: readonly variable", &assignment.name);
-                                    return Ok(ExitStatus::new(1));
+                                    return Err(ExecutionError::Errexit(1));
                                 }
                             }
                         }
