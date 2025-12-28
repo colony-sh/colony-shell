@@ -1625,16 +1625,63 @@ client_id = "..."
 
 ---
 
-## 17. Appendix: Boundaries
+## 17. Audits
 
-### 17.1 V1 Scope
+### 17.1 Idea / Product Audit
+
+**Strengths**
+- Dual-mode vision (Terminal+ and Personal App) with a clear differentiator: on-demand code generation instead of pre-built integrations.
+- Local-first posture with polyglot execution and peekable code (learning gradient).
+- Trust/safety framing (explain → execute → log; graduated trust) already articulated.
+- Competitive/monetization thinking captured; hybrid pricing aligns costs to value.
+
+**Risks / Gaps**
+- Scope creep: Personal App + Docker/K8s UX + pattern library + cloud execution + monetization. Risk of diluted v1. Recommendation: a single killer flow (NL → data fetch → chart/table → saved recipe → re-run/schedule locally) as v1.
+- Safety & sandboxing not concretely specified (FS allowlist, network egress rules, CPU/mem/time limits, persistence policy). Needs defaults + enforcement.
+- Pattern library privacy: requires rigorous redaction/validation pipeline; opt-in by default.
+- LLM cost control: need caching/replay/model-tiering; current quotas lack optimization plan.
+- AuthZ for teams/enterprise: resource-level permissions on recipes, connections, dashboards not defined.
+- Observability: generated code runs need tracing (inputs redacted, outputs, timing, code hash) to debug/rollback.
+- Offline story: Personal App mode must degrade gracefully when offline (local connectors only with clear messaging).
+
+### 17.2 Codebase Audit (Rust Best Practices)
+
+Focus: `crates/colony-shell/src/main.rs` (large entrypoint), structural/project-level observations.
+
+**Top Concerns (Actionable)**
+1) Main is monolithic (~2k LOC). Hard to test/maintain. Split into modules: CLI parsing, trust/config, startup files, REPL, exec/control-flow, expansion/eval. Expose testable functions; avoid scattered `process::exit`.
+2) Async + `fork` mixing. `tokio::main` with `nix::fork` for background jobs is fragile. Isolate forking from async runtime (dedicated supervisor thread or use `tokio::process`/job tracking without raw fork).
+3) Unsafe signal handling. Replace `libc::signal` with `signal-hook`/`tokio::signal`; ensure SIGCHLD is handled safely.
+4) Error handling/logging. Prefer structured `tracing` + `anyhow`/`miette` contexts over `eprintln!`; normalize exits to a single gate.
+5) Duplicate code paths. Both `execute_if_with_control` and legacy `execute_if_statement` coexist—consolidate.
+6) Security posture. `.colonyrc` trust is interactive only; add non-interactive allow/deny. Generated code sandbox defaults not enforced/documented (FS/network/resource limits, no-persistence policy).
+7) Testing gaps. POSIX bats tests exist; add integration tests for Personal App, Docker mode (list/stop/log), K8s mode (context/namespace switch, log fetch, scale), and sandbox defaults.
+8) Style/maintainability. Long functions, stringly code; run `cargo fmt` + `clippy -D warnings`. Avoid silent unwraps that mask errors.
+
+**Good Practices Observed**
+- Uses `miette` for diagnostics; `tracing_subscriber` for logging.
+- Trust model exists for `.colonyrc` (direnv-style).
+- POSIX startup behavior mirrored (profiles/rc files); SIGPIPE ignored explicitly.
+
+**Suggested Refactor Plan (high level)**
+- Module breakup: `cli.rs`, `trust.rs`, `startup.rs`, `repl.rs`, `exec_control.rs`, `eval.rs`.
+- Exit strategy: return `Result<ExitCode>` and exit once in main.
+- Signals: adopt `signal-hook`/`tokio::signal`; move forked/background execution out of async context or replace with a job model not using raw fork.
+- Sandbox defaults: define and enforce FS/network/resource limits for generated code; document them and test.
+- Observability: log code hash, inputs (redacted), outputs, duration, errors; add `colony runs` view.
+
+---
+
+## 18. Appendix: Boundaries
+
+### 18.1 V1 Scope
 
 - **In:** Single-user personal tools
 - **In:** Desktop terminal experience
 - **In:** Data from everywhere (files, APIs, web)
 - **In:** Code invisible by default, peekable
 
-### 17.2 Future Scope
+### 18.2 Future Scope
 
 - **Phase 2:** Remote execution (Colony Cloud)
 - **Phase 3:** Teams and shared workspaces
@@ -1642,7 +1689,7 @@ client_id = "..."
 - **Later:** Enterprise features (SSO, audit, compliance)
 - **Later:** Marketplace for recipes/patterns
 
-### 17.3 Non-Goals
+### 18.3 Non-Goals
 
 - Replacing professional development tools
 - Competing with Zapier/IFTTT directly (different UX model)
