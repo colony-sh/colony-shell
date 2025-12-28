@@ -4,7 +4,12 @@
 # Based on bash dstack.tests
 
 setup() {
-    COLONY="${COLONY_BIN}"
+    # Convert to absolute path before cd changes directory
+    if [[ "${COLONY_BIN}" == ./* ]]; then
+        COLONY="$(pwd)/${COLONY_BIN#./}"
+    else
+        COLONY="${COLONY_BIN}"
+    fi
     ORIG_DIR=$(pwd)
     TEST_DIR=$(mktemp -d)
     mkdir -p "$TEST_DIR/subdir1" "$TEST_DIR/subdir2" "$TEST_DIR/subdir3"
