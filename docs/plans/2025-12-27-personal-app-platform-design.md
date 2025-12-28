@@ -40,7 +40,7 @@ Colony doesn't ship 500 integrations. Colony **writes** the integration when you
 
 ## 2. Colony Modes
 
-Colony is one product with two modes, sharing the same underlying infrastructure.
+Colony is one product with multiple modes, sharing the same underlying infrastructure. **All modes are built on a fully POSIX-compliant shell**—you can always run `ps aux`, `grep`, `awk`, or any Unix command.
 
 ### 2.1 Terminal+ Mode (Default for Technical Users)
 
@@ -49,6 +49,17 @@ Colony is one product with two modes, sharing the same underlying infrastructure
 - Agent assistance available but not primary
 - The Colony that exists today
 
+```bash
+# Standard Unix commands work exactly as expected
+$ ps aux | grep node
+$ find . -name "*.rs" | xargs wc -l
+$ docker ps --format "table {{.Names}}\t{{.Status}}"
+$ kubectl get pods -A
+
+# Plus Colony enhancements
+$ cat data.json -> jq '.users[]' => table
+```
+
 ### 2.2 Personal App Mode (For Non-Technical Users)
 
 - Conversational interface takes over
@@ -56,23 +67,45 @@ Colony is one product with two modes, sharing the same underlying infrastructure
 - Natural language primary, code invisible
 - The new vision
 
-### 2.3 Mode Switching
+### 2.3 Docker Mode
+
+- Sidebar showing containers, images, volumes, networks
+- Conversational container management
+- All `docker` commands still work directly
+
+### 2.4 Kubernetes Mode
+
+- Sidebar showing clusters, namespaces, pods, workloads
+- Built-in `kubectx` and `kubens`
+- Conversational cluster management
+- All `kubectl` commands still work directly
+
+### 2.5 Mode Switching
 
 **At launch:**
 ```bash
 colony --mode personal    # Launch in personal mode
 colony --mode terminal    # Launch in terminal mode (default)
+colony --mode docker      # Launch with Docker sidebar
+colony --mode k8s         # Launch with Kubernetes sidebar
 ```
 
 **Within a session:**
 ```
 /personal    # Switch to personal app mode
 /terminal    # Switch back to terminal mode
+/docker      # Activate Docker sidebar
+/k8s         # Activate Kubernetes sidebar
 ```
 
-### 2.4 Shared Foundation
+**Modes are additive, not exclusive:**
+- In Docker mode, you still have the full shell—`docker ps` works alongside the sidebar
+- In K8s mode, `kubectl get pods` works alongside conversational management
+- In Personal mode, power users can still drop to shell commands when needed
 
-Both modes use the same capabilities:
+### 2.6 Shared Foundation
+
+All modes use the same capabilities:
 - Same code generation engine
 - Same data connectivity
 - Same tuple space for state
