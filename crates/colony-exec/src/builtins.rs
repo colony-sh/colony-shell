@@ -2296,7 +2296,9 @@ fn builtin_printf(args: &[String], context: &mut ExpansionContext) -> Result<Bui
     if let Some(var_name) = store_var {
         context.set_var(var_name.to_string(), output);
     } else {
+        use std::io::Write;
         print!("{}", output);
+        let _ = std::io::stdout().flush();
     }
 
     Ok(BuiltinResult::Success(0))
