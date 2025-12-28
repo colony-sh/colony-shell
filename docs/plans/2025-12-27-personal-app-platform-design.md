@@ -1026,177 +1026,523 @@ colony serve --tls --cert /path/to/cert.pem --key /path/to/key.pem
 
 ### 16.3 Docker Mode
 
-Run Colony in a container for isolation, reproducibility, and easy deployment.
+Colony becomes a conversational interface to Docker, letting users manage containers without memorizing commands.
 
+**Entering Docker mode:**
 ```bash
-# Run Colony in Docker
-docker run -it \
-  -v ~/.colony:/data \
-  -p 3000:3000 \
-  colony/colony:latest
-
-# With PostgreSQL sidecar
-docker-compose up -d  # Uses colony-compose.yml
-
-# Build custom image with pre-installed recipes
-colony export --docker > Dockerfile
-docker build -t my-colony .
+colony --mode docker
+# Or within a session:
+/docker
 ```
 
-**colony-compose.yml:**
+**Docker Sidebar:**
 
-```yaml
-version: '3.8'
-services:
-  colony:
-    image: colony/colony:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - COLONY_DB_URL=postgres://colony:colony@db:5432/colony
-      - COLONY_MODE=server
-    volumes:
-      - ./recipes:/recipes
-      - ./data:/data
-    depends_on:
-      - db
-  
-  db:
-    image: postgres:16
-    environment:
-      - POSTGRES_USER=colony
-      - POSTGRES_PASSWORD=colony
-      - POSTGRES_DB=colony
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+When in Docker mode, a sidebar appears showing your Docker environment at a glance:
 
-volumes:
-  postgres_data:
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ ┌─────────────────────┐                                                 │
+│ │ 🐳 DOCKER           │  Conversation                                   │
+│ │                     │  ─────────────────────────────────────────────  │
+│ │ ▼ Containers (4)    │                                                 │
+│ │   ● postgres-dev    │  User: "Why is the API container restarting?"   │
+│ │   ● redis-cache     │                                                 │
+│ │   ● api-server  ⟳   │  Colony: Looking at api-server logs...          │
+│ │   ● nginx-proxy     │                                                 │
+│ │                     │  The container is OOM-killed. Last 3 restarts:  │
+│ │ ▼ Images (12)       │  - 14:23 OOMKilled (512Mi limit exceeded)       │
+│ │   node:20-alpine    │  - 14:18 OOMKilled                              │
+│ │   postgres:16       │  - 14:12 OOMKilled                              │
+│ │   redis:7-alpine    │                                                 │
+│ │   myapp:latest      │  Current memory: 489Mi / 512Mi limit            │
+│ │   myapp:v2.3.0      │                                                 │
+│ │   +7 more...        │  Recommendation: Increase memory limit to 1Gi   │
+│ │                     │                                                 │
+│ │ ▼ Volumes (3)       │  ─────────────────────────────────────────────  │
+│ │   postgres_data     │  > _                                            │
+│ │   redis_data        │                                                 │
+│ │   app_uploads       │                                                 │
+│ │                     │                                                 │
+│ │ ▼ Networks (2)      │                                                 │
+│ │   colony-net        │                                                 │
+│ │   bridge            │                                                 │
+│ │                     │                                                 │
+│ │ ─────────────────── │                                                 │
+│ │ CPU:  23% ████░░░░  │                                                 │
+│ │ MEM:  4.2 / 16 GB   │                                                 │
+│ │ DISK: 12.3 GB used  │                                                 │
+│ └─────────────────────┘                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Docker mode features:**
+**Sidebar features:**
 
-| Feature | Description |
-|---------|-------------|
-| **Headless mode** | No TUI, HTTP API only |
-| **Recipe mounting** | Mount recipes directory for GitOps |
-| **Credential injection** | Via environment variables or secrets |
-| **Multi-arch** | ARM64 and AMD64 images |
-| **Distroless option** | Minimal attack surface image |
+| Section | Shows | Interactions |
+|---------|-------|--------------|
+| **Containers** | Running/stopped containers with status indicators | Click to select, right-click for actions |
+| **Images** | Local images sorted by recent use | Click to run, inspect layers |
+| **Volumes** | Named volumes with size | Click to browse contents |
+| **Networks** | Docker networks | Click to see connected containers |
+| **Resources** | CPU/Memory/Disk usage | Real-time updates |
+
+**Status indicators:**
+- `●` Running healthy
+- `⟳` Restarting / unhealthy
+- `○` Stopped
+- `◐` Starting
+
+**Keyboard navigation:**
+- `Tab` - Switch focus between sidebar and conversation
+- `↑↓` - Navigate sidebar items
+- `Enter` - Select/expand item
+- `d` - Delete selected
+- `l` - View logs
+- `s` - Start/stop toggle
+- `i` - Inspect details
+
+**Conversational container management:**
+
+```
+User: "What containers are running?"
+
+Colony: You have 4 containers running:
+        
+        CONTAINER        IMAGE              STATUS      PORTS
+        postgres-dev     postgres:16        Up 2 days   5432→5432
+        redis-cache      redis:7            Up 2 days   6379→6379
+        api-server       myapp:latest       Up 4 hours  3000→3000
+        nginx-proxy      nginx:alpine       Up 4 hours  80→80, 443→443
+
+User: "Stop the api server and show me its logs from the last hour"
+
+Colony: I'll stop api-server and fetch recent logs. OK?
+
+User: "Yes"
+
+Colony: [Stops container]
+        
+        Last hour of logs from api-server:
+        
+        14:23:01 INFO  Server starting on port 3000
+        14:23:02 INFO  Connected to database
+        14:45:17 WARN  Slow query detected (2.3s): SELECT * FROM orders...
+        15:02:33 ERROR Connection refused to redis-cache:6379
+        15:02:34 INFO  Reconnected to Redis
+        ...
+        
+        Container stopped. Want me to investigate that Redis connection issue?
+```
+
+**Docker recipes:**
+
+```
+User: "Every time I start working, I need postgres and redis running"
+
+Colony: I'll create a recipe called "dev-environment" that:
+        - Starts postgres:16 on port 5432
+        - Starts redis:7 on port 6379
+        - Waits for both to be healthy
+        - Shows you the connection strings
+        
+        Save this recipe?
+
+User: "Yes"
+
+Colony: Saved. Next time just say "start my dev environment" or run:
+        colony run dev-environment
+```
+
+**Docker mode capabilities:**
+
+| Natural Language | Docker Equivalent |
+|------------------|-------------------|
+| "What's running?" | `docker ps` |
+| "Show logs for X" | `docker logs X` |
+| "Stop everything" | `docker stop $(docker ps -q)` |
+| "Clean up old images" | `docker system prune` |
+| "Run postgres" | `docker run -d postgres:16...` |
+| "Why did X crash?" | `docker logs X --tail 100` + analysis |
+| "How much space is Docker using?" | `docker system df` |
+| "Connect me to the database container" | `docker exec -it postgres psql` |
+
+**Compose integration:**
+
+```
+User: "Start my project"
+
+Colony: I found docker-compose.yml in this directory. It defines:
+        - api (Node.js app)
+        - db (PostgreSQL)
+        - cache (Redis)
+        
+        Start all services?
+
+User: "Just the database"
+
+Colony: Starting db service only...
+        
+        PostgreSQL is ready:
+        - Host: localhost
+        - Port: 5432
+        - Connection: postgres://postgres:postgres@localhost:5432/app
+```
 
 ### 16.4 Kubernetes Mode
 
-Deploy Colony as a scalable service in Kubernetes.
+Colony becomes a conversational interface to Kubernetes, making cluster management accessible.
+
+**Entering Kubernetes mode:**
+```bash
+colony --mode k8s
+# Or within a session:
+/k8s
+
+# Connect to specific cluster
+/k8s --context production
+```
+
+**Kubernetes Sidebar:**
+
+When in Kubernetes mode, a sidebar provides hierarchical cluster navigation:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ ┌─────────────────────┐                                                 │
+│ │ ☸ KUBERNETES        │  Conversation                                   │
+│ │                     │  ─────────────────────────────────────────────  │
+│ │ Context: production │                                                 │
+│ │ ▼ Switch Context    │  User: "What's wrong with the api namespace?"   │
+│ │   ○ staging         │                                                 │
+│ │   ● production      │  Colony: Checking api namespace...              │
+│ │   ○ development     │                                                 │
+│ │                     │  Found 1 issue:                                 │
+│ │ ▼ Namespaces        │                                                 │
+│ │   ▼ api (7/8) ⚠     │  POD                    STATUS    RESTARTS     │
+│ │     ● api-server-a  │  api-server-7d4f-x2k4   CrashLoop 5 (12m ago)  │
+│ │     ● api-server-b  │                                                 │
+│ │     ⟳ api-server-c  │  Last error: OOMKilled                         │
+│ │     ● api-worker-a  │  Memory: 509Mi / 512Mi limit                   │
+│ │     ● api-worker-b  │                                                 │
+│ │   ▶ default (12/12) │  ─────────────────────────────────────────────  │
+│ │   ▶ monitoring (5/5)│  > increase memory to 1Gi                       │
+│ │   ▶ kube-system     │                                                 │
+│ │                     │                                                 │
+│ │ ▼ Workloads         │                                                 │
+│ │   Deployments: 8    │                                                 │
+│ │   StatefulSets: 2   │                                                 │
+│ │   DaemonSets: 3     │                                                 │
+│ │   Jobs: 1 running   │                                                 │
+│ │                     │                                                 │
+│ │ ▼ Storage           │                                                 │
+│ │   PVCs: 5 (42Gi)    │                                                 │
+│ │   ConfigMaps: 12    │                                                 │
+│ │   Secrets: 8        │                                                 │
+│ │                     │                                                 │
+│ │ ─────────────────── │                                                 │
+│ │ Nodes: 3/3 Ready    │                                                 │
+│ │ CPU:  45% █████░░░  │                                                 │
+│ │ MEM:  62% ██████░░  │                                                 │
+│ └─────────────────────┘                                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Sidebar features:**
+
+| Section | Shows | Interactions |
+|---------|-------|--------------|
+| **Context** | Current cluster, quick switch | Click to change cluster |
+| **Namespaces** | All namespaces with pod health summary | Expand to see pods |
+| **Workloads** | Deployments, StatefulSets, DaemonSets, Jobs | Click to manage |
+| **Storage** | PVCs, ConfigMaps, Secrets | Click to inspect |
+| **Cluster health** | Node status, resource utilization | Real-time updates |
+
+**Health indicators:**
+- `●` All pods healthy
+- `⚠` Some pods unhealthy
+- `⟳` Pods restarting
+- `(7/8)` Ready count / desired count
+
+**Keyboard navigation:**
+- `Tab` - Switch focus between sidebar and conversation
+- `↑↓` - Navigate items
+- `←→` - Collapse/expand sections
+- `Enter` - Select item for details
+- `l` - View logs for selected pod
+- `e` - Exec into selected pod
+- `d` - Describe resource
+- `x` - Delete (with confirmation)
+- `p` - Port-forward
+- `c` - Switch context
+
+**Context-aware conversation:**
+
+Selecting an item in the sidebar sets context for conversation:
+
+```
+[User clicks on api-server-c in sidebar]
+
+User: "What's wrong with this?"
+
+Colony: api-server-c (api-server-7d4f8b6c9-x2k4m) is crash-looping.
+        
+        Status: CrashLoopBackOff
+        Restarts: 5 in the last 12 minutes
+        Last exit code: 137 (OOMKilled)
+        
+        Memory timeline:
+        - 14:23:01  256Mi (started)
+        - 14:23:45  489Mi
+        - 14:23:52  509Mi
+        - 14:23:53  KILLED (limit: 512Mi)
+        
+        This pod consistently hits its memory limit.
+        
+        Options:
+        1. Increase memory limit to 1Gi
+        2. View heap dump from last run
+        3. Check for memory leaks in recent commits
+```
+
+**Built-in kubectx and kubens:**
+
+Colony includes `kubectx` and `kubens` as built-in commands—no separate installation needed.
 
 ```bash
-# Generate Kubernetes manifests
-colony export --kubernetes > colony-k8s.yaml
+# List available contexts
+kubectx
+# staging
+# production  ← current
+# development
 
-# Or use Helm chart
-helm repo add colony https://charts.colony.dev
+# Switch context
+kubectx staging
+# Switched to context "staging"
+
+# Switch to previous context
+kubectx -
+# Switched to context "production"
+
+# Interactive fuzzy selection (if multiple contexts)
+kubectx
+# > staging
+#   production
+#   development
+#   docker-desktop
+# (type to filter, enter to select)
+```
+
+```bash
+# List namespaces in current context
+kubens
+# api
+# default  ← current
+# kube-system
+# monitoring
+
+# Switch namespace
+kubens api
+# Active namespace is "api"
+
+# Switch to previous namespace
+kubens -
+# Active namespace is "default"
+
+# Interactive fuzzy selection
+kubens
+# > api
+#   default
+#   monitoring
+# (type to filter, enter to select)
+```
+
+**Enhanced features beyond standard kubectx/kubens:**
+
+| Feature | Standard | Colony Built-in |
+|---------|----------|-----------------|
+| Context switching | ✓ | ✓ |
+| Namespace switching | ✓ | ✓ |
+| Fuzzy search | Requires fzf | Built-in |
+| Previous context (`-`) | ✓ | ✓ |
+| Context health preview | ✗ | ✓ Shows node/pod status |
+| Namespace pod count | ✗ | ✓ Shows (healthy/total) |
+| Sidebar sync | ✗ | ✓ Sidebar updates on switch |
+| Recent contexts | ✗ | ✓ Sorted by recent use |
+| Context aliases | ✗ | ✓ `kubectx prod=gke_myproj_us-east1_prod` |
+
+**Context health preview:**
+
+```bash
+kubectx
+# > staging      3 nodes, 24/24 pods ✓
+#   production   5 nodes, 47/48 pods ⚠
+#   development  1 node,  12/12 pods ✓
+```
+
+**Namespace pod count:**
+
+```bash
+kubens
+# > api          8 pods (7 ready) ⚠
+#   default      12 pods ✓
+#   monitoring   5 pods ✓
+#   kube-system  9 pods ✓
+```
+
+**Context aliases:**
+
+```bash
+# Create alias
+kubectx prod=gke_my-project_us-east1_production
+# Aliased "gke_my-project_us-east1_production" as "prod"
+
+# Use alias
+kubectx prod
+# Switched to context "gke_my-project_us-east1_production"
+
+# List aliases
+kubectx --aliases
+# prod → gke_my-project_us-east1_production
+# stg  → gke_my-project_us-east1_staging
+```
+
+**Conversational cluster management:**
+
+```
+User: "What's the status of my cluster?"
+
+Colony: Connected to cluster: production (GKE)
+        
+        NODES          STATUS    CPU     MEMORY
+        node-pool-1a   Ready     45%     62%
+        node-pool-1b   Ready     38%     58%
+        node-pool-1c   Ready     52%     71%
+        
+        NAMESPACES     PODS    HEALTHY
+        default        12      12 ✓
+        api            8       7 ⚠ (1 CrashLoopBackOff)
+        monitoring     5       5 ✓
+        
+        ⚠ Issue detected: 1 pod in api namespace is crash-looping.
+        Want me to investigate?
+
+User: "Yes"
+
+Colony: Pod api-server-7d4f8b6c9-x2k4m is crash-looping.
+        
+        Last 3 restart reasons:
+        1. OOMKilled (12 min ago) - exceeded 512Mi memory limit
+        2. OOMKilled (8 min ago)
+        3. OOMKilled (3 min ago)
+        
+        Current memory request: 256Mi, limit: 512Mi
+        Peak usage before crash: 509Mi
+        
+        Recommendation: Increase memory limit to 1Gi
+        
+        Should I patch the deployment?
+
+User: "Yes, increase it to 1Gi"
+
+Colony: I'll update api-server deployment:
+        - memory limit: 512Mi → 1Gi
+        - memory request: 256Mi → 512Mi
+        
+        This will trigger a rolling restart. Proceed?
+
+User: "Do it"
+
+Colony: ✓ Deployment patched
+        ✓ Rolling restart initiated
+        
+        Progress: 2/3 pods updated
+        ...
+        Progress: 3/3 pods updated
+        
+        All pods healthy. Memory issue resolved.
+```
+
+**Kubernetes recipes:**
+
+```
+User: "I want to check on production every morning"
+
+Colony: I'll create a recipe "production-health-check" that:
+        - Connects to production cluster
+        - Checks all pod health
+        - Reports any crashloops, pending pods, or resource pressure
+        - Summarizes recent error logs
+        - Alerts you if anything needs attention
+        
+        Schedule this for 8am weekdays?
+
+User: "Yes"
+
+Colony: Saved. You'll get a morning briefing on production health.
+```
+
+**Kubernetes mode capabilities:**
+
+| Natural Language | Kubectl Equivalent |
+|------------------|-------------------|
+| "What's running in production?" | `kubectl get pods -n production` |
+| "Why is the API down?" | `kubectl describe pod... + kubectl logs...` |
+| "Scale up the workers" | `kubectl scale deployment workers --replicas=5` |
+| "Show me recent deployments" | `kubectl rollout history deployment/...` |
+| "Roll back the last deploy" | `kubectl rollout undo deployment/...` |
+| "What's using the most resources?" | `kubectl top pods --sort-by=memory` |
+| "Port forward to the database" | `kubectl port-forward svc/postgres 5432:5432` |
+| "Show me the config for X" | `kubectl get deployment X -o yaml` |
+| "Find all pods with errors" | `kubectl get pods --field-selector=status.phase!=Running` |
+
+**Multi-cluster support:**
+
+```
+User: "Compare staging and production"
+
+Colony: Comparing clusters...
+        
+        RESOURCE         STAGING    PRODUCTION    DIFF
+        API replicas     2          5             ✓ Expected
+        API image        v2.3.1     v2.3.0        ⚠ Staging ahead
+        DB storage       10Gi       100Gi         ✓ Expected
+        Worker replicas  1          10            ✓ Expected
+        
+        ⚠ Staging is running v2.3.1 but production has v2.3.0
+        
+        Want to see what changed in v2.3.1?
+```
+
+### 16.5 Mode Summary
+
+| Mode | Activated By | Purpose |
+|------|--------------|---------|
+| **Terminal+** | Default | Full shell, POSIX compliance |
+| **Personal App** | `--mode personal` or `/personal` | Conversational, non-technical users |
+| **Docker** | `--mode docker` or `/docker` | Container management |
+| **Kubernetes** | `--mode k8s` or `/k8s` | Cluster management |
+
+Modes share the same recipe system—a Docker recipe and a Kubernetes recipe work the same way.
+
+### 16.6 Deployment of Colony Itself
+
+Colony can also be deployed in containers/Kubernetes for team use:
+
+```bash
+# Run Colony server in Docker
+docker run -d \
+  -v ~/.colony:/data \
+  -p 3000:3000 \
+  colony/colony:latest --mode server
+
+# Deploy to Kubernetes via Helm
 helm install colony colony/colony \
   --set database.type=postgres \
-  --set database.external=true \
-  --set database.url=postgres://... \
   --set replicas=3
 ```
 
-**Kubernetes architecture:**
+See [Colony Self-Hosting Guide] for production deployment details.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Kubernetes Cluster                        │
-│                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   Colony    │  │   Colony    │  │   Colony    │         │
-│  │  Pod (API)  │  │  Pod (API)  │  │  Pod (API)  │         │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘         │
-│         └────────────────┼────────────────┘                 │
-│                          │                                   │
-│                    ┌─────▼─────┐                            │
-│                    │  Service  │                            │
-│                    │ (LoadBal) │                            │
-│                    └─────┬─────┘                            │
-│                          │                                   │
-│  ┌───────────────────────┼───────────────────────┐         │
-│  │                       │                        │         │
-│  ▼                       ▼                        ▼         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │  PostgreSQL │  │   Redis     │  │  S3/Minio   │         │
-│  │  (recipes)  │  │  (sessions) │  │  (artifacts)│         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-│                                                              │
-│  ┌─────────────────────────────────────────────────┐       │
-│  │              Colony Workers (Executors)          │       │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐         │       │
-│  │  │ Worker  │  │ Worker  │  │ Worker  │  (HPA)  │       │
-│  │  └─────────┘  └─────────┘  └─────────┘         │       │
-│  └─────────────────────────────────────────────────┘       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Kubernetes features:**
-
-| Feature | Description |
-|---------|-------------|
-| **Horizontal Pod Autoscaler** | Scale API pods based on load |
-| **Worker autoscaling** | Scale executors based on queue depth |
-| **PodDisruptionBudget** | Zero-downtime upgrades |
-| **NetworkPolicy** | Isolate worker pods |
-| **ServiceAccount** | Fine-grained RBAC |
-| **Secrets integration** | External secrets operator support |
-| **Ingress** | Built-in ingress resource |
-
-**Helm values example:**
-
-```yaml
-# values.yaml
-replicaCount: 3
-
-database:
-  type: postgres
-  external: true
-  url: postgres://colony:secret@postgres.default.svc:5432/colony
-
-redis:
-  enabled: true
-  
-workers:
-  replicas: 5
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 20
-    targetCPUUtilization: 70
-
-ingress:
-  enabled: true
-  className: nginx
-  hosts:
-    - host: colony.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-
-resources:
-  api:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 1000m
-      memory: 1Gi
-```
-
-### 16.5 Deployment Mode Summary
-
-| Mode | Use Case | Database | Scaling |
-|------|----------|----------|---------|
-| **Local** | Personal use | SQLite | Single instance |
-| **Docker** | Small team, simple deploy | PostgreSQL | Docker Compose |
-| **Kubernetes** | Enterprise, high availability | PostgreSQL + Redis | HPA, multiple replicas |
-
-### 16.6 Configuration Hierarchy
+### 16.7 Configuration Hierarchy
 
 Colony configuration cascades from multiple sources:
 
@@ -1229,6 +1575,14 @@ key_file = "/etc/colony/tls/key.pem"
 max_concurrent = 10
 timeout_seconds = 300
 sandbox = "firecracker"  # or "docker", "v8"
+
+[docker]
+default_network = "colony-net"
+socket = "/var/run/docker.sock"
+
+[kubernetes]
+default_context = "production"
+contexts = ["staging", "production"]
 
 [auth]
 type = "sso"
