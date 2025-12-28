@@ -932,16 +932,322 @@ Based on research: differentiating seats reduces friction for stakeholders who o
 
 ---
 
-## 16. Appendix: Boundaries
+## 16. Infrastructure & Deployment Modes
 
-### 16.1 V1 Scope
+Colony adapts to its environment—from a single user's laptop to a Kubernetes cluster serving an organization.
+
+### 16.1 Configurable Database Backend
+
+**Default: SQLite** — Zero configuration, single file, perfect for personal use.
+
+**Upgrade path via built-in command:**
+
+```bash
+# Check current database
+colony db status
+# Database: SQLite
+# Location: ~/.colony/colony.db
+# Size: 12.4 MB
+# Recipes: 47
+
+# Install and configure PostgreSQL
+colony db install postgres
+# This will:
+# - Install PostgreSQL (via Homebrew/apt/docker)
+# - Create colony database and user
+# - Migrate existing data from SQLite
+# - Update Colony configuration
+# Proceed? [y/N]
+
+# Or connect to existing PostgreSQL
+colony db connect postgres://user:pass@localhost:5432/colony
+
+# Switch to MySQL
+colony db install mysql
+colony db connect mysql://user:pass@localhost:3306/colony
+```
+
+**Database comparison:**
+
+| Backend | Best For | Concurrent Users | Setup |
+|---------|----------|------------------|-------|
+| **SQLite** | Personal, single user | 1 | Zero config |
+| **PostgreSQL** | Teams, self-hosted | 100+ | `colony db install postgres` |
+| **MySQL** | Enterprise, existing infra | 100+ | `colony db install mysql` |
+
+**Migration is automatic:**
+- Colony detects schema version
+- Runs migrations on startup
+- Handles SQLite → PostgreSQL data transfer
+- Zero downtime for teams (run migration, then switch connection)
+
+### 16.2 Built-in HTTP Server
+
+Colony can expose dashboards and artifacts via HTTP—no external web server needed.
+
+```bash
+# Start HTTP server for current workspace
+colony serve
+# Server running at http://localhost:3000
+# Serving: 3 dashboards, 12 widgets
+# Press Ctrl+C to stop
+
+# Configure port and host
+colony serve --port 8080 --host 0.0.0.0
+
+# Serve specific dashboard
+colony serve --dashboard "sales-metrics"
+
+# Enable authentication
+colony serve --auth basic    # Username/password
+colony serve --auth token    # API token
+colony serve --auth sso      # SSO (Team/Enterprise)
+
+# Production mode with TLS
+colony serve --tls --cert /path/to/cert.pem --key /path/to/key.pem
+```
+
+**HTTP server capabilities:**
+
+| Feature | Description |
+|---------|-------------|
+| **Dashboard serving** | Render dashboards as web pages |
+| **Widget API** | JSON endpoints for widget data |
+| **Webhook receiver** | Trigger recipes from external events |
+| **Health checks** | `/health` and `/ready` endpoints |
+| **Metrics** | Prometheus-compatible `/metrics` endpoint |
+| **WebSocket** | Real-time dashboard updates |
+
+**Use cases:**
+- Share dashboard with team via URL
+- Embed widgets in other tools (iframe)
+- Receive webhooks from GitHub, Stripe, etc.
+- Monitoring and alerting integration
+
+### 16.3 Docker Mode
+
+Run Colony in a container for isolation, reproducibility, and easy deployment.
+
+```bash
+# Run Colony in Docker
+docker run -it \
+  -v ~/.colony:/data \
+  -p 3000:3000 \
+  colony/colony:latest
+
+# With PostgreSQL sidecar
+docker-compose up -d  # Uses colony-compose.yml
+
+# Build custom image with pre-installed recipes
+colony export --docker > Dockerfile
+docker build -t my-colony .
+```
+
+**colony-compose.yml:**
+
+```yaml
+version: '3.8'
+services:
+  colony:
+    image: colony/colony:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - COLONY_DB_URL=postgres://colony:colony@db:5432/colony
+      - COLONY_MODE=server
+    volumes:
+      - ./recipes:/recipes
+      - ./data:/data
+    depends_on:
+      - db
+  
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=colony
+      - POSTGRES_PASSWORD=colony
+      - POSTGRES_DB=colony
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+```
+
+**Docker mode features:**
+
+| Feature | Description |
+|---------|-------------|
+| **Headless mode** | No TUI, HTTP API only |
+| **Recipe mounting** | Mount recipes directory for GitOps |
+| **Credential injection** | Via environment variables or secrets |
+| **Multi-arch** | ARM64 and AMD64 images |
+| **Distroless option** | Minimal attack surface image |
+
+### 16.4 Kubernetes Mode
+
+Deploy Colony as a scalable service in Kubernetes.
+
+```bash
+# Generate Kubernetes manifests
+colony export --kubernetes > colony-k8s.yaml
+
+# Or use Helm chart
+helm repo add colony https://charts.colony.dev
+helm install colony colony/colony \
+  --set database.type=postgres \
+  --set database.external=true \
+  --set database.url=postgres://... \
+  --set replicas=3
+```
+
+**Kubernetes architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                        │
+│                                                              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │   Colony    │  │   Colony    │  │   Colony    │         │
+│  │  Pod (API)  │  │  Pod (API)  │  │  Pod (API)  │         │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘         │
+│         └────────────────┼────────────────┘                 │
+│                          │                                   │
+│                    ┌─────▼─────┐                            │
+│                    │  Service  │                            │
+│                    │ (LoadBal) │                            │
+│                    └─────┬─────┘                            │
+│                          │                                   │
+│  ┌───────────────────────┼───────────────────────┐         │
+│  │                       │                        │         │
+│  ▼                       ▼                        ▼         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │  PostgreSQL │  │   Redis     │  │  S3/Minio   │         │
+│  │  (recipes)  │  │  (sessions) │  │  (artifacts)│         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+│                                                              │
+│  ┌─────────────────────────────────────────────────┐       │
+│  │              Colony Workers (Executors)          │       │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐         │       │
+│  │  │ Worker  │  │ Worker  │  │ Worker  │  (HPA)  │       │
+│  │  └─────────┘  └─────────┘  └─────────┘         │       │
+│  └─────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Kubernetes features:**
+
+| Feature | Description |
+|---------|-------------|
+| **Horizontal Pod Autoscaler** | Scale API pods based on load |
+| **Worker autoscaling** | Scale executors based on queue depth |
+| **PodDisruptionBudget** | Zero-downtime upgrades |
+| **NetworkPolicy** | Isolate worker pods |
+| **ServiceAccount** | Fine-grained RBAC |
+| **Secrets integration** | External secrets operator support |
+| **Ingress** | Built-in ingress resource |
+
+**Helm values example:**
+
+```yaml
+# values.yaml
+replicaCount: 3
+
+database:
+  type: postgres
+  external: true
+  url: postgres://colony:secret@postgres.default.svc:5432/colony
+
+redis:
+  enabled: true
+  
+workers:
+  replicas: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilization: 70
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: colony.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  api:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+```
+
+### 16.5 Deployment Mode Summary
+
+| Mode | Use Case | Database | Scaling |
+|------|----------|----------|---------|
+| **Local** | Personal use | SQLite | Single instance |
+| **Docker** | Small team, simple deploy | PostgreSQL | Docker Compose |
+| **Kubernetes** | Enterprise, high availability | PostgreSQL + Redis | HPA, multiple replicas |
+
+### 16.6 Configuration Hierarchy
+
+Colony configuration cascades from multiple sources:
+
+```
+Priority (highest to lowest):
+1. Command-line flags        --db-url=...
+2. Environment variables     COLONY_DB_URL=...
+3. Local config file         ./.colony/config.toml
+4. User config file          ~/.colony/config.toml
+5. System config file        /etc/colony/config.toml
+6. Defaults                  SQLite, port 3000, etc.
+```
+
+**Example config.toml:**
+
+```toml
+[database]
+type = "postgres"
+url = "postgres://colony:secret@localhost:5432/colony"
+max_connections = 20
+
+[server]
+host = "0.0.0.0"
+port = 3000
+tls = true
+cert_file = "/etc/colony/tls/cert.pem"
+key_file = "/etc/colony/tls/key.pem"
+
+[execution]
+max_concurrent = 10
+timeout_seconds = 300
+sandbox = "firecracker"  # or "docker", "v8"
+
+[auth]
+type = "sso"
+provider = "okta"
+client_id = "..."
+```
+
+---
+
+## 17. Appendix: Boundaries
+
+### 17.1 V1 Scope
 
 - **In:** Single-user personal tools
 - **In:** Desktop terminal experience
 - **In:** Data from everywhere (files, APIs, web)
 - **In:** Code invisible by default, peekable
 
-### 16.2 Future Scope
+### 17.2 Future Scope
 
 - **Phase 2:** Remote execution (Colony Cloud)
 - **Phase 3:** Teams and shared workspaces
@@ -949,7 +1255,7 @@ Based on research: differentiating seats reduces friction for stakeholders who o
 - **Later:** Enterprise features (SSO, audit, compliance)
 - **Later:** Marketplace for recipes/patterns
 
-### 16.3 Non-Goals
+### 17.3 Non-Goals
 
 - Replacing professional development tools
 - Competing with Zapier/IFTTT directly (different UX model)
