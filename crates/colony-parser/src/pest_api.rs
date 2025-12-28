@@ -313,8 +313,69 @@ fn preprocess_line_continuations(source: &str) -> String {
     let bytes = source.as_bytes();
     let mut i = 0;
     let mut in_single_quote = false;
+    let mut in_heredoc: Option<(String, bool)> = None; // (delimiter, is_quoted_delimiter)
     
     while i < bytes.len() {
+        // Check for heredoc start
+        if in_heredoc.is_none() && !in_single_quote {
+            if i + 1 < bytes.len() && bytes[i] == b'<' && bytes[i + 1] == b'<' {
+                let start = i;
+                i += 2;
+                if i < bytes.len() && bytes[i] == b'-' {
+                    i += 1;
+                }
+                while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+                    i += 1;
+                }
+                let delim_start = i;
+                let mut quoted = false;
+                if i < bytes.len() && (bytes[i] == b'\'' || bytes[i] == b'"') {
+                    quoted = true;
+                    let quote = bytes[i];
+                    i += 1;
+                    while i < bytes.len() && bytes[i] != quote {
+                        i += 1;
+                    }
+                    let delim = String::from_utf8_lossy(&bytes[delim_start + 1..i]).to_string();
+                    if i < bytes.len() {
+                        i += 1;
+                    }
+                    in_heredoc = Some((delim, quoted));
+                } else {
+                    while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b';' && bytes[i] != b'&' && bytes[i] != b'|' && bytes[i] != b'>' && bytes[i] != b'<' && bytes[i] != b')' {
+                        i += 1;
+                    }
+                    let delim = String::from_utf8_lossy(&bytes[delim_start..i]).to_string();
+                    if !delim.is_empty() {
+                        in_heredoc = Some((delim, false));
+                    }
+                }
+                result.push_str(&String::from_utf8_lossy(&bytes[start..i]));
+                continue;
+            }
+        }
+        
+        // Check for heredoc end
+        if let Some((ref delim, _is_quoted)) = in_heredoc {
+            if bytes[i] == b'\n' {
+                result.push('\n');
+                i += 1;
+                let line_start = i;
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                let line = String::from_utf8_lossy(&bytes[line_start..i]).to_string();
+                if line.trim() == delim {
+                    in_heredoc = None;
+                }
+                result.push_str(&line);
+                continue;
+            }
+            result.push(bytes[i] as char);
+            i += 1;
+            continue;
+        }
+        
         if bytes[i] == b'\'' && !in_single_quote {
             in_single_quote = true;
             result.push('\'');
