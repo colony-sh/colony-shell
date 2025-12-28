@@ -1849,3 +1849,14 @@
 [2025-12-27 18:55] FIX: execute_pipeline_with_lastpipe also checks first element
 [2025-12-27 19:00] RESULT: Pipeline negation tests 43/45 (96%), double/triple negation edge cases remain
 [2025-12-27 19:05] PROGRESS: Failures reduced from 103 to 27 (74% improvement)
+
+[2025-12-27 13:20] START: Session continuation - fixing BATS test failures
+[2025-12-27 13:25] STATUS: 1099 total tests, 44 failures (96% pass rate)
+[2025-12-27 13:30] DIAGNOSIS: 31 of 44 failures were dstack tests (dirs/pushd/popd)
+[2025-12-27 13:35] ROOT CAUSE: Tests cd to temp dir, breaking relative COLONY_BIN path
+[2025-12-27 13:40] FIX: Convert COLONY_BIN to absolute path in 21_dstack.bats setup()
+[2025-12-27 13:45] COMMIT: fix: Readonly variable enforcement for unset and assignments
+[2025-12-27 13:50] COMMIT: fix: Convert COLONY_BIN to absolute path in dstack tests
+[2025-12-27 13:55] RESULT: 1099 tests, 11 failures (99% pass rate) - improved from 96%
+[2025-12-27 14:00] REMAINING: 11 failures - heredoc backslash (2), quote backslash (6), comsub (1), printf (1), pwd (1)
+[2025-12-27 14:05] ANALYSIS: Most are backslash-newline handling edge cases in various contexts
