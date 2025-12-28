@@ -596,41 +596,360 @@ Phases 4, 5, 6 can partially parallelize after Phase 3.
 ### 11.1 Deferred Decisions
 
 - Product naming (Colony? New brand for Personal Mode?)
-- Monetization model (free tier limits, pro features)
-- Mobile strategy (companion app? PWA?)
-- Collaboration features (sharing dashboards, team recipes)
+- Mobile app strategy (PWA vs native companion app)
+- Pattern library moderation (automated vs human review)
+- Enterprise sales motion (self-serve vs sales-led)
 
 ### 11.2 Technical Unknowns
 
-- Python sandboxing approach (subprocess vs WASM)
-- Pattern library infrastructure (self-hosted vs managed service)
-- Native export feasibility (macOS widgets, etc.)
+- Python sandboxing approach (subprocess vs WASM vs container)
+- Cloud execution provider (build vs buy: Cloudflare/Fly.io/Railway)
+- Credential vault implementation (HashiCorp Vault vs AWS Secrets Manager vs custom)
+- Real-time sync protocol for team workspaces
 
 ### 11.3 Research Needed
 
 - User testing with actual non-technical users
-- Competitive analysis of no-code/low-code tools
-- LLM cost optimization for code generation
+- LLM cost optimization for code generation (caching, smaller models)
+- Optimal cloud execution pricing (cost modeling at scale)
+- Enterprise buyer interviews for feature prioritization
 
 ---
 
-## 12. Appendix: Boundaries
+## 12. Competitive Landscape
 
-### 12.1 V1 Scope
+### 12.1 Market Categories Analyzed
+
+| Category | Players | Colony's Position |
+|----------|---------|-------------------|
+| Automation platforms | Zapier, IFTTT, Make, n8n | No pre-built connector limits |
+| Internal tool builders | Retool, Appsmith | Single-user focus, no SSO complexity |
+| Productivity databases | Notion, Airtable | No arbitrary limits, local-first |
+| AI-native tools | Bolt.new, v0, Lovable | Polyglot generation, recipes persist |
+| Personal dashboards | Geckoboard, Monarch | Universal, not vertical-specific |
+
+### 12.2 Automation Platforms (Zapier, IFTTT, Make, n8n)
+
+| Platform | Target | Pricing Model | Key Limitation |
+|----------|--------|---------------|----------------|
+| Zapier | Business users | Per-task ($20-70/mo) | Expensive at scale, 1.5★ Trustpilot |
+| IFTTT | Consumers | Per-applet ($3-9/mo) | Gutted free tier, 1.5★ Trustpilot |
+| Make.com | Power users | Per-credit ($9-29/mo) | No self-hosting, AI costs variable |
+| n8n | Developers | Per-execution ($0-50/mo) | Steep learning curve |
+
+**User Pain Points:**
+- Cost unpredictability (task/operation-based pricing surprises users)
+- Reliability (automations fail silently, triggers don't fire)
+- Vendor lock-in (can't export workflows)
+- Integration limits (pre-built connectors only)
+
+**Colony Advantage:** Code generation means no pre-built connector limits. Any API, any website, any data source.
+
+### 12.3 Internal Tool Builders (Retool, Appsmith)
+
+| Platform | Target | Pricing | Key Limitation |
+|----------|--------|---------|----------------|
+| Retool | Enterprise dev teams | $10-50/user/mo | SSO requires Enterprise, no code export |
+| Appsmith | Cost-conscious devs | $0-25/user/mo | No mobile apps, performance issues |
+
+**User Pain Points:**
+- Pricing tiers lock essential features (SSO, Git integration require expensive plans)
+- Performance degrades with complex apps
+- Still requires technical users ("low-code" but need database knowledge)
+
+**Colony Advantage:** Single-user focus means no SSO complexity. Code generation handles technical complexity invisibly.
+
+### 12.4 Productivity Databases (Notion, Airtable)
+
+| Platform | Target | Pricing | Key Limitation |
+|----------|--------|---------|----------------|
+| Notion | Knowledge workers | $12-20/user/mo | Performance issues, limited offline |
+| Airtable | Operations teams | $20-45/user/mo | Hard record limits (50K), no offline |
+
+**User Pain Points:**
+- Record limits (Airtable's 50K cap breaks businesses)
+- Performance (large databases become sluggish)
+- Learning curve (flexibility becomes overwhelming)
+- No offline (dependent on internet)
+
+**Colony Advantage:** Local-first means no arbitrary limits. Terminal-based means true offline capability.
+
+### 12.5 AI-Native Tools (Bolt.new, v0, Lovable)
+
+| Platform | Type | Pricing | Key Limitation |
+|----------|------|---------|----------------|
+| Bolt.new | Full-stack generator | $0-20/mo | Burns tokens fixing bugs, 1.5★ Trustpilot |
+| v0 by Vercel | UI component generator | $0-20/mo | Frontend only, no backend |
+| Lovable | Full-stack MVP builder | $0-25/mo | Supabase lock-in |
+
+**User Pain Points:**
+- Token consumption (2M+ tokens just fixing bugs)
+- "Demo to production" gap (works in demos, breaks in real use)
+- Debugging difficulty (AI-generated code you don't understand)
+- Backend limitations (toy backends you can't migrate)
+
+**Colony Advantage:** Polyglot generation picks the right tool. Recipes mean you don't regenerate from scratch. Peek-under-hood enables learning.
+
+### 12.6 Personal Dashboards (Geckoboard, Monarch)
+
+| Platform | Target | Pricing | Key Limitation |
+|----------|--------|---------|----------------|
+| Geckoboard | SMB metrics | $75/mo | Limited to pre-built integrations |
+| Monarch Money | Personal finance | $15/mo | Finance-only |
+| Looker Studio | Budget-conscious | Free | Requires data modeling knowledge |
+
+**User Pain Points:**
+- Pre-built integrations only (can't connect custom sources)
+- Vertical-specific (finance OR metrics, not both)
+- Learning curve (even "easy" tools require understanding data sources)
+
+**Colony Advantage:** Generate integrations on demand. Dashboard = recipe outputs composed. Not vertical-specific.
+
+### 12.7 Colony's Unique Position
+
+| Competitor Weakness | Colony Advantage |
+|---------------------|------------------|
+| Pre-built integrations only | Code generation on demand |
+| Per-task/operation pricing | Execution-based (your compute) |
+| Vendor lock-in | Local-first, code visible |
+| Cloud-only | Terminal = offline capable |
+| GUI complexity | Conversational interface |
+| Vertical-specific | Universal (anything you describe) |
+| Toy backends | Polyglot generation (real code) |
+
+### 12.8 Competitive Positioning Statement
+
+> Colony is not another no-code platform. It's a personal software factory that generates exactly what you need through conversation—no pre-built integrations to configure, no arbitrary limits, no vendor lock-in. Your recipes run locally on your machine with your data.
+
+---
+
+## 13. Monetization Strategy
+
+### 13.1 Pricing Philosophy
+
+**Core principles:**
+- **Local-first is free** — Running recipes on your own machine costs Colony nothing
+- **Cloud features have real costs** — Remote execution, pattern library, team sync
+- **Value-aligned pricing** — Pay for what you use, not arbitrary seat counts
+- **No vendor lock-in** — Export recipes, own your data, self-host if desired
+
+### 13.2 Pricing Model: Hybrid (Base + Usage)
+
+Based on research showing hybrid models have 21% median growth rate and 27% lower churn than flat-rate:
+
+| Tier | Price | What's Included |
+|------|-------|-----------------|
+| **Free** | $0 | Local execution, unlimited recipes, pattern library (read), basic LLM quota |
+| **Pro** | $15/month | Cloud execution credits, scheduled recipes, pattern contributions, priority LLM |
+| **Team** | $50/month + $10/seat | Shared recipes, team workspace, audit logs, SSO |
+| **Enterprise** | Custom | Self-hosted, SLA, dedicated support, compliance features |
+
+### 13.3 Usage-Based Components
+
+| Resource | Free | Pro | Team |
+|----------|------|-----|------|
+| Local recipe executions | Unlimited | Unlimited | Unlimited |
+| Cloud executions | 0 | 1,000/month | 5,000/month + overage |
+| LLM tokens (code generation) | 50K/month | 500K/month | 2M/month + overage |
+| Pattern library contributions | Read-only | Full access | Full access |
+| Scheduled recipes | 0 | 10 | Unlimited |
+| Connected data sources | 3 | Unlimited | Unlimited |
+
+**Overage rates:**
+- Cloud executions: $0.01 per execution
+- LLM tokens: $0.002 per 1K tokens
+
+### 13.4 Why This Model Works
+
+| Design Choice | Rationale |
+|---------------|-----------|
+| Free local execution | Drives adoption, zero marginal cost to Colony |
+| Cloud execution paid | Real infrastructure cost, enables mobile/scheduled |
+| LLM quota | AI costs are significant, aligns with actual value |
+| Pattern library free read | Network effect, community growth |
+| Team features separate | Different buyer (manager vs individual) |
+
+### 13.5 Conversion Strategy
+
+**Free tier limitations that trigger upgrade:**
+- Hit LLM quota while building something important
+- Want recipes to run when laptop is closed (→ cloud execution)
+- Need more than 3 data sources connected
+- Team member wants to use your recipe (→ Team tier)
+
+**Target conversion timeline:** 1-3 months (matches "quicksand effect" research)
+
+---
+
+## 14. Remote Execution (Colony Cloud)
+
+### 14.1 Why Remote Execution?
+
+Local-first is the default, but remote execution enables:
+- **Scheduled recipes** — Run "every Monday morning" without laptop open
+- **Mobile access** — View dashboards from phone (future)
+- **Webhooks/triggers** — React to external events instantly
+- **Heavy compute** — GPU workloads, large data processing
+- **Team sharing** — Recipes run in shared environment
+
+### 14.2 Architecture Options
+
+| Approach | Startup | Security | Cost | Best For |
+|----------|---------|----------|------|----------|
+| **V8 Isolates** (Cloudflare/Deno) | <5ms | Good | Low | Simple TS recipes |
+| **Firecracker microVMs** | ~300ms | Excellent | Medium | Untrusted code, polyglot |
+| **Containers** | 100ms-2s | Good | Medium | Complex dependencies |
+
+**Recommended: Hybrid approach**
+- V8 isolates for TypeScript recipes (fast, cheap)
+- Firecracker microVMs for shell/Python (secure, flexible)
+
+### 14.3 Execution Model
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    User's Local Colony                       │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Recipe: "morning-briefing"                          │    │
+│  │  Schedule: "0 7 * * 1-5" (weekdays 7am)             │    │
+│  │  Execution: cloud                                    │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ Sync recipe + schedule
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Colony Cloud                              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │  Scheduler  │  │  Executor   │  │  Credential │         │
+│  │             │──│  (Sandbox)  │──│   Vault     │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+│                          │                                   │
+│                          ▼                                   │
+│                   ┌─────────────┐                           │
+│                   │   Results   │                           │
+│                   │   Storage   │                           │
+│                   └─────────────┘                           │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ Push notification / sync results
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│              User's Phone / Next Session                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 14.4 Security Model
+
+**Credential handling:**
+- User's OAuth tokens stored in Colony Cloud vault (encrypted at rest)
+- Tokens never leave vault except to sandbox during execution
+- User can revoke cloud access anytime
+- Audit log of all cloud executions
+
+**Code sandboxing:**
+- Each execution in isolated environment
+- No network access except explicitly allowed endpoints
+- Resource limits (CPU time, memory, execution duration)
+- No persistent filesystem between executions
+
+### 14.5 Pricing Rationale
+
+Cloud execution has real costs:
+- Compute time (~$0.000017/GB-second on Lambda)
+- Cold starts and warm instance maintenance
+- Credential vault infrastructure
+- Bandwidth for results
+
+**$0.01/execution** covers:
+- Average 500ms execution at 512MB = ~$0.000008 compute
+- Margin for infrastructure, cold starts, failures
+- Sustainable at scale
+
+---
+
+## 15. Teams & Organizations
+
+### 15.1 Evolution from Single-User
+
+Colony starts single-user but naturally expands:
+1. **Individual** builds useful recipes
+2. **Shares recipe** with colleague ("you should try this")
+3. **Team** wants shared dashboards, consistent data
+4. **Organization** needs governance, audit, SSO
+
+### 15.2 Team Features
+
+| Feature | Purpose |
+|---------|---------|
+| **Shared recipe library** | Team members use each other's recipes |
+| **Shared workspace** | Collaborative dashboards, widgets |
+| **Shared connections** | Team OAuth tokens (e.g., company Google Workspace) |
+| **Activity feed** | See what teammates are building |
+| **Permissions** | Who can edit vs run vs view |
+
+### 15.3 Team Pricing Model
+
+**Base + seats (not pure per-seat):**
+- $50/month base (includes 3 seats)
+- $10/month per additional seat
+- Shared cloud execution pool (5,000/month)
+- Shared LLM token pool (2M/month)
+
+**Why not pure per-seat:**
+- Avoids "seat counting" friction
+- Teams have mix of heavy and light users
+- Usage pools encourage collaboration
+
+### 15.4 Seat Types
+
+| Seat Type | Can Do | Price |
+|-----------|--------|-------|
+| **Full** | Create, edit, run recipes, manage connections | $10/month |
+| **Runner** | Run existing recipes, view dashboards | $5/month |
+| **Viewer** | View dashboards only | Free |
+
+Based on research: differentiating seats reduces friction for stakeholders who only need limited access.
+
+### 15.5 Enterprise Features
+
+| Feature | Why Enterprises Need It |
+|---------|------------------------|
+| **SSO/SAML** | Centralized identity, compliance |
+| **SCIM provisioning** | Automated user management |
+| **Audit logs** | Security investigations, compliance |
+| **Data residency** | GDPR, sovereignty requirements |
+| **Self-hosted option** | Air-gapped environments, full control |
+| **SLA** | Guaranteed uptime for critical workflows |
+| **Dedicated support** | Named account manager |
+
+**Enterprise pricing:** Custom, typically $25K-100K/year based on seats and usage.
+
+### 15.6 Team Implementation Phases
+
+**Phase 1 (MVP):** Recipe sharing via export/import
+**Phase 2:** Shared workspace with permissions
+**Phase 3:** Team connections and credential sharing
+**Phase 4:** SSO, audit logs, enterprise features
+
+---
+
+## 16. Appendix: Boundaries
+
+### 16.1 V1 Scope
 
 - **In:** Single-user personal tools
 - **In:** Desktop terminal experience
 - **In:** Data from everywhere (files, APIs, web)
 - **In:** Code invisible by default, peekable
 
-### 12.2 Future Scope
+### 16.2 Future Scope
 
-- **Later:** Collaboration, sharing, teams
+- **Phase 2:** Remote execution (Colony Cloud)
+- **Phase 3:** Teams and shared workspaces
 - **Later:** Mobile native apps
-- **Later:** Enterprise features
+- **Later:** Enterprise features (SSO, audit, compliance)
 - **Later:** Marketplace for recipes/patterns
 
-### 12.3 Non-Goals
+### 16.3 Non-Goals
 
 - Replacing professional development tools
 - Competing with Zapier/IFTTT directly (different UX model)
