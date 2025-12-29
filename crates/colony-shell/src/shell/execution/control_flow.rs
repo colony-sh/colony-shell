@@ -9,7 +9,8 @@ use crate::shell::engine::{
     evaluate_cstyle_arith_value,
     execute_coproc,
 };
-use crate::shell::execution::{execute_err_trap, run_in_background};
+use crate::shell::execution::execute_err_trap;
+use crate::shell::execution::background::run_in_background;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlFlow {
@@ -24,7 +25,6 @@ pub(crate) async fn execute_list_with_control(
     list: &colony_parser::CommandList,
     executor: &mut Executor,
 ) -> (i32, ControlFlow) {
-    use colony_exec::JobStatus;
     use colony_parser::ListOp;
 
     let Some((first_op, _)) = list.rest.first() else {

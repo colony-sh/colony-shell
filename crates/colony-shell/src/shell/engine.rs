@@ -84,7 +84,7 @@ pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, execut
     let stdin_pipe = pipe().map_err(|e| format!("pipe error: {}", e))?;
     let stdout_pipe = pipe().map_err(|e| format!("pipe error: {}", e))?;
 
-    let is_simple_external = matches!(coproc.command.as_ref(), colony_parser::Statement::SimpleCommand(cmd)
+    let is_simple_external = matches!(coproc.command.as_ref(), Statement::SimpleCommand(cmd)
         if cmd.name.as_literal().is_some() && !colony_exec::is_builtin(cmd.name.as_literal().unwrap()));
 
     let shell_cmd = if !is_simple_external {
@@ -106,7 +106,7 @@ pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, execut
     };
 
     let external_exec = if is_simple_external {
-        if let colony_parser::Statement::SimpleCommand(cmd) = coproc.command.as_ref() {
+        if let Statement::SimpleCommand(cmd) = coproc.command.as_ref() {
             let cmd_name = cmd.name.as_literal().unwrap_or("true");
             let c_cmd = CString::new(cmd_name).map_err(|e| format!("arg error: {}", e))?;
             let mut c_args: Vec<CString> = vec![c_cmd.clone()];
