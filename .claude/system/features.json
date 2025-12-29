@@ -671,6 +671,28 @@
       "notes": []
     },
     {
+      "id": "F052",
+      "name": "Reactive TUI Core (colony-ui-core)",
+      "description": "Shared component system for prompt and sidebar widgets. PromptComponent and SidebarComponent traits. TOML+shell user components. Tuple space subscriptions. Used by both colony-tui and colony-terminal.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": ["F010"],
+      "notes": [
+        "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md"
+      ]
+    },
+    {
+      "id": "F053",
+      "name": "Reactive TUI Renderer (colony-tui)",
+      "description": "Full ratatui-based TUI replacing rustyline. Modal vim keybindings. Mini-editor with tree-sitter highlighting, ghost completions, fzf history. Left/right sidebars. Structured agent task view. Command palette.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": ["F052", "F022"],
+      "notes": [
+        "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md"
+      ]
+    },
+    {
       "id": "F028",
       "name": "File Tree State & Watching",
       "description": "Shell-side file tree state management. TreeState with FileNode structure, FileSystemWatcher via notify crate, GitStatusCache for git indicators. Agent context includes tree state. Enables agent awareness of file selection and project structure.",
