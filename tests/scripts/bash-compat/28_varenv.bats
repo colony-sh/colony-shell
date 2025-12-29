@@ -127,14 +127,12 @@ teardown() {
 }
 
 @test "varenv: export -p lists exported variables" {
-    skip "export -p not yet implemented"
     run "$COLONY" -c 'export MYTEST=abc; export -p | grep MYTEST'
     [ "$status" -eq 0 ]
     [[ "$output" =~ "MYTEST" ]]
 }
 
 @test "varenv: export -n removes export attribute" {
-    skip "export -n not yet implemented"
     run "$COLONY" -c 'export VAR=test; export -n VAR; /bin/sh -c "echo \$VAR"'
     [ "$status" -eq 0 ]
     [ "$output" = "" ]
@@ -216,28 +214,24 @@ teardown() {
 # ============================================================================
 
 @test "varenv: readonly variable" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'readonly VAR=hello; echo $VAR'
     [ "$status" -eq 0 ]
     [ "$output" = "hello" ]
 }
 
 @test "varenv: readonly prevents assignment" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'readonly VAR=hello; VAR=world 2>&1'
     [ "$status" -ne 0 ]
     [[ "$output" =~ "readonly" ]] || [[ "$output" =~ "read-only" ]] || [[ "$output" =~ "cannot" ]]
 }
 
 @test "varenv: readonly prevents unset" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'readonly VAR=hello; unset VAR 2>&1'
     [ "$status" -ne 0 ]
     [[ "$output" =~ "readonly" ]] || [[ "$output" =~ "read-only" ]] || [[ "$output" =~ "cannot" ]]
 }
 
 @test "varenv: readonly existing variable" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'VAR=hello; readonly VAR; VAR=world 2>&1'
     [ "$status" -ne 0 ]
 }
@@ -250,7 +244,6 @@ teardown() {
 }
 
 @test "varenv: readonly without value" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'VAR=hello; readonly VAR; echo $VAR'
     [ "$status" -eq 0 ]
     [ "$output" = "hello" ]
@@ -493,7 +486,6 @@ teardown() {
 }
 
 @test "varenv: OLDPWD used by cd -" {
-    skip "cd - (return to previous directory) not yet implemented"
     run "$COLONY" -c 'cd /tmp; cd /; cd -; pwd'
     [ "$status" -eq 0 ]
     [[ "$output" =~ "/tmp" ]] || [[ "$output" =~ "private/tmp" ]]
@@ -762,7 +754,6 @@ line2"; echo "$VAR"'
 }
 
 @test "compare: readonly with bash" {
-    skip "readonly builtin not yet implemented"
     run bash -c 'readonly VAR=hello; echo $VAR'
     bash_output="$output"
     run "$COLONY" -c 'readonly VAR=hello; echo $VAR'

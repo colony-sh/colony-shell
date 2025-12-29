@@ -270,38 +270,32 @@ teardown() {
 # ============================================================================
 
 @test "error: assignment to readonly variable fails" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'readonly RO=value; RO=new'
     [ "$status" -ne 0 ]
 }
 
 @test "error: unset readonly variable fails" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'readonly RO=value; unset RO'
     [ "$status" -ne 0 ]
 }
 
 @test "error: readonly error message mentions variable name" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'readonly MYVAR=x; MYVAR=y'
     [ "$status" -ne 0 ]
     [[ "$output" == *"MYVAR"* ]] || [[ "$output" == *"readonly"* ]] || [[ "$output" == *"read-only"* ]] || true
 }
 
 @test "error: export readonly then assign fails" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'export EXPORTRO=x; readonly EXPORTRO; EXPORTRO=y'
     [ "$status" -ne 0 ]
 }
 
 @test "error: readonly in for loop" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c 'readonly VAR=x; for VAR in 1 2 3; do echo $VAR; done'
     [ "$status" -ne 0 ]
 }
 
 @test "compare: readonly assignment error matches bash" {
-    skip "readonly builtin not yet implemented"
     run bash -c 'readonly X=1; X=2'
     local bash_status="$status"
 
@@ -871,7 +865,6 @@ line without closing delimiter'
 }
 
 @test "compare: readonly error consistent with bash" {
-    skip "readonly builtin not yet implemented"
     run bash -c 'readonly X=1; X=2; echo unreached'
     local bash_ro_status="$status"
     

@@ -234,21 +234,18 @@ run_colony() {
 # =============================================================================
 
 @test "read -n: read specific number of characters" {
-    skip "read -n not yet implemented"
     run_colony 'echo "abcdefg" | { read -n 3 x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[abc]" ]
 }
 
 @test "read -n: fewer chars available than requested" {
-    skip "read -n not yet implemented"
     run_colony 'echo "ab" | { read -n 5 x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[ab]" ]
 }
 
 @test "read -n 1: read single character" {
-    skip "read -n not yet implemented"
     run_colony 'echo "xyz" | { read -n 1 x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[x]" ]
@@ -270,21 +267,18 @@ run_colony() {
 # =============================================================================
 
 @test "read -d: custom delimiter" {
-    skip "read -d not yet implemented"
     run_colony 'echo "abc|def" | { read -d "|" x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[abc]" ]
 }
 
 @test "read -d: space as delimiter" {
-    skip "read -d not yet implemented"
     run_colony 'echo "hello world" | { read -d " " x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[hello]" ]
 }
 
 @test "read -d: null delimiter for NUL-separated input" {
-    skip "read -d not yet implemented"
     run_colony 'printf "a\0b\0c" | { read -d "" x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[a]" ]
@@ -295,14 +289,12 @@ run_colony() {
 # =============================================================================
 
 @test "read -t: timeout with available input succeeds" {
-    skip "read -t not yet implemented"
     run_colony 'echo "quick" | { read -t 1 x; echo "[$x]"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "[quick]" ]
 }
 
 @test "read -t 0: poll for available input" {
-    skip "read -t not yet implemented"
     run_colony 'echo "data" | { read -t 0 && echo "data available"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "data available" ]
@@ -324,14 +316,12 @@ run_colony() {
 # =============================================================================
 
 @test "read -a: read into array" {
-    skip "read -a not yet implemented"
     run_colony 'echo "one two three" | { read -a arr; echo "${arr[0]} ${arr[1]} ${arr[2]}"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "one two three" ]
 }
 
 @test "read -a: array with custom IFS" {
-    skip "read -a not yet implemented"
     run_colony 'echo "a:b:c" | { IFS=:; read -a arr; echo "${#arr[@]} elements"; }'
     [ "$status" -eq 0 ]
     [ "$output" = "3 elements" ]

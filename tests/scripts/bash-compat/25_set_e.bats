@@ -372,27 +372,23 @@ teardown() {
 }
 
 @test "set -o pipefail: any pipeline failure causes errexit" {
-    skip "pipefail not yet implemented"
     run "$COLONY" -c 'set -e; set -o pipefail; false | true; echo unreachable'
     [ "$status" -ne 0 ]
     [ "$output" = "" ]
 }
 
 @test "set -o pipefail: all succeed - no exit" {
-    skip "pipefail not yet implemented"
     run "$COLONY" -c 'set -e; set -o pipefail; true | true; echo done'
     [ "$status" -eq 0 ]
     [ "$output" = "done" ]
 }
 
 @test "set -o pipefail: first of three fails" {
-    skip "pipefail not yet implemented"
     run "$COLONY" -c 'set -e; set -o pipefail; false | true | true; echo unreachable'
     [ "$status" -ne 0 ]
 }
 
 @test "set -o pipefail: middle of three fails" {
-    skip "pipefail not yet implemented"
     run "$COLONY" -c 'set -e; set -o pipefail; true | false | true; echo unreachable'
     [ "$status" -ne 0 ]
 }
