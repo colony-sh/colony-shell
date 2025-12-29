@@ -2,3 +2,4 @@
 target/
 _bmad/
 .claude/commands/bmad/
+**/.fastembed_cache/*

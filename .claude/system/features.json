@@ -291,10 +291,19 @@
       "id": "F013",
       "name": "Memory substrate (LanceDB vectors)",
       "description": "Vector embeddings via LanceDB + fastembed (all-MiniLM-L6-v2). Semantic search over memories with hybrid text+vector queries.",
-      "status": "new",
+      "status": "complete",
       "priority": 4,
       "dependencies": ["F012"],
-      "notes": []
+      "notes": [
+        "2025-12-29: Implementation complete with full vector memory store",
+        "2025-12-29: LanceDB v0.17 + fastembed v4 (all-MiniLM-L6-v2, 384d vectors)",
+        "2025-12-29: Fixed arrow version mismatch (v54 -> v53 to match lancedb)",
+        "2025-12-29: Fixed blocking_lock issue in async context (std::sync::Mutex)",
+        "2025-12-29: MemoryStore: store, search, get, delete, forget_scope, consolidate, decay_importance",
+        "2025-12-29: Scope hierarchy: Global -> Project -> Session -> Task",
+        "2025-12-29: EmbeddingProvider trait with FastEmbedProvider implementation",
+        "2025-12-29: All 6 tests passing (5 unit + 1 doctest)"
+      ]
     },
     {
       "id": "F014",
