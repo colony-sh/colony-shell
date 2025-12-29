@@ -1,4 +1,44 @@
 //! Memory substrate with LanceDB vectors and SQLite metadata
+//!
+//! This crate provides the semantic memory layer for Colony Shell's AI-native features.
+//! It uses LanceDB for vector storage and fastembed for generating embeddings.
+//!
+//! ## Architecture
+//!
+//! - **LanceDB**: Stores vector embeddings for semantic search (384d via all-MiniLM-L6-v2)
+//! - **Scopes**: Hierarchical memory organization (Global → Project → Session → Task)
+//! - **Operations**: Store, retrieve, search, consolidate, forget
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use colony_memory::{MemoryStore, MemoryEntry, Scope};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let store = MemoryStore::open_default().await?;
+//!
+//! // Store a memory
+//! store.store(
+//!     "The user prefers verbose error messages",
+//!     Scope::Project("my-project".to_string()),
+//!     None,
+//! ).await?;
+//!
+//! // Search semantically
+//! let results = store.search("error handling preferences", 5).await?;
+//! for result in results {
+//!     println!("{}: {}", result.entry.id, result.entry.content);
+//! }
+//! # Ok(())
+//! # }
+//! ```
 
-/// Placeholder for memory functionality
-pub struct MemoryStore;
+mod embedding;
+mod error;
+mod scope;
+mod store;
+
+pub use embedding::{EmbeddingProvider, FastEmbedProvider};
+pub use error::{MemoryError, Result};
+pub use scope::Scope;
+pub use store::{MemoryEntry, MemoryStore, SearchResult};

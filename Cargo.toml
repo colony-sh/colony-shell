@@ -64,6 +64,15 @@ pest = "2.7"
 pest_derive = "2.7"
 tree-sitter = "0.20"
 
+# Vector embeddings and storage
+lancedb = "0.17"
+fastembed = "4"
+arrow-array = "53"
+arrow-schema = "53"
+
+# Directory utilities
+dirs = "5.0"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
