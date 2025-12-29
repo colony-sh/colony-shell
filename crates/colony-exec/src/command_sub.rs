@@ -323,7 +323,7 @@ fn execute_command_in_child_blocking(
     let path_env = context.get_env("PATH");
     let program_path = resolve_command(command_name, path_env)?;
 
-    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    let mut env = crate::build_env(context);
     
     for assignment in &cmd.env_assignments {
         if assignment.subscript.is_none() {

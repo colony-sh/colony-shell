@@ -4,10 +4,10 @@ mod tutorial;
 
 use colony_agent::{Agent, AgentConfig, NaturalLanguageDetector};
 use colony_config::{discover_config, ColonyConfig, TrustManager, TrustStatus};
-use colony_exec::{Executor, ExecutionError};
-use colony_expand::{ExpansionContext, TrapSignal, TrapAction};
+use colony_exec::{ExecutionError, Executor};
+use colony_expand::{ExpansionContext, TrapAction, TrapSignal};
 use colony_parser::pest_api::parse_statement;
-use colony_parser::{Statement, AliasContext};
+use colony_parser::{AliasContext, Statement};
 use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
 use miette::Result;
@@ -266,16 +266,20 @@ impl ShellOptions {
         let raw_args: Vec<String> = std::env::args().collect();
         let mut opts = ShellOptions::default();
         opts.depth = 2;
-        
+
         // Check if invoked as login shell (argv[0] starts with '-')
         if let Some(argv0) = raw_args.first() {
             if let Some(basename) = std::path::Path::new(argv0).file_name() {
-                if basename.to_str().map(|s| s.starts_with('-')).unwrap_or(false) {
+                if basename
+                    .to_str()
+                    .map(|s| s.starts_with('-'))
+                    .unwrap_or(false)
+                {
                     opts.login = true;
                 }
             }
         }
-        
+
         let mut i = 1;
         while i < raw_args.len() {
             let arg = &raw_args[i];
@@ -324,17 +328,27 @@ impl ShellOptions {
                     std::process::exit(0);
                 }
                 arg if arg.starts_with('-') => {
-                    // Handle combined short options like -lc
+                    // Handle combined short options like -lT or -lc
                     let chars: Vec<char> = arg[1..].chars().collect();
                     let mut j = 0;
                     while j < chars.len() {
                         match chars[j] {
                             'l' => opts.login = true,
+                            'T' => opts.tutorial = true,
+                            'v' => opts.verbose = true,
+                            'h' => {
+                                print_help();
+                                std::process::exit(0);
+                            }
+                            'V' => {
+                                println!("Colony Shell v{}", env!("CARGO_PKG_VERSION"));
+                                std::process::exit(0);
+                            }
                             'c' => {
                                 // -c needs an argument
                                 if j + 1 < chars.len() {
                                     // Rest of this arg is the command
-                                    opts.command = Some(chars[j+1..].iter().collect());
+                                    opts.command = Some(chars[j + 1..].iter().collect());
                                 } else {
                                     // Next arg is the command
                                     i += 1;
@@ -372,10 +386,10 @@ impl ShellOptions {
             }
             i += 1;
         }
-        
+
         opts
     }
-    
+
     fn is_interactive(&self) -> bool {
         self.command.is_none() && self.script.is_none() && unsafe { libc::isatty(0) != 0 }
     }
@@ -425,13 +439,11 @@ fn print_help() {
 
 /// Expand tilde in a path (~ to home directory)
 fn expand_tilde(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
+    if let Some(stripped) = path.strip_prefix('~') {
         if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join(&path[2..]);
-        }
-    } else if path == "~" {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home);
+            let mut result = PathBuf::from(home);
+            result.push(stripped.trim_start_matches('/'));
+            return result;
         }
     }
     PathBuf::from(path)
@@ -440,7 +452,7 @@ fn expand_tilde(path: &str) -> PathBuf {
 /// Source a startup file if it exists
 async fn maybe_source_file(path: &str, executor: &mut Executor, verbose: bool) -> bool {
     let expanded = expand_tilde(path);
-    
+
     if expanded.is_file() {
         if verbose {
             eprintln!("colony: sourcing {}", expanded.display());
@@ -460,19 +472,19 @@ async fn maybe_source_file(path: &str, executor: &mut Executor, verbose: bool) -
 fn load_exported_functions(context: &mut ExpansionContext) {
     const BASHFUNC_PREFIX: &str = "BASH_FUNC_";
     const BASHFUNC_SUFFIX: &str = "%%";
-    
+
     for (key, value) in std::env::vars() {
         if key.starts_with(BASHFUNC_PREFIX) && key.ends_with(BASHFUNC_SUFFIX) {
             let name_start = BASHFUNC_PREFIX.len();
             let name_end = key.len() - BASHFUNC_SUFFIX.len();
             let func_name = &key[name_start..name_end];
-            
+
             if !value.starts_with("() {") {
                 continue;
             }
-            
+
             let func_source = format!("{} {}", func_name, value);
-            
+
             if let Ok(stmt) = parse_statement(&func_source) {
                 if let Statement::FunctionDef(func) = stmt {
                     context.define_function(func.name.clone(), func);
@@ -488,16 +500,16 @@ async fn run_startup_files(opts: &ShellOptions, executor: &mut Executor) {
     let is_login = opts.login;
     let is_interactive = opts.is_interactive();
     let verbose = opts.verbose;
-    
+
     if verbose {
         eprintln!("colony: login={}, interactive={}", is_login, is_interactive);
     }
-    
+
     // Login shell startup files
     if is_login && !opts.noprofile {
         // 1. System-wide profile
         maybe_source_file("/etc/profile", executor, verbose).await;
-        
+
         // 2. User profile - try in order, use first found
         if !maybe_source_file("~/.bash_profile", executor, verbose).await {
             if !maybe_source_file("~/.bash_login", executor, verbose).await {
@@ -505,7 +517,7 @@ async fn run_startup_files(opts: &ShellOptions, executor: &mut Executor) {
             }
         }
     }
-    
+
     // Interactive non-login shell startup files
     if is_interactive && !is_login && !opts.norc {
         if let Some(ref rcfile) = opts.rcfile {
@@ -527,7 +539,7 @@ async fn run_startup_files(opts: &ShellOptions, executor: &mut Executor) {
             maybe_source_file("~/.bashrc", executor, verbose).await;
         }
     }
-    
+
     // Non-interactive shell (script or -c command)
     if !is_interactive {
         // Only process BASH_ENV or ENV if set
@@ -541,9 +553,11 @@ async fn run_startup_files(opts: &ShellOptions, executor: &mut Executor) {
             }
         }
     }
-    
+
     // Set marker to prevent re-sourcing
-    executor.context_mut().set_var("COLONY_STARTUP_SOURCED".to_string(), "1".to_string());
+    executor
+        .context_mut()
+        .set_var("COLONY_STARTUP_SOURCED".to_string(), "1".to_string());
 }
 
 #[tokio::main]
@@ -552,7 +566,7 @@ async fn main() -> Result<()> {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
     }
-    
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
@@ -570,7 +584,7 @@ async fn main() -> Result<()> {
         }
 
         let mut executor = Executor::new(context);
-        
+
         // Source BASH_ENV for non-interactive shells
         run_startup_files(&opts, &mut executor).await;
 
@@ -578,24 +592,24 @@ async fn main() -> Result<()> {
         let exit_code = execute_command_with_status(command, &mut executor).await;
         std::process::exit(exit_code);
     }
-    
+
     // Handle script execution mode
     if let Some(ref script) = opts.script {
         if opts.tutorial {
-            use tutorial::{TutorialConfig, TutorialRunner};
             use tutorial::tracer::TraceDepth;
-            
+            use tutorial::{TutorialConfig, TutorialRunner};
+
             let depth = match opts.depth {
                 3 => TraceDepth::Internals,
                 _ => TraceDepth::Mechanics,
             };
-            
+
             let config = TutorialConfig {
                 depth,
                 teach_mode: opts.teach,
                 pause_on_complex: true,
             };
-            
+
             let mut runner = match TutorialRunner::new(script, config) {
                 Ok(r) => r,
                 Err(e) => {
@@ -603,7 +617,7 @@ async fn main() -> Result<()> {
                     std::process::exit(1);
                 }
             };
-            
+
             match runner.run() {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
@@ -612,14 +626,14 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        
+
         let mut context = ExpansionContext::new();
         load_exported_functions(&mut context);
         context.set_shell_name(script.display().to_string());
         context.set_positional_params(opts.positional_args.clone());
 
         let mut executor = Executor::new(context);
-        
+
         // Source BASH_ENV for non-interactive shells
         run_startup_files(&opts, &mut executor).await;
 
@@ -693,7 +707,7 @@ impl Completer for ColonyHelper {
         _pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        Ok((0, vec![]))  // No completion for now
+        Ok((0, vec![])) // No completion for now
     }
 }
 
@@ -701,7 +715,7 @@ impl Hinter for ColonyHelper {
     type Hint = String;
 
     fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
-        None  // No hints for now
+        None // No hints for now
     }
 }
 
@@ -713,7 +727,7 @@ impl Highlighter for ColonyHelper {
     }
 
     fn highlight_char(&self, _line: &str, _pos: usize, _forced: bool) -> bool {
-        false  // Don't force character-level highlighting
+        false // Don't force character-level highlighting
     }
 }
 
@@ -753,12 +767,15 @@ impl Helper for ColonyHelper {}
 
 async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()> {
     let helper = ColonyHelper::new();
-    let mut rl = Editor::new()
-        .map_err(|e| miette::miette!("failed to create readline: {}", e))?;
+    let mut rl = Editor::new().map_err(|e| miette::miette!("failed to create readline: {}", e))?;
     rl.set_helper(Some(helper));
 
     loop {
-        let prompt = if agent.is_some() { "colony> " } else { "shell> " };
+        let prompt = if agent.is_some() {
+            "colony> "
+        } else {
+            "shell> "
+        };
 
         let readline = rl.readline(prompt);
 
@@ -835,19 +852,30 @@ async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()
 }
 
 /// Execute a list with control flow propagation
-async fn execute_list_with_control(list: &colony_parser::CommandList, executor: &mut Executor) -> (i32, ControlFlow) {
-    use colony_parser::ListOp;
-    use nix::unistd::{fork, ForkResult, Pid};
-    use nix::sys::wait::{waitpid, WaitPidFlag};
+async fn execute_list_with_control(
+    list: &colony_parser::CommandList,
+    executor: &mut Executor,
+) -> (i32, ControlFlow) {
     use colony_exec::JobStatus;
+    use colony_parser::ListOp;
+    use nix::sys::wait::{waitpid, WaitPidFlag};
+    use nix::unistd::{fork, ForkResult, Pid};
 
     // Check if first command should be backgrounded
     // This happens when rest starts with Background operator
-    let first_is_background = list.rest.first().map(|(op, _)| *op == ListOp::Background).unwrap_or(false);
-    
+    let first_is_background = list
+        .rest
+        .first()
+        .map(|(op, _)| *op == ListOp::Background)
+        .unwrap_or(false);
+
     // Check if first command is followed by && or || (errexit exemption)
-    let first_is_errexit_exempt = list.rest.first().map(|(op, _)| matches!(op, ListOp::And | ListOp::Or)).unwrap_or(false);
-    
+    let first_is_errexit_exempt = list
+        .rest
+        .first()
+        .map(|(op, _)| matches!(op, ListOp::And | ListOp::Or))
+        .unwrap_or(false);
+
     let (mut last_exit_code, mut control) = if first_is_background {
         // Run first command in background
         match run_in_background(&*list.first, executor).await {
@@ -857,10 +885,11 @@ async fn execute_list_with_control(list: &colony_parser::CommandList, executor: 
                 }
                 (0, ControlFlow::Normal)
             }
-            Err(_) => (1, ControlFlow::Normal)
+            Err(_) => (1, ControlFlow::Normal),
         }
     } else {
-        execute_statement_with_errexit_control(&*list.first, executor, first_is_errexit_exempt).await
+        execute_statement_with_errexit_control(&*list.first, executor, first_is_errexit_exempt)
+            .await
     };
     executor.context_mut().set_last_exit_status(last_exit_code);
 
@@ -873,14 +902,22 @@ async fn execute_list_with_control(list: &colony_parser::CommandList, executor: 
     let mut i = 0;
     while i < list.rest.len() {
         let (op, stmt) = &list.rest[i];
-        
+
         // Check if NEXT operator is Background (meaning this stmt should be backgrounded)
-        let next_is_background = list.rest.get(i + 1).map(|(next_op, _)| *next_op == ListOp::Background).unwrap_or(false);
+        let next_is_background = list
+            .rest
+            .get(i + 1)
+            .map(|(next_op, _)| *next_op == ListOp::Background)
+            .unwrap_or(false);
         // Check if NEXT operator is && or || (errexit exemption)
-        let next_is_errexit_exempt = list.rest.get(i + 1).map(|(next_op, _)| matches!(next_op, ListOp::And | ListOp::Or)).unwrap_or(false);
+        let next_is_errexit_exempt = list
+            .rest
+            .get(i + 1)
+            .map(|(next_op, _)| matches!(next_op, ListOp::And | ListOp::Or))
+            .unwrap_or(false);
         // Also check if this is the last item and the op itself is Background (trailing &)
         let this_is_background = *op == ListOp::Background;
-        
+
         let should_execute = match op {
             ListOp::Semi => true,
             ListOp::And => last_exit_code == 0,
@@ -911,7 +948,9 @@ async fn execute_list_with_control(list: &colony_parser::CommandList, executor: 
                 }
             } else if !this_is_background {
                 // Run in foreground
-                let (code, flow) = execute_statement_with_errexit_control(stmt, executor, next_is_errexit_exempt).await;
+                let (code, flow) =
+                    execute_statement_with_errexit_control(stmt, executor, next_is_errexit_exempt)
+                        .await;
                 last_exit_code = code;
                 executor.context_mut().set_last_exit_status(last_exit_code);
                 control = flow;
@@ -922,37 +961,35 @@ async fn execute_list_with_control(list: &colony_parser::CommandList, executor: 
                 }
             }
         }
-        
+
         i += 1;
     }
 
     (last_exit_code, control)
 }
 
-async fn run_in_background(stmt: &colony_parser::Statement, executor: &mut Executor) -> std::result::Result<u32, ()> {
-    use nix::unistd::{fork, ForkResult, Pid};
-    use nix::sys::signal::{SigHandler, Signal, signal};
+async fn run_in_background(
+    stmt: &colony_parser::Statement,
+    executor: &mut Executor,
+) -> std::result::Result<u32, ()> {
     use colony_exec::JobStatus;
-    
+    use nix::sys::signal::{signal, SigHandler, Signal};
+    use nix::unistd::{fork, ForkResult, Pid};
+
     let cmd_string = statement_to_shell_string(stmt);
     let stmt_clone = stmt.clone();
     let context_clone = executor.context().clone();
-    
+
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child }) => {
             let pid = child.as_raw() as u32;
             executor.context().set_last_bg_pid(pid);
-            
-            executor.jobs().add_job(
-                child,
-                vec![child],
-                cmd_string,
-            );
-            executor.jobs().update_status(
-                executor.jobs().list_jobs().len(),
-                JobStatus::Background,
-            );
-            
+
+            executor.jobs().add_job(child, vec![child], cmd_string);
+            executor
+                .jobs()
+                .update_status(executor.jobs().list_jobs().len(), JobStatus::Background);
+
             Ok(pid)
         }
         Ok(ForkResult::Child) => {
@@ -961,25 +998,33 @@ async fn run_in_background(stmt: &colony_parser::Statement, executor: &mut Execu
                 let _ = signal(Signal::SIGQUIT, SigHandler::SigDfl);
                 let _ = signal(Signal::SIGTSTP, SigHandler::SigDfl);
             }
-            
+
             let _ = nix::unistd::setpgid(Pid::from_raw(0), Pid::from_raw(0));
-            
-            let exit_code = colony_exec::execute_statement_for_process_sub(&stmt_clone, &mut context_clone.clone());
-            
+
+            let exit_code = colony_exec::execute_statement_for_process_sub(
+                &stmt_clone,
+                &mut context_clone.clone(),
+            );
+
             std::process::exit(exit_code);
         }
-        Err(_) => Err(())
+        Err(_) => Err(()),
     }
 }
 
 /// Execute if with control flow propagation
-async fn execute_if_with_control(if_stmt: &colony_parser::IfStatement, executor: &mut Executor) -> (i32, ControlFlow) {
+async fn execute_if_with_control(
+    if_stmt: &colony_parser::IfStatement,
+    executor: &mut Executor,
+) -> (i32, ControlFlow) {
     use colony_parser::Condition;
 
     let saved_errexit = executor.context().shell_options().errexit;
     executor.context_mut().shell_options_mut().errexit = false;
     let (condition_exit, _) = match &if_stmt.condition {
-        Condition::Command(cmd) => execute_statement_with_errexit_control(cmd, executor, true).await,
+        Condition::Command(cmd) => {
+            execute_statement_with_errexit_control(cmd, executor, true).await
+        }
         Condition::Expression(_expr) => {
             eprintln!("Expression conditions not yet supported");
             (1, ControlFlow::Normal)
@@ -1004,7 +1049,9 @@ async fn execute_if_with_control(if_stmt: &colony_parser::IfStatement, executor:
             let saved_errexit = executor.context().shell_options().errexit;
             executor.context_mut().shell_options_mut().errexit = false;
             let (elif_exit, _) = match &elif.condition {
-                Condition::Command(cmd) => execute_statement_with_errexit_control(cmd, executor, true).await,
+                Condition::Command(cmd) => {
+                    execute_statement_with_errexit_control(cmd, executor, true).await
+                }
                 Condition::Expression(_) => (1, ControlFlow::Normal),
             };
             executor.context_mut().shell_options_mut().errexit = saved_errexit;
@@ -1040,7 +1087,10 @@ async fn execute_if_with_control(if_stmt: &colony_parser::IfStatement, executor:
 }
 
 /// Execute for loop with control flow returns
-async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> (i32, ControlFlow) {
+async fn execute_for_loop_with_control(
+    for_stmt: &colony_parser::ForStatement,
+    executor: &mut Executor,
+) -> (i32, ControlFlow) {
     use colony_expand::Expander;
 
     // Expand the word list (with command substitution support)
@@ -1065,7 +1115,9 @@ async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, e
     let mut last_exit = 0;
     for field in values {
         // Set loop variable
-        executor.context_mut().set_var(for_stmt.var.clone(), field.text);
+        executor
+            .context_mut()
+            .set_var(for_stmt.var.clone(), field.text);
 
         // Execute body
         for stmt in &for_stmt.body {
@@ -1086,7 +1138,10 @@ async fn execute_for_loop_with_control(for_stmt: &colony_parser::ForStatement, e
 }
 
 /// Execute an if statement (old version for compatibility)
-async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &mut Executor) -> i32 {
+async fn execute_if_statement(
+    if_stmt: &colony_parser::IfStatement,
+    executor: &mut Executor,
+) -> i32 {
     use colony_parser::Condition;
 
     // Evaluate the condition
@@ -1114,9 +1169,7 @@ async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &m
         // Check elif branches
         for elif in &if_stmt.elif_branches {
             let elif_result = match &elif.condition {
-                Condition::Command(cmd) => {
-                    execute_statement_for_code(cmd, executor).await == 0
-                }
+                Condition::Command(cmd) => execute_statement_for_code(cmd, executor).await == 0,
                 Condition::Expression(_) => false,
             };
 
@@ -1137,15 +1190,15 @@ async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &m
             }
             last_exit
         } else {
-            0  // No else, return success
+            0 // No else, return success
         }
     }
 }
 
 /// Evaluate a [[ ]] conditional expression
 fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor) -> bool {
-    use colony_parser::{CondExpr, CondBinaryOp, CondUnaryOp};
-    
+    use colony_parser::{CondBinaryOp, CondExpr, CondUnaryOp};
+
     match expr {
         CondExpr::And(left, right) => {
             evaluate_conditional(left, executor) && evaluate_conditional(right, executor)
@@ -1153,13 +1206,16 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor)
         CondExpr::Or(left, right) => {
             evaluate_conditional(left, executor) || evaluate_conditional(right, executor)
         }
-        CondExpr::Not(inner) => {
-            !evaluate_conditional(inner, executor)
-        }
-        CondExpr::Binary { left, op, right, right_quoted } => {
+        CondExpr::Not(inner) => !evaluate_conditional(inner, executor),
+        CondExpr::Binary {
+            left,
+            op,
+            right,
+            right_quoted,
+        } => {
             let left_expanded = expand_cond_operand(left, executor);
             let right_expanded = expand_cond_operand(right, executor);
-            
+
             match op {
                 CondBinaryOp::Eq => {
                     if *right_quoted {
@@ -1175,30 +1231,30 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor)
                         !glob_match(&right_expanded, &left_expanded)
                     }
                 }
-                CondBinaryOp::Match => {
-                    match regex::Regex::new(&right_expanded) {
-                        Ok(re) => {
-                            if let Some(caps) = re.captures(&left_expanded) {
-                                let mut bash_rematch = Vec::new();
-                                for i in 0..caps.len() {
-                                    bash_rematch.push(caps.get(i).map(|m| m.as_str()).unwrap_or("").to_string());
-                                }
-                                executor.context_mut().set_variable(
-                                    "BASH_REMATCH".to_string(),
-                                    colony_expand::Variable::Array(bash_rematch),
+                CondBinaryOp::Match => match regex::Regex::new(&right_expanded) {
+                    Ok(re) => {
+                        if let Some(caps) = re.captures(&left_expanded) {
+                            let mut bash_rematch = Vec::new();
+                            for i in 0..caps.len() {
+                                bash_rematch.push(
+                                    caps.get(i).map(|m| m.as_str()).unwrap_or("").to_string(),
                                 );
-                                true
-                            } else {
-                                executor.context_mut().set_variable(
-                                    "BASH_REMATCH".to_string(),
-                                    colony_expand::Variable::Array(vec![]),
-                                );
-                                false
                             }
+                            executor.context_mut().set_variable(
+                                "BASH_REMATCH".to_string(),
+                                colony_expand::Variable::Array(bash_rematch),
+                            );
+                            true
+                        } else {
+                            executor.context_mut().set_variable(
+                                "BASH_REMATCH".to_string(),
+                                colony_expand::Variable::Array(vec![]),
+                            );
+                            false
                         }
-                        Err(_) => false,
                     }
-                }
+                    Err(_) => false,
+                },
                 CondBinaryOp::Lt => left_expanded < right_expanded,
                 CondBinaryOp::Gt => left_expanded > right_expanded,
                 CondBinaryOp::IntEq => {
@@ -1246,8 +1302,8 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor)
                     }
                 }
                 CondBinaryOp::SameFile => {
-                    use std::os::unix::fs::MetadataExt;
                     use std::fs;
+                    use std::os::unix::fs::MetadataExt;
                     match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
                         (Ok(m1), Ok(m2)) => m1.dev() == m2.dev() && m1.ino() == m2.ino(),
                         _ => false,
@@ -1258,7 +1314,7 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor)
         CondExpr::Unary { op, arg } => {
             let arg_expanded = expand_cond_operand(arg, executor);
             let path = std::path::Path::new(&arg_expanded);
-            
+
             match op {
                 CondUnaryOp::NonZeroLen => !arg_expanded.is_empty(),
                 CondUnaryOp::ZeroLen => arg_expanded.is_empty(),
@@ -1277,46 +1333,59 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor)
                 }
                 CondUnaryOp::Executable => {
                     use std::os::unix::fs::PermissionsExt;
-                    path.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.permissions().mode() & 0o111 != 0)
+                        .unwrap_or(false)
                 }
-                CondUnaryOp::NonEmpty => {
-                    path.metadata().map(|m| m.len() > 0).unwrap_or(false)
-                }
+                CondUnaryOp::NonEmpty => path.metadata().map(|m| m.len() > 0).unwrap_or(false),
                 CondUnaryOp::IsSymlink => path.is_symlink(),
                 CondUnaryOp::IsPipe => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_fifo()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_fifo())
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::IsSocket => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_socket()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_socket())
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::IsBlock => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_block_device()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_block_device())
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::IsChar => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_char_device()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_char_device())
+                        .unwrap_or(false)
                 }
-                CondUnaryOp::IsTerminal => {
-                    arg_expanded.parse::<i32>().map(|fd| unsafe { libc::isatty(fd) } != 0).unwrap_or(false)
-                }
+                CondUnaryOp::IsTerminal => arg_expanded
+                    .parse::<i32>()
+                    .map(|fd| unsafe { libc::isatty(fd) } != 0)
+                    .unwrap_or(false),
                 CondUnaryOp::OwnedByEuid => {
                     use std::os::unix::fs::MetadataExt;
-                    path.metadata().map(|m| m.uid() == unsafe { libc::geteuid() }).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.uid() == unsafe { libc::geteuid() })
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::OwnedByEgid => {
                     use std::os::unix::fs::MetadataExt;
-                    path.metadata().map(|m| m.gid() == unsafe { libc::getegid() }).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.gid() == unsafe { libc::getegid() })
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::ModifiedSinceRead => {
                     use std::os::unix::fs::MetadataExt;
-                    path.metadata().map(|m| m.mtime() > m.atime()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.mtime() > m.atime())
+                        .unwrap_or(false)
                 }
-                CondUnaryOp::VarIsSet => {
-                    executor.context().get_var_or_env(&arg_expanded).is_some()
-                }
+                CondUnaryOp::VarIsSet => executor.context().get_var_or_env(&arg_expanded).is_some(),
             }
         }
         CondExpr::String(s) => {
@@ -1328,9 +1397,9 @@ fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor)
 
 fn expand_cond_operand(s: &str, executor: &Executor) -> String {
     if s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2 {
-        s[1..s.len()-1].to_string()
+        s[1..s.len() - 1].to_string()
     } else if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-        expand_double_quoted(&s[1..s.len()-1], executor)
+        expand_double_quoted(&s[1..s.len() - 1], executor)
     } else if s.starts_with('$') {
         expand_variable_ref(s, executor)
     } else {
@@ -1341,7 +1410,7 @@ fn expand_cond_operand(s: &str, executor: &Executor) -> String {
 fn expand_double_quoted(content: &str, executor: &Executor) -> String {
     let mut result = String::new();
     let mut chars = content.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         if c == '$' {
             let mut var_str = String::from("$");
@@ -1359,8 +1428,12 @@ fn expand_double_quoted(content: &str, executor: &Executor) -> String {
                 while depth > 0 {
                     if let Some(ch) = chars.next() {
                         var_str.push(ch);
-                        if ch == '(' { depth += 1; }
-                        if ch == ')' { depth -= 1; }
+                        if ch == '(' {
+                            depth += 1;
+                        }
+                        if ch == ')' {
+                            depth -= 1;
+                        }
                     } else {
                         break;
                     }
@@ -1389,28 +1462,28 @@ fn expand_double_quoted(content: &str, executor: &Executor) -> String {
             result.push(c);
         }
     }
-    
+
     result
 }
 
 fn expand_variable_ref(s: &str, executor: &Executor) -> String {
     use colony_expand::Variable;
-    
+
     if !s.starts_with('$') {
         return s.to_string();
     }
-    
+
     let content = if s.starts_with("${") && s.ends_with('}') {
-        &s[2..s.len()-1]
+        &s[2..s.len() - 1]
     } else {
         &s[1..]
     };
-    
+
     if let Some(bracket_pos) = content.find('[') {
         if let Some(end_pos) = content.find(']') {
             let var_name = &content[..bracket_pos];
-            let index_str = &content[bracket_pos+1..end_pos];
-            
+            let index_str = &content[bracket_pos + 1..end_pos];
+
             if let Some(Variable::Array(arr)) = executor.context().get_variable(var_name) {
                 if let Ok(index) = index_str.parse::<usize>() {
                     return arr.get(index).cloned().unwrap_or_default();
@@ -1421,14 +1494,17 @@ fn expand_variable_ref(s: &str, executor: &Executor) -> String {
             return String::new();
         }
     }
-    
-    executor.context().get_var_or_env(content).unwrap_or_default()
+
+    executor
+        .context()
+        .get_var_or_env(content)
+        .unwrap_or_default()
 }
 
 fn glob_match(pattern: &str, text: &str) -> bool {
     let mut pattern_chars = pattern.chars().peekable();
     let mut text_chars = text.chars().peekable();
-    
+
     while let Some(p) = pattern_chars.next() {
         match p {
             '*' => {
@@ -1438,7 +1514,10 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                 let remaining_pattern: String = pattern_chars.collect();
                 let text_remaining: Vec<char> = text_chars.collect();
                 for i in 0..=text_remaining.len() {
-                    if glob_match(&remaining_pattern, &text_remaining[i..].iter().collect::<String>()) {
+                    if glob_match(
+                        &remaining_pattern,
+                        &text_remaining[i..].iter().collect::<String>(),
+                    ) {
                         return true;
                     }
                 }
@@ -1454,16 +1533,17 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                     Some(c) => c,
                     None => return false,
                 };
-                
-                let negated = pattern_chars.peek() == Some(&'!') || pattern_chars.peek() == Some(&'^');
+
+                let negated =
+                    pattern_chars.peek() == Some(&'!') || pattern_chars.peek() == Some(&'^');
                 if negated {
                     pattern_chars.next();
                 }
-                
+
                 let mut matches = false;
                 let mut prev_char: Option<char> = None;
                 let mut first_char = true;
-                
+
                 loop {
                     match pattern_chars.next() {
                         Some(']') if !first_char => break,
@@ -1483,21 +1563,22 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                                     class_name.push(pattern_chars.next().unwrap());
                                 }
                             }
-                            matches = matches || match class_name.as_str() {
-                                "alpha" => text_char.is_alphabetic(),
-                                "digit" => text_char.is_ascii_digit(),
-                                "alnum" => text_char.is_alphanumeric(),
-                                "space" => text_char.is_whitespace(),
-                                "lower" => text_char.is_lowercase(),
-                                "upper" => text_char.is_uppercase(),
-                                "punct" => text_char.is_ascii_punctuation(),
-                                "xdigit" => text_char.is_ascii_hexdigit(),
-                                "blank" => text_char == ' ' || text_char == '\t',
-                                "cntrl" => text_char.is_ascii_control(),
-                                "graph" => text_char.is_ascii_graphic(),
-                                "print" => !text_char.is_ascii_control() || text_char == ' ',
-                                _ => false,
-                            };
+                            matches = matches
+                                || match class_name.as_str() {
+                                    "alpha" => text_char.is_alphabetic(),
+                                    "digit" => text_char.is_ascii_digit(),
+                                    "alnum" => text_char.is_alphanumeric(),
+                                    "space" => text_char.is_whitespace(),
+                                    "lower" => text_char.is_lowercase(),
+                                    "upper" => text_char.is_uppercase(),
+                                    "punct" => text_char.is_ascii_punctuation(),
+                                    "xdigit" => text_char.is_ascii_hexdigit(),
+                                    "blank" => text_char == ' ' || text_char == '\t',
+                                    "cntrl" => text_char.is_ascii_control(),
+                                    "graph" => text_char.is_ascii_graphic(),
+                                    "print" => !text_char.is_ascii_control() || text_char == ' ',
+                                    _ => false,
+                                };
                             prev_char = None;
                         }
                         Some('-') if prev_char.is_some() && pattern_chars.peek() != Some(&']') => {
@@ -1518,15 +1599,15 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                         None => return false,
                     }
                 }
-                
+
                 if let Some(pc) = prev_char {
                     matches = matches || text_char == pc;
                 }
-                
+
                 if negated {
                     matches = !matches;
                 }
-                
+
                 if !matches {
                     return false;
                 }
@@ -1545,7 +1626,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
             }
         }
     }
-    
+
     text_chars.next().is_none()
 }
 
@@ -1560,21 +1641,28 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
     let mut result = String::new();
     let chars_vec: Vec<char> = expr.chars().collect();
     let mut i = 0;
-    
+
     while i < chars_vec.len() {
         let c = chars_vec[i];
-        if c == '$' && i + 1 < chars_vec.len() && chars_vec[i+1] == '(' {
+        if c == '$' && i + 1 < chars_vec.len() && chars_vec[i + 1] == '(' {
             i += 2;
             let start = i;
             let mut paren_depth = 1;
             while i < chars_vec.len() && paren_depth > 0 {
-                if chars_vec[i] == '(' { paren_depth += 1; }
-                else if chars_vec[i] == ')' { paren_depth -= 1; }
-                if paren_depth > 0 { i += 1; }
+                if chars_vec[i] == '(' {
+                    paren_depth += 1;
+                } else if chars_vec[i] == ')' {
+                    paren_depth -= 1;
+                }
+                if paren_depth > 0 {
+                    i += 1;
+                }
             }
             let cmd_str: String = chars_vec[start..i].iter().collect();
-            if i < chars_vec.len() { i += 1; }
-            
+            if i < chars_vec.len() {
+                i += 1;
+            }
+
             if let Ok(program) = colony_parser::pest_api::parse(&cmd_str) {
                 let mut ctx = executor.context().clone();
                 let mut output = String::new();
@@ -1594,14 +1682,20 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
                     var_name.push(chars_vec[i]);
                     i += 1;
                 }
-                if i < chars_vec.len() { i += 1; }
+                if i < chars_vec.len() {
+                    i += 1;
+                }
             } else {
-                while i < chars_vec.len() && (chars_vec[i].is_alphanumeric() || chars_vec[i] == '_') {
+                while i < chars_vec.len() && (chars_vec[i].is_alphanumeric() || chars_vec[i] == '_')
+                {
                     var_name.push(chars_vec[i]);
                     i += 1;
                 }
             }
-            let val = executor.context().get_var_or_env(&var_name).unwrap_or_default();
+            let val = executor
+                .context()
+                .get_var_or_env(&var_name)
+                .unwrap_or_default();
             result.push_str(&val);
         } else if c.is_alphabetic() || c == '_' {
             let mut var_name = String::from(c);
@@ -1629,8 +1723,10 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
                 }
                 let expanded_index = expand_arithmetic_vars(&index, executor);
                 let idx: usize = evaluate_arithmetic_expr(&expanded_index) as usize;
-                
-                if let Some(colony_expand::Variable::Array(arr)) = executor.context().get_variable(&var_name) {
+
+                if let Some(colony_expand::Variable::Array(arr)) =
+                    executor.context().get_variable(&var_name)
+                {
                     if let Some(val) = arr.get(idx) {
                         result.push_str(val);
                     } else {
@@ -1651,81 +1747,89 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
             i += 1;
         }
     }
-    
+
     result
 }
 
 fn evaluate_arithmetic_expr(expr: &str) -> i64 {
     let expr = expr.trim();
-    
+
     if let Some(idx) = expr.find("||") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left != 0 || right != 0 { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("&&") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left != 0 && right != 0 { 1 } else { 0 };
     }
-    
+
     if let Some(idx) = expr.find(">=") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left >= right { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("<=") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left <= right { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("==") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left == right { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("!=") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left != right { 1 } else { 0 };
     }
     if let Some(idx) = expr.rfind('>') {
-        if idx > 0 && !expr[..idx].ends_with('>') && !expr[..idx].ends_with('|') && !expr[..idx].ends_with('=') {
+        if idx > 0
+            && !expr[..idx].ends_with('>')
+            && !expr[..idx].ends_with('|')
+            && !expr[..idx].ends_with('=')
+        {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return if left > right { 1 } else { 0 };
         }
     }
     if let Some(idx) = expr.rfind('<') {
-        if idx > 0 && !expr[..idx].ends_with('<') && !expr[..idx].ends_with('|') && !expr[..idx].ends_with('=') {
+        if idx > 0
+            && !expr[..idx].ends_with('<')
+            && !expr[..idx].ends_with('|')
+            && !expr[..idx].ends_with('=')
+        {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return if left < right { 1 } else { 0 };
         }
     }
-    
+
     if let Some(idx) = expr.rfind('+') {
         if idx > 0 {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return left + right;
         }
     }
     if let Some(idx) = expr.rfind('-') {
         if idx > 0 {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return left - right;
         }
     }
     if let Some(idx) = expr.rfind('*') {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
         return left * right;
     }
     if let Some(idx) = expr.rfind('/') {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
         if right != 0 {
             return left / right;
         }
@@ -1733,21 +1837,21 @@ fn evaluate_arithmetic_expr(expr: &str) -> i64 {
     }
     if let Some(idx) = expr.rfind('%') {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
         if right != 0 {
             return left % right;
         }
         return 0;
     }
-    
+
     if expr.starts_with('(') && expr.ends_with(')') {
-        return evaluate_arithmetic_expr(&expr[1..expr.len()-1]);
+        return evaluate_arithmetic_expr(&expr[1..expr.len() - 1]);
     }
-    
+
     if let Some(stripped) = expr.strip_prefix('-') {
         return -evaluate_arithmetic_expr(stripped);
     }
-    
+
     expr.parse().unwrap_or(0)
 }
 
@@ -1756,7 +1860,7 @@ fn evaluate_cstyle_arith_expr(expr: &str, executor: &mut Executor) -> i64 {
     if expr.is_empty() {
         return 0;
     }
-    
+
     let exprs: Vec<&str> = expr.split(',').collect();
     if exprs.len() > 1 {
         let mut result = 0;
@@ -1765,7 +1869,7 @@ fn evaluate_cstyle_arith_expr(expr: &str, executor: &mut Executor) -> i64 {
         }
         return result;
     }
-    
+
     evaluate_cstyle_arith_single(expr, executor)
 }
 
@@ -1774,86 +1878,109 @@ fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
     if expr.is_empty() {
         return 0;
     }
-    
+
     if expr.starts_with("++") {
         let var = &expr[2..].trim();
         let current = get_var_as_i64(var, executor);
         let new_val = current + 1;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if expr.starts_with("--") {
         let var = &expr[2..].trim();
         let current = get_var_as_i64(var, executor);
         let new_val = current - 1;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
-    
+
     if expr.ends_with("++") {
-        let var = expr[..expr.len()-2].trim();
+        let var = expr[..expr.len() - 2].trim();
         let current = get_var_as_i64(var, executor);
-        executor.context_mut().set_var(var.to_string(), (current + 1).to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), (current + 1).to_string());
         return current;
     }
     if expr.ends_with("--") {
-        let var = expr[..expr.len()-2].trim();
+        let var = expr[..expr.len() - 2].trim();
         let current = get_var_as_i64(var, executor);
-        executor.context_mut().set_var(var.to_string(), (current - 1).to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), (current - 1).to_string());
         return current;
     }
-    
+
     if let Some(idx) = expr.find("+=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let delta = evaluate_cstyle_arith_value(val_expr, executor);
         let new_val = current + delta;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if let Some(idx) = expr.find("-=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let delta = evaluate_cstyle_arith_value(val_expr, executor);
         let new_val = current - delta;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if let Some(idx) = expr.find("*=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let factor = evaluate_cstyle_arith_value(val_expr, executor);
         let new_val = current * factor;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if let Some(idx) = expr.find("/=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let divisor = evaluate_cstyle_arith_value(val_expr, executor);
         if divisor != 0 {
             let new_val = current / divisor;
-            executor.context_mut().set_var(var.to_string(), new_val.to_string());
+            executor
+                .context_mut()
+                .set_var(var.to_string(), new_val.to_string());
             return new_val;
         }
         return 0;
     }
-    
+
     if let Some(idx) = expr.find('=') {
-        if idx > 0 && !matches!(expr.chars().nth(idx.saturating_sub(1)), Some('!') | Some('<') | Some('>') | Some('=')) 
-            && !matches!(expr.chars().nth(idx+1), Some('=')) {
+        if idx > 0
+            && !matches!(
+                expr.chars().nth(idx.saturating_sub(1)),
+                Some('!') | Some('<') | Some('>') | Some('=')
+            )
+            && !matches!(expr.chars().nth(idx + 1), Some('='))
+        {
             let var = expr[..idx].trim();
-            let val_expr = expr[idx+1..].trim();
+            let val_expr = expr[idx + 1..].trim();
             let new_val = evaluate_cstyle_arith_value(val_expr, executor);
-            executor.context_mut().set_var(var.to_string(), new_val.to_string());
+            executor
+                .context_mut()
+                .set_var(var.to_string(), new_val.to_string());
             return new_val;
         }
     }
-    
+
     evaluate_cstyle_arith_value(expr, executor)
 }
 
@@ -1863,7 +1990,9 @@ fn evaluate_cstyle_arith_value(expr: &str, executor: &Executor) -> i64 {
 }
 
 fn get_var_as_i64(var: &str, executor: &Executor) -> i64 {
-    executor.context().get_var_or_env(var)
+    executor
+        .context()
+        .get_var_or_env(var)
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
 }
@@ -1875,9 +2004,9 @@ async fn execute_cstyle_for_loop(
     if let Some(ref init) = cstyle_for.init {
         evaluate_cstyle_arith_expr(init, executor);
     }
-    
+
     let mut last_exit = 0;
-    
+
     loop {
         if let Some(ref cond) = cstyle_for.condition {
             let cond_result = evaluate_cstyle_arith_value(cond, executor);
@@ -1885,7 +2014,7 @@ async fn execute_cstyle_for_loop(
                 break;
             }
         }
-        
+
         for stmt in &cstyle_for.body {
             if let Statement::SimpleCommand(cmd) = stmt {
                 if let Some(name) = cmd.name.as_literal() {
@@ -1901,15 +2030,15 @@ async fn execute_cstyle_for_loop(
                     }
                 }
             }
-            
+
             last_exit = execute_statement_for_code(stmt, executor).await;
         }
-        
+
         if let Some(ref update) = cstyle_for.update {
             evaluate_cstyle_arith_expr(update, executor);
         }
     }
-    
+
     last_exit
 }
 
@@ -1920,9 +2049,9 @@ async fn execute_cstyle_for_loop_with_control(
     if let Some(ref init) = cstyle_for.init {
         evaluate_cstyle_arith_expr(init, executor);
     }
-    
+
     let mut last_exit = 0;
-    
+
     loop {
         if let Some(ref cond) = cstyle_for.condition {
             let cond_result = evaluate_cstyle_arith_value(cond, executor);
@@ -1930,14 +2059,14 @@ async fn execute_cstyle_for_loop_with_control(
                 break;
             }
         }
-        
+
         let mut should_break = false;
         let mut should_continue = false;
-        
+
         for stmt in &cstyle_for.body {
             let (code, flow) = execute_statement_with_control(stmt, executor).await;
             last_exit = code;
-            
+
             match flow {
                 ControlFlow::Break => {
                     should_break = true;
@@ -1954,20 +2083,20 @@ async fn execute_cstyle_for_loop_with_control(
                 ControlFlow::Normal => {}
             }
         }
-        
+
         if should_break {
             break;
         }
-        
+
         if let Some(ref update) = cstyle_for.update {
             evaluate_cstyle_arith_expr(update, executor);
         }
-        
+
         if should_continue {
             continue;
         }
     }
-    
+
     last_exit
 }
 
@@ -1998,7 +2127,9 @@ async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut
     let mut last_exit = 0;
     for field in values {
         // Set loop variable (Field has .text)
-        executor.context_mut().set_var(for_stmt.var.clone(), field.text);
+        executor
+            .context_mut()
+            .set_var(for_stmt.var.clone(), field.text);
 
         // Execute body
         for stmt in &for_stmt.body {
@@ -2007,7 +2138,7 @@ async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut
                 if let Some(name) = cmd.name.as_literal() {
                     match name {
                         "break" => return last_exit, // Exit loop immediately
-                        "continue" => break,          // Skip to next iteration
+                        "continue" => break,         // Skip to next iteration
                         _ => {}
                     }
                 }
@@ -2035,201 +2166,219 @@ fn execute_statement_with_errexit_control<'a>(
     errexit_exempt: bool,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = (i32, ControlFlow)> + 'a>> {
     Box::pin(async move {
-    match stmt {
-        Statement::SimpleCommand(cmd) => {
-            if let Some(literal) = cmd.name.as_literal() {
-                match literal {
-                    "break" => return (0, ControlFlow::Break),
-                    "continue" => return (0, ControlFlow::Continue),
-                    _ => {}
+        match stmt {
+            Statement::SimpleCommand(cmd) => {
+                if let Some(literal) = cmd.name.as_literal() {
+                    match literal {
+                        "break" => return (0, ControlFlow::Break),
+                        "continue" => return (0, ControlFlow::Continue),
+                        _ => {}
+                    }
                 }
-            }
 
-            let result = match executor.execute_simple_command(cmd).await {
-                Ok(status) => {
-                    let code = status.code();
-                    if !errexit_exempt && executor.context().shell_options().errexit && code != 0 {
-                        (code, ControlFlow::Exit)
-                    } else {
-                        (code, ControlFlow::Normal)
+                let result = match executor.execute_simple_command(cmd).await {
+                    Ok(status) => {
+                        let code = status.code();
+                        if !errexit_exempt
+                            && executor.context().shell_options().errexit
+                            && code != 0
+                        {
+                            (code, ControlFlow::Exit)
+                        } else {
+                            (code, ControlFlow::Normal)
+                        }
+                    }
+                    Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
+                    Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
+                    Err(ref e) => {
+                        eprintln!("execution error: {}", e);
+                        let exit_code = match e {
+                            ExecutionError::CommandNotFound(_) => 127,
+                            ExecutionError::PermissionDenied(_) => 126,
+                            _ => 1,
+                        };
+                        if !errexit_exempt && executor.context().shell_options().errexit {
+                            (exit_code, ControlFlow::Exit)
+                        } else {
+                            (exit_code, ControlFlow::Normal)
+                        }
+                    }
+                };
+                if result.0 != 0 {
+                    execute_err_trap(executor).await;
+                }
+                result
+            }
+            Statement::Pipeline(pipeline) => {
+                let pipeline_has_negation = pipeline
+                    .elements
+                    .first()
+                    .map(|e| e.negated)
+                    .unwrap_or(false);
+                if pipeline.elements.len() == 1 {
+                    let element = &pipeline.elements[0];
+                    let saved_errexit = executor.context().shell_options().errexit;
+                    if element.negated {
+                        executor.context_mut().shell_options_mut().errexit = false;
+                    }
+                    let (mut code, flow) = execute_statement_with_errexit_control(
+                        &element.command,
+                        executor,
+                        errexit_exempt || element.negated,
+                    )
+                    .await;
+                    if element.negated {
+                        executor.context_mut().shell_options_mut().errexit = saved_errexit;
+                        code = if code == 0 { 1 } else { 0 };
+                    }
+                    executor.context_mut().set_last_exit_status(code);
+                    return (code, flow);
+                }
+                let result = match executor.execute_pipeline(&pipeline).await {
+                    Ok(status) => {
+                        let code = status.code();
+                        if !errexit_exempt
+                            && !pipeline_has_negation
+                            && executor.context().shell_options().errexit
+                            && code != 0
+                        {
+                            (code, ControlFlow::Exit)
+                        } else {
+                            (code, ControlFlow::Normal)
+                        }
+                    }
+                    Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
+                    Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
+                    Err(e) => {
+                        eprintln!("execution error: {}", e);
+                        (1, ControlFlow::Normal)
+                    }
+                };
+                if result.0 != 0 && result.1 == ControlFlow::Normal {
+                    execute_err_trap(executor).await;
+                }
+                result
+            }
+            Statement::List(list) => execute_list_with_control(list, executor).await,
+            Statement::For(for_stmt) => execute_for_loop_with_control(for_stmt, executor).await,
+            Statement::CStyleFor(cstyle_for) => (
+                execute_cstyle_for_loop_with_control(cstyle_for, executor).await,
+                ControlFlow::Normal,
+            ),
+            Statement::If(if_stmt) => execute_if_with_control(if_stmt, executor).await,
+            Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
+                match executor.execute_statement_recursive(stmt).await {
+                    Ok(code) => (code, ControlFlow::Normal),
+                    Err(ExecutionError::Break) => (0, ControlFlow::Break),
+                    Err(ExecutionError::Continue) => (0, ControlFlow::Continue),
+                    Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
+                    Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
+                    Err(e) => {
+                        eprintln!("execution error: {}", e);
+                        let exit_code = match &e {
+                            ExecutionError::CommandNotFound(_) => 127,
+                            ExecutionError::PermissionDenied(_) => 126,
+                            _ => 1,
+                        };
+                        if !errexit_exempt && executor.context().shell_options().errexit {
+                            (exit_code, ControlFlow::Exit)
+                        } else {
+                            (exit_code, ControlFlow::Normal)
+                        }
                     }
                 }
-                Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
-                Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
-                Err(ref e) => {
-                    eprintln!("execution error: {}", e);
-                    let exit_code = match e {
-                        ExecutionError::CommandNotFound(_) => 127,
-                        ExecutionError::PermissionDenied(_) => 126,
-                        _ => 1,
-                    };
-                    if !errexit_exempt && executor.context().shell_options().errexit {
-                        (exit_code, ControlFlow::Exit)
-                    } else {
-                        (exit_code, ControlFlow::Normal)
+            }
+            Statement::BraceGroup(brace_group) => {
+                use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+                let _redirect_guard = match BuiltinRedirectGuard::apply(
+                    &brace_group.redirects,
+                    executor.context_mut(),
+                ) {
+                    Ok(guard) => guard,
+                    Err(e) => {
+                        eprintln!("colony: redirect error: {}", e);
+                        return (1, ControlFlow::Normal);
+                    }
+                };
+                let mut last_exit = 0;
+                for stmt in &brace_group.body {
+                    let (exit_code, flow) = execute_statement_with_control(stmt, executor).await;
+                    last_exit = exit_code;
+                    match flow {
+                        ControlFlow::Normal => {}
+                        other => return (last_exit, other),
                     }
                 }
-            };
-            if result.0 != 0 {
-                execute_err_trap(executor).await;
+                (last_exit, ControlFlow::Normal)
             }
-            result
-        }
-        Statement::Pipeline(pipeline) => {
-            let pipeline_has_negation = pipeline.elements.first().map(|e| e.negated).unwrap_or(false);
-            if pipeline.elements.len() == 1 {
-                let element = &pipeline.elements[0];
-                let saved_errexit = executor.context().shell_options().errexit;
-                if element.negated {
-                    executor.context_mut().shell_options_mut().errexit = false;
-                }
-                let (mut code, flow) = execute_statement_with_errexit_control(&element.command, executor, errexit_exempt || element.negated).await;
-                if element.negated {
-                    executor.context_mut().shell_options_mut().errexit = saved_errexit;
-                    code = if code == 0 { 1 } else { 0 };
-                }
-                executor.context_mut().set_last_exit_status(code);
-                return (code, flow);
-            }
-            let result = match executor.execute_pipeline(&pipeline).await {
-                Ok(status) => {
-                    let code = status.code();
-                    if !errexit_exempt && !pipeline_has_negation && executor.context().shell_options().errexit && code != 0 {
-                        (code, ControlFlow::Exit)
-                    } else {
-                        (code, ControlFlow::Normal)
+            Statement::Subshell(subshell) => {
+                use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+                let mut subshell_executor = Executor::new(executor.context().clone());
+                subshell_executor.context_mut().clear_non_ignored_traps();
+                let _redirect_guard = match BuiltinRedirectGuard::apply(
+                    &subshell.redirects,
+                    subshell_executor.context_mut(),
+                ) {
+                    Ok(guard) => guard,
+                    Err(e) => {
+                        eprintln!("colony: redirect error: {}", e);
+                        return (1, ControlFlow::Normal);
+                    }
+                };
+                let mut last_exit = 0;
+                for stmt in &subshell.body {
+                    let (exit_code, flow) =
+                        execute_statement_with_control(stmt, &mut subshell_executor).await;
+                    last_exit = exit_code;
+                    match flow {
+                        ControlFlow::Normal => {}
+                        ControlFlow::Return | ControlFlow::Break | ControlFlow::Continue => {
+                            return (last_exit, flow);
+                        }
+                        ControlFlow::Exit => return (last_exit, ControlFlow::Exit),
                     }
                 }
-                Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
-                Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
-                Err(e) => {
-                    eprintln!("execution error: {}", e);
-                    (1, ControlFlow::Normal)
-                }
-            };
-            if result.0 != 0 && result.1 == ControlFlow::Normal {
-                execute_err_trap(executor).await;
+                subshell_executor.run_exit_trap().await;
+                (last_exit, ControlFlow::Normal)
             }
-            result
-        }
-        Statement::List(list) => {
-            execute_list_with_control(list, executor).await
-        }
-        Statement::For(for_stmt) => {
-            execute_for_loop_with_control(for_stmt, executor).await
-        }
-        Statement::CStyleFor(cstyle_for) => {
-            (execute_cstyle_for_loop_with_control(cstyle_for, executor).await, ControlFlow::Normal)
-        }
-        Statement::If(if_stmt) => {
-            execute_if_with_control(if_stmt, executor).await
-        }
-        Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
-            match executor.execute_statement_recursive(stmt).await {
-                Ok(code) => (code, ControlFlow::Normal),
-                Err(ExecutionError::Break) => (0, ControlFlow::Break),
-                Err(ExecutionError::Continue) => (0, ControlFlow::Continue),
-                Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
-                Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
-                Err(e) => {
-                    eprintln!("execution error: {}", e);
-                    let exit_code = match &e {
-                        ExecutionError::CommandNotFound(_) => 127,
-                        ExecutionError::PermissionDenied(_) => 126,
-                        _ => 1,
-                    };
-                    if !errexit_exempt && executor.context().shell_options().errexit {
-                        (exit_code, ControlFlow::Exit)
-                    } else {
-                        (exit_code, ControlFlow::Normal)
-                    }
-                }
+            Statement::FunctionDef(func_def) => {
+                // Store function definition
+                executor
+                    .context_mut()
+                    .define_function(func_def.name.clone(), func_def.clone());
+                (0, ControlFlow::Normal)
             }
-        }
-        Statement::BraceGroup(brace_group) => {
-            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
-            let _redirect_guard = match BuiltinRedirectGuard::apply(&brace_group.redirects, executor.context_mut()) {
-                Ok(guard) => guard,
-                Err(e) => {
-                    eprintln!("colony: redirect error: {}", e);
-                    return (1, ControlFlow::Normal);
-                }
-            };
-            let mut last_exit = 0;
-            for stmt in &brace_group.body {
-                let (exit_code, flow) = execute_statement_with_control(stmt, executor).await;
-                last_exit = exit_code;
-                match flow {
-                    ControlFlow::Normal => {}
-                    other => return (last_exit, other),
-                }
+            Statement::Return(ret_stmt) => {
+                // Return statement - propagate as control flow
+                let exit_code = if let Some(ref _expr) = ret_stmt.value {
+                    // TODO: Evaluate expression
+                    0
+                } else {
+                    0
+                };
+                (exit_code, ControlFlow::Return)
             }
-            (last_exit, ControlFlow::Normal)
-        }
-        Statement::Subshell(subshell) => {
-            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
-            let mut subshell_executor = Executor::new(executor.context().clone());
-            subshell_executor.context_mut().clear_non_ignored_traps();
-            let _redirect_guard = match BuiltinRedirectGuard::apply(&subshell.redirects, subshell_executor.context_mut()) {
-                Ok(guard) => guard,
-                Err(e) => {
-                    eprintln!("colony: redirect error: {}", e);
-                    return (1, ControlFlow::Normal);
-                }
-            };
-            let mut last_exit = 0;
-            for stmt in &subshell.body {
-                let (exit_code, flow) = execute_statement_with_control(stmt, &mut subshell_executor).await;
-                last_exit = exit_code;
-                match flow {
-                    ControlFlow::Normal => {}
-                    ControlFlow::Return | ControlFlow::Break | ControlFlow::Continue => {
-                        return (last_exit, flow);
-                    }
-                    ControlFlow::Exit => return (last_exit, ControlFlow::Exit),
-                }
+            Statement::VarDecl(_) | Statement::ProcDef(_) => {
+                eprintln!("This declaration not yet supported");
+                (1, ControlFlow::Normal)
             }
-            subshell_executor.run_exit_trap().await;
-            (last_exit, ControlFlow::Normal)
-        }
-        Statement::FunctionDef(func_def) => {
-            // Store function definition
-            executor.context_mut().define_function(func_def.name.clone(), func_def.clone());
-            (0, ControlFlow::Normal)
-        }
-        Statement::Return(ret_stmt) => {
-            // Return statement - propagate as control flow
-            let exit_code = if let Some(ref _expr) = ret_stmt.value {
-                // TODO: Evaluate expression
-                0
-            } else {
-                0
-            };
-            (exit_code, ControlFlow::Return)
-        }
-        Statement::VarDecl(_) | Statement::ProcDef(_) => {
-            eprintln!("This declaration not yet supported");
-            (1, ControlFlow::Normal)
-        }
-        Statement::Conditional(cond_cmd) => {
-            let result = evaluate_conditional(&cond_cmd.expr, executor);
-            (if result { 0 } else { 1 }, ControlFlow::Normal)
-        }
-        Statement::Arithmetic(arith_cmd) => {
-            let result = evaluate_arithmetic_command(&arith_cmd.expr, executor);
-            (if result != 0 { 0 } else { 1 }, ControlFlow::Normal)
-        }
-        Statement::Coproc(coproc) => {
-            match execute_coproc(coproc, executor).await {
+            Statement::Conditional(cond_cmd) => {
+                let result = evaluate_conditional(&cond_cmd.expr, executor);
+                (if result { 0 } else { 1 }, ControlFlow::Normal)
+            }
+            Statement::Arithmetic(arith_cmd) => {
+                let result = evaluate_arithmetic_command(&arith_cmd.expr, executor);
+                (if result != 0 { 0 } else { 1 }, ControlFlow::Normal)
+            }
+            Statement::Coproc(coproc) => match execute_coproc(coproc, executor).await {
                 Ok(exit_code) => (exit_code, ControlFlow::Normal),
                 Err(e) => {
                     eprintln!("colony: coproc error: {}", e);
                     (1, ControlFlow::Normal)
                 }
-            }
+            },
+            Statement::Empty => (executor.context().last_exit_status(), ControlFlow::Normal),
         }
-        Statement::Empty => (executor.context().last_exit_status(), ControlFlow::Normal),
-    }
     })
 }
 
@@ -2252,158 +2401,162 @@ fn _old_execute_statement_for_code<'a>(
     executor: &'a mut Executor,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>> {
     Box::pin(async move {
-    match stmt {
-        Statement::SimpleCommand(cmd) => {
-            match executor.execute_simple_command(cmd).await {
+        match stmt {
+            Statement::SimpleCommand(cmd) => match executor.execute_simple_command(cmd).await {
                 Ok(status) => status.code(),
                 Err(e) => {
                     eprintln!("execution error: {}", e);
                     1
                 }
-            }
-        }
-        Statement::Pipeline(pipeline) => {
-            let element = &pipeline.elements[0];
-            let is_negated = pipeline.elements.last().map(|e| e.negated).unwrap_or(false);
-            
-            if pipeline.elements.len() == 1 {
-                let mut code = if let Statement::SimpleCommand(ref cmd) = *element.command {
-                    match executor.execute_simple_command(cmd).await {
-                        Ok(status) => status.code(),
-                        Err(e) => {
-                            eprintln!("execution error: {}", e);
-                            1
+            },
+            Statement::Pipeline(pipeline) => {
+                let element = &pipeline.elements[0];
+                let is_negated = pipeline.elements.last().map(|e| e.negated).unwrap_or(false);
+
+                if pipeline.elements.len() == 1 {
+                    let mut code = if let Statement::SimpleCommand(ref cmd) = *element.command {
+                        match executor.execute_simple_command(cmd).await {
+                            Ok(status) => status.code(),
+                            Err(e) => {
+                                eprintln!("execution error: {}", e);
+                                1
+                            }
                         }
+                    } else {
+                        match executor.execute_pipeline(&pipeline).await {
+                            Ok(status) => status.code(),
+                            Err(e) => {
+                                eprintln!("execution error: {}", e);
+                                1
+                            }
+                        }
+                    };
+                    if is_negated {
+                        code = if code == 0 { 1 } else { 0 };
                     }
+                    code
                 } else {
-                    match executor.execute_pipeline(&pipeline).await {
+                    let mut code = match executor.execute_pipeline(&pipeline).await {
                         Ok(status) => status.code(),
                         Err(e) => {
                             eprintln!("execution error: {}", e);
                             1
                         }
+                    };
+                    if is_negated {
+                        code = if code == 0 { 1 } else { 0 };
                     }
-                };
-                if is_negated {
-                    code = if code == 0 { 1 } else { 0 };
+                    code
                 }
-                code
-            } else {
-                let mut code = match executor.execute_pipeline(&pipeline).await {
-                    Ok(status) => status.code(),
+            }
+            Statement::List(list) => {
+                use colony_parser::ListOp;
+
+                // Execute first statement
+                let mut last_exit_code = execute_statement_for_code(&*list.first, executor).await;
+
+                // Execute rest of list based on operators
+                for (op, stmt) in &list.rest {
+                    let should_execute = match op {
+                        ListOp::Semi => true,               // ; always executes
+                        ListOp::And => last_exit_code == 0, // && executes if prev succeeded
+                        ListOp::Or => last_exit_code != 0,  // || executes if prev failed
+                        ListOp::Background => {
+                            eprintln!("Background jobs (&) not yet supported");
+                            false
+                        }
+                    };
+
+                    if should_execute {
+                        last_exit_code = execute_statement_for_code(stmt, executor).await;
+                    }
+                }
+
+                last_exit_code
+            }
+            Statement::For(for_stmt) => execute_for_loop(for_stmt, executor).await,
+            Statement::CStyleFor(cstyle_for) => execute_cstyle_for_loop(cstyle_for, executor).await,
+            Statement::If(if_stmt) => execute_if_statement(if_stmt, executor).await,
+            Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
+                eprintln!("This control flow not yet supported");
+                1
+            }
+            Statement::BraceGroup(brace_group) => {
+                use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+                let _redirect_guard = match BuiltinRedirectGuard::apply(
+                    &brace_group.redirects,
+                    executor.context_mut(),
+                ) {
+                    Ok(guard) => guard,
                     Err(e) => {
-                        eprintln!("execution error: {}", e);
-                        1
+                        eprintln!("colony: redirect error: {}", e);
+                        return 1;
                     }
                 };
-                if is_negated {
-                    code = if code == 0 { 1 } else { 0 };
+                let mut last_exit = 0;
+                for stmt in &brace_group.body {
+                    last_exit = Box::pin(execute_statement_for_code(stmt, executor)).await;
                 }
-                code
+                last_exit
             }
-        }
-        Statement::List(list) => {
-            use colony_parser::ListOp;
-
-            // Execute first statement
-            let mut last_exit_code = execute_statement_for_code(&*list.first, executor).await;
-
-            // Execute rest of list based on operators
-            for (op, stmt) in &list.rest {
-                let should_execute = match op {
-                    ListOp::Semi => true,              // ; always executes
-                    ListOp::And => last_exit_code == 0, // && executes if prev succeeded
-                    ListOp::Or => last_exit_code != 0,  // || executes if prev failed
-                    ListOp::Background => {
-                        eprintln!("Background jobs (&) not yet supported");
-                        false
+            Statement::Subshell(subshell) => {
+                use colony_exec::builtin_redirect::BuiltinRedirectGuard;
+                let _redirect_guard = match BuiltinRedirectGuard::apply(
+                    &subshell.redirects,
+                    executor.context_mut(),
+                ) {
+                    Ok(guard) => guard,
+                    Err(e) => {
+                        eprintln!("colony: redirect error: {}", e);
+                        return 1;
                     }
                 };
-
-                if should_execute {
-                    last_exit_code = execute_statement_for_code(stmt, executor).await;
+                let mut last_exit = 0;
+                for stmt in &subshell.body {
+                    last_exit = Box::pin(execute_statement_for_code(stmt, executor)).await;
+                }
+                last_exit
+            }
+            Statement::FunctionDef(func_def) => {
+                // Store function definition
+                executor
+                    .context_mut()
+                    .define_function(func_def.name.clone(), func_def.clone());
+                0
+            }
+            Statement::Return(_ret_stmt) => {
+                // Return statement outside function - just return 0
+                0
+            }
+            Statement::VarDecl(_) | Statement::ProcDef(_) => {
+                eprintln!("This declaration not yet supported");
+                1
+            }
+            Statement::Conditional(cond_cmd) => {
+                if evaluate_conditional(&cond_cmd.expr, executor) {
+                    0
+                } else {
+                    1
                 }
             }
-
-            last_exit_code
-        }
-        Statement::For(for_stmt) => {
-            execute_for_loop(for_stmt, executor).await
-        }
-        Statement::CStyleFor(cstyle_for) => {
-            execute_cstyle_for_loop(cstyle_for, executor).await
-        }
-        Statement::If(if_stmt) => {
-            execute_if_statement(if_stmt, executor).await
-        }
-        Statement::While(_) | Statement::Until(_) | Statement::Case(_) => {
-            eprintln!("This control flow not yet supported");
-            1
-        }
-        Statement::BraceGroup(brace_group) => {
-            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
-            let _redirect_guard = match BuiltinRedirectGuard::apply(&brace_group.redirects, executor.context_mut()) {
-                Ok(guard) => guard,
-                Err(e) => {
-                    eprintln!("colony: redirect error: {}", e);
-                    return 1;
+            Statement::Arithmetic(arith_cmd) => {
+                if evaluate_arithmetic_command(&arith_cmd.expr, executor) != 0 {
+                    0
+                } else {
+                    1
                 }
-            };
-            let mut last_exit = 0;
-            for stmt in &brace_group.body {
-                last_exit = Box::pin(execute_statement_for_code(stmt, executor)).await;
             }
-            last_exit
-        }
-        Statement::Subshell(subshell) => {
-            use colony_exec::builtin_redirect::BuiltinRedirectGuard;
-            let _redirect_guard = match BuiltinRedirectGuard::apply(&subshell.redirects, executor.context_mut()) {
-                Ok(guard) => guard,
-                Err(e) => {
-                    eprintln!("colony: redirect error: {}", e);
-                    return 1;
-                }
-            };
-            let mut last_exit = 0;
-            for stmt in &subshell.body {
-                last_exit = Box::pin(execute_statement_for_code(stmt, executor)).await;
-            }
-            last_exit
-        }
-        Statement::FunctionDef(func_def) => {
-            // Store function definition
-            executor.context_mut().define_function(func_def.name.clone(), func_def.clone());
-            0
-        }
-        Statement::Return(_ret_stmt) => {
-            // Return statement outside function - just return 0
-            0
-        }
-        Statement::VarDecl(_) | Statement::ProcDef(_) => {
-            eprintln!("This declaration not yet supported");
-            1
-        }
-        Statement::Conditional(cond_cmd) => {
-            if evaluate_conditional(&cond_cmd.expr, executor) { 0 } else { 1 }
-        }
-        Statement::Arithmetic(arith_cmd) => {
-            if evaluate_arithmetic_command(&arith_cmd.expr, executor) != 0 { 0 } else { 1 }
-        }
-        Statement::Coproc(coproc) => {
-            match tokio::runtime::Handle::try_current() {
+            Statement::Coproc(coproc) => match tokio::runtime::Handle::try_current() {
                 Ok(handle) => {
-                    handle.block_on(async {
-                        execute_coproc(coproc, executor).await.unwrap_or(1)
-                    })
+                    handle.block_on(async { execute_coproc(coproc, executor).await.unwrap_or(1) })
                 }
                 Err(_) => {
                     eprintln!("colony: coproc requires async runtime");
                     1
                 }
-            }
+            },
+            Statement::Empty => 0,
         }
-        Statement::Empty => 0,
-    }
     })
 }
 
@@ -2432,7 +2585,7 @@ async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32
             return code;
         }
     }
-    
+
     if let Some(trap_code) = execute_exit_trap(executor, last_exit).await {
         return trap_code;
     }
@@ -2441,8 +2594,9 @@ async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32
 
 async fn execute_exit_trap(executor: &mut Executor, _exit_code: i32) -> Option<i32> {
     use colony_parser::pest_api::parse;
-    
-    if let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Exit).cloned() {
+
+    if let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Exit).cloned()
+    {
         if let Ok(program) = parse(&cmd) {
             for stmt in &program.statements {
                 let (code, flow) = execute_statement_with_control(&stmt, executor).await;
@@ -2457,7 +2611,7 @@ async fn execute_exit_trap(executor: &mut Executor, _exit_code: i32) -> Option<i
 
 async fn execute_err_trap(executor: &mut Executor) {
     use colony_parser::pest_api::parse;
-    
+
     if let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Err).cloned() {
         if let Ok(program) = parse(&cmd) {
             for stmt in &program.statements {
@@ -2469,8 +2623,8 @@ async fn execute_err_trap(executor: &mut Executor) {
 
 /// Serialize a Statement to a shell command string for child process execution
 fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
-    use colony_parser::{Statement, Word, WordPart, VariableRef};
-    
+    use colony_parser::{Statement, VariableRef, Word, WordPart};
+
     fn varref_to_string(v: &VariableRef) -> String {
         let mut result = String::from("$");
         if v.modifier.is_some() || v.subscript.is_some() || v.prefix.is_some() {
@@ -2482,7 +2636,7 @@ fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
         }
         result
     }
-    
+
     fn word_to_string(word: &Word) -> String {
         let mut result = String::new();
         for part in &word.parts {
@@ -2544,7 +2698,7 @@ fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
         }
         result
     }
-    
+
     fn simple_cmd_to_string(cmd: &colony_parser::SimpleCommand) -> String {
         let mut parts = Vec::new();
         parts.push(word_to_string(&cmd.name));
@@ -2553,29 +2707,30 @@ fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
         }
         parts.join(" ")
     }
-    
+
     fn statements_to_string(stmts: &[Statement]) -> String {
-        stmts.iter()
+        stmts
+            .iter()
             .map(statement_to_shell_string)
             .collect::<Vec<_>>()
             .join("; ")
     }
-    
+
     fn condition_to_string(cond: &colony_parser::Condition) -> String {
         match cond {
             colony_parser::Condition::Command(stmt) => statement_to_shell_string(stmt),
             colony_parser::Condition::Expression(expr) => format!("{:?}", expr),
         }
     }
-    
+
     match stmt {
         Statement::SimpleCommand(cmd) => simple_cmd_to_string(cmd),
-        Statement::Pipeline(pipe) => {
-            pipe.elements.iter()
-                .map(|elem| statement_to_shell_string(&elem.command))
-                .collect::<Vec<_>>()
-                .join(" | ")
-        }
+        Statement::Pipeline(pipe) => pipe
+            .elements
+            .iter()
+            .map(|elem| statement_to_shell_string(&elem.command))
+            .collect::<Vec<_>>()
+            .join(" | "),
         Statement::List(list) => {
             let mut result = statement_to_shell_string(&list.first);
             for (op, cmd) in &list.rest {
@@ -2596,13 +2751,17 @@ fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
             format!("( {} )", statements_to_string(&sub.body))
         }
         Statement::If(if_stmt) => {
-            let mut result = format!("if {}; then {}", 
+            let mut result = format!(
+                "if {}; then {}",
                 condition_to_string(&if_stmt.condition),
-                statements_to_string(&if_stmt.then_body));
+                statements_to_string(&if_stmt.then_body)
+            );
             for elif in &if_stmt.elif_branches {
-                result.push_str(&format!("; elif {}; then {}",
+                result.push_str(&format!(
+                    "; elif {}; then {}",
                     condition_to_string(&elif.condition),
-                    statements_to_string(&elif.body)));
+                    statements_to_string(&elif.body)
+                ));
             }
             if let Some(else_body) = &if_stmt.else_body {
                 result.push_str(&format!("; else {}", statements_to_string(else_body)));
@@ -2611,32 +2770,38 @@ fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
             result
         }
         Statement::While(while_stmt) => {
-            format!("while {}; do {}; done",
+            format!(
+                "while {}; do {}; done",
                 condition_to_string(&while_stmt.condition),
-                statements_to_string(&while_stmt.body))
+                statements_to_string(&while_stmt.body)
+            )
         }
         Statement::Until(until_stmt) => {
-            format!("until {}; do {}; done",
+            format!(
+                "until {}; do {}; done",
                 condition_to_string(&until_stmt.condition),
-                statements_to_string(&until_stmt.body))
+                statements_to_string(&until_stmt.body)
+            )
         }
         Statement::For(for_stmt) => {
-            let words: Vec<String> = for_stmt.words.iter()
-                .map(word_to_string)
-                .collect();
-            format!("for {} in {}; do {}; done",
+            let words: Vec<String> = for_stmt.words.iter().map(word_to_string).collect();
+            format!(
+                "for {} in {}; do {}; done",
                 for_stmt.var,
                 words.join(" "),
-                statements_to_string(&for_stmt.body))
+                statements_to_string(&for_stmt.body)
+            )
         }
         Statement::Case(case_stmt) => {
             let word = word_to_string(&case_stmt.value);
             let mut result = format!("case {} in ", word);
             for arm in &case_stmt.arms {
-                let patterns: Vec<String> = arm.patterns.iter()
-                    .map(word_to_string)
-                    .collect();
-                result.push_str(&format!("{}) {};; ", patterns.join("|"), statements_to_string(&arm.body)));
+                let patterns: Vec<String> = arm.patterns.iter().map(word_to_string).collect();
+                result.push_str(&format!(
+                    "{}) {};; ",
+                    patterns.join("|"),
+                    statements_to_string(&arm.body)
+                ));
             }
             result.push_str("esac");
             result
@@ -2646,49 +2811,53 @@ fn statement_to_shell_string(stmt: &colony_parser::Statement) -> String {
     }
 }
 
-async fn execute_coproc(coproc: &colony_parser::CoprocCommand, executor: &mut Executor) -> Result<i32, String> {
-    use nix::unistd::{fork, ForkResult, pipe, dup2, close, execvp};
-    use std::os::fd::AsRawFd;
+async fn execute_coproc(
+    coproc: &colony_parser::CoprocCommand,
+    executor: &mut Executor,
+) -> Result<i32, String> {
+    use nix::unistd::{close, dup2, execvp, fork, pipe, ForkResult};
     use std::ffi::CString;
-    
+    use std::os::fd::AsRawFd;
+
     let coproc_name = coproc.name.clone().unwrap_or_else(|| "COPROC".to_string());
-    
+
     let stdin_pipe = pipe().map_err(|e| format!("pipe error: {}", e))?;
     let stdout_pipe = pipe().map_err(|e| format!("pipe error: {}", e))?;
-    
+
     // Determine if we need to run through shell or can exec directly
-    let is_simple_external = matches!(coproc.command.as_ref(), colony_parser::Statement::SimpleCommand(cmd) 
+    let is_simple_external = matches!(coproc.command.as_ref(), colony_parser::Statement::SimpleCommand(cmd)
         if cmd.name.as_literal().is_some() && !colony_exec::is_builtin(cmd.name.as_literal().unwrap()));
-    
+
     // For compound commands or builtins, serialize to shell string and run through colony
     let shell_cmd = if !is_simple_external {
         Some(statement_to_shell_string(coproc.command.as_ref()))
     } else {
         None
     };
-    
+
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
             close(stdin_pipe.1.as_raw_fd()).ok();
             close(stdout_pipe.0.as_raw_fd()).ok();
-            
+
             dup2(stdin_pipe.0.as_raw_fd(), 0).ok();
             dup2(stdout_pipe.1.as_raw_fd(), 1).ok();
-            
+
             close(stdin_pipe.0.as_raw_fd()).ok();
             close(stdout_pipe.1.as_raw_fd()).ok();
-            
+
             if let Some(cmd_string) = shell_cmd {
                 // Run compound command or builtin through colony shell
                 let exe_path = std::env::current_exe()
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|_| "colony".to_string());
-                
+
                 let c_exe = CString::new(exe_path.as_str()).unwrap();
                 let c_flag = CString::new("-c").unwrap();
                 let c_cmd = CString::new(cmd_string.as_str()).unwrap();
-                
-                let args: Vec<&std::ffi::CStr> = vec![c_exe.as_c_str(), c_flag.as_c_str(), c_cmd.as_c_str()];
+
+                let args: Vec<&std::ffi::CStr> =
+                    vec![c_exe.as_c_str(), c_flag.as_c_str(), c_cmd.as_c_str()];
                 let _ = execvp(&c_exe, &args);
                 std::process::exit(127);
             } else if let colony_parser::Statement::SimpleCommand(cmd) = coproc.command.as_ref() {
@@ -2701,7 +2870,8 @@ async fn execute_coproc(coproc: &colony_parser::CoprocCommand, executor: &mut Ex
                         c_args.push(CString::new(lit).unwrap());
                     }
                 }
-                let c_args_ref: Vec<&std::ffi::CStr> = c_args.iter().map(|s| s.as_c_str()).collect();
+                let c_args_ref: Vec<&std::ffi::CStr> =
+                    c_args.iter().map(|s| s.as_c_str()).collect();
                 let _ = execvp(&c_cmd, &c_args_ref);
                 std::process::exit(127);
             } else {
@@ -2712,17 +2882,23 @@ async fn execute_coproc(coproc: &colony_parser::CoprocCommand, executor: &mut Ex
         Ok(ForkResult::Parent { child }) => {
             drop(stdin_pipe.0);
             drop(stdout_pipe.1);
-            
+
             let read_fd = stdout_pipe.0.as_raw_fd();
             let write_fd = stdin_pipe.1.as_raw_fd();
-            
-            executor.context_mut().set_array_element(&coproc_name, 0, &read_fd.to_string());
-            executor.context_mut().set_array_element(&coproc_name, 1, &write_fd.to_string());
-            executor.context_mut().set_var(format!("{}_PID", coproc_name), child.as_raw().to_string());
-            
+
+            executor
+                .context_mut()
+                .set_array_element(&coproc_name, 0, &read_fd.to_string());
+            executor
+                .context_mut()
+                .set_array_element(&coproc_name, 1, &write_fd.to_string());
+            executor
+                .context_mut()
+                .set_var(format!("{}_PID", coproc_name), child.as_raw().to_string());
+
             std::mem::forget(stdout_pipe.0);
             std::mem::forget(stdin_pipe.1);
-            
+
             Ok(0)
         }
         Err(e) => Err(format!("fork error: {}", e)),
@@ -2736,7 +2912,7 @@ async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()
 
     let exit_code = execute_statement_for_code(&stmt, executor).await;
     executor.context_mut().set_last_exit_status(exit_code);
-    
+
     if exit_code != 0 {
         eprintln!("Command exited with code {}", exit_code);
     }
@@ -2779,10 +2955,7 @@ async fn handle_llm_command(line: &str, agent: &mut Option<Agent>) {
 
             for info in providers {
                 let status = if info.available { "✓" } else { "✗" };
-                println!(
-                    "  {} {:?}: {}",
-                    status, info.provider_type, info.model
-                );
+                println!("  {} {:?}: {}", status, info.provider_type, info.model);
                 if let Some(reason) = info.reason {
                     println!("      {}", reason);
                 }
@@ -2856,9 +3029,11 @@ fn display_tuple_activity(executor: &Executor) {
     ]);
 
     while let Some(tuple) = tuple_space.inp(env_pattern.clone()) {
-        if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) =
-            (tuple.fields.get(1), tuple.fields.get(2), tuple.fields.get(3))
-        {
+        if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) = (
+            tuple.fields.get(1),
+            tuple.fields.get(2),
+            tuple.fields.get(3),
+        ) {
             match new {
                 Value::Null => {
                     println!("🔄 Environment: unset {}", var);

@@ -67,11 +67,11 @@ pub fn is_builtin(name: &str) -> bool {
         name,
         "cd" | "export" | "unset" | "exit" | "pwd" | "echo" | "type"
         | "alias" | "unalias" | "." | "source"
-        | "fg" | "bg" | "jobs" | "wait"
+        | "fg" | "bg" | "jobs" | "wait" | "disown"
         | "[" | "test"
         | ":"
         | "context"
-        | "declare" | "local"
+        | "declare" | "local" | "readonly" | "typeset"
         | "true" | "false"
         | "read"
         | "history"
@@ -88,6 +88,7 @@ pub fn is_builtin(name: &str) -> bool {
         | "complete" | "compgen"
         | "mapfile" | "readarray"
         | "eval"
+        | "hash"
     )
 }
 
@@ -199,6 +200,10 @@ pub fn execute_builtin(
         "compgen" => builtin_compgen(&args, context),
         "mapfile" | "readarray" => builtin_mapfile(&args, context),
         "eval" => builtin_eval(&args),
+        "readonly" => builtin_readonly(&args, context),
+        "typeset" => builtin_declare(&args, context),  // typeset is alias for declare
+        "disown" => builtin_disown(&args, jobs),
+        "hash" => builtin_hash(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -225,11 +230,22 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &Tup
                 std::io::ErrorKind::NotFound,
                 "HOME not set",
             )))?
+            .to_string()
+    } else if args[0] == "-" {
+        context
+            .get_env("OLDPWD")
+            .ok_or_else(|| ExecutionError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "OLDPWD not set",
+            )))?
+            .to_string()
     } else {
-        &args[0]
+        args[0].clone()
     };
+    
+    let print_dir = args.first().map(|s| s == "-").unwrap_or(false);
 
-    env::set_current_dir(target).map_err(|e| {
+    env::set_current_dir(&target).map_err(|e| {
         ExecutionError::IoError(std::io::Error::new(
             e.kind(),
             format!("cd: {}: {}", target, e),
@@ -240,6 +256,10 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &Tup
         .ok()
         .and_then(|p| p.to_str().map(String::from))
         .unwrap_or_else(|| target.to_string());
+
+    if print_dir {
+        println!("{}", new_dir);
+    }
 
     context.set_env("OLDPWD", &old_dir);
     context.set_env("PWD", &new_dir);
@@ -310,9 +330,21 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
         return Ok(if exit_code == 0 { BuiltinResult::Success(0) } else { BuiltinResult::Failure(1) });
     }
     
-    if names.is_empty() {
+    if unexport {
+        for name in &names {
+            env::remove_var(name);
+            context.unset_env(name);
+            if let Some(mut attrs) = context.get_var_attributes(name).cloned() {
+                attrs.export = false;
+                context.set_var_attributes(name, attrs);
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if print_mode || names.is_empty() {
         for (key, value) in env::vars() {
-            println!("export {}={}", key, value);
+            println!("declare -x {}=\"{}\"", key, value);
         }
         return Ok(BuiltinResult::Success(0));
     }
@@ -334,8 +366,10 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
                 Value::Str(value.to_string()),
             ]));
         } else {
-            if let Some(value) = context.get_env(arg) {
-                env::set_var(arg, value);
+            if let Some(value) = context.get_var_or_env(arg) {
+                env::set_var(arg, &value);
+            } else {
+                env::set_var(arg, "");
             }
         }
     }
@@ -713,6 +747,7 @@ fn set_option_by_name(context: &mut ExpansionContext, name: &str, enable: bool) 
         "noglob" => opts.noglob = enable,
         "noexec" => opts.noexec = enable,
         "verbose" => opts.verbose = enable,
+        "pipefail" => opts.pipefail = enable,
         _ => {}
     }
 }
@@ -1173,6 +1208,129 @@ fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
     }
     
     Ok(BuiltinResult::Success(last_status))
+}
+
+fn builtin_disown(args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
+    let mut remove_all = false;
+    let mut job_specs: Vec<&str> = Vec::new();
+    
+    for arg in args {
+        match arg.as_str() {
+            "-a" => remove_all = true,
+            "-r" | "-h" => {}
+            s if s.starts_with('%') || s.chars().all(|c| c.is_ascii_digit()) => {
+                job_specs.push(s);
+            }
+            _ => {
+                eprintln!("disown: {}: invalid option", arg);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    }
+    
+    if remove_all {
+        for job in jobs.list_jobs() {
+            jobs.remove_job(job.id);
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if job_specs.is_empty() {
+        if let Some(job) = jobs.list_jobs().last() {
+            jobs.remove_job(job.id);
+        }
+    } else {
+        for spec in job_specs {
+            if let Some(job_id) = parse_job_spec(spec, jobs) {
+                jobs.remove_job(job_id);
+            } else {
+                eprintln!("disown: {}: no such job", spec);
+            }
+        }
+    }
+    
+    Ok(BuiltinResult::Success(0))
+}
+
+fn parse_job_spec(spec: &str, jobs: &JobTable) -> Option<usize> {
+    if spec.starts_with('%') {
+        let rest = &spec[1..];
+        if rest == "%" || rest == "+" {
+            jobs.list_jobs().last().map(|j| j.id)
+        } else if rest == "-" {
+            let all = jobs.list_jobs();
+            if all.len() >= 2 {
+                Some(all[all.len() - 2].id)
+            } else {
+                None
+            }
+        } else if let Ok(n) = rest.parse::<usize>() {
+            if jobs.get_job(n).is_some() { Some(n) } else { None }
+        } else {
+            jobs.list_jobs().iter().find(|j| j.command.starts_with(rest)).map(|j| j.id)
+        }
+    } else if let Ok(pid) = spec.parse::<i32>() {
+        jobs.find_by_pid(nix::unistd::Pid::from_raw(pid)).map(|j| j.id)
+    } else {
+        None
+    }
+}
+
+fn builtin_hash(_args: &[String], _context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    Ok(BuiltinResult::Success(0))
+}
+
+fn builtin_readonly(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    use colony_expand::VarAttributes;
+    
+    if args.is_empty() {
+        for (name, var, attr) in context.variables_with_attrs() {
+            if attr.map(|a| a.readonly).unwrap_or(false) {
+                let val = var.as_str();
+                println!("declare -r {}=\"{}\"", name, val);
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    let mut print_mode = false;
+    let mut var_specs: Vec<&str> = Vec::new();
+    
+    for arg in args {
+        if arg == "-p" {
+            print_mode = true;
+        } else if arg.starts_with('-') {
+        } else {
+            var_specs.push(arg);
+        }
+    }
+    
+    if print_mode && var_specs.is_empty() {
+        for (name, var, attr) in context.variables_with_attrs() {
+            if attr.map(|a| a.readonly).unwrap_or(false) {
+                let val = var.as_str();
+                println!("declare -r {}=\"{}\"", name, val);
+            }
+        }
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    let attrs = VarAttributes { readonly: true, ..Default::default() };
+    
+    for spec in var_specs {
+        let (name, value_opt) = if let Some(eq_pos) = spec.find('=') {
+            (&spec[..eq_pos], Some(&spec[eq_pos + 1..]))
+        } else {
+            (spec, None)
+        };
+        
+        if let Err(e) = context.declare_with_attrs(name, value_opt.map(String::from), attrs) {
+            eprintln!("readonly: {}: {}", name, e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    }
+    
+    Ok(BuiltinResult::Success(0))
 }
 
 /// [ or test - Evaluate conditional expressions
@@ -1808,12 +1966,38 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     let mut raw_mode = false;
     let mut var_names: Vec<&str> = Vec::new();
     let mut input_fd: Option<i32> = None;
+    let mut nchars: Option<usize> = None;
+    let mut delimiter: Option<char> = None;
+    let mut timeout_secs: Option<f64> = None;
+    let mut array_mode = false;
+    let mut array_name: Option<&str> = None;
     
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
         if arg == "-r" {
             raw_mode = true;
+        } else if arg == "-a" {
+            array_mode = true;
+            i += 1;
+            if i < args.len() {
+                array_name = Some(&args[i]);
+            }
+        } else if arg == "-n" {
+            i += 1;
+            if i < args.len() {
+                nchars = args[i].parse().ok();
+            }
+        } else if arg == "-d" {
+            i += 1;
+            if i < args.len() && !args[i].is_empty() {
+                delimiter = args[i].chars().next();
+            }
+        } else if arg == "-t" {
+            i += 1;
+            if i < args.len() {
+                timeout_secs = args[i].parse().ok();
+            }
         } else if arg == "-u" {
             i += 1;
             if i < args.len() {
@@ -1822,13 +2006,19 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
                 }
             }
         } else if arg.starts_with('-') {
-            if arg.starts_with("-u") && arg.len() > 2 {
+            if arg.starts_with("-n") && arg.len() > 2 {
+                nchars = arg[2..].parse().ok();
+            } else if arg.starts_with("-d") && arg.len() > 2 {
+                delimiter = arg[2..].chars().next();
+            } else if arg.starts_with("-t") && arg.len() > 2 {
+                timeout_secs = arg[2..].parse().ok();
+            } else if arg.starts_with("-u") && arg.len() > 2 {
                 if let Ok(fd) = arg[2..].parse::<i32>() {
                     input_fd = Some(fd);
                 }
-            } else {
-                i += 1;
-                continue;
+            } else if arg.starts_with("-a") && arg.len() > 2 {
+                array_mode = true;
+                array_name = Some(&arg[2..]);
             }
         } else {
             var_names.push(arg);
@@ -1836,18 +2026,45 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         i += 1;
     }
     
-    if var_names.is_empty() {
+    if var_names.is_empty() && !array_mode {
         var_names.push("REPLY");
     }
     
+    let line_delimiter = delimiter.unwrap_or('\n');
     let mut line = String::new();
     
-    if let Some(fd) = input_fd {
+    if let Some(n) = nchars {
+        let stdin = io::stdin();
+        let mut stdin_lock = stdin.lock();
+        let mut buf = vec![0u8; n];
+        match stdin_lock.read(&mut buf) {
+            Ok(0) => {
+                if array_mode {
+                    if let Some(name) = array_name {
+                        context.set_variable(name.to_string(), Variable::Array(vec![]));
+                    }
+                } else {
+                    for name in &var_names {
+                        context.set_var(name.to_string(), String::new());
+                    }
+                }
+                return Ok(BuiltinResult::Success(1));
+            }
+            Ok(bytes_read) => {
+                line = String::from_utf8_lossy(&buf[..bytes_read]).to_string();
+                if line.ends_with('\n') {
+                    line.pop();
+                }
+            }
+            Err(e) => return Err(ExecutionError::IoError(e)),
+        }
+    } else if let Some(fd) = input_fd {
         let file = unsafe { std::fs::File::from_raw_fd(fd) };
         let mut reader = io::BufReader::new(file);
         
         if raw_mode {
-            match reader.read_line(&mut line) {
+            let mut buf = Vec::new();
+            match reader.read_until(line_delimiter as u8, &mut buf) {
                 Ok(0) => {
                     std::mem::forget(reader.into_inner());
                     for name in &var_names {
@@ -1856,6 +2073,10 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
                     return Ok(BuiltinResult::Success(1));
                 }
                 Ok(_) => {
+                    line = String::from_utf8_lossy(&buf).to_string();
+                    if line.ends_with(line_delimiter) {
+                        line.pop();
+                    }
                     std::mem::forget(reader.into_inner());
                 }
                 Err(e) => {
@@ -1901,15 +2122,21 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         let stdin = io::stdin();
         let mut stdin_lock = stdin.lock();
     
-        if raw_mode {
-            match stdin_lock.read_line(&mut line) {
+        if raw_mode || delimiter.is_some() {
+            let mut buf = Vec::new();
+            match stdin_lock.read_until(line_delimiter as u8, &mut buf) {
                 Ok(0) => {
                     for name in &var_names {
                         context.set_var(name.to_string(), String::new());
                     }
                     return Ok(BuiltinResult::Success(1));
                 }
-                Ok(_) => {}
+                Ok(_) => {
+                    line = String::from_utf8_lossy(&buf).to_string();
+                    if line.ends_with(line_delimiter) {
+                        line.pop();
+                    }
+                }
                 Err(e) => return Err(ExecutionError::IoError(e)),
             }
         } else {
@@ -1977,6 +2204,19 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     
     if var_names.len() == 1 && var_names[0] == "REPLY" {
         context.set_var("REPLY".to_string(), line);
+        return Ok(BuiltinResult::Success(0));
+    }
+    
+    if array_mode {
+        if let Some(name) = array_name {
+            let ifs = context.ifs();
+            let ifs_chars: Vec<char> = ifs.chars().collect();
+            let words: Vec<String> = line.split(|c| ifs_chars.contains(&c))
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+            context.set_variable(name.to_string(), Variable::Array(words));
+        }
         return Ok(BuiltinResult::Success(0));
     }
     
