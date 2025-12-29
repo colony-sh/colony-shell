@@ -741,6 +741,9 @@ pub struct ExpansionContext {
     shell_pid: u32,
     last_bg_pid: Cell<Option<u32>>,
     interactive: bool,
+    /// Tracks whether we're currently executing a trap handler
+    /// Used to prevent recursive trap invocation (e.g., DEBUG in DEBUG)
+    in_trap_execution: Cell<bool>,
     #[cfg(feature = "secure")]
     current_script_path: Option<PathBuf>,
 }
@@ -807,6 +810,7 @@ impl Clone for ExpansionContext {
             shell_pid: self.shell_pid,
             last_bg_pid: Cell::new(self.last_bg_pid.get()),
             interactive: self.interactive,
+            in_trap_execution: Cell::new(self.in_trap_execution.get()),
             #[cfg(feature = "secure")]
             current_script_path: self.current_script_path.clone(),
         }
@@ -849,6 +853,7 @@ impl ExpansionContext {
             shell_pid: std::process::id(),
             last_bg_pid: Cell::new(None),
             interactive: false,
+            in_trap_execution: Cell::new(false),
             #[cfg(feature = "secure")]
             current_script_path: None,
         };
@@ -1152,6 +1157,12 @@ impl ExpansionContext {
         self.environment.remove(name);
     }
 
+    pub fn exported_env(&self) -> Vec<(String, String)> {
+        self.environment.iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
     /// Get current working directory
     pub fn cwd(&self) -> &PathBuf {
         &self.cwd
@@ -1403,6 +1414,18 @@ impl ExpansionContext {
 
     pub fn clear_non_ignored_traps(&mut self) {
         self.traps.retain(|_, action| matches!(action, TrapAction::Ignore));
+    }
+
+    pub fn in_trap(&self) -> bool {
+        self.in_trap_execution.get()
+    }
+
+    pub fn enter_trap(&self) {
+        self.in_trap_execution.set(true);
+    }
+
+    pub fn exit_trap(&self) {
+        self.in_trap_execution.set(false);
     }
 
     pub fn dir_stack(&self) -> &[PathBuf] {

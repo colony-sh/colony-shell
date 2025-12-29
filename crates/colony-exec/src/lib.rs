@@ -42,6 +42,26 @@ use colony_expand::ExpansionContext;
 use colony_parser::{Pipeline, SimpleCommand};
 use colony_tuple::TupleSpace;
 
+pub fn build_env(context: &ExpansionContext) -> Vec<(String, String)> {
+    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    
+    for (name, value) in context.exported_env() {
+        env.retain(|(k, _)| k != &name);
+        env.push((name, value));
+    }
+    
+    for func_name in context.exported_function_names() {
+        if let Some(func) = context.get_function(func_name) {
+            let body = builtins::serialize_function_for_export(func);
+            let env_name = format!("BASH_FUNC_{}%%", func_name);
+            env.retain(|(k, _)| k != &env_name);
+            env.push((env_name, body));
+        }
+    }
+    
+    env
+}
+
 /// Main executor for shell commands
 pub struct Executor {
     context: ExpansionContext,
@@ -115,6 +135,63 @@ impl Executor {
         }
         0
     }
+    
+    pub async fn run_return_trap(&mut self) -> i32 {
+        use colony_expand::TrapAction;
+        use colony_expand::TrapSignal;
+        use colony_parser::pest_api::parse;
+        
+        let return_trap = self.context.get_trap(&TrapSignal::Return).cloned();
+        
+        if let Some(TrapAction::Command(cmd)) = return_trap {
+            if let Ok(program) = parse(&cmd) {
+                let mut last = 0;
+                for stmt in &program.statements {
+                    match self.execute_statement_recursive(stmt).await {
+                        Ok(code) => {
+                            last = code;
+                            self.context.set_last_exit_status(code);
+                        }
+                        Err(_) => break,
+                    }
+                }
+                return last;
+            }
+        }
+        0
+    }
+    
+    pub async fn run_debug_trap(&mut self) -> i32 {
+        use colony_expand::TrapAction;
+        use colony_expand::TrapSignal;
+        use colony_parser::pest_api::parse;
+        
+        if self.context.in_trap() {
+            return 0;
+        }
+        
+        let debug_trap = self.context.get_trap(&TrapSignal::Debug).cloned();
+        
+        if let Some(TrapAction::Command(cmd)) = debug_trap {
+            self.context.enter_trap();
+            if let Ok(program) = parse(&cmd) {
+                let mut last = 0;
+                for stmt in &program.statements {
+                    match self.execute_statement_recursive(stmt).await {
+                        Ok(code) => {
+                            last = code;
+                            self.context.set_last_exit_status(code);
+                        }
+                        Err(_) => break,
+                    }
+                }
+                self.context.exit_trap();
+                return last;
+            }
+            self.context.exit_trap();
+        }
+        0
+    }
 
     pub async fn execute_function(
         &mut self,
@@ -138,6 +215,7 @@ impl Executor {
                     break;
                 }
                 Err(e) => {
+                    self.run_return_trap().await;
                     self.context.exit_function();
                     self.context.set_positional_params(saved_params);
                     return Err(e);
@@ -145,6 +223,7 @@ impl Executor {
             }
         }
 
+        self.run_return_trap().await;
         self.context.exit_function();
         self.context.set_positional_params(saved_params);
         Ok(ExitStatus::new(last_exit))
@@ -158,6 +237,8 @@ impl Executor {
     pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
         use colony_expand::{Expander, Variable};
         use colony_parser::AssignmentValue;
+
+        self.run_debug_trap().await;
 
         // Check if this is a command that treats assignments as arguments
         // (alias, declare, export, local, readonly, typeset)
@@ -596,7 +677,7 @@ impl Executor {
             let path_env = context_clone.get_env("PATH");
             let program_path = resolve_command(command_name, path_env)?;
 
-            let mut env: Vec<(String, String)> = std::env::vars().collect();
+            let mut env = build_env(&context_clone);
             
             for assignment in &cmd_clone.env_assignments {
                 if assignment.subscript.is_none() {

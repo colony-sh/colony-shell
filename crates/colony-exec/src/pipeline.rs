@@ -193,6 +193,7 @@ fn execute_pipeline_blocking(pipeline: &Pipeline, context: &ExpansionContext) ->
     }
 
     let is_negated = pipeline.elements.first().map_or(false, |e| e.negated);
+    let pipefail = context.shell_options().pipefail;
 
     if num_commands == 1 {
         let element = &pipeline.elements[0];
@@ -207,7 +208,6 @@ fn execute_pipeline_blocking(pipeline: &Pipeline, context: &ExpansionContext) ->
         let read_end = pipe_fds.0.as_raw_fd();
         let write_end = pipe_fds.1.as_raw_fd();
         pipes.push((read_end, write_end));
-        // Leak the OwnedFds so they don't get closed automatically
         std::mem::forget(pipe_fds.0);
         std::mem::forget(pipe_fds.1);
     }
@@ -221,18 +221,14 @@ fn execute_pipeline_blocking(pipeline: &Pipeline, context: &ExpansionContext) ->
                 pids.push(child);
             }
             ForkResult::Child => {
-                // Setup pipes for this command
                 setup_pipeline_fds(i, num_commands, &pipes);
 
-                // Close all pipe ends in child
                 for (read_fd, write_fd) in &pipes {
                     let _ = close(*read_fd);
                     let _ = close(*write_fd);
                 }
 
-                // Execute the command
                 execute_pipeline_element_in_child(element, context);
-                // execute_pipeline_element_in_child never returns
             }
         }
     }
@@ -244,21 +240,28 @@ fn execute_pipeline_blocking(pipeline: &Pipeline, context: &ExpansionContext) ->
     }
 
     // Wait for all children and collect exit statuses
-    let mut last_status = ExitStatus::success();
+    let mut statuses: Vec<i32> = Vec::with_capacity(pids.len());
     for pid in pids {
         match waitpid(pid, None) {
             Ok(WaitStatus::Exited(_pid, code)) => {
-                last_status = ExitStatus::new(code);
+                statuses.push(code);
             }
             Ok(WaitStatus::Signaled(_pid, signal, _core_dumped)) => {
-                last_status = ExitStatus::new(128 + signal as i32);
+                statuses.push(128 + signal as i32);
             }
-            _ => {}
+            _ => {
+                statuses.push(0);
+            }
         }
     }
 
-    // Return the exit status of the last command
-    Ok(negate_exit_status(last_status, is_negated))
+    let final_status = if pipefail {
+        statuses.iter().rev().find(|&&c| c != 0).copied().unwrap_or(0)
+    } else {
+        *statuses.last().unwrap_or(&0)
+    };
+
+    Ok(negate_exit_status(ExitStatus::new(final_status), is_negated))
 }
 
 fn negate_exit_status(status: ExitStatus, negated: bool) -> ExitStatus {
@@ -596,7 +599,7 @@ fn execute_simple_command_in_child_blocking(
     match unsafe { fork() }.map_err(crate::ExecutionError::ForkError)? {
         ForkResult::Child => {
             let _ = crate::apply_redirects(&cmd.redirects, &mut context.clone());
-            let mut env: Vec<(String, String)> = std::env::vars().collect();
+    let mut env = crate::build_env(&context);
             
             for assignment in &cmd.env_assignments {
                 if assignment.subscript.is_none() {
@@ -978,7 +981,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         }
     };
 
-    let mut env: Vec<(String, String)> = std::env::vars().collect();
+    let mut env = crate::build_env(&context);
     
     for assignment in &simple_cmd.env_assignments {
         if assignment.subscript.is_none() {

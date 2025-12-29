@@ -7,18 +7,7 @@ use colony_expand::{ExpansionContext, Expander};
 use colony_parser::SimpleCommand;
 
 fn build_env_with_exported_functions(context: &ExpansionContext) -> Vec<(String, String)> {
-    let mut env: Vec<(String, String)> = std::env::vars().collect();
-    
-    for func_name in context.exported_function_names() {
-        if let Some(func) = context.get_function(func_name) {
-            let body = crate::builtins::serialize_function_for_export(func);
-            let env_name = format!("BASH_FUNC_{}%%", func_name);
-            env.retain(|(k, _)| k != &env_name);
-            env.push((env_name, body));
-        }
-    }
-    
-    env
+    crate::build_env(context)
 }
 
 /// Execute a simple command
