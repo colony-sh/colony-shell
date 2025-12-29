@@ -5,7 +5,7 @@
 //! and constructs AST nodes.
 
 use pest::iterators::{Pair, Pairs};
-use crate::pest_parser::{ColonyParser, Rule};
+use crate::pest_parser::Rule;
 use crate::ast::*;
 use crate::span::{Position, Span};
 
@@ -180,7 +180,7 @@ impl AstBuilder {
     /// Build a simple command: name args... redirects...
     fn build_simple_command(pair: Pair<Rule>) -> Result<SimpleCommand, BuildError> {
         let span = span_from_pair(&pair);
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
 
         // SimpleCommand = Assignment* ~ Word ~ Word* ~ Redirect*
         let mut env_assignments = Vec::new();
@@ -325,7 +325,7 @@ impl AstBuilder {
     fn build_pipeline(pair: Pair<Rule>) -> Result<Pipeline, BuildError> {
         let span = span_from_pair(&pair);
         let raw_text = pair.as_str();
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
 
         let mut elements = Vec::new();
         let negated = raw_text.trim_start().starts_with('!');
@@ -392,7 +392,7 @@ impl AstBuilder {
     /// Build a command list: cmd1 && cmd2 || cmd3
     fn build_command_list(pair: Pair<Rule>) -> Result<CommandList, BuildError> {
         let span = span_from_pair(&pair);
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
 
         // CommandList = AndOrList ~ (ListOp ~ AndOrList)* ~ TrailingBackground?
         let mut lists = Vec::new();
@@ -903,7 +903,7 @@ impl AstBuilder {
 
     fn build_coproc_command(pair: Pair<Rule>) -> Result<CoprocCommand, BuildError> {
         let span = span_from_pair(&pair);
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
         
         let mut name: Option<String> = None;
         let mut command: Option<Box<Statement>> = None;
@@ -990,7 +990,7 @@ impl AstBuilder {
     }
 
     fn build_case_arm(pair: Pair<Rule>) -> Result<CaseArm, BuildError> {
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
 
         let mut patterns = Vec::new();
         let mut body = Vec::new();
@@ -1342,7 +1342,7 @@ impl AstBuilder {
 
     fn build_power(pair: Pair<Rule>) -> Result<Expression, BuildError> {
         let span = span_from_pair(&pair);
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
 
         // Power is RIGHT-associative: 2 ** 3 ** 4 = 2 ** (3 ** 4)
         let terms: Vec<_> = inner
@@ -1582,7 +1582,7 @@ impl AstBuilder {
                             }
                             "(" => {
                                 // Call: expr(args)
-                                let args = Self::build_arg_list(op_inner)?;
+                                let _args = Self::build_arg_list(op_inner)?;
                                 // TODO: Convert to FuncCall or MethodCall
                                 // For now, just return expr unchanged
                             }
@@ -1649,7 +1649,7 @@ impl AstBuilder {
         }
     }
 
-    fn build_arg_list(mut inner: pest::iterators::Pairs<Rule>) -> Result<Vec<Expression>, BuildError> {
+    fn build_arg_list(inner: pest::iterators::Pairs<Rule>) -> Result<Vec<Expression>, BuildError> {
         let mut args = Vec::new();
 
         for part in inner {
@@ -2386,7 +2386,7 @@ impl AstBuilder {
         let mut literal_buffer = String::new();
 
         // Helper to flush accumulated literals
-        let mut flush_literal = |buffer: &mut String, parts: &mut Vec<WordPart>| {
+        let flush_literal = |buffer: &mut String, parts: &mut Vec<WordPart>| {
             if !buffer.is_empty() {
                 parts.push(WordPart::Literal(buffer.clone()));
                 buffer.clear();

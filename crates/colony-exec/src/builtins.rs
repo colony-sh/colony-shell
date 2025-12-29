@@ -19,7 +19,7 @@
 use crate::{ExecutionError, JobTable, Result};
 use colony_channels::ChannelManager;
 use colony_expand::{ExpansionContext, Expander, Variable, CompletionSpec, CompletionAction};
-use colony_parser::{SimpleCommand, Word};
+use colony_parser::SimpleCommand;
 use colony_tuple::{Tuple, TupleSpace, Value};
 use std::env;
 use std::path::PathBuf;
@@ -131,7 +131,7 @@ pub fn execute_builtin(
     let mut args: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
     let is_assignment_builtin = matches!(name.as_str(), "export" | "declare" | "local" | "readonly" | "typeset");
     
-    for (i, arg_word) in cmd.args.iter().enumerate() {
+    for (_i, arg_word) in cmd.args.iter().enumerate() {
         // For assignment builtins, check if this arg looks like an assignment
         let use_assignment_expansion = is_assignment_builtin && 
             arg_word.parts.iter().any(|p| {
@@ -1802,7 +1802,7 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
 }
 
 fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    use std::io::{self, BufRead, Read};
+    use std::io::{self, BufRead};
     use std::os::unix::io::FromRawFd;
     
     let mut raw_mode = false;
@@ -2054,7 +2054,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
 ///
 /// If ARRAY is not supplied, the default array name is MAPFILE.
 fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    use std::io::{self, BufRead, Read};
+    use std::io::{self, BufRead};
     
     // Parse options
     let mut strip_newlines = false;
@@ -2318,7 +2318,7 @@ fn format_function_body(body: &[colony_parser::Statement]) -> String {
 }
 
 fn format_statement(stmt: &colony_parser::Statement) -> String {
-    use colony_parser::{Statement, ListOp, Condition};
+    use colony_parser::{Statement, ListOp};
     
     match stmt {
         Statement::SimpleCommand(cmd) => {

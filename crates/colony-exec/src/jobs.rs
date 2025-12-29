@@ -8,7 +8,6 @@
 
 use crate::{ExecutionError, ExitStatus, Result};
 use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet, Signal, sigaction};
-use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::{Pid, setpgid, tcsetpgrp};
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -189,6 +188,7 @@ pub fn init_job_control() -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 /// Create a new process group for a job
 ///
 /// Should be called in both parent and child to avoid race conditions.
@@ -203,6 +203,7 @@ pub fn create_process_group(pid: Pid, pgid: Pid) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 /// Give terminal control to a process group
 ///
 /// Makes the specified process group the foreground process group.
@@ -220,6 +221,7 @@ pub fn give_terminal_to(pgid: Pid) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 /// Take back terminal control from a job
 ///
 /// Returns terminal control to the shell's process group.

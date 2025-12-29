@@ -60,7 +60,7 @@
 //! ```
 
 use crate::persistent::{PersistentTupleSpace, StorageError};
-use crate::{Tuple, Value};
+use crate::Tuple;
 use ipc_channel::ipc::IpcSender;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};

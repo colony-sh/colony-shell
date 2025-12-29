@@ -371,6 +371,7 @@ impl ShoptOptions {
     }
 }
 
+#[allow(dead_code)]
 /// Alias for backward compatibility
 pub type ShopOptions = ShoptOptions;
 
@@ -870,43 +871,8 @@ impl ExpansionContext {
     pub fn get_variable(&self, name: &str) -> Option<&Variable> {
         // Check shell variables first
         if let Some(var) = self.variables.get(name) {
-            return Some(var);
-        }
+            if let Variable::NameRef(_target) = var {
 
-        // Fall back to environment variables (handled by get_var_or_env instead)
-        None
-    }
-    
-    /// Resolve nameref chain and return the final target variable name
-    /// Returns None if there's a circular reference (cycle detection)
-    /// Max depth of 10 to prevent infinite loops from circular refs
-    pub fn resolve_nameref(&self, name: &str) -> Option<String> {
-        let mut current = name.to_string();
-        let mut depth = 0;
-        const MAX_DEPTH: usize = 10;
-        
-        while depth < MAX_DEPTH {
-            if let Some(var) = self.variables.get(&current) {
-                if let Variable::NameRef(target) = var {
-                    if target == name || target == &current {
-                        return None;
-                    }
-                    current = target.clone();
-                    depth += 1;
-                } else {
-                    return Some(current);
-                }
-            } else {
-                return Some(current);
-            }
-        }
-        None
-    }
-    
-    /// Get variable resolving namerefs to their targets
-    pub fn get_variable_resolved(&self, name: &str) -> Option<&Variable> {
-        if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(target) = var {
                 if let Some(resolved) = self.resolve_nameref(name) {
                     return self.variables.get(&resolved);
                 }
@@ -980,7 +946,7 @@ impl ExpansionContext {
         }
 
         if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(target) = var {
+            if let Variable::NameRef(_target) = var {
                 if let Some(resolved) = self.resolve_nameref(name) {
                     if let Some(target_var) = self.variables.get(&resolved) {
                         return Some(target_var.as_str().to_string());
@@ -1058,7 +1024,7 @@ impl ExpansionContext {
     /// Set a shell variable
     pub fn set_variable(&mut self, name: String, value: Variable) {
         if let Some(existing) = self.variables.get(&name) {
-            if let Variable::NameRef(target) = existing {
+            if let Variable::NameRef(_target) = existing {
                 if let Some(resolved) = self.resolve_nameref(&name) {
                     self.variables.insert(resolved, value);
                     return;
@@ -1121,32 +1087,31 @@ impl ExpansionContext {
         true
     }
     
-    /// Set a nameref variable
-    pub fn set_nameref(&mut self, name: String, target: String) {
-        self.variables.insert(name, Variable::NameRef(target));
-    }
-    
-    pub fn set_array_element(&mut self, name: &str, index: usize, value: &str) {
-        match self.variables.get_mut(name) {
-            Some(Variable::Array(arr)) => {
-                if index >= arr.len() {
-                    arr.resize(index + 1, String::new());
+    pub fn resolve_nameref(&self, name: &str) -> Option<String> {
+
+        let mut current = name.to_string();
+        let mut depth = 0;
+        loop {
+            if depth > 16 {
+                return None;
+            }
+            match self.variables.get(&current) {
+                Some(Variable::NameRef(target)) if !target.is_empty() => {
+                    current = target.clone();
+                    depth += 1;
                 }
-                arr[index] = value.to_string();
-            }
-            Some(Variable::AssocArray(map)) => {
-                map.insert(index.to_string(), value.to_string());
-            }
-            _ => {
-                let mut arr = vec![String::new(); index + 1];
-                arr[index] = value.to_string();
-                self.variables.insert(name.to_string(), Variable::Array(arr));
+                _ => return Some(current),
             }
         }
     }
-    
+
+    pub fn set_nameref(&mut self, name: String, target: String) {
+        self.variables.insert(name, Variable::NameRef(target));
+    }
+
     /// Unset a nameref itself (not its target)
     pub fn unset_nameref(&mut self, name: &str) {
+
         if let Some(var) = self.variables.get(name) {
             if let Variable::NameRef(_) = var {
                 self.variables.remove(name);

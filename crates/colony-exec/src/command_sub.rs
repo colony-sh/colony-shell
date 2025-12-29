@@ -3,12 +3,12 @@
 //! Executes a statement and captures its stdout output.
 //! Used by the expansion system for command substitution.
 
-use crate::{execute_builtin, is_builtin, Result};
+use crate::{execute_builtin, Result};
 use colony_channels::ChannelManager;
 use colony_expand::ExpansionContext;
 use colony_parser::Statement;
 use colony_tuple::TupleSpace;
-use nix::unistd::{close, dup2, fork, pipe, read, ForkResult};
+use nix::unistd::{dup2, fork, pipe, read, ForkResult};
 use std::os::fd::{AsRawFd, OwnedFd};
 
 pub fn execute_statement_for_process_sub(
@@ -359,12 +359,12 @@ fn execute_pipeline_in_child_blocking(
     pipeline: &colony_parser::Pipeline,
     context: &mut ExpansionContext,
 ) -> Result<crate::ExitStatus> {
-    use crate::JobTable;
-    use colony_channels::ChannelManager;
-    use colony_expand::Expander;
-    use colony_tuple::TupleSpace;
-    use nix::unistd::{close, pipe, fork, ForkResult, dup2};
-    use std::io::Write;
+    
+    
+    
+    
+    use nix::unistd::{pipe, fork, ForkResult, dup2};
+    
     use std::os::fd::AsRawFd;
 
     let num_cmds = pipeline.elements.len();

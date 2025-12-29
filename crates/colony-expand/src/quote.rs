@@ -16,6 +16,7 @@
 ///
 /// So there's nothing to "remove" - we never had the quote characters
 /// in the expanded text to begin with.
+#[allow(dead_code)]
 pub fn remove_quotes(text: &str) -> String {
     // In our architecture, quotes are already removed during parsing
     text.to_string()

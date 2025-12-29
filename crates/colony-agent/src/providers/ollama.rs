@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use futures::stream;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Ollama provider for local models
 pub struct OllamaProvider {
@@ -248,11 +248,13 @@ struct OllamaResponse {
     message: OllamaMessage,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct OllamaModelList {
     models: Vec<OllamaModelInfo>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct OllamaModelInfo {
     name: String,

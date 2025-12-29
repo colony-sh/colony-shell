@@ -44,6 +44,7 @@ pub struct ProcessHandle {
 }
 
 impl ProcessHandle {
+    #[allow(dead_code)]
     fn new(pid: Pid) -> Self {
         Self {
             pid,

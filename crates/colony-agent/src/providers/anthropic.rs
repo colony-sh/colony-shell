@@ -5,14 +5,13 @@
 //! future models.
 
 use crate::provider::{
-    CompletionRequest, CompletionStream, ContentBlock, Message, MessageContent, MessageRole,
+    CompletionRequest, CompletionStream, ContentBlock, MessageContent, MessageRole,
     ModelProvider, ProviderHealth, StreamEvent as ProviderStreamEvent, ToolDefinition,
 };
 use crate::{AgentError, Result};
 use async_trait::async_trait;
 use claude_sdk::{ClaudeClient, ConversationBuilder, StreamEvent as ClaudeStreamEvent};
-use futures::{Stream, StreamExt};
-use std::pin::Pin;
+use futures::StreamExt;
 use tracing::debug;
 
 /// Anthropic provider using claude-sdk

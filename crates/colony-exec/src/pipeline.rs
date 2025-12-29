@@ -1021,7 +1021,7 @@ fn execute_single_pipeline_element(
             })
         }
         Statement::For(for_stmt) => {
-            let mut context_mut = context.clone();
+            let context_mut = context.clone();
             tokio::runtime::Handle::current().block_on(async {
                 let mut executor = crate::Executor::new(context_mut);
                 let code = executor.execute_for_loop_internal(for_stmt).await
@@ -1030,7 +1030,7 @@ fn execute_single_pipeline_element(
             })
         }
         Statement::If(if_stmt) => {
-            let mut context_mut = context.clone();
+            let context_mut = context.clone();
             tokio::runtime::Handle::current().block_on(async {
                 let mut executor = crate::Executor::new(context_mut);
                 let code = executor.execute_if_internal(if_stmt).await
@@ -1039,7 +1039,7 @@ fn execute_single_pipeline_element(
             })
         }
         Statement::While(while_stmt) => {
-            let mut context_mut = context.clone();
+            let context_mut = context.clone();
             tokio::runtime::Handle::current().block_on(async {
                 let mut executor = crate::Executor::new(context_mut);
                 let code = executor.execute_while_internal(while_stmt).await
@@ -1048,7 +1048,7 @@ fn execute_single_pipeline_element(
             })
         }
         Statement::BraceGroup(brace) => {
-            let mut context_mut = context.clone();
+            let context_mut = context.clone();
             tokio::runtime::Handle::current().block_on(async {
                 let mut executor = crate::Executor::new(context_mut);
                 let mut last = 0;

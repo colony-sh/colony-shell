@@ -335,7 +335,7 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                     executor.context_mut().set_last_exit_status(code);
                     return (code, flow);
                 }
-                let result = match executor.execute_pipeline(&pipeline).await {
+                let result = match executor.execute_pipeline(pipeline).await {
                     Ok(status) => {
                         let code = status.code();
                         if !errexit_exempt
@@ -446,9 +446,8 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                 executor.context_mut().define_function(func_def.name.clone(), func_def.clone());
                 (0, ControlFlow::Normal)
             }
-            Statement::Return(ret_stmt) => {
-                let exit_code = if ret_stmt.value.is_some() { 0 } else { 0 };
-                (exit_code, ControlFlow::Return)
+            Statement::Return(_ret_stmt) => {
+                (0, ControlFlow::Return)
             }
             Statement::VarDecl(_) | Statement::ProcDef(_) => {
                 eprintln!("This declaration not yet supported");

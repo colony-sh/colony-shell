@@ -54,13 +54,10 @@ pub(crate) async fn handle_llm_command(line: &str, agent: &mut Option<Agent>) {
             let provider_str = spec_parts[0];
             let model_name = spec_parts[1];
 
-            let provider_type = match ProviderType::from_str(provider_str) {
-                Some(p) => p,
-                None => {
-                    eprintln!("Unknown provider: {}", provider_str);
-                    eprintln!("Available: anthropic, openai, ollama");
-                    return;
-                }
+            let Some(provider_type) = ProviderType::from_str(provider_str) else {
+                eprintln!("Unknown provider: {}", provider_str);
+                eprintln!("Available: anthropic, openai, ollama");
+                return;
             };
 
             if let Some(ref mut agent) = agent {

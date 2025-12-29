@@ -16,7 +16,7 @@ use crate::{context::ExpansionContext, Field, IntermediateWord};
 /// 2. IFS whitespace (space, tab, newline) at start/end is stripped
 /// 3. Consecutive IFS whitespace is treated as single separator
 /// 4. Non-whitespace IFS characters always create field boundaries
-pub fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<Field> {
+pub(crate) fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<Field> {
     let ifs = context.ifs();
     let ifs_whitespace: Vec<char> = ifs
         .chars()

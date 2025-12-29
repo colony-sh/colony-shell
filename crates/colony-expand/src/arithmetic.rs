@@ -1176,7 +1176,7 @@ fn parse_unary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> 
 
 /// Parse postfix (var++, var--, array[idx])
 fn parse_postfix(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
-    let (val, mut new_pos) = parse_primary(tokens, pos, context)?;
+    let (val, new_pos) = parse_primary(tokens, pos, context)?;
     
     // Check for postfix operators on variables
     if let Some(Token::Variable(ref name)) = tokens.get(pos) {

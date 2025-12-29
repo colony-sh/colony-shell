@@ -328,9 +328,7 @@ fn preprocess_line_continuations(source: &str) -> String {
                     i += 1;
                 }
                 let delim_start = i;
-                let mut quoted = false;
                 if i < bytes.len() && (bytes[i] == b'\'' || bytes[i] == b'"') {
-                    quoted = true;
                     let quote = bytes[i];
                     i += 1;
                     while i < bytes.len() && bytes[i] != quote {
@@ -340,7 +338,7 @@ fn preprocess_line_continuations(source: &str) -> String {
                     if i < bytes.len() {
                         i += 1;
                     }
-                    in_heredoc = Some((delim, quoted));
+                    in_heredoc = Some((delim, true));
                 } else {
                     while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b';' && bytes[i] != b'&' && bytes[i] != b'|' && bytes[i] != b'>' && bytes[i] != b'<' && bytes[i] != b')' {
                         i += 1;

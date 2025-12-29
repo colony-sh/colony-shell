@@ -6,7 +6,7 @@
 //! - Trailing space handling for chained alias expansion
 
 use colony_expand::ExpansionContext;
-use colony_parser::{SimpleCommand, Statement, Word, Span};
+use colony_parser::{SimpleCommand, Statement, Word};
 use std::collections::HashSet;
 
 /// Result of alias expansion
@@ -109,6 +109,7 @@ fn simple_expansion(alias_value: &str, expand_next: bool) -> AliasExpansionResul
 /// - `Ok(Some(statements))` if the alias expanded to multiple statements (needs re-execution)
 /// - `Ok(None)` if simple expansion was done (command was modified in place)
 /// - The modified command with expanded alias
+#[allow(dead_code)]
 pub fn expand_command_alias(
     cmd: &SimpleCommand,
     command_name: &str,
@@ -139,7 +140,7 @@ pub fn expand_command_alias(
             Ok(Some(statements))
         }
         
-        AliasExpansionResult::SimpleExpansion { new_command, alias_args, expand_next } => {
+        AliasExpansionResult::SimpleExpansion { new_command, alias_args: _alias_args, expand_next } => {
             // Mark this alias as being expanded (for cycle detection)
             expanding.insert(command_name.to_string());
             
@@ -191,6 +192,7 @@ pub fn expand_command_alias(
 ///
 /// This creates a new command with the alias value substituted for the command name.
 /// It handles simple expansions where the alias doesn't contain metacharacters.
+#[allow(dead_code)]
 pub fn build_expanded_command(
     original_cmd: &SimpleCommand,
     new_command: &str,
@@ -283,7 +285,8 @@ mod tests {
         let result = expand_alias("ll", &context, &expanding);
         
         match result {
-            AliasExpansionResult::SimpleExpansion { new_command, alias_args, expand_next } => {
+        AliasExpansionResult::SimpleExpansion { new_command, alias_args: _alias_args, expand_next } => {
+
                 assert_eq!(new_command, "ls");
                 assert_eq!(alias_args, vec!["-la"]);
                 assert!(!expand_next);

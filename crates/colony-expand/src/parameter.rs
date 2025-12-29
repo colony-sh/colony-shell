@@ -66,12 +66,14 @@ pub enum ExpandedValue {
     Multiple(Vec<String>),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct ExpansionSideEffect {
     pub assignment: Option<(String, String)>,
 }
 
 impl ExpansionSideEffect {
+    #[allow(dead_code)]
     pub fn with_assignment(name: String, value: String) -> Self {
         Self { assignment: Some((name, value)) }
     }
@@ -88,7 +90,7 @@ impl ExpandedValue {
 
 /// Expand a parameter, returning multiple values for ${arr[@]} expansion
 pub fn expand_parameter_multi(var_ref: &VariableRef, context: &ExpansionContext) -> Result<ExpandedValue> {
-    use colony_parser::{ArraySubscript, VarPrefix};
+    use colony_parser::ArraySubscript;
     
     let variable = context.get_variable(&var_ref.name);
     

@@ -88,6 +88,7 @@ fn expand_comma_list(content: &str) -> Vec<String> {
     results
 }
 
+#[allow(dead_code)]
 pub fn expand_word_with_braces(prefix: &str, braces: &str, suffix: &str) -> Vec<String> {
     let inner = braces.trim_start_matches('{').trim_end_matches('}');
     let expansions = expand_braces(inner);

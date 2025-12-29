@@ -27,7 +27,7 @@ pub use context::{ExpansionContext, ShellOptions, ShoptOptions, Variable, VarAtt
 pub use tilde::expand_tilde;
 pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
 pub use arithmetic::{expand_arithmetic, expand_arithmetic_immut};
-pub use field_split::split_fields;
+pub(crate) use field_split::split_fields;
 pub use pathname::{expand_pathname, expand_pathname_with_options};
 pub use brace::expand_braces;
 

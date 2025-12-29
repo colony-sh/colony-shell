@@ -4,9 +4,8 @@
 //! It emits JSON events that describe what's happening during script execution.
 
 use crate::tutorial::events::{
-    BranchType, ComplexityLevel, ExpansionPhase, LoopType, TraceEvent,
+    BranchType, ExpansionPhase, LoopType, TraceEvent,
 };
-use colony_parser::Statement;
 use serde_json;
 use std::collections::HashSet;
 use std::io::{self, Write};

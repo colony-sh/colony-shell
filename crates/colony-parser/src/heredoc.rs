@@ -20,7 +20,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 struct HeredocMarker {
     /// Position of << or <<- in source
-    start_pos: usize,
+    _start_pos: usize,
     /// End of marker line (after newline)
     end_pos: usize,
     /// Delimiter string
@@ -214,7 +214,7 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
             }
 
             markers.push(HeredocMarker {
-                start_pos,
+                _start_pos: start_pos,
                 end_pos: current_line_end.unwrap(),
                 delimiter,
                 strip_tabs,

@@ -25,7 +25,7 @@ use colony_parser::pest_api::parse;
 use colony_parser::{Statement, Word, WordPart};
 
 use crate::tutorial::complexity::ComplexityScorer;
-use crate::tutorial::events::{BranchType, ComplexityLevel, ExpansionPhase, LoopType, TraceEvent};
+use crate::tutorial::events::{BranchType, ExpansionPhase, LoopType, TraceEvent};
 use crate::tutorial::explain::CommandExplainer;
 use crate::tutorial::teach::{Concept, ConceptTracker};
 use crate::tutorial::tracer::{TraceDepth, TracerConfig};
@@ -364,7 +364,6 @@ impl TutorialRunner {
             }
             WordPart::AnsiCQuoted(s) => format!("ANSI($'{}')", s),
             WordPart::CommandSub(_) => "CmdSub(<ast>)".to_string(),
-            _ => "<?>".to_string(),
         }
     }
     
@@ -647,7 +646,7 @@ impl TutorialRunner {
     }
     
     /// Emit concept explanations for constructs in a statement (teach mode)
-    fn emit_concepts_for_statement(&mut self, stmt: &Statement, line: u32, tx: &Sender<TraceEvent>) {
+    fn emit_concepts_for_statement(&mut self, stmt: &Statement, _line: u32, tx: &Sender<TraceEvent>) {
         // Detect concepts used in this statement and emit explanations for first occurrences
         let concepts = self.detect_concepts_in_statement(stmt);
         

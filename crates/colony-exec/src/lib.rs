@@ -657,7 +657,6 @@ impl Executor {
 
                 // Write to appropriate channel
                 if let Some(channel) = self.channels.get_mut(*fd as colony_channels::ChannelId) {
-                    use colony_channels::Channel;
                     match channel.write(content.as_bytes()) {
                         Ok(n) => tracing::debug!("Wrote {} bytes to channel {}", n, fd),
                         Err(e) => tracing::warn!("Failed to write to channel {}: {}", fd, e),

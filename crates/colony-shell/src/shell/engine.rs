@@ -164,8 +164,6 @@ pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, execut
             let read_fd = stdout_pipe.0.as_raw_fd();
             let write_fd = stdin_pipe.1.as_raw_fd();
 
-            executor.context_mut().set_array_element(&coproc_name, 0, &read_fd.to_string());
-            executor.context_mut().set_array_element(&coproc_name, 1, &write_fd.to_string());
             executor.context_mut().set_var(format!("{}_PID", coproc_name), child.as_raw().to_string());
 
             std::mem::forget(stdout_pipe.0);
