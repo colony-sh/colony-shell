@@ -523,7 +523,7 @@ fn expand_extglob_pathname(pattern: &str) -> Result<Vec<String>> {
     }
     
     let regex_pattern = extglob_to_regex(file_pattern);
-    let has_negation = file_pattern.starts_with("!(");
+    let has_negation = file_pattern.contains("!(");
     
     let read_dir = match std::fs::read_dir(dir) {
         Ok(rd) => rd,
