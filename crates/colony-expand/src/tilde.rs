@@ -7,7 +7,6 @@
 //! - Tilde does not expand if quoted
 
 use crate::{ExpansionContext, ExpansionError, Result};
-
 /// Expand tilde to home directory
 ///
 /// - `~` → $HOME
@@ -38,15 +37,19 @@ pub fn expand_tilde(user: Option<&str>, context: &ExpansionContext) -> Result<St
 
 /// Get a user's home directory
 ///
-/// On Unix, this uses getpwnam. For now, we'll just return an error
-/// as this requires unsafe FFI or a dependency like `users` crate.
 fn expand_user_home(username: &str) -> Result<String> {
-    // TODO: Implement using nix crate's getpwnam
-    // For now, return error
-    Err(ExpansionError::InvalidParameter(format!(
-        "~{}: user home directory lookup not yet implemented",
-        username
-    )))
+    use nix::unistd::User;
+    
+    let user = User::from_name(username)
+        .map_err(|e| ExpansionError::InvalidParameter(format!("~{}: {}", username, e)))?
+        .ok_or_else(|| ExpansionError::InvalidParameter(format!("~{}: unknown user", username)))?;
+    
+    user.dir
+        .to_str()
+        .map(String::from)
+        .ok_or_else(|| ExpansionError::InvalidParameter(
+            format!("~{}: home directory is not valid UTF-8", username)
+        ))
 }
 
 #[cfg(test)]

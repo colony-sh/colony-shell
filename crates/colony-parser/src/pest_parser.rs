@@ -1,17 +1,5 @@
 //! pest-based parser for Colony Shell
 //!
-//! This module provides a PEG parser generated from colony.pest grammar.
-//! It works in conjunction with the existing mode-stack lexer for preprocessing
-//! and produces the same AST as the recursive descent parser.
-//!
-//! Architecture:
-//! 1. Preprocess: Mode-stack lexer (existing) handles context-sensitive tokenization
-//! 2. Parse: pest parses the syntactic structure
-//! 3. Build: AST builder transforms pest's parse tree into our AST
-//!
-//! See docs/peg-proposal.md for full design.
-
-use pest::Parser;
 use pest_derive::Parser;
 
 #[derive(Parser)]
