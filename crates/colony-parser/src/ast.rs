@@ -40,11 +40,11 @@ pub enum Statement {
     Until(UntilStatement),
 
     // === Bash Extended Commands ===
-    /// [[ expression ]] - Extended conditional
+    /// `[[ expression ]]` - Extended conditional
     Conditional(ConditionalCommand),
-    /// (( expression )) - Arithmetic command
+    /// `(( expression ))` - Arithmetic command
     Arithmetic(ArithmeticCommand),
-    /// coproc [NAME] command
+    /// `coproc [NAME] command`
     Coproc(CoprocCommand),
 
     // === Declarations (Colony) ===
@@ -55,7 +55,7 @@ pub enum Statement {
     /// proc name(...) { }
     ProcDef(ProcDef),
 
-    /// return [value]
+    /// `return [value]`
     Return(ReturnStatement),
 
     /// Empty statement
@@ -88,7 +88,7 @@ impl Statement {
     }
 }
 
-/// A simple command: name [args] [redirects]
+/// A simple command: `name [args] [redirects]`
 #[derive(Clone, Debug, Serialize)]
 pub struct SimpleCommand {
     /// Command name/path
@@ -102,7 +102,7 @@ pub struct SimpleCommand {
     pub span: Span,
 }
 
-/// An assignment: name=value or name=(array values) or name[index]=value
+/// An assignment: `name=value` or `name=(array values)` or `name[index]=value`
 #[derive(Clone, Debug, Serialize)]
 pub struct Assignment {
     pub name: String,
@@ -186,7 +186,7 @@ pub enum ListOp {
 pub struct Redirect {
     /// Source file descriptor (default based on type)
     pub fd: Option<i32>,
-    /// Source fd from variable (e.g., {COPROC[1]} syntax)
+    /// Source fd from variable (e.g., `{COPROC[1]}` syntax)
     pub fd_var: Option<String>,
     /// Redirection type
     pub kind: RedirectKind,
@@ -363,11 +363,11 @@ pub enum VarPrefix {
 /// Array subscript
 #[derive(Clone, Debug, Serialize)]
 pub enum ArraySubscript {
-    /// [index] - numeric or expression
+    /// `[index]` - numeric or expression
     Index(Box<Expression>),
-    /// [@] - all elements as separate words
+    /// `[@]` - all elements as separate words
     All,
-    /// [*] - all elements as single word
+    /// `[*]` - all elements as single word
     Star,
 }
 
@@ -382,11 +382,11 @@ pub enum VarModifier {
     Error { word: Box<Word>, check_null: bool },
     /// ${var:+word} or ${var+word}
     Alternate { word: Box<Word>, check_null: bool },
-    /// ${#var} or ${#arr[@]}
+    /// `${#var}` or `${#arr[@]}`
     Length,
-    /// ${!arr[@]} - array indices
+    /// `${!arr[@]}` - array indices
     Indices,
-    /// ${arr[@]:offset} or ${arr[@]:offset:length}
+    /// `${arr[@]:offset}` or `${arr[@]:offset:length}`
     Slice {
         offset: Box<Word>,
         length: Option<Box<Word>>,
@@ -508,7 +508,7 @@ pub struct UntilStatement {
     pub span: Span,
 }
 
-/// [[ expression ]] - Extended conditional command
+/// `[[ expression ]]` - Extended conditional command
 #[derive(Clone, Debug, Serialize)]
 pub struct ConditionalCommand {
     pub expr: CondExpr,

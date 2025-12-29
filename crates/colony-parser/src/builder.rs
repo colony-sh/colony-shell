@@ -1,6 +1,6 @@
 //! AST Builder - transforms pest parse tree into Colony AST
 //!
-//! The pest parser generates a parse tree (Pairs<Rule>) which we need to
+//! The pest parser generates a parse tree (`Pairs<Rule>`) which we need to
 //! transform into our strongly-typed AST. This module walks the parse tree
 //! and constructs AST nodes.
 
