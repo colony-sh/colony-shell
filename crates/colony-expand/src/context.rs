@@ -131,6 +131,7 @@ impl SystemVars {
     }
 
     #[cfg(not(target_os = "macos"))]
+    #[allow(dead_code)]
     fn get_darwin_version() -> String {
         String::new()
     }
