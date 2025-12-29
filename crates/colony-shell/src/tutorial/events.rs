@@ -261,21 +261,16 @@ pub enum BranchType {
 }
 
 /// Complexity level for pacing
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComplexityLevel {
     /// Simple commands, basic assignments
+    #[default]
     Low,
     /// Parameter expansion, simple redirects
     Medium,
     /// Pipelines, command substitution, loops
     High,
-}
-
-impl Default for ComplexityLevel {
-    fn default() -> Self {
-        Self::Low
-    }
 }
 
 #[cfg(test)]
