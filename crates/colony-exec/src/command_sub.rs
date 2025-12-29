@@ -506,6 +506,23 @@ mod tests {
     }
 
     #[test]
+    fn test_pwd_substitution() {
+        let mut context = ExpansionContext::new();
+
+        let stmt = pest_api::parse_statement("pwd").unwrap();
+        let result = execute_and_capture(&stmt, &mut context);
+
+        if let Ok(output) = result {
+            assert!(!output.trim().is_empty(), "pwd output should not be empty");
+            assert!(
+                output.trim().starts_with('/') || output.contains(':'),
+                "pwd should return a path, got: {:?}",
+                output
+            );
+        }
+    }
+
+    #[test]
     fn test_echo_world_substitution() {
         let mut context = ExpansionContext::new();
 

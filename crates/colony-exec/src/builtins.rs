@@ -494,11 +494,18 @@ fn builtin_exit(args: &[String]) -> Result<BuiltinResult> {
 ///
 /// Usage: pwd
 fn builtin_pwd(_args: &[String]) -> Result<BuiltinResult> {
+    use std::io::Write;
+    use std::os::unix::io::FromRawFd;
+
     let cwd = env::current_dir().map_err(|e| {
         ExecutionError::IoError(std::io::Error::new(e.kind(), format!("pwd: {}", e)))
     })?;
 
-    println!("{}", cwd.display());
+    let mut stdout = unsafe { std::fs::File::from_raw_fd(1) };
+    let _ = writeln!(stdout, "{}", cwd.display());
+    let _ = stdout.flush();
+    std::mem::forget(stdout);
+
     Ok(BuiltinResult::Success(0))
 }
 
