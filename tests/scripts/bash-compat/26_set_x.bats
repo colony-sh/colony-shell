@@ -203,7 +203,6 @@ teardown() {
 }
 
 @test "set -x: trace readonly assignment" {
-    skip "readonly builtin not yet implemented"
     run "$COLONY" -c "set -x; readonly VAR=value; echo done" 2>&1
     [ "$status" -eq 0 ]
     [[ "$output" == *"readonly"* ]] && [[ "$output" == *"VAR=value"* ]]
