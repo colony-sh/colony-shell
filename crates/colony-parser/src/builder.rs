@@ -322,13 +322,26 @@ impl AstBuilder {
     }
 
     /// Build a pipeline: cmd1 | cmd2 | cmd3
+    /// Supports multiple negations: ! ! false = false (even negations cancel out)
     fn build_pipeline(pair: Pair<Rule>) -> Result<Pipeline, BuildError> {
         let span = span_from_pair(&pair);
         let raw_text = pair.as_str();
         let inner = pair.into_inner();
 
         let mut elements = Vec::new();
-        let negated = raw_text.trim_start().starts_with('!');
+        
+        // Count the number of '!' at the start (for multiple negations like ! ! false)
+        let trimmed = raw_text.trim_start();
+        let mut negation_count = 0;
+        for ch in trimmed.chars() {
+            if ch == '!' {
+                negation_count += 1;
+            } else if !ch.is_whitespace() {
+                break;
+            }
+        }
+        // Odd number of negations means negated
+        let negated = negation_count % 2 == 1;
 
         // Parse elements
         let mut current_element: Option<Box<Statement>> = None;
