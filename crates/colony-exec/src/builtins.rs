@@ -1362,12 +1362,14 @@ fn builtin_test(args: &[String], cmd_name: &str) -> Result<BuiltinResult> {
         return Ok(BuiltinResult::Failure(1));
     }
 
-    let result = evaluate_test_expr(args)?;
-    Ok(if result {
-        BuiltinResult::Success(0)
-    } else {
-        BuiltinResult::Failure(1)
-    })
+    match evaluate_test_expr(args) {
+        Ok(result) => Ok(if result {
+            BuiltinResult::Success(0)
+        } else {
+            BuiltinResult::Failure(1)
+        }),
+        Err(_) => Ok(BuiltinResult::Failure(2)),
+    }
 }
 
 fn evaluate_test_expr(args: &[String]) -> Result<bool> {
@@ -1530,7 +1532,10 @@ fn evaluate_test_primary(args: &[String], idx: &mut usize) -> Result<bool> {
         let op = &args[*idx + 1];
         let right = &args[*idx + 2];
         
-        if matches!(op.as_str(), "=" | "==" | "!=" | "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge" | "<" | ">" | "-nt" | "-ot" | "-ef") {
+        let is_known_binary_op = matches!(op.as_str(), "=" | "==" | "!=" | "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge" | "<" | ">" | "-nt" | "-ot" | "-ef");
+        let looks_like_binary_op = op.starts_with('-') && op.len() > 1;
+        
+        if is_known_binary_op || looks_like_binary_op {
             *idx += 3;
             return evaluate_binary_op(left, op, right);
         }
@@ -1600,8 +1605,11 @@ fn evaluate_binary_op(left: &str, op: &str, right: &str) -> Result<bool> {
             }
         }
         _ => {
-            eprintln!("test: unknown operator: {}", op);
-            return Ok(false);
+            eprintln!("[: {}: binary operator expected", op);
+            return Err(ExecutionError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("{}: binary operator expected", op),
+            )));
         }
     };
     Ok(result)
@@ -2018,8 +2026,12 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
             }
         } else if arg == "-d" {
             i += 1;
-            if i < args.len() && !args[i].is_empty() {
-                delimiter = args[i].chars().next();
+            if i < args.len() {
+                if args[i].is_empty() {
+                    delimiter = Some('\0');
+                } else {
+                    delimiter = args[i].chars().next();
+                }
             }
         } else if arg == "-t" {
             i += 1;

@@ -926,6 +926,7 @@ dependencies = [
  "libc",
  "nix",
  "parking_lot",
+ "regex",
  "signal-hook",
  "thiserror",
  "tokio",

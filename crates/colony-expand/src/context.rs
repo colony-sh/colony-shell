@@ -1125,16 +1125,19 @@ impl ExpansionContext {
     }
 
     /// Unset a variable (follows nameref to target)
+    /// Also removes any attributes (integer, readonly, etc.) associated with the variable
     pub fn unset_variable(&mut self, name: &str) {
         if let Some(var) = self.variables.get(name) {
             if let Variable::NameRef(_) = var {
                 if let Some(resolved) = self.resolve_nameref(name) {
                     self.variables.remove(&resolved);
+                    self.var_attributes.remove(&resolved);
                     return;
                 }
             }
         }
         self.variables.remove(name);
+        self.var_attributes.remove(name);
     }
 
     /// Get environment variable
