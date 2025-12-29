@@ -75,9 +75,14 @@ impl ApprovalDatabase {
         Ok(())
     }
 
-    pub fn check_approval(&self, script_path: &Path, script_hash: &str, variable: &str) -> Result<bool> {
+    pub fn check_approval(
+        &self,
+        script_path: &Path,
+        script_hash: &str,
+        variable: &str,
+    ) -> Result<bool> {
         let script_path_str = script_path.to_string_lossy();
-        
+
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM approvals 
              WHERE script_path = ?1 AND script_hash = ?2 AND variable_name = ?3",
@@ -102,7 +107,13 @@ impl ApprovalDatabase {
             "INSERT OR REPLACE INTO approvals 
              (script_path, script_hash, variable_name, scope, granted_at, granted_by)
              VALUES (?1, ?2, ?3, 'global', ?4, ?5)",
-            params![script_path_str, script_hash, variable, granted_at, granted_by],
+            params![
+                script_path_str,
+                script_hash,
+                variable,
+                granted_at,
+                granted_by
+            ],
         )?;
 
         Ok(())
@@ -110,7 +121,7 @@ impl ApprovalDatabase {
 
     pub fn revoke_approval(&self, script_path: &Path, variable: &str) -> Result<()> {
         let script_path_str = script_path.to_string_lossy();
-        
+
         self.conn.execute(
             "DELETE FROM approvals WHERE script_path = ?1 AND variable_name = ?2",
             params![script_path_str, variable],
@@ -131,7 +142,7 @@ impl ApprovalDatabase {
     pub fn list_approvals(&self, variable: &str) -> Result<Vec<SecureApproval>> {
         let mut stmt = self.conn.prepare(
             "SELECT script_path, script_hash, variable_name, scope, granted_at, granted_by
-             FROM approvals WHERE variable_name = ?1"
+             FROM approvals WHERE variable_name = ?1",
         )?;
 
         let approvals = stmt.query_map(params![variable], |row| {
@@ -173,7 +184,7 @@ impl ApprovalDatabase {
     pub fn list_all_approvals(&self) -> Result<Vec<SecureApproval>> {
         let mut stmt = self.conn.prepare(
             "SELECT script_path, script_hash, variable_name, scope, granted_at, granted_by
-             FROM approvals"
+             FROM approvals",
         )?;
 
         let approvals = stmt.query_map([], |row| {
@@ -214,7 +225,7 @@ impl ApprovalDatabase {
 
     pub fn clear_stale_approvals(&self, script_path: &Path, current_hash: &str) -> Result<usize> {
         let script_path_str = script_path.to_string_lossy();
-        
+
         let deleted = self.conn.execute(
             "DELETE FROM approvals WHERE script_path = ?1 AND script_hash != ?2",
             params![script_path_str, current_hash],
@@ -235,13 +246,20 @@ mod tests {
         let script_hash = "sha256:abc123";
         let variable = "AWS_SECRET_KEY";
 
-        assert!(!db.check_approval(&script_path, script_hash, variable).unwrap());
+        assert!(!db
+            .check_approval(&script_path, script_hash, variable)
+            .unwrap());
 
-        db.save_approval(&script_path, script_hash, variable, "interactive").unwrap();
-        assert!(db.check_approval(&script_path, script_hash, variable).unwrap());
+        db.save_approval(&script_path, script_hash, variable, "interactive")
+            .unwrap();
+        assert!(db
+            .check_approval(&script_path, script_hash, variable)
+            .unwrap());
 
         let wrong_hash = "sha256:different";
-        assert!(!db.check_approval(&script_path, wrong_hash, variable).unwrap());
+        assert!(!db
+            .check_approval(&script_path, wrong_hash, variable)
+            .unwrap());
 
         let approvals = db.list_approvals(variable).unwrap();
         assert_eq!(approvals.len(), 1);
@@ -249,7 +267,9 @@ mod tests {
         assert_eq!(approvals[0].granted_by, "interactive");
 
         db.revoke_approval(&script_path, variable).unwrap();
-        assert!(!db.check_approval(&script_path, script_hash, variable).unwrap());
+        assert!(!db
+            .check_approval(&script_path, script_hash, variable)
+            .unwrap());
     }
 
     #[test]
@@ -262,13 +282,15 @@ mod tests {
             "sha256:hash1",
             variable,
             "user1",
-        ).unwrap();
+        )
+        .unwrap();
         db.save_approval(
             &PathBuf::from("/script2.sh"),
             "sha256:hash2",
             variable,
             "user2",
-        ).unwrap();
+        )
+        .unwrap();
 
         let approvals = db.list_approvals(variable).unwrap();
         assert_eq!(approvals.len(), 2);
@@ -285,13 +307,21 @@ mod tests {
         let script_path = PathBuf::from("/deploy.sh");
         let variable = "SECRET";
 
-        db.save_approval(&script_path, "sha256:old", variable, "user").unwrap();
-        db.save_approval(&script_path, "sha256:new", variable, "user").unwrap();
+        db.save_approval(&script_path, "sha256:old", variable, "user")
+            .unwrap();
+        db.save_approval(&script_path, "sha256:new", variable, "user")
+            .unwrap();
 
-        let cleared = db.clear_stale_approvals(&script_path, "sha256:new").unwrap();
+        let cleared = db
+            .clear_stale_approvals(&script_path, "sha256:new")
+            .unwrap();
         assert_eq!(cleared, 1);
 
-        assert!(db.check_approval(&script_path, "sha256:new", variable).unwrap());
-        assert!(!db.check_approval(&script_path, "sha256:old", variable).unwrap());
+        assert!(db
+            .check_approval(&script_path, "sha256:new", variable)
+            .unwrap());
+        assert!(!db
+            .check_approval(&script_path, "sha256:old", variable)
+            .unwrap());
     }
 }

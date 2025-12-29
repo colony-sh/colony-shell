@@ -50,11 +50,11 @@
 //! - **Event Notification**: `out("file_change", path, mtime)`
 //! - **Request/Response**: `out("request", id, data)` → `in("response", id, *)`
 
-mod persistent;
 mod ipc;
+mod persistent;
 
+pub use ipc::{IpcError, IpcTupleSpace, TupleNotification};
 pub use persistent::{PersistentTupleSpace, StorageError};
-pub use ipc::{IpcTupleSpace, IpcError, TupleNotification};
 
 use parking_lot::{Condvar, Mutex};
 use scc::HashMap;
@@ -179,11 +179,7 @@ impl TupleSpace {
         let hash = tuple.len() as u64;
 
         // Add to the appropriate bucket
-        self.tuples
-            .entry(hash)
-            .or_insert_with(Vec::new)
-            .get_mut()
-            .push(tuple);
+        self.tuples.entry(hash).or_default().get_mut().push(tuple);
 
         // Notify any waiting threads
         let (_lock, condvar) = &*self.notify;
@@ -408,7 +404,10 @@ mod tests {
 
         let result = space.inp(pattern);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().fields[1], Value::Str("file_changed".to_string()));
+        assert_eq!(
+            result.unwrap().fields[1],
+            Value::Str("file_changed".to_string())
+        );
     }
 
     #[test]
@@ -488,9 +487,18 @@ mod tests {
         let space = TupleSpace::new();
 
         // Write multiple tuples
-        space.out(Tuple::from(vec![Value::Str("a".to_string()), Value::Int(1)]));
-        space.out(Tuple::from(vec![Value::Str("a".to_string()), Value::Int(2)]));
-        space.out(Tuple::from(vec![Value::Str("b".to_string()), Value::Int(3)]));
+        space.out(Tuple::from(vec![
+            Value::Str("a".to_string()),
+            Value::Int(1),
+        ]));
+        space.out(Tuple::from(vec![
+            Value::Str("a".to_string()),
+            Value::Int(2),
+        ]));
+        space.out(Tuple::from(vec![
+            Value::Str("b".to_string()),
+            Value::Int(3),
+        ]));
 
         assert_eq!(space.len(), 3);
 

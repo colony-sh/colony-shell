@@ -154,9 +154,9 @@ impl History {
         if self.control.ignorespace && command.starts_with(' ') {
             return false;
         }
-        
+
         let command = command.trim();
-        
+
         if command.is_empty() {
             return false;
         }
@@ -177,9 +177,9 @@ impl History {
 
         self.entries.push_back(command.to_string());
         self.truncate();
-        
+
         self.position = self.entries.len();
-        
+
         true
     }
 
@@ -253,12 +253,10 @@ impl History {
         };
 
         let reader = BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(cmd) = line {
-                let cmd = cmd.trim();
-                if !cmd.is_empty() {
-                    self.entries.push_back(cmd.to_string());
-                }
+        for cmd in reader.lines().map_while(Result::ok) {
+            let cmd = cmd.trim();
+            if !cmd.is_empty() {
+                self.entries.push_back(cmd.to_string());
             }
         }
 
@@ -280,7 +278,7 @@ impl History {
         }
 
         let mut file = File::create(&path)?;
-        
+
         // Only save last file_max_size entries
         let start = if self.entries.len() > self.file_max_size {
             self.entries.len() - self.file_max_size
@@ -307,10 +305,7 @@ impl History {
             std::fs::create_dir_all(parent)?;
         }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
 
         writeln!(file, "{}", command)?;
 
@@ -348,6 +343,7 @@ impl History {
     }
 
     /// Move to next entry (newer)
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<&String> {
         if self.position < self.entries.len() {
             self.position += 1;
@@ -427,42 +423,38 @@ impl History {
                 Some('-') => {
                     // !-N - relative reference
                     chars.next();
-                    let num_str: String = chars
-                        .by_ref()
-                        .take_while(|c| c.is_ascii_digit())
-                        .collect();
-                    
+                    let num_str: String =
+                        chars.by_ref().take_while(|c| c.is_ascii_digit()).collect();
+
                     if num_str.is_empty() {
                         return Err(HistoryExpansionError::InvalidReference("!-".to_string()));
                     }
-                    
+
                     let n: usize = num_str.parse().map_err(|_| {
                         HistoryExpansionError::InvalidReference(format!("!-{}", num_str))
                     })?;
-                    
+
                     if n == 0 || n > self.entries.len() {
                         return Err(HistoryExpansionError::OutOfRange(format!("!-{}", n)));
                     }
-                    
+
                     let idx = self.entries.len() - n;
                     result.push_str(&self.entries[idx]);
                     expanded = true;
                 }
                 Some(c) if c.is_ascii_digit() => {
                     // !N - absolute reference
-                    let num_str: String = chars
-                        .by_ref()
-                        .take_while(|c| c.is_ascii_digit())
-                        .collect();
-                    
+                    let num_str: String =
+                        chars.by_ref().take_while(|c| c.is_ascii_digit()).collect();
+
                     let n: usize = num_str.parse().map_err(|_| {
                         HistoryExpansionError::InvalidReference(format!("!{}", num_str))
                     })?;
-                    
+
                     if n == 0 || n > self.entries.len() {
                         return Err(HistoryExpansionError::OutOfRange(format!("!{}", n)));
                     }
-                    
+
                     result.push_str(&self.entries[n - 1]);
                     expanded = true;
                 }
@@ -472,7 +464,7 @@ impl History {
                         .by_ref()
                         .take_while(|c| !c.is_whitespace() && *c != '!')
                         .collect();
-                    
+
                     match self.search_prefix(&prefix) {
                         Some(cmd) => {
                             result.push_str(cmd);
@@ -528,11 +520,11 @@ pub fn execute_history_builtin(args: &[String], history: &mut History) -> i32 {
     let mut read = false;
     let mut write = false;
     let mut suppress_numbers = false;
-    
+
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
-        
+
         if arg == "-c" {
             clear = true;
         } else if arg == "-d" {
@@ -562,15 +554,15 @@ pub fn execute_history_builtin(args: &[String], history: &mut History) -> i32 {
         } else if let Ok(n) = arg.parse::<usize>() {
             show_count = Some(n);
         }
-        
+
         i += 1;
     }
-    
+
     if clear {
         history.clear();
         return 0;
     }
-    
+
     if let Some(idx) = delete_index {
         let actual_idx = if idx < 0 {
             let len = history.len() as i64;
@@ -582,14 +574,14 @@ pub fn execute_history_builtin(args: &[String], history: &mut History) -> i32 {
         } else {
             idx as usize
         };
-        
+
         if !history.delete(actual_idx) {
             eprintln!("history: {}: history position out of range", idx);
             return 1;
         }
         return 0;
     }
-    
+
     if append {
         if let Err(e) = history.save_to_file() {
             eprintln!("history: cannot append: {}", e);
@@ -597,12 +589,12 @@ pub fn execute_history_builtin(args: &[String], history: &mut History) -> i32 {
         }
         return 0;
     }
-    
+
     if read {
         history.load_from_file();
         return 0;
     }
-    
+
     if write {
         if let Err(e) = history.save_to_file() {
             eprintln!("history: cannot write: {}", e);
@@ -610,20 +602,24 @@ pub fn execute_history_builtin(args: &[String], history: &mut History) -> i32 {
         }
         return 0;
     }
-    
+
     let entries: Vec<_> = if let Some(n) = show_count {
         history.last_n(n).into_iter().collect()
     } else {
         history.entries().collect()
     };
-    
+
     let total = history.len();
     let start_num = if let Some(n) = show_count {
-        if n < total { total - n + 1 } else { 1 }
+        if n < total {
+            total - n + 1
+        } else {
+            1
+        }
     } else {
         1
     };
-    
+
     for (i, entry) in entries.iter().enumerate() {
         if suppress_numbers {
             println!("{}", entry);
@@ -631,7 +627,7 @@ pub fn execute_history_builtin(args: &[String], history: &mut History) -> i32 {
             println!("{:>5}  {}", start_num + i, entry);
         }
     }
-    
+
     0
 }
 
@@ -671,7 +667,7 @@ impl<'a> InteractiveHistorySearch<'a> {
         }
 
         let query_lower = query.to_lowercase();
-        
+
         for (idx, cmd) in self.history.entries.iter().enumerate().rev() {
             let cmd_lower = cmd.to_lowercase();
             if let Some(pos) = cmd_lower.find(&query_lower) {
@@ -721,7 +717,8 @@ impl History {
 
     pub fn fuzzy_search(&self, query: &str, max_results: usize) -> Vec<HistorySearchResult> {
         if query.is_empty() {
-            return self.entries
+            return self
+                .entries
                 .iter()
                 .enumerate()
                 .rev()
@@ -742,7 +739,7 @@ impl History {
             if results.len() >= max_results {
                 break;
             }
-            
+
             let cmd_lower = cmd.to_lowercase();
             let (match_start, match_end) = if let Some(pos) = cmd_lower.find(&query_lower) {
                 (pos, pos + query.len())
@@ -762,7 +759,8 @@ impl History {
     }
 
     fn history_entries_with_scores(&self, query: &str) -> Vec<(usize, &String)> {
-        let mut scored: Vec<(usize, &String, i32)> = self.entries
+        let mut scored: Vec<(usize, &String, i32)> = self
+            .entries
             .iter()
             .enumerate()
             .filter_map(|(idx, cmd)| {
@@ -776,7 +774,7 @@ impl History {
             .collect();
 
         scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.0.cmp(&a.0)));
-        
+
         scored.into_iter().map(|(idx, cmd, _)| (idx, cmd)).collect()
     }
 
@@ -786,17 +784,23 @@ impl History {
 
         if haystack_lower.contains(&needle_lower) {
             let mut score = 100;
-            
+
             if haystack_lower.starts_with(&needle_lower) {
                 score += 50;
             }
-            
+
             if let Some(pos) = haystack_lower.find(&needle_lower) {
-                if pos == 0 || haystack.chars().nth(pos - 1).map(|c| c == ' ' || c == '/').unwrap_or(false) {
+                if pos == 0
+                    || haystack
+                        .chars()
+                        .nth(pos - 1)
+                        .map(|c| c == ' ' || c == '/')
+                        .unwrap_or(false)
+                {
                     score += 25;
                 }
             }
-            
+
             return score;
         }
 
@@ -808,7 +812,7 @@ impl History {
         for (pos, c) in haystack_lower.chars().enumerate() {
             if needle_chars.peek() == Some(&c) {
                 needle_chars.next();
-                
+
                 if last_match_pos.map(|p| p + 1 == pos).unwrap_or(false) {
                     consecutive += 1;
                     score += 5 + consecutive * 2;
@@ -816,7 +820,7 @@ impl History {
                     consecutive = 0;
                     score += 5;
                 }
-                
+
                 last_match_pos = Some(pos);
             }
         }
@@ -842,11 +846,11 @@ mod tests {
     #[test]
     fn test_add_and_get() {
         let mut history = History::new();
-        
+
         history.add("ls -la");
         history.add("cd /tmp");
         history.add("echo hello");
-        
+
         assert_eq!(history.len(), 3);
         assert_eq!(history.get(1), Some(&"ls -la".to_string()));
         assert_eq!(history.get(2), Some(&"cd /tmp".to_string()));
@@ -859,12 +863,12 @@ mod tests {
     fn test_max_size() {
         let mut history = History::new();
         history.set_max_size(3);
-        
+
         history.add("cmd1");
         history.add("cmd2");
         history.add("cmd3");
         history.add("cmd4");
-        
+
         assert_eq!(history.len(), 3);
         assert_eq!(history.get(1), Some(&"cmd2".to_string()));
         assert_eq!(history.get(3), Some(&"cmd4".to_string()));
@@ -877,7 +881,7 @@ mod tests {
             ignorespace: true,
             ..Default::default()
         });
-        
+
         assert!(history.add("normal command"));
         assert!(!history.add(" secret command"));
         assert_eq!(history.len(), 1);
@@ -890,16 +894,16 @@ mod tests {
             ignoredups: true,
             ..Default::default()
         });
-        
+
         history.add("ls");
         history.add("ls");
         history.add("ls");
-        
+
         assert_eq!(history.len(), 1);
-        
+
         history.add("pwd");
         history.add("ls");
-        
+
         assert_eq!(history.len(), 3); // ls, pwd, ls
     }
 
@@ -910,11 +914,11 @@ mod tests {
             erasedups: true,
             ..Default::default()
         });
-        
+
         history.add("ls");
         history.add("pwd");
         history.add("ls");
-        
+
         assert_eq!(history.len(), 2);
         assert_eq!(history.get(1), Some(&"pwd".to_string()));
         assert_eq!(history.get(2), Some(&"ls".to_string()));
@@ -925,9 +929,9 @@ mod tests {
         let mut history = History::new();
         history.add("cmd1");
         history.add("cmd2");
-        
+
         history.clear();
-        
+
         assert!(history.is_empty());
     }
 
@@ -937,12 +941,12 @@ mod tests {
         history.add("cmd1");
         history.add("cmd2");
         history.add("cmd3");
-        
+
         assert!(history.delete(2));
         assert_eq!(history.len(), 2);
         assert_eq!(history.get(1), Some(&"cmd1".to_string()));
         assert_eq!(history.get(2), Some(&"cmd3".to_string()));
-        
+
         assert!(!history.delete(0));
         assert!(!history.delete(10));
     }
@@ -954,10 +958,10 @@ mod tests {
         history.add("cmd2");
         history.add("cmd3");
         history.add("cmd4");
-        
+
         let last2: Vec<_> = history.last_n(2).into_iter().cloned().collect();
         assert_eq!(last2, vec!["cmd3", "cmd4"]);
-        
+
         let last10: Vec<_> = history.last_n(10).into_iter().cloned().collect();
         assert_eq!(last10.len(), 4);
     }
@@ -969,7 +973,7 @@ mod tests {
         history.add("cd /tmp");
         history.add("ls /home");
         history.add("echo hello");
-        
+
         let results = history.search("ls");
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0, 1);
@@ -982,7 +986,7 @@ mod tests {
         history.add("ls -la");
         history.add("cd /tmp");
         history.add("ls /home");
-        
+
         assert_eq!(history.search_prefix("ls"), Some(&"ls /home".to_string()));
         assert_eq!(history.search_prefix("cd"), Some(&"cd /tmp".to_string()));
         assert_eq!(history.search_prefix("xyz"), None);
@@ -994,16 +998,16 @@ mod tests {
         history.add("cmd1");
         history.add("cmd2");
         history.add("cmd3");
-        
+
         // Position starts at end
         assert_eq!(history.position(), 3);
-        
+
         // Go back
         assert_eq!(history.previous(), Some(&"cmd3".to_string()));
         assert_eq!(history.previous(), Some(&"cmd2".to_string()));
         assert_eq!(history.previous(), Some(&"cmd1".to_string()));
         assert_eq!(history.previous(), None);
-        
+
         // Go forward
         assert_eq!(history.next(), Some(&"cmd2".to_string()));
         assert_eq!(history.next(), Some(&"cmd3".to_string()));
@@ -1016,11 +1020,11 @@ mod tests {
         assert!(control.ignorespace);
         assert!(control.ignoredups);
         assert!(!control.erasedups);
-        
+
         let control = HistoryControl::from_env("ignoreboth");
         assert!(control.ignorespace);
         assert!(control.ignoredups);
-        
+
         let control = HistoryControl::from_env("erasedups");
         assert!(!control.ignorespace);
         assert!(!control.ignoredups);
@@ -1040,11 +1044,11 @@ mod tests {
         let mut history = History::new();
         history.add("ls -la");
         history.add("echo hello");
-        
+
         let (expanded, was_expanded) = history.expand("!!").unwrap();
         assert!(was_expanded);
         assert_eq!(expanded, "echo hello");
-        
+
         let (expanded, was_expanded) = history.expand("sudo !!").unwrap();
         assert!(was_expanded);
         assert_eq!(expanded, "sudo echo hello");
@@ -1056,13 +1060,13 @@ mod tests {
         history.add("cmd1");
         history.add("cmd2");
         history.add("cmd3");
-        
+
         let (expanded, _) = history.expand("!1").unwrap();
         assert_eq!(expanded, "cmd1");
-        
+
         let (expanded, _) = history.expand("!2").unwrap();
         assert_eq!(expanded, "cmd2");
-        
+
         let (expanded, _) = history.expand("!3").unwrap();
         assert_eq!(expanded, "cmd3");
     }
@@ -1073,13 +1077,13 @@ mod tests {
         history.add("cmd1");
         history.add("cmd2");
         history.add("cmd3");
-        
+
         let (expanded, _) = history.expand("!-1").unwrap();
         assert_eq!(expanded, "cmd3");
-        
+
         let (expanded, _) = history.expand("!-2").unwrap();
         assert_eq!(expanded, "cmd2");
-        
+
         let (expanded, _) = history.expand("!-3").unwrap();
         assert_eq!(expanded, "cmd1");
     }
@@ -1090,10 +1094,10 @@ mod tests {
         history.add("ls -la");
         history.add("cd /tmp");
         history.add("ls /home");
-        
+
         let (expanded, _) = history.expand("!ls").unwrap();
         assert_eq!(expanded, "ls /home");
-        
+
         let (expanded, _) = history.expand("!cd").unwrap();
         assert_eq!(expanded, "cd /tmp");
     }
@@ -1102,7 +1106,7 @@ mod tests {
     fn test_expand_no_expansion_in_single_quotes() {
         let mut history = History::new();
         history.add("echo hello");
-        
+
         let (expanded, was_expanded) = history.expand("echo '!!'").unwrap();
         assert!(!was_expanded);
         assert_eq!(expanded, "echo '!!'");
@@ -1111,25 +1115,25 @@ mod tests {
     #[test]
     fn test_expand_errors() {
         let history = History::new();
-        
+
         assert!(matches!(
             history.expand("!!"),
             Err(HistoryExpansionError::NoHistory)
         ));
-        
+
         let mut history = History::new();
         history.add("cmd1");
-        
+
         assert!(matches!(
             history.expand("!0"),
             Err(HistoryExpansionError::OutOfRange(_))
         ));
-        
+
         assert!(matches!(
             history.expand("!99"),
             Err(HistoryExpansionError::OutOfRange(_))
         ));
-        
+
         assert!(matches!(
             history.expand("!notfound"),
             Err(HistoryExpansionError::NotFound(_))
@@ -1140,7 +1144,7 @@ mod tests {
     fn test_expand_no_expansion_needed() {
         let mut history = History::new();
         history.add("cmd1");
-        
+
         let (expanded, was_expanded) = history.expand("echo hello").unwrap();
         assert!(!was_expanded);
         assert_eq!(expanded, "echo hello");
@@ -1150,7 +1154,7 @@ mod tests {
     fn test_expand_trailing_bang() {
         let mut history = History::new();
         history.add("cmd1");
-        
+
         let (expanded, was_expanded) = history.expand("echo wow!").unwrap();
         assert!(!was_expanded);
         assert_eq!(expanded, "echo wow!");
@@ -1160,7 +1164,7 @@ mod tests {
     fn test_expand_bang_space() {
         let mut history = History::new();
         history.add("cmd1");
-        
+
         let (expanded, was_expanded) = history.expand("echo ! hello").unwrap();
         assert!(!was_expanded);
         assert_eq!(expanded, "echo ! hello");
@@ -1174,16 +1178,16 @@ mod tests {
         history.add("ls /home");
         history.add("echo hello");
         history.add("git status");
-        
+
         let mut search = history.interactive_search();
-        
+
         search.update_query("ls");
         assert_eq!(search.results().len(), 2);
         assert_eq!(search.selected().unwrap().command, "ls /home");
-        
+
         search.select_next();
         assert_eq!(search.selected().unwrap().command, "ls -la");
-        
+
         search.select_prev();
         assert_eq!(search.selected().unwrap().command, "ls /home");
     }
@@ -1195,10 +1199,10 @@ mod tests {
         history.add("git push origin main");
         history.add("cargo build --release");
         history.add("git log --oneline");
-        
+
         let results = history.fuzzy_search("git", 10);
         assert_eq!(results.len(), 3);
-        
+
         let results = history.fuzzy_search("gco", 10);
         assert!(!results.is_empty());
     }
@@ -1207,9 +1211,9 @@ mod tests {
     fn test_fuzzy_score() {
         assert!(History::fuzzy_score("git commit", "git") > 0);
         assert!(History::fuzzy_score("git commit", "git") > History::fuzzy_score("digit", "git"));
-        
+
         assert!(History::fuzzy_score("git commit", "gc") > 0);
-        
+
         assert_eq!(History::fuzzy_score("abc", "xyz"), 0);
     }
 }

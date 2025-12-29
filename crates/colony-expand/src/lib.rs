@@ -13,25 +13,28 @@
 //! output for the next. Field splitting is the first phase that can produce
 //! multiple fields from one input.
 
-mod tilde;
-mod parameter;
-mod command;
 mod arithmetic;
+mod brace;
+mod command;
+mod context;
 mod field_split;
+mod parameter;
 pub mod pathname;
 mod quote;
-mod context;
-mod brace;
+mod tilde;
 
-pub use context::{ExpansionContext, ShellOptions, ShoptOptions, Variable, VarAttributes, TrapSignal, TrapAction, CompletionSpec, CompletionAction};
-pub use tilde::expand_tilde;
-pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
 pub use arithmetic::{expand_arithmetic, expand_arithmetic_immut};
-pub use field_split::split_fields;
-pub use pathname::{expand_pathname, expand_pathname_with_options};
 pub use brace::expand_braces;
+pub use context::{
+    CompletionAction, CompletionSpec, ExpansionContext, ShellOptions, ShoptOptions, TrapAction,
+    TrapSignal, VarAttributes, Variable,
+};
+pub(crate) use field_split::split_fields;
+pub use parameter::{expand_parameter, expand_parameter_multi, ExpandedValue};
+pub use pathname::{expand_pathname, expand_pathname_with_options};
+pub use tilde::expand_tilde;
 
-use colony_parser::{Word, WordPart, ProcessSubDirection};
+use colony_parser::{ProcessSubDirection, Word, WordPart};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -76,22 +79,25 @@ impl Field {
     }
 
     pub fn unquoted(text: String) -> Self {
-        Self { text, quoted: false }
+        Self {
+            text,
+            quoted: false,
+        }
     }
 }
 
 /// Command executor callback
 ///
 /// Takes a statement AST and expansion context, returns stdout output
-pub type CommandExecutor =
-    Box<dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>>;
+pub type CommandExecutor = Box<
+    dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>,
+>;
 
 /// Process substitution executor callback
 ///
 /// Takes a statement AST and expansion context, runs the command without capturing
 /// Returns exit code
-pub type ProcessSubExecutor =
-    Box<dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> i32>;
+pub type ProcessSubExecutor = Box<dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> i32>;
 
 /// Main expansion orchestrator
 pub struct Expander {
@@ -115,7 +121,10 @@ impl Expander {
     /// Create expander with command executor for command substitution
     pub fn with_executor<F>(context: ExpansionContext, executor: F) -> Self
     where
-        F: Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>
+        F: Fn(
+                &colony_parser::Statement,
+                &mut ExpansionContext,
+            ) -> std::result::Result<String, String>
             + 'static,
     {
         Self {
@@ -132,7 +141,10 @@ impl Expander {
         procsub_executor: G,
     ) -> Self
     where
-        F: Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>
+        F: Fn(
+                &colony_parser::Statement,
+                &mut ExpansionContext,
+            ) -> std::result::Result<String, String>
             + 'static,
         G: Fn(&colony_parser::Statement, &mut ExpansionContext) -> i32 + 'static,
     {
@@ -142,19 +154,19 @@ impl Expander {
             process_sub_executor: Some(Box::new(procsub_executor)),
         }
     }
-    
+
     pub fn into_context(self) -> ExpansionContext {
         self.context
     }
-    
+
     pub fn context(&self) -> &ExpansionContext {
         &self.context
     }
-    
+
     pub fn context_mut(&mut self) -> &mut ExpansionContext {
         &mut self.context
     }
-    
+
     fn expand_modifier_word(&mut self, word: &Word, in_double_quote: bool) -> Result<String> {
         let mut result = String::new();
         for part in &word.parts {
@@ -207,9 +219,13 @@ impl Expander {
                                 let trimmed_cmd = cmd_str.trim();
                                 if !trimmed_cmd.is_empty() {
                                     if let Some(ref executor) = self.command_executor {
-                                        if let Ok(program) = colony_parser::pest_api::parse(trimmed_cmd) {
+                                        if let Ok(program) =
+                                            colony_parser::pest_api::parse(trimmed_cmd)
+                                        {
                                             for stmt in &program.statements {
-                                                if let Ok(output) = executor(stmt, &mut self.context) {
+                                                if let Ok(output) =
+                                                    executor(stmt, &mut self.context)
+                                                {
                                                     result.push_str(output.trim_end_matches('\n'));
                                                 }
                                             }
@@ -226,19 +242,28 @@ impl Expander {
         }
         Ok(result)
     }
-    
-    fn expand_variable_with_modifier(&mut self, var_ref: &colony_parser::VariableRef, in_double_quote: bool) -> Result<String> {
+
+    fn expand_variable_with_modifier(
+        &mut self,
+        var_ref: &colony_parser::VariableRef,
+        in_double_quote: bool,
+    ) -> Result<String> {
         use colony_parser::VarModifier;
-        
+
         let has_assign_modifier = matches!(var_ref.modifier, Some(VarModifier::Assign { .. }));
-        let modifier_needs_quoting_context = in_double_quote && self.modifier_has_tilde(&var_ref.modifier);
-        
-        if var_ref.modifier.is_none() || (!has_assign_modifier && !modifier_needs_quoting_context && !self.modifier_has_command_sub(&var_ref.modifier)) {
+        let modifier_needs_quoting_context =
+            in_double_quote && self.modifier_has_tilde(&var_ref.modifier);
+
+        if var_ref.modifier.is_none()
+            || (!has_assign_modifier
+                && !modifier_needs_quoting_context
+                && !self.modifier_has_command_sub(&var_ref.modifier))
+        {
             return expand_parameter(var_ref, &self.context);
         }
-        
+
         let var_value = self.context.get_var_or_env(&var_ref.name);
-        
+
         match &var_ref.modifier {
             Some(VarModifier::Default { word, check_null }) => {
                 let should_use_default = if *check_null {
@@ -294,59 +319,67 @@ impl Expander {
             _ => expand_parameter(var_ref, &self.context),
         }
     }
-    
+
     fn modifier_has_command_sub(&self, modifier: &Option<colony_parser::VarModifier>) -> bool {
         use colony_parser::VarModifier;
         match modifier {
             Some(VarModifier::Default { word, .. })
             | Some(VarModifier::Assign { word, .. })
             | Some(VarModifier::Alternate { word, .. })
-            | Some(VarModifier::Error { word, .. }) => {
-                self.word_has_command_sub(word)
-            }
+            | Some(VarModifier::Error { word, .. }) => self.word_has_command_sub(word),
             _ => false,
         }
     }
-    
+
     fn modifier_has_tilde(&self, modifier: &Option<colony_parser::VarModifier>) -> bool {
         use colony_parser::VarModifier;
         match modifier {
             Some(VarModifier::Default { word, .. })
             | Some(VarModifier::Assign { word, .. })
             | Some(VarModifier::Alternate { word, .. })
-            | Some(VarModifier::Error { word, .. }) => {
-                word.parts.iter().any(|part| matches!(part, WordPart::Tilde(_)))
-            }
+            | Some(VarModifier::Error { word, .. }) => word
+                .parts
+                .iter()
+                .any(|part| matches!(part, WordPart::Tilde(_))),
             _ => false,
         }
     }
-    
+
     fn word_has_command_sub(&self, word: &Word) -> bool {
         word.parts.iter().any(|part| match part {
             WordPart::CommandSubRaw(_) | WordPart::CommandSub(_) => true,
-            WordPart::DoubleQuoted(inner) => inner.iter().any(|p| matches!(p, WordPart::CommandSubRaw(_) | WordPart::CommandSub(_))),
+            WordPart::DoubleQuoted(inner) => inner
+                .iter()
+                .any(|p| matches!(p, WordPart::CommandSubRaw(_) | WordPart::CommandSub(_))),
             _ => false,
         })
     }
-    
+
     fn pre_expand_command_subs_in_arith(&mut self, expr: &str) -> Result<String> {
         let mut result = String::new();
         let chars: Vec<char> = expr.chars().collect();
         let mut i = 0;
-        
+
         while i < chars.len() {
-            if i + 1 < chars.len() && chars[i] == '$' && chars[i+1] == '(' {
+            if i + 1 < chars.len() && chars[i] == '$' && chars[i + 1] == '(' {
                 i += 2;
                 let start = i;
                 let mut paren_depth = 1;
                 while i < chars.len() && paren_depth > 0 {
-                    if chars[i] == '(' { paren_depth += 1; }
-                    else if chars[i] == ')' { paren_depth -= 1; }
-                    if paren_depth > 0 { i += 1; }
+                    if chars[i] == '(' {
+                        paren_depth += 1;
+                    } else if chars[i] == ')' {
+                        paren_depth -= 1;
+                    }
+                    if paren_depth > 0 {
+                        i += 1;
+                    }
                 }
                 let cmd_str: String = chars[start..i].iter().collect();
-                if i < chars.len() { i += 1; }
-                
+                if i < chars.len() {
+                    i += 1;
+                }
+
                 if let Some(ref executor) = self.command_executor {
                     if let Ok(program) = colony_parser::pest_api::parse(&cmd_str) {
                         let mut output = String::new();
@@ -370,11 +403,11 @@ impl Expander {
         if let Some(fields) = self.try_expand_array_at_word(word)? {
             return Ok(fields);
         }
-        
+
         if let Some(brace_results) = self.try_expand_brace_word(word)? {
             return Ok(brace_results);
         }
-        
+
         let mut intermediate = IntermediateWord::new();
 
         for part in &word.parts {
@@ -396,16 +429,16 @@ impl Expander {
 
         Ok(expanded_fields)
     }
-    
+
     pub fn expand_word_no_glob(&mut self, word: &Word) -> Result<Vec<Field>> {
         if let Some(fields) = self.try_expand_array_at_word(word)? {
             return Ok(fields);
         }
-        
+
         if let Some(brace_results) = self.try_expand_brace_word(word)? {
             return Ok(brace_results);
         }
-        
+
         let mut intermediate = IntermediateWord::new();
 
         for part in &word.parts {
@@ -415,11 +448,11 @@ impl Expander {
         let fields = split_fields(&intermediate, &self.context);
         Ok(fields)
     }
-    
+
     /// Expand a word for variable assignment RHS (no field splitting, tilde after colon)
     pub fn expand_word_for_assignment(&mut self, word: &Word) -> Result<String> {
         let mut segments: Vec<(String, bool)> = Vec::new();
-        
+
         for part in &word.parts {
             match part {
                 WordPart::Literal(s) => {
@@ -467,7 +500,7 @@ impl Expander {
                 }
             }
         }
-        
+
         let mut result = String::new();
         for (text, quoted) in segments {
             if quoted {
@@ -480,7 +513,11 @@ impl Expander {
                     if segment.starts_with('~') {
                         let slash_pos = segment.find('/').unwrap_or(segment.len());
                         let (tilde_part, rest) = segment.split_at(slash_pos);
-                        let user = if tilde_part.len() > 1 { Some(&tilde_part[1..]) } else { None };
+                        let user = if tilde_part.len() > 1 {
+                            Some(&tilde_part[1..])
+                        } else {
+                            None
+                        };
                         match expand_tilde(user, &self.context) {
                             Ok(expanded) => {
                                 result.push_str(&expanded);
@@ -494,54 +531,71 @@ impl Expander {
                 }
             }
         }
-        
+
         Ok(result)
     }
-    
+
     fn try_expand_array_at_word(&mut self, word: &Word) -> Result<Option<Vec<Field>>> {
         use colony_parser::ArraySubscript;
-        
+
         // Only handle single double-quoted word parts for now
         if word.parts.len() != 1 {
             return Ok(None);
         }
-        
+
         if let WordPart::DoubleQuoted(inner_parts) = &word.parts[0] {
             // Check if there's any $@ in this double-quoted content
-            let at_positions: Vec<usize> = inner_parts.iter().enumerate()
+            let at_positions: Vec<usize> = inner_parts
+                .iter()
+                .enumerate()
                 .filter_map(|(i, part)| {
                     if let WordPart::Variable(var_ref) = part {
-                        if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                        if var_ref.name == "@"
+                            && var_ref.subscript.is_none()
+                            && var_ref.modifier.is_none()
+                            && var_ref.prefix.is_none()
+                        {
                             return Some(i);
                         }
                     }
                     None
                 })
                 .collect();
-            
+
             // No $@ found - fall through to normal expansion
             if at_positions.is_empty() {
                 // Check for $* handling
                 if inner_parts.len() == 1 {
                     if let WordPart::Variable(var_ref) = &inner_parts[0] {
                         // Handle "$*" - join with first char of IFS
-                        if var_ref.name == "*" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                        if var_ref.name == "*"
+                            && var_ref.subscript.is_none()
+                            && var_ref.modifier.is_none()
+                            && var_ref.prefix.is_none()
+                        {
                             let params = self.context.get_all_positional_params();
                             let ifs = self.context.ifs();
                             let sep = ifs.chars().next().unwrap_or(' ');
-                            let joined: String = params.iter()
+                            let joined: String = params
+                                .iter()
                                 .map(|s| s.as_str())
                                 .collect::<Vec<_>>()
                                 .join(&sep.to_string());
                             return Ok(Some(vec![Field::quoted(joined)]));
                         }
-                        
-                        // Handle "${array[@]}" - each element becomes separate quoted field  
+
+                        // Handle "${array[@]}" - each element becomes separate quoted field
                         let has_no_modifier = var_ref.modifier.is_none();
                         let has_no_prefix = var_ref.prefix.is_none();
-                        if matches!(var_ref.subscript, Some(ArraySubscript::All)) && has_no_modifier && has_no_prefix {
-                            if let Some(Variable::Array(arr)) = self.context.get_variable(&var_ref.name) {
-                                let fields: Vec<Field> = arr.iter().map(|s| Field::quoted(s.clone())).collect();
+                        if matches!(var_ref.subscript, Some(ArraySubscript::All))
+                            && has_no_modifier
+                            && has_no_prefix
+                        {
+                            if let Some(Variable::Array(arr)) =
+                                self.context.get_variable(&var_ref.name)
+                            {
+                                let fields: Vec<Field> =
+                                    arr.iter().map(|s| Field::quoted(s.clone())).collect();
                                 return Ok(Some(fields));
                             }
                         }
@@ -549,7 +603,7 @@ impl Expander {
                 }
                 return Ok(None);
             }
-            
+
             // POSIX $@ word splitting: "xx$@yy" → xxfirst, middle..., lastyy
             let params: Vec<String> = self.context.get_all_positional_params().to_vec();
             if params.is_empty() {
@@ -558,7 +612,11 @@ impl Expander {
                 let mut prefix_text = String::new();
                 for part in inner_parts {
                     if let WordPart::Variable(var_ref) = part {
-                        if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                        if var_ref.name == "@"
+                            && var_ref.subscript.is_none()
+                            && var_ref.modifier.is_none()
+                            && var_ref.prefix.is_none()
+                        {
                             continue; // Skip $@ - it expands to nothing
                         }
                     }
@@ -572,23 +630,27 @@ impl Expander {
                     return Ok(Some(vec![Field::quoted(prefix_text)]));
                 }
             }
-            
+
             // Build the result by processing parts in order
             // We need to track: prefix text, multiple $@ expansions, and suffix text
             let mut result_fields: Vec<Field> = Vec::new();
             let mut current_text = String::new();
-            
+
             for (i, part) in inner_parts.iter().enumerate() {
                 if let WordPart::Variable(var_ref) = part {
-                    if var_ref.name == "@" && var_ref.subscript.is_none() && var_ref.modifier.is_none() && var_ref.prefix.is_none() {
+                    if var_ref.name == "@"
+                        && var_ref.subscript.is_none()
+                        && var_ref.modifier.is_none()
+                        && var_ref.prefix.is_none()
+                    {
                         // This is a $@ - expand to multiple fields
                         // current_text is the prefix for the first param
                         // After $@, any remaining text is suffix for last param (unless another $@ follows)
-                        
+
                         // Check if this is the last $@ and if there's suffix text after it
                         let is_last_at = !at_positions.iter().any(|&pos| pos > i);
                         let mut suffix_text = String::new();
-                        
+
                         if is_last_at {
                             // Collect suffix text from remaining parts
                             for remaining_part in inner_parts.iter().skip(i + 1) {
@@ -596,33 +658,33 @@ impl Expander {
                                 suffix_text.push_str(&expanded);
                             }
                         }
-                        
+
                         // Expand $@ with prefix and suffix
                         for (param_idx, param) in params.iter().enumerate() {
                             let mut field_text = String::new();
-                            
+
                             // First param gets the accumulated prefix
                             if param_idx == 0 {
                                 field_text.push_str(&current_text);
                                 current_text.clear();
                             }
-                            
+
                             field_text.push_str(param);
-                            
+
                             // Last param gets the suffix (if this is the last $@)
                             if param_idx == params.len() - 1 && is_last_at {
                                 field_text.push_str(&suffix_text);
                             }
-                            
+
                             result_fields.push(Field::quoted(field_text));
                         }
-                        
+
                         // If there's text between $@ expansions, it goes to the prefix for the next $@
                         // After processing, if this is the last $@, we're done with this double-quoted section
                         if is_last_at {
                             break;
                         } else {
-                            // Not the last $@, prepare for next $@ 
+                            // Not the last $@, prepare for next $@
                             // The last field will receive any text between $@ expansions as suffix,
                             // then that text also becomes prefix for next $@
                             // Actually, for "$@$@", last of first $@ joins with first of second $@
@@ -634,35 +696,35 @@ impl Expander {
                         continue;
                     }
                 }
-                
+
                 // Regular part - accumulate text
                 let expanded = self.expand_part_to_string(part)?;
                 current_text.push_str(&expanded);
             }
-            
+
             // Any remaining text (shouldn't happen if we handled correctly)
             if !current_text.is_empty() {
                 result_fields.push(Field::quoted(current_text));
             }
-            
+
             return Ok(Some(result_fields));
         }
-        
+
         Ok(None)
     }
-    
+
     /// Helper to expand a single part to a string (for use in $@ expansion)
     fn expand_part_to_string(&mut self, part: &WordPart) -> Result<String> {
         let mut temp = IntermediateWord::new();
         self.expand_part_with_quoted(part, &mut temp, true)?;
         Ok(temp.as_single_string())
     }
-    
+
     fn try_expand_brace_word(&mut self, word: &Word) -> Result<Option<Vec<Field>>> {
         let mut brace_parts: Vec<Vec<String>> = Vec::new();
         let mut literal_parts: Vec<String> = Vec::new();
         let mut current_literal = String::new();
-        
+
         for part in &word.parts {
             match part {
                 WordPart::BraceExpansion(content) => {
@@ -672,7 +734,7 @@ impl Expander {
                     } else if literal_parts.is_empty() || brace_parts.len() >= literal_parts.len() {
                         literal_parts.push(String::new());
                     }
-                    
+
                     let inner = content.trim_start_matches('{').trim_end_matches('}');
                     let expansions = brace::expand_braces(inner);
                     brace_parts.push(expansions);
@@ -685,23 +747,23 @@ impl Expander {
                 }
             }
         }
-        
+
         if brace_parts.is_empty() {
             return Ok(None);
         }
-        
+
         if !current_literal.is_empty() {
             literal_parts.push(current_literal);
         }
-        
+
         fn cartesian_product(lists: &[Vec<String>]) -> Vec<Vec<String>> {
             if lists.is_empty() {
                 return vec![vec![]];
             }
-            
+
             let first = &lists[0];
             let rest = cartesian_product(&lists[1..]);
-            
+
             let mut result = Vec::new();
             for item in first {
                 for r in &rest {
@@ -712,9 +774,9 @@ impl Expander {
             }
             result
         }
-        
+
         let combinations = cartesian_product(&brace_parts);
-        
+
         let mut results = Vec::new();
         for combo in combinations {
             let mut expanded = String::new();
@@ -727,13 +789,13 @@ impl Expander {
             if literal_parts.len() > combo.len() {
                 expanded.push_str(&literal_parts[combo.len()]);
             }
-            
+
             let paths = expand_pathname_with_options(&expanded, self.context.shopt_options())?;
             for path in paths {
                 results.push(Field::unquoted(path));
             }
         }
-        
+
         Ok(Some(results))
     }
 
@@ -741,7 +803,12 @@ impl Expander {
         self.expand_part_with_quoted(part, out, false)
     }
 
-    fn expand_part_with_quoted(&mut self, part: &WordPart, out: &mut IntermediateWord, in_double_quote: bool) -> Result<()> {
+    fn expand_part_with_quoted(
+        &mut self,
+        part: &WordPart,
+        out: &mut IntermediateWord,
+        in_double_quote: bool,
+    ) -> Result<()> {
         match part {
             WordPart::Literal(s) => {
                 if in_double_quote {
@@ -803,14 +870,14 @@ impl Expander {
                                 program.statements[0].clone()
                             } else {
                                 // Create a synthetic BraceGroup to wrap all statements
-                                use colony_parser::{Statement, BraceGroup, Span};
+                                use colony_parser::{BraceGroup, Span, Statement};
                                 Statement::BraceGroup(BraceGroup {
                                     body: program.statements.clone(),
                                     redirects: vec![],
                                     span: Span::DUMMY,
                                 })
                             };
-                            
+
                             match executor(&stmt, &mut self.context) {
                                 Ok(output) => {
                                     let trimmed = output.trim_end_matches('\n');
@@ -826,7 +893,10 @@ impl Expander {
                             }
                         }
                         Err(e) => {
-                            return Err(ExpansionError::CommandFailed(format!("parse error: {}", e)));
+                            return Err(ExpansionError::CommandFailed(format!(
+                                "parse error: {}",
+                                e
+                            )));
                         }
                     }
                 } else {
@@ -853,7 +923,7 @@ impl Expander {
                     out.push_expanded("");
                 }
             }
-            
+
             WordPart::BraceExpansion(content) => {
                 if in_double_quote {
                     out.push_quoted(content);
@@ -861,22 +931,28 @@ impl Expander {
                     out.push_literal(content);
                 }
             }
-            
+
             WordPart::AnsiCQuoted(content) => {
                 let expanded = expand_ansi_c_string(content);
                 out.push_quoted(&expanded);
             }
-            
+
             WordPart::ProcessSub { direction, command } => {
                 if let Some(ref procsub_exec) = self.process_sub_executor {
-                    let path = expand_process_sub(*direction, command, procsub_exec, &mut self.context)?;
+                    let path =
+                        expand_process_sub(*direction, command, procsub_exec, &mut self.context)?;
                     if in_double_quote {
                         out.push_quoted(&path);
                     } else {
                         out.push_literal(&path);
                     }
                 } else if let Some(ref executor) = self.command_executor {
-                    let path = expand_process_sub_fallback(*direction, command, executor, &mut self.context)?;
+                    let path = expand_process_sub_fallback(
+                        *direction,
+                        command,
+                        executor,
+                        &mut self.context,
+                    )?;
                     if in_double_quote {
                         out.push_quoted(&path);
                     } else {
@@ -884,12 +960,15 @@ impl Expander {
                     }
                 } else {
                     return Err(ExpansionError::CommandFailed(
-                        "Process substitution requires command executor".to_string()
+                        "Process substitution requires command executor".to_string(),
                     ));
                 }
             }
-            
-            WordPart::ExtGlob { operator, pattern_list } => {
+
+            WordPart::ExtGlob {
+                operator,
+                pattern_list,
+            } => {
                 let op_char = match operator {
                     colony_parser::ExtGlobOp::ZeroOrOne => '?',
                     colony_parser::ExtGlobOp::ZeroOrMore => '*',
@@ -933,11 +1012,11 @@ impl Segment {
     pub fn quoted(&self) -> bool {
         self.kind == SegmentKind::Quoted
     }
-    
+
     pub fn should_field_split(&self) -> bool {
         self.kind == SegmentKind::Expanded
     }
-    
+
     pub fn should_glob(&self) -> bool {
         self.kind != SegmentKind::Quoted
     }
@@ -945,7 +1024,9 @@ impl Segment {
 
 impl IntermediateWord {
     fn new() -> Self {
-        Self { segments: Vec::new() }
+        Self {
+            segments: Vec::new(),
+        }
     }
 
     fn push_quoted(&mut self, text: &str) {
@@ -960,7 +1041,7 @@ impl IntermediateWord {
             kind: SegmentKind::Quoted,
         });
     }
-    
+
     fn push_literal(&mut self, text: &str) {
         if let Some(last) = self.segments.last_mut() {
             if last.kind == SegmentKind::Literal {
@@ -994,8 +1075,7 @@ impl IntermediateWord {
         });
     }
 
-    fn end_quoted(&mut self) {
-    }
+    fn end_quoted(&mut self) {}
 
     pub fn segments(&self) -> &[Segment] {
         &self.segments
@@ -1009,7 +1089,7 @@ impl IntermediateWord {
 fn expand_ansi_c_string(content: &str) -> String {
     let mut result = String::new();
     let mut chars = content.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         if ch == '\\' {
             if let Some(&next) = chars.peek() {
@@ -1115,7 +1195,7 @@ fn expand_ansi_c_string(content: &str) -> String {
             result.push(ch);
         }
     }
-    
+
     result
 }
 
@@ -1126,32 +1206,32 @@ fn expand_process_sub(
     context: &mut ExpansionContext,
 ) -> Result<String> {
     use std::os::unix::io::AsRawFd;
-    
+
     let trimmed_cmd = command.trim();
     if trimmed_cmd.is_empty() {
-        return Err(ExpansionError::CommandFailed("Empty process substitution".to_string()));
+        return Err(ExpansionError::CommandFailed(
+            "Empty process substitution".to_string(),
+        ));
     }
-    
+
     let (read_fd, write_fd) = nix::unistd::pipe()
         .map_err(|e| ExpansionError::CommandFailed(format!("pipe() failed: {}", e)))?;
-    
+
     match unsafe { nix::unistd::fork() } {
         Ok(nix::unistd::ForkResult::Child) => {
             match direction {
                 ProcessSubDirection::Input => {
                     drop(read_fd);
-                    nix::unistd::dup2(write_fd.as_raw_fd(), 1)
-                        .expect("dup2 failed");
+                    nix::unistd::dup2(write_fd.as_raw_fd(), 1).expect("dup2 failed");
                     drop(write_fd);
                 }
                 ProcessSubDirection::Output => {
                     drop(write_fd);
-                    nix::unistd::dup2(read_fd.as_raw_fd(), 0)
-                        .expect("dup2 failed");
+                    nix::unistd::dup2(read_fd.as_raw_fd(), 0).expect("dup2 failed");
                     drop(read_fd);
                 }
             }
-            
+
             let exit_code = match colony_parser::pest_api::parse(trimmed_cmd) {
                 Ok(program) => {
                     let mut last_code = 0;
@@ -1162,28 +1242,27 @@ fn expand_process_sub(
                 }
                 Err(_) => 1,
             };
-            
+
             std::process::exit(exit_code);
         }
-        Ok(nix::unistd::ForkResult::Parent { child: _ }) => {
-            match direction {
-                ProcessSubDirection::Input => {
-                    drop(write_fd);
-                    let fd_num = read_fd.as_raw_fd();
-                    std::mem::forget(read_fd);
-                    Ok(format!("/dev/fd/{}", fd_num))
-                }
-                ProcessSubDirection::Output => {
-                    drop(read_fd);
-                    let fd_num = write_fd.as_raw_fd();
-                    std::mem::forget(write_fd);
-                    Ok(format!("/dev/fd/{}", fd_num))
-                }
+        Ok(nix::unistd::ForkResult::Parent { child: _ }) => match direction {
+            ProcessSubDirection::Input => {
+                drop(write_fd);
+                let fd_num = read_fd.as_raw_fd();
+                std::mem::forget(read_fd);
+                Ok(format!("/dev/fd/{}", fd_num))
             }
-        }
-        Err(e) => {
-            Err(ExpansionError::CommandFailed(format!("fork() failed: {}", e)))
-        }
+            ProcessSubDirection::Output => {
+                drop(read_fd);
+                let fd_num = write_fd.as_raw_fd();
+                std::mem::forget(write_fd);
+                Ok(format!("/dev/fd/{}", fd_num))
+            }
+        },
+        Err(e) => Err(ExpansionError::CommandFailed(format!(
+            "fork() failed: {}",
+            e
+        ))),
     }
 }
 
@@ -1193,69 +1272,62 @@ fn expand_process_sub_fallback(
     executor: &CommandExecutor,
     context: &mut ExpansionContext,
 ) -> Result<String> {
-    use std::os::unix::io::AsRawFd;
     use std::io::Write;
-    
+    use std::os::unix::io::AsRawFd;
+
     let trimmed_cmd = command.trim();
     if trimmed_cmd.is_empty() {
-        return Err(ExpansionError::CommandFailed("Empty process substitution".to_string()));
+        return Err(ExpansionError::CommandFailed(
+            "Empty process substitution".to_string(),
+        ));
     }
-    
+
     let (read_fd, write_fd) = nix::unistd::pipe()
         .map_err(|e| ExpansionError::CommandFailed(format!("pipe() failed: {}", e)))?;
-    
+
     match unsafe { nix::unistd::fork() } {
         Ok(nix::unistd::ForkResult::Child) => {
             match direction {
                 ProcessSubDirection::Input => {
                     drop(read_fd);
-                    nix::unistd::dup2(write_fd.as_raw_fd(), 1)
-                        .expect("dup2 failed");
+                    nix::unistd::dup2(write_fd.as_raw_fd(), 1).expect("dup2 failed");
                     drop(write_fd);
                 }
                 ProcessSubDirection::Output => {
                     drop(write_fd);
-                    nix::unistd::dup2(read_fd.as_raw_fd(), 0)
-                        .expect("dup2 failed");
+                    nix::unistd::dup2(read_fd.as_raw_fd(), 0).expect("dup2 failed");
                     drop(read_fd);
                 }
             }
-            
-            match colony_parser::pest_api::parse(trimmed_cmd) {
-                Ok(program) => {
-                    for stmt in &program.statements {
-                        match executor(stmt, context) {
-                            Ok(output) => {
-                                let _ = std::io::stdout().write_all(output.as_bytes());
-                                let _ = std::io::stdout().flush();
-                            }
-                            Err(_) => {}
-                        }
+
+            if let Ok(program) = colony_parser::pest_api::parse(trimmed_cmd) {
+                for stmt in &program.statements {
+                    if let Ok(output) = executor(stmt, context) {
+                        let _ = std::io::stdout().write_all(output.as_bytes());
+                        let _ = std::io::stdout().flush();
                     }
                 }
-                Err(_) => {}
             }
-            
+
             std::process::exit(0);
         }
-        Ok(nix::unistd::ForkResult::Parent { child: _ }) => {
-            match direction {
-                ProcessSubDirection::Input => {
-                    drop(write_fd);
-                    let fd_num = read_fd.as_raw_fd();
-                    std::mem::forget(read_fd);
-                    Ok(format!("/dev/fd/{}", fd_num))
-                }
-                ProcessSubDirection::Output => {
-                    drop(read_fd);
-                    let fd_num = write_fd.as_raw_fd();
-                    std::mem::forget(write_fd);
-                    Ok(format!("/dev/fd/{}", fd_num))
-                }
+        Ok(nix::unistd::ForkResult::Parent { child: _ }) => match direction {
+            ProcessSubDirection::Input => {
+                drop(write_fd);
+                let fd_num = read_fd.as_raw_fd();
+                std::mem::forget(read_fd);
+                Ok(format!("/dev/fd/{}", fd_num))
             }
-        }
-        Err(e) => {
-            Err(ExpansionError::CommandFailed(format!("fork() failed: {}", e)))
-        }
+            ProcessSubDirection::Output => {
+                drop(read_fd);
+                let fd_num = write_fd.as_raw_fd();
+                std::mem::forget(write_fd);
+                Ok(format!("/dev/fd/{}", fd_num))
+            }
+        },
+        Err(e) => Err(ExpansionError::CommandFailed(format!(
+            "fork() failed: {}",
+            e
+        ))),
     }
 }

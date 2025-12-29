@@ -15,7 +15,7 @@
 //! as they modify the file descriptor table.
 
 use crate::{ExecutionError, Result};
-use colony_expand::{ExpansionContext, Expander};
+use colony_expand::{Expander, ExpansionContext};
 use colony_parser::{HereDocKind, Redirect, RedirectKind, RedirectTarget};
 use nix::fcntl::{open, OFlag};
 use nix::sys::stat::Mode;
@@ -47,7 +47,11 @@ pub struct ChannelPipe {
 
 impl ChannelPipe {
     /// Create a new channel pipe with both ends
-    pub fn new(channel_fd: RawFd, read_end: std::os::fd::OwnedFd, write_end: std::os::fd::OwnedFd) -> Self {
+    pub fn new(
+        channel_fd: RawFd,
+        read_end: std::os::fd::OwnedFd,
+        write_end: std::os::fd::OwnedFd,
+    ) -> Self {
         Self {
             channel_fd,
             read_end,
@@ -75,9 +79,7 @@ impl ChannelPipe {
 /// - `>&3` - redirect stdout to channel fd 3
 /// - `2>&4` - redirect stderr to channel fd 4
 /// - `3>&-` - close channel fd 3 (no pipe needed)
-pub fn prepare_channel_redirects(
-    redirects: &[Redirect],
-) -> Result<Vec<ChannelPipe>> {
+pub fn prepare_channel_redirects(redirects: &[Redirect]) -> Result<Vec<ChannelPipe>> {
     let mut channel_pipes = Vec::new();
     let mut prepared_fds = std::collections::HashSet::new();
 
@@ -154,15 +156,30 @@ pub fn apply_redirects(
         // Handle {varname}>file fd allocation (vredir)
         if let Some(ref var_name) = redirect.fd_var {
             if var_name.is_empty() {
-                return Err(ExecutionError::RedirectError("empty variable name in fd redirect".to_string()));
+                return Err(ExecutionError::RedirectError(
+                    "empty variable name in fd redirect".to_string(),
+                ));
             }
             match &redirect.target {
                 RedirectTarget::File(word) => {
                     // {fd}>file or {fd}<file - allocate fd and open file
-                    if !matches!(redirect.kind, RedirectKind::DupFd | RedirectKind::DupFdInput) {
-                        let allocated_fd = apply_vredir_file(redirect.kind, var_name, word, context, &mut opened_fds)?;
+                    if !matches!(
+                        redirect.kind,
+                        RedirectKind::DupFd | RedirectKind::DupFdInput
+                    ) {
+                        let allocated_fd = apply_vredir_file(
+                            redirect.kind,
+                            var_name,
+                            word,
+                            context,
+                            &mut opened_fds,
+                        )?;
                         context.set_var(var_name.clone(), allocated_fd.to_string());
-                        tracing::debug!("vredir: allocated fd {} for variable {}", allocated_fd, var_name);
+                        tracing::debug!(
+                            "vredir: allocated fd {} for variable {}",
+                            allocated_fd,
+                            var_name
+                        );
                         continue;
                     }
                 }
@@ -178,7 +195,12 @@ pub fn apply_redirects(
                     apply_fd_redirect(source_fd, *target_fd)?;
                     continue;
                 }
-                RedirectTarget::HereDoc { content, expand, strip_tabs, .. } => {
+                RedirectTarget::HereDoc {
+                    content,
+                    expand,
+                    strip_tabs,
+                    ..
+                } => {
                     let allocated_fd = allocate_heredoc_fd(content, *expand, *strip_tabs, context)?;
                     context.set_var(var_name.clone(), allocated_fd.to_string());
                     continue;
@@ -202,20 +224,30 @@ pub fn apply_redirects(
 
         match &redirect.target {
             RedirectTarget::File(word) => {
-                if matches!(redirect.kind, RedirectKind::HereDoc(HereDocKind::HereString)) {
+                if matches!(
+                    redirect.kind,
+                    RedirectKind::HereDoc(HereDocKind::HereString)
+                ) {
                     let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
                         crate::execute_and_capture(stmt, ctx)
                     });
                     let content = if let Ok(fields) = expander.expand_word(word) {
-                        fields.iter().map(|f| f.text.clone()).collect::<Vec<_>>().join(" ")
+                        fields
+                            .iter()
+                            .map(|f| f.text.clone())
+                            .collect::<Vec<_>>()
+                            .join(" ")
                     } else {
                         word.as_literal().unwrap_or_default().to_string()
                     };
                     apply_here_string(source_fd, &content)?;
                     continue;
                 }
-                
-                if matches!(redirect.kind, RedirectKind::DupFd | RedirectKind::DupFdInput) {
+
+                if matches!(
+                    redirect.kind,
+                    RedirectKind::DupFd | RedirectKind::DupFdInput
+                ) {
                     if let Some(literal) = word.as_literal() {
                         if let Ok(target_fd) = literal.parse::<RawFd>() {
                             tracing::debug!("DupFd literal: '{}' → Fd({})", literal, target_fd);
@@ -229,29 +261,41 @@ pub fn apply_redirects(
                     if let Ok(expanded_fields) = expander.expand_word(word) {
                         if let Some(first) = expanded_fields.first() {
                             if let Ok(target_fd) = first.text.parse::<RawFd>() {
-                                tracing::debug!("DupFd expanded: '{}' → Fd({})", first.text, target_fd);
+                                tracing::debug!(
+                                    "DupFd expanded: '{}' → Fd({})",
+                                    first.text,
+                                    target_fd
+                                );
                                 apply_fd_redirect(source_fd, target_fd)?;
                                 continue;
                             }
                         }
                     }
-                    return Err(ExecutionError::RedirectError(
-                        format!("Invalid fd for redirect: {:?}", word)
-                    ));
+                    return Err(ExecutionError::RedirectError(format!(
+                        "Invalid fd for redirect: {:?}",
+                        word
+                    )));
                 }
 
                 tracing::debug!("Applying file redirect");
                 apply_file_redirect(redirect.kind, source_fd, word, context, &mut opened_fds)?;
             }
             RedirectTarget::Fd(target_fd) => {
-                tracing::debug!("Target is Fd({}), is_channel={}", target_fd, is_channel_fd(*target_fd));
+                tracing::debug!(
+                    "Target is Fd({}), is_channel={}",
+                    target_fd,
+                    is_channel_fd(*target_fd)
+                );
                 apply_fd_redirect(source_fd, *target_fd)?;
             }
             RedirectTarget::Close => {
                 close_fd(source_fd)?;
             }
             RedirectTarget::HereDoc {
-                content, expand, strip_tabs, ..
+                content,
+                expand,
+                strip_tabs,
+                ..
             } => {
                 apply_heredoc(source_fd, content, *expand, *strip_tabs, context)?;
             }
@@ -271,7 +315,7 @@ fn apply_vredir_file(
     opened_fds: &mut Vec<RawFd>,
 ) -> Result<RawFd> {
     use nix::fcntl::{fcntl, FcntlArg};
-    
+
     let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
         crate::execute_and_capture(stmt, ctx)
     });
@@ -301,9 +345,12 @@ fn apply_vredir_file(
             OFlag::O_RDWR | OFlag::O_CREAT,
             Mode::from_bits_truncate(0o666),
         ),
-        _ => return Err(ExecutionError::InvalidRedirect(
-            format!("Unsupported redirect kind for vredir: {:?}", kind)
-        )),
+        _ => {
+            return Err(ExecutionError::InvalidRedirect(format!(
+                "Unsupported redirect kind for vredir: {:?}",
+                kind
+            )))
+        }
     };
 
     let file_fd = open(filename.as_str(), flags, mode)
@@ -328,13 +375,13 @@ fn allocate_heredoc_fd(
 ) -> Result<RawFd> {
     use nix::fcntl::{fcntl, FcntlArg};
     use std::os::fd::{AsRawFd, BorrowedFd};
-    
+
     let expanded_content = if expand {
         expand_heredoc_content(content, context)
     } else {
         content.to_string()
     };
-    
+
     let final_content = if strip_tabs {
         expanded_content
             .lines()
@@ -345,13 +392,13 @@ fn allocate_heredoc_fd(
         expanded_content
     };
 
-    let (read_fd, write_fd) = nix::unistd::pipe()
-        .map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
+    let (read_fd, write_fd) =
+        nix::unistd::pipe().map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
 
     let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
-    nix::unistd::write(&write_borrowed, final_content.as_bytes())
+    nix::unistd::write(write_borrowed, final_content.as_bytes())
         .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
-    
+
     drop(write_fd);
 
     let allocated_fd = fcntl(read_fd.as_raw_fd(), FcntlArg::F_DUPFD(10))
@@ -374,7 +421,7 @@ pub fn apply_channel_redirects_in_child(channel_pipes: &[ChannelPipe]) -> Result
                 .map_err(|e| ExecutionError::RedirectError(format!("dup2 channel: {}", e)))?;
         } else {
             return Err(ExecutionError::RedirectError(
-                "Channel pipe missing write end in child".to_string()
+                "Channel pipe missing write end in child".to_string(),
             ));
         }
     }
@@ -397,7 +444,10 @@ pub fn process_channel_writes(
     use nix::unistd::read;
     use std::os::fd::AsRawFd;
 
-    tracing::debug!("process_channel_writes: {} pipes to process", channel_pipes.len());
+    tracing::debug!(
+        "process_channel_writes: {} pipes to process",
+        channel_pipes.len()
+    );
 
     for pipe in channel_pipes {
         tracing::debug!("Reading from channel pipe fd={}", pipe.channel_fd);
@@ -426,7 +476,12 @@ pub fn process_channel_writes(
         // Convert to string (lossy for non-UTF8)
         let content = String::from_utf8_lossy(&buffer).to_string();
 
-        tracing::debug!("Captured {} bytes from fd={}: {:?}", buffer.len(), pipe.channel_fd, content);
+        tracing::debug!(
+            "Captured {} bytes from fd={}: {:?}",
+            buffer.len(),
+            pipe.channel_fd,
+            content
+        );
 
         if !content.is_empty() {
             // Emit tuple: ("channel_write", fd, content, timestamp)
@@ -460,29 +515,36 @@ fn get_source_fd_with_context(redirect: &Redirect, context: &ExpansionContext) -
         if let Some(bracket_pos) = var_name.find('[') {
             if let Some(end_pos) = var_name.find(']') {
                 let name = &var_name[..bracket_pos];
-                let index_str = &var_name[bracket_pos+1..end_pos];
-                
+                let index_str = &var_name[bracket_pos + 1..end_pos];
+
                 if let Some(colony_expand::Variable::Array(arr)) = context.get_variable(name) {
                     if let Ok(index) = index_str.parse::<usize>() {
                         if let Some(val) = arr.get(index) {
-                            return val.parse::<RawFd>()
-                                .map_err(|_| ExecutionError::RedirectError(
-                                    format!("Invalid fd from variable: {}", val)
-                                ));
+                            return val.parse::<RawFd>().map_err(|_| {
+                                ExecutionError::RedirectError(format!(
+                                    "Invalid fd from variable: {}",
+                                    val
+                                ))
+                            });
                         }
                     }
                 }
             }
         }
         let value = context.get_var_or_env(var_name).unwrap_or_default();
-        return value.parse::<RawFd>()
-            .map_err(|_| ExecutionError::RedirectError(
-                format!("Invalid fd from variable {}: {}", var_name, value)
-            ));
+        return value.parse::<RawFd>().map_err(|_| {
+            ExecutionError::RedirectError(format!(
+                "Invalid fd from variable {}: {}",
+                var_name, value
+            ))
+        });
     }
-    
-    Ok(redirect.fd.unwrap_or_else(|| match redirect.kind {
-        RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) | RedirectKind::DupFdInput => 0,
+
+    Ok(redirect.fd.unwrap_or(match redirect.kind {
+        RedirectKind::Input
+        | RedirectKind::ReadWrite
+        | RedirectKind::HereDoc(_)
+        | RedirectKind::DupFdInput => 0,
         _ => 1,
     }))
 }
@@ -493,8 +555,11 @@ fn get_source_fd_with_context(redirect: &Redirect, context: &ExpansionContext) -
 /// - Input redirects: fd 0 (stdin)
 /// - Output redirects: fd 1 (stdout)
 fn get_source_fd(redirect: &Redirect) -> RawFd {
-    redirect.fd.unwrap_or_else(|| match redirect.kind {
-        RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) | RedirectKind::DupFdInput => 0,
+    redirect.fd.unwrap_or(match redirect.kind {
+        RedirectKind::Input
+        | RedirectKind::ReadWrite
+        | RedirectKind::HereDoc(_)
+        | RedirectKind::DupFdInput => 0,
         _ => 1,
     })
 }
@@ -530,22 +595,21 @@ fn apply_file_redirect(
             OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_APPEND
         };
         let mode = Mode::from_bits_truncate(0o666);
-        
+
         let target_fd = open(filename.as_str(), flags, mode)
             .map_err(|e| ExecutionError::RedirectError(format!("open {}: {}", filename, e)))?;
-        
+
         opened_fds.push(target_fd);
-        
+
         // Redirect stdout to file
         dup2(target_fd, 1)
             .map_err(|e| ExecutionError::RedirectError(format!("dup2 stdout: {}", e)))?;
         // Redirect stderr to same file (via stdout)
-        dup2(1, 2)
-            .map_err(|e| ExecutionError::RedirectError(format!("dup2 stderr: {}", e)))?;
-        
+        dup2(1, 2).map_err(|e| ExecutionError::RedirectError(format!("dup2 stderr: {}", e)))?;
+
         nix::unistd::close(target_fd)
             .map_err(|e| ExecutionError::RedirectError(format!("close: {}", e)))?;
-        
+
         return Ok(());
     }
 
@@ -554,9 +618,10 @@ fn apply_file_redirect(
         RedirectKind::Input => (OFlag::O_RDONLY, Mode::empty()),
         RedirectKind::Output => {
             if context.shell_options().noclobber && std::path::Path::new(filename).exists() {
-                return Err(ExecutionError::RedirectError(
-                    format!("cannot overwrite existing file: {}", filename)
-                ));
+                return Err(ExecutionError::RedirectError(format!(
+                    "cannot overwrite existing file: {}",
+                    filename
+                )));
             }
             (
                 OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_TRUNC,
@@ -640,7 +705,7 @@ fn close_fd(fd: RawFd) -> Result<()> {
 fn expand_heredoc_content(content: &str, context: &mut ExpansionContext) -> String {
     let mut result = String::new();
     let mut chars = content.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         if ch == '$' {
             if let Some(&next_ch) = chars.peek() {
@@ -679,7 +744,7 @@ fn expand_heredoc_content(content: &str, context: &mut ExpansionContext) -> Stri
             result.push(ch);
         }
     }
-    
+
     result
 }
 
@@ -695,7 +760,7 @@ fn apply_heredoc(
     } else {
         content.to_string()
     };
-    
+
     let final_content = if strip_tabs {
         expanded_content
             .lines()
@@ -708,13 +773,13 @@ fn apply_heredoc(
 
     // Create a pipe
     use std::os::fd::{AsRawFd, BorrowedFd};
-    let (read_fd, write_fd) = nix::unistd::pipe()
-        .map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
+    let (read_fd, write_fd) =
+        nix::unistd::pipe().map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
 
     // Write content to pipe
     use nix::unistd::write;
     let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
-    write(&write_borrowed, final_content.as_bytes())
+    write(write_borrowed, final_content.as_bytes())
         .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
 
     // Don't need to close write_fd explicitly - dropped automatically
@@ -730,15 +795,15 @@ fn apply_heredoc(
 
 fn apply_here_string(source_fd: RawFd, content: &str) -> Result<()> {
     use std::os::fd::{AsRawFd, BorrowedFd};
-    
-    let (read_fd, write_fd) = nix::unistd::pipe()
-        .map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
+
+    let (read_fd, write_fd) =
+        nix::unistd::pipe().map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
 
     let mut final_content = content.to_string();
     final_content.push('\n');
-    
+
     let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
-    nix::unistd::write(&write_borrowed, final_content.as_bytes())
+    nix::unistd::write(write_borrowed, final_content.as_bytes())
         .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
 
     drop(write_fd);
@@ -777,8 +842,8 @@ mod tests {
         let args = vec!["echo".to_string(), "hello".to_string()];
         let env = vec![];
 
-        let handle = crate::process::spawn_process(&program, &args, &env, &redirects, &mut context)
-            .unwrap();
+        let handle =
+            crate::process::spawn_process(&program, &args, &env, &redirects, &mut context).unwrap();
         let status = handle.wait().unwrap();
 
         assert!(status.is_success());
@@ -811,8 +876,8 @@ mod tests {
         let args = vec!["cat".to_string()];
         let env = vec![];
 
-        let handle = crate::process::spawn_process(&program, &args, &env, &redirects, &mut context)
-            .unwrap();
+        let handle =
+            crate::process::spawn_process(&program, &args, &env, &redirects, &mut context).unwrap();
         let status = handle.wait().unwrap();
 
         assert!(status.is_success());
@@ -841,8 +906,9 @@ mod tests {
         let args1 = vec!["echo".to_string(), "line1".to_string()];
         let env = vec![];
 
-        let handle = crate::process::spawn_process(&program, &args1, &env, &redirect1, &mut context)
-            .unwrap();
+        let handle =
+            crate::process::spawn_process(&program, &args1, &env, &redirect1, &mut context)
+                .unwrap();
         handle.wait().unwrap();
 
         // Second: echo line2 >> file (append)
@@ -855,8 +921,9 @@ mod tests {
         }];
 
         let args2 = vec!["echo".to_string(), "line2".to_string()];
-        let handle = crate::process::spawn_process(&program, &args2, &env, &redirect2, &mut context)
-            .unwrap();
+        let handle =
+            crate::process::spawn_process(&program, &args2, &env, &redirect2, &mut context)
+                .unwrap();
         handle.wait().unwrap();
 
         // Verify both lines are in file
@@ -903,8 +970,8 @@ mod tests {
         ];
         let env = vec![];
 
-        let handle = crate::process::spawn_process(&program, &args, &env, &redirects, &mut context)
-            .unwrap();
+        let handle =
+            crate::process::spawn_process(&program, &args, &env, &redirects, &mut context).unwrap();
         let status = handle.wait().unwrap();
 
         assert!(status.is_success());
@@ -945,8 +1012,8 @@ mod tests {
         let args = vec!["cat".to_string()];
         let env = vec![];
 
-        let handle = crate::process::spawn_process(&program, &args, &env, &redirects, &mut context)
-            .unwrap();
+        let handle =
+            crate::process::spawn_process(&program, &args, &env, &redirects, &mut context).unwrap();
         let status = handle.wait().unwrap();
 
         assert!(status.is_success());

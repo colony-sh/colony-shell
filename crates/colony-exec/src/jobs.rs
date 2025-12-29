@@ -7,9 +7,8 @@
 //! - Builtins: fg, bg, jobs, wait
 
 use crate::{ExecutionError, ExitStatus, Result};
-use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet, Signal, sigaction};
-use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
-use nix::unistd::{Pid, setpgid, tcsetpgrp};
+use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
+use nix::unistd::{setpgid, tcsetpgrp, Pid};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -121,11 +120,7 @@ impl JobTable {
 
     /// Find job by process group ID
     pub fn find_by_pgid(&self, pgid: Pid) -> Option<Job> {
-        self.jobs
-            .read()
-            .values()
-            .find(|j| j.pgid == pgid)
-            .cloned()
+        self.jobs.read().values().find(|j| j.pgid == pgid).cloned()
     }
 
     /// Find job by PID (searches all processes in all jobs)
@@ -158,51 +153,39 @@ pub fn init_job_control() -> Result<()> {
     // Children will inherit these and we'll change them as needed
 
     unsafe {
-        let ignore = SigAction::new(
-            SigHandler::SigIgn,
-            SaFlags::empty(),
-            SigSet::empty(),
-        );
+        let ignore = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
 
         // Ignore SIGINT (Ctrl-C) - let foreground job handle it
-        sigaction(Signal::SIGINT, &ignore)
-            .map_err(|e| ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("sigaction SIGINT: {}", e),
-            )))?;
+        sigaction(Signal::SIGINT, &ignore).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::other(format!("sigaction SIGINT: {}", e)))
+        })?;
 
         // Ignore SIGTSTP (Ctrl-Z) - let foreground job handle it
-        sigaction(Signal::SIGTSTP, &ignore)
-            .map_err(|e| ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("sigaction SIGTSTP: {}", e),
-            )))?;
+        sigaction(Signal::SIGTSTP, &ignore).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::other(format!("sigaction SIGTSTP: {}", e)))
+        })?;
 
         // Ignore SIGTTOU (background write to terminal)
-        sigaction(Signal::SIGTTOU, &ignore)
-            .map_err(|e| ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("sigaction SIGTTOU: {}", e),
-            )))?;
+        sigaction(Signal::SIGTTOU, &ignore).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::other(format!("sigaction SIGTTOU: {}", e)))
+        })?;
     }
 
     Ok(())
 }
 
+#[allow(dead_code)]
 /// Create a new process group for a job
 ///
 /// Should be called in both parent and child to avoid race conditions.
 /// The first call (parent or child) will succeed, the second will be a no-op.
 pub fn create_process_group(pid: Pid, pgid: Pid) -> Result<()> {
-    setpgid(pid, pgid).map_err(|e| {
-        ExecutionError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("setpgid: {}", e),
-        ))
-    })?;
+    setpgid(pid, pgid)
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(format!("setpgid: {}", e))))?;
     Ok(())
 }
 
+#[allow(dead_code)]
 /// Give terminal control to a process group
 ///
 /// Makes the specified process group the foreground process group.
@@ -211,15 +194,12 @@ pub fn give_terminal_to(pgid: Pid) -> Result<()> {
     let stdin_fd = std::io::stdin().as_raw_fd();
     let stdin_borrowed = unsafe { BorrowedFd::borrow_raw(stdin_fd) };
 
-    tcsetpgrp(&stdin_borrowed, pgid).map_err(|e| {
-        ExecutionError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("tcsetpgrp: {}", e),
-        ))
-    })?;
+    tcsetpgrp(stdin_borrowed, pgid)
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(format!("tcsetpgrp: {}", e))))?;
     Ok(())
 }
 
+#[allow(dead_code)]
 /// Take back terminal control from a job
 ///
 /// Returns terminal control to the shell's process group.
@@ -231,12 +211,8 @@ pub fn take_terminal() -> Result<Pid> {
     // Get shell's own pgid
     let shell_pgid = nix::unistd::getpgrp();
 
-    tcsetpgrp(&stdin_borrowed, shell_pgid).map_err(|e| {
-        ExecutionError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("tcsetpgrp: {}", e),
-        ))
-    })?;
+    tcsetpgrp(stdin_borrowed, shell_pgid)
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(format!("tcsetpgrp: {}", e))))?;
 
     Ok(shell_pgid)
 }
@@ -322,7 +298,11 @@ mod tests {
         let table = JobTable::new();
 
         let pgid = Pid::from_raw(9999);
-        let pids = vec![Pid::from_raw(9999), Pid::from_raw(10000), Pid::from_raw(10001)];
+        let pids = vec![
+            Pid::from_raw(9999),
+            Pid::from_raw(10000),
+            Pid::from_raw(10001),
+        ];
         let _job_id = table.add_job(pgid, pids.clone(), "test".to_string());
 
         // Should find job by any of its PIDs

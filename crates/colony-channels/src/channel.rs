@@ -3,7 +3,6 @@
 //! Channels extend the Unix fd model with semantic meaning.
 //! Each channel accumulates structured information during the session.
 
-use crate::Result;
 use std::io;
 
 /// Channel identifier (file descriptor number)

@@ -6,7 +6,9 @@ pub fn trace_command(context: &ExpansionContext, command: &str, args: &[String])
         return;
     }
 
-    let ps4 = context.get_var_or_env("PS4").unwrap_or_else(|| "+ ".to_string());
+    let ps4 = context
+        .get_var_or_env("PS4")
+        .unwrap_or_else(|| "+ ".to_string());
 
     let mut trace_line = ps4;
     trace_line.push_str(command);
@@ -36,7 +38,9 @@ pub fn trace_assignment(context: &ExpansionContext, name: &str, value: &str) {
         return;
     }
 
-    let ps4 = context.get_var_or_env("PS4").unwrap_or_else(|| "+ ".to_string());
+    let ps4 = context
+        .get_var_or_env("PS4")
+        .unwrap_or_else(|| "+ ".to_string());
     let _ = writeln!(std::io::stderr(), "{}{}={}", ps4, name, value);
 }
 
@@ -54,7 +58,11 @@ mod tests {
     fn test_trace_command_enabled() {
         let mut context = ExpansionContext::new();
         context.shell_options_mut().xtrace = true;
-        trace_command(&context, "echo", &["hello".to_string(), "world".to_string()]);
+        trace_command(
+            &context,
+            "echo",
+            &["hello".to_string(), "world".to_string()],
+        );
     }
 
     #[test]

@@ -47,10 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Value::Str(s) => s.clone(),
             _ => "unknown".to_string(),
         };
-        println!(
-            "[{}] Lock is held by {}. Waiting...",
-            worker_id, holder
-        );
+        println!("[{}] Lock is held by {}. Waiting...", worker_id, holder);
 
         // Wait for lock to be released
         loop {

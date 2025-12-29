@@ -6,11 +6,11 @@
 //! - Tool classifications
 //! - Security: Explicit trust required before loading
 
-mod trust;
 mod discovery;
+mod trust;
 
-pub use trust::{TrustManager, TrustStatus};
 pub use discovery::{discover_config, ConfigLocation};
+pub use trust::{TrustManager, TrustStatus};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -47,6 +47,7 @@ pub struct ColonyConfig {
 /// Agent-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct AgentConfig {
     /// Custom system prompt / agent personality for this project
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,18 +68,6 @@ pub struct AgentConfig {
     /// Max tokens override
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-}
-
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            personality: None,
-            preferred_provider: None,
-            preferred_model: None,
-            temperature: None,
-            max_tokens: None,
-        }
-    }
 }
 
 /// Project metadata and conventions
@@ -308,7 +297,10 @@ conventions = ["Use parking_lot", "No unwrap()"]
         assert!(config.agent.is_some());
 
         let agent = config.agent.unwrap();
-        assert_eq!(agent.personality, Some("You are a Rust expert.".to_string()));
+        assert_eq!(
+            agent.personality,
+            Some("You are a Rust expert.".to_string())
+        );
         assert_eq!(agent.preferred_provider, Some("anthropic".to_string()));
         assert_eq!(agent.temperature, Some(0.7));
 

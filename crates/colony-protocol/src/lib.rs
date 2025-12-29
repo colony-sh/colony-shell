@@ -43,11 +43,22 @@ use std::io::{self, Write};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ProtocolMessage {
-    Agent { status: String },
-    Widget { kind: String, data: serde_json::Value },
-    Memory { operation: String },
-    Output { content_type: String },
-    Session { action: String },
+    Agent {
+        status: String,
+    },
+    Widget {
+        kind: String,
+        data: serde_json::Value,
+    },
+    Memory {
+        operation: String,
+    },
+    Output {
+        content_type: String,
+    },
+    Session {
+        action: String,
+    },
     SecureAccess {
         request_id: u64,
         variable: String,
@@ -208,14 +219,12 @@ pub fn emit_secure_access_request(
 }
 
 pub fn parse_secure_access_response(json: &str) -> Option<(u64, SecureAccessDecision)> {
-    if let Ok(msg) = serde_json::from_str::<ProtocolMessage>(json) {
-        if let ProtocolMessage::SecureAccessResponse {
-            request_id,
-            decision,
-        } = msg
-        {
-            return Some((request_id, decision));
-        }
+    if let Ok(ProtocolMessage::SecureAccessResponse {
+        request_id,
+        decision,
+    }) = serde_json::from_str::<ProtocolMessage>(json)
+    {
+        return Some((request_id, decision));
     }
     None
 }

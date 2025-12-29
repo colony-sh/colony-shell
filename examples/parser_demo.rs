@@ -1,6 +1,6 @@
 //! Demo of the Colony parser
 
-use colony_parser::{Lexer, Parser, ShellOptions};
+use colony_parser::parse;
 
 fn main() {
     let examples = vec![
@@ -25,16 +25,7 @@ fn main() {
 }
 
 fn parse_and_show(input: &str) -> Result<String, String> {
-    let mut lexer = Lexer::new(input, ShellOptions::posix());
-    let tokens = lexer
-        .tokenize()
-        .map_err(|e| format!("Lexer error: {}", e))?;
-
-    println!("Tokens: {:?}", tokens.iter().map(|t| t.kind).collect::<Vec<_>>());
-
-    let mut parser = Parser::new(tokens);
-    let program = parser.parse().map_err(|e| format!("Parser error: {}", e))?;
-
+    let program = parse(input).map_err(|e| format!("Parse error: {}", e))?;
     Ok(describe_program(&program))
 }
 

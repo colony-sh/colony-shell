@@ -6,9 +6,9 @@
 //! - Ollama: Local models (free fallback)
 
 pub mod anthropic;
-pub mod openai;
 pub mod ollama;
+pub mod openai;
 
 pub use anthropic::AnthropicProvider;
-pub use openai::OpenAIProvider;
 pub use ollama::OllamaProvider;
+pub use openai::OpenAIProvider;

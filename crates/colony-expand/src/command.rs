@@ -9,6 +9,7 @@ use colony_parser::Statement;
 ///
 /// TODO: This requires integration with colony-exec crate
 /// For now, returns empty string
+#[allow(dead_code)]
 pub fn expand_command_substitution(_cmd: &Statement) -> String {
     // Placeholder - requires executor integration
     String::new()

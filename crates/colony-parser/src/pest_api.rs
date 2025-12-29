@@ -31,11 +31,11 @@
 //!
 //! See `docs/peg-proposal.md` for full architectural discussion.
 
-use pest::Parser;
-use crate::pest_parser::{ColonyParser, Rule};
-use crate::builder::AstBuilder;
 use crate::ast::Program;
+use crate::builder::AstBuilder;
 use crate::heredoc::preprocess_heredocs;
+use crate::pest_parser::{ColonyParser, Rule};
+use pest::Parser;
 
 /// Parse Colony shell source code into AST
 ///
@@ -75,25 +75,25 @@ use crate::heredoc::preprocess_heredocs;
 /// - Heredoc preprocessing fails
 pub fn parse(source: &str) -> Result<Program, ParseError> {
     let source = preprocess_line_continuations(source);
-    
+
     let (arith_normalized, arith_map) = if source.contains("$((") {
         crate::arith_preprocess::preprocess_arithmetic(&source)
     } else {
         (source.to_string(), Vec::new())
     };
-    
+
     let mut program = if arith_normalized.contains("<<") {
         parse_with_heredocs(&arith_normalized)?
     } else {
         parse_direct(&arith_normalized)?
     };
-    
+
     if !arith_map.is_empty() {
         for stmt in &mut program.statements {
             inject_arithmetic(stmt, &arith_map);
         }
     }
-    
+
     Ok(program)
 }
 
@@ -102,75 +102,71 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
 /// This function performs parse-time alias expansion before parsing.
 /// Aliases are expanded at command positions (after ;, |, &&, ||, etc.)
 pub fn parse_with_aliases(
-    source: &str, 
-    alias_ctx: &mut crate::alias_expand::AliasContext
+    source: &str,
+    alias_ctx: &mut crate::alias_expand::AliasContext,
 ) -> Result<Program, ParseError> {
     let source = preprocess_line_continuations(source);
     let source = crate::alias_expand::preprocess_aliases(&source, alias_ctx);
-    
+
     let (arith_normalized, arith_map) = if source.contains("$((") {
         crate::arith_preprocess::preprocess_arithmetic(&source)
     } else {
         (source.to_string(), Vec::new())
     };
-    
+
     let mut program = if arith_normalized.contains("<<") {
         parse_with_heredocs(&arith_normalized)?
     } else {
         parse_direct(&arith_normalized)?
     };
-    
+
     if !arith_map.is_empty() {
         for stmt in &mut program.statements {
             inject_arithmetic(stmt, &arith_map);
         }
     }
-    
+
     Ok(program)
 }
 
 /// Parse source directly with pest (no heredocs)
 fn parse_direct(source: &str) -> Result<Program, ParseError> {
     // Parse source directly with pest
-    let pairs = ColonyParser::parse(Rule::Program, source)
-        .map_err(|e| {
-            let (line, column) = match e.line_col {
-                pest::error::LineColLocation::Pos((l, c)) => (l, c),
-                pest::error::LineColLocation::Span((l, c), _) => (l, c),
-            };
-            ParseError::Syntax {
-                message: e.to_string(),
-                line,
-                column,
-            }
-        })?;
+    let pairs = ColonyParser::parse(Rule::Program, source).map_err(|e| {
+        let (line, column) = match e.line_col {
+            pest::error::LineColLocation::Pos((l, c)) => (l, c),
+            pest::error::LineColLocation::Span((l, c), _) => (l, c),
+        };
+        ParseError::Syntax {
+            message: e.to_string(),
+            line,
+            column,
+        }
+    })?;
 
     // Build AST from parse tree
-    let program = AstBuilder::build_program(pairs)
-        .map_err(ParseError::Build)?;
+    let program = AstBuilder::build_program(pairs).map_err(ParseError::Build)?;
 
     Ok(program)
 }
 
 fn parse_with_heredocs(source: &str) -> Result<Program, ParseError> {
-    let (normalized, heredoc_contents) = preprocess_heredocs(source)
-        .map_err(|e| ParseError::HeredocPreprocessing(e))?;
+    let (normalized, heredoc_contents) =
+        preprocess_heredocs(source).map_err(ParseError::HeredocPreprocessing)?;
 
-    let pairs = ColonyParser::parse(Rule::Program, &normalized)
-        .map_err(|e| {
-            let (line, column) = match e.line_col {
-                pest::error::LineColLocation::Pos((l, c)) => (l, c),
-                pest::error::LineColLocation::Span((l, c), _) => (l, c),
-            };
-            ParseError::Syntax {
-                message: e.to_string(),
-                line,
-                column,
-            }
-        })?;
+    let pairs = ColonyParser::parse(Rule::Program, &normalized).map_err(|e| {
+        let (line, column) = match e.line_col {
+            pest::error::LineColLocation::Pos((l, c)) => (l, c),
+            pest::error::LineColLocation::Span((l, c), _) => (l, c),
+        };
+        ParseError::Syntax {
+            message: e.to_string(),
+            line,
+            column,
+        }
+    })?;
 
-    let mut program = AstBuilder::build_program(pairs)
-        .map_err(ParseError::Build)?;
+    let mut program = AstBuilder::build_program(pairs).map_err(ParseError::Build)?;
 
     let mut heredoc_index = 0;
     for stmt in &mut program.statements {
@@ -188,33 +184,28 @@ pub fn parse_statement(source: &str) -> Result<crate::ast::Statement, ParseError
     };
 
     let (normalized, heredoc_contents) = if normalized_arith.contains("<<") {
-        preprocess_heredocs(&normalized_arith)
-            .map_err(|e| ParseError::HeredocPreprocessing(e))?
+        preprocess_heredocs(&normalized_arith).map_err(ParseError::HeredocPreprocessing)?
     } else {
         (normalized_arith, std::collections::HashMap::new())
     };
 
-    let pairs = ColonyParser::parse(Rule::Statement, &normalized)
-        .map_err(|e| {
-            let (line, column) = match e.line_col {
-                pest::error::LineColLocation::Pos((l, c)) => (l, c),
-                pest::error::LineColLocation::Span((l, c), _) => (l, c),
-            };
-            ParseError::Syntax {
-                message: e.to_string(),
-                line,
-                column,
-            }
-        })?;
+    let pairs = ColonyParser::parse(Rule::Statement, &normalized).map_err(|e| {
+        let (line, column) = match e.line_col {
+            pest::error::LineColLocation::Pos((l, c)) => (l, c),
+            pest::error::LineColLocation::Span((l, c), _) => (l, c),
+        };
+        ParseError::Syntax {
+            message: e.to_string(),
+            line,
+            column,
+        }
+    })?;
 
-    let pair = pairs.into_iter().next()
-        .ok_or(ParseError::EmptyInput)?;
+    let pair = pairs.into_iter().next().ok_or(ParseError::EmptyInput)?;
 
-    let inner = pair.into_inner().next()
-        .ok_or(ParseError::EmptyInput)?;
+    let inner = pair.into_inner().next().ok_or(ParseError::EmptyInput)?;
 
-    let mut stmt = AstBuilder::build_statement(inner)
-        .map_err(ParseError::Build)?;
+    let mut stmt = AstBuilder::build_statement(inner).map_err(ParseError::Build)?;
 
     if !_arith_map.is_empty() {
         inject_arithmetic(&mut stmt, &_arith_map);
@@ -238,7 +229,7 @@ pub fn parse_statement_with_aliases(
 ) -> Result<crate::ast::Statement, ParseError> {
     let source = preprocess_line_continuations(source);
     let source = crate::alias_expand::preprocess_aliases(&source, alias_ctx);
-    
+
     let (normalized_arith, _arith_map) = if source.contains("$((") {
         crate::arith_preprocess::preprocess_arithmetic(&source)
     } else {
@@ -246,33 +237,28 @@ pub fn parse_statement_with_aliases(
     };
 
     let (normalized, heredoc_contents) = if normalized_arith.contains("<<") {
-        preprocess_heredocs(&normalized_arith)
-            .map_err(|e| ParseError::HeredocPreprocessing(e))?
+        preprocess_heredocs(&normalized_arith).map_err(ParseError::HeredocPreprocessing)?
     } else {
         (normalized_arith, std::collections::HashMap::new())
     };
 
-    let pairs = ColonyParser::parse(Rule::Statement, &normalized)
-        .map_err(|e| {
-            let (line, column) = match e.line_col {
-                pest::error::LineColLocation::Pos((l, c)) => (l, c),
-                pest::error::LineColLocation::Span((l, c), _) => (l, c),
-            };
-            ParseError::Syntax {
-                message: e.to_string(),
-                line,
-                column,
-            }
-        })?;
+    let pairs = ColonyParser::parse(Rule::Statement, &normalized).map_err(|e| {
+        let (line, column) = match e.line_col {
+            pest::error::LineColLocation::Pos((l, c)) => (l, c),
+            pest::error::LineColLocation::Span((l, c), _) => (l, c),
+        };
+        ParseError::Syntax {
+            message: e.to_string(),
+            line,
+            column,
+        }
+    })?;
 
-    let pair = pairs.into_iter().next()
-        .ok_or(ParseError::EmptyInput)?;
+    let pair = pairs.into_iter().next().ok_or(ParseError::EmptyInput)?;
 
-    let inner = pair.into_inner().next()
-        .ok_or(ParseError::EmptyInput)?;
+    let inner = pair.into_inner().next().ok_or(ParseError::EmptyInput)?;
 
-    let mut stmt = AstBuilder::build_statement(inner)
-        .map_err(ParseError::Build)?;
+    let mut stmt = AstBuilder::build_statement(inner).map_err(ParseError::Build)?;
 
     if !_arith_map.is_empty() {
         inject_arithmetic(&mut stmt, &_arith_map);
@@ -288,24 +274,21 @@ pub fn parse_statement_with_aliases(
 
 /// Parse an expression (for evaluation)
 pub fn parse_expression(source: &str) -> Result<crate::ast::Expression, ParseError> {
-    let pairs = ColonyParser::parse(Rule::Expression, source)
-        .map_err(|e| {
-            let (line, column) = match e.line_col {
-                pest::error::LineColLocation::Pos((l, c)) => (l, c),
-                pest::error::LineColLocation::Span((l, c), _) => (l, c),
-            };
-            ParseError::Syntax {
-                message: e.to_string(),
-                line,
-                column,
-            }
-        })?;
+    let pairs = ColonyParser::parse(Rule::Expression, source).map_err(|e| {
+        let (line, column) = match e.line_col {
+            pest::error::LineColLocation::Pos((l, c)) => (l, c),
+            pest::error::LineColLocation::Span((l, c), _) => (l, c),
+        };
+        ParseError::Syntax {
+            message: e.to_string(),
+            line,
+            column,
+        }
+    })?;
 
-    let pair = pairs.into_iter().next()
-        .ok_or(ParseError::EmptyInput)?;
+    let pair = pairs.into_iter().next().ok_or(ParseError::EmptyInput)?;
 
-    AstBuilder::build_expression(pair)
-        .map_err(ParseError::Build)
+    AstBuilder::build_expression(pair).map_err(ParseError::Build)
 }
 
 fn preprocess_line_continuations(source: &str) -> String {
@@ -314,47 +297,58 @@ fn preprocess_line_continuations(source: &str) -> String {
     let mut i = 0;
     let mut in_single_quote = false;
     let mut in_heredoc: Option<(String, bool)> = None; // (delimiter, is_quoted_delimiter)
-    
+
     while i < bytes.len() {
         // Check for heredoc start
-        if in_heredoc.is_none() && !in_single_quote {
-            if i + 1 < bytes.len() && bytes[i] == b'<' && bytes[i + 1] == b'<' {
-                let start = i;
-                i += 2;
-                if i < bytes.len() && bytes[i] == b'-' {
-                    i += 1;
-                }
-                while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-                    i += 1;
-                }
-                let delim_start = i;
-                let mut quoted = false;
-                if i < bytes.len() && (bytes[i] == b'\'' || bytes[i] == b'"') {
-                    quoted = true;
-                    let quote = bytes[i];
-                    i += 1;
-                    while i < bytes.len() && bytes[i] != quote {
-                        i += 1;
-                    }
-                    let delim = String::from_utf8_lossy(&bytes[delim_start + 1..i]).to_string();
-                    if i < bytes.len() {
-                        i += 1;
-                    }
-                    in_heredoc = Some((delim, quoted));
-                } else {
-                    while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b';' && bytes[i] != b'&' && bytes[i] != b'|' && bytes[i] != b'>' && bytes[i] != b'<' && bytes[i] != b')' {
-                        i += 1;
-                    }
-                    let delim = String::from_utf8_lossy(&bytes[delim_start..i]).to_string();
-                    if !delim.is_empty() {
-                        in_heredoc = Some((delim, false));
-                    }
-                }
-                result.push_str(&String::from_utf8_lossy(&bytes[start..i]));
-                continue;
+        if in_heredoc.is_none()
+            && !in_single_quote
+            && i + 1 < bytes.len()
+            && bytes[i] == b'<'
+            && bytes[i + 1] == b'<'
+        {
+            let start = i;
+            i += 2;
+            if i < bytes.len() && bytes[i] == b'-' {
+                i += 1;
             }
+            while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+                i += 1;
+            }
+            let delim_start = i;
+            if i < bytes.len() && (bytes[i] == b'\'' || bytes[i] == b'"') {
+                let quote = bytes[i];
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    i += 1;
+                }
+                let delim = String::from_utf8_lossy(&bytes[delim_start + 1..i]).to_string();
+                if i < bytes.len() {
+                    i += 1;
+                }
+                in_heredoc = Some((delim, true));
+            } else {
+                while i < bytes.len()
+                    && bytes[i] != b'\n'
+                    && bytes[i] != b' '
+                    && bytes[i] != b'\t'
+                    && bytes[i] != b';'
+                    && bytes[i] != b'&'
+                    && bytes[i] != b'|'
+                    && bytes[i] != b'>'
+                    && bytes[i] != b'<'
+                    && bytes[i] != b')'
+                {
+                    i += 1;
+                }
+                let delim = String::from_utf8_lossy(&bytes[delim_start..i]).to_string();
+                if !delim.is_empty() {
+                    in_heredoc = Some((delim, false));
+                }
+            }
+            result.push_str(&String::from_utf8_lossy(&bytes[start..i]));
+            continue;
         }
-        
+
         // Check for heredoc end
         if let Some((ref delim, _is_quoted)) = in_heredoc {
             if bytes[i] == b'\n' {
@@ -375,36 +369,36 @@ fn preprocess_line_continuations(source: &str) -> String {
             i += 1;
             continue;
         }
-        
+
         if bytes[i] == b'\'' && !in_single_quote {
             in_single_quote = true;
             result.push('\'');
             i += 1;
             continue;
         }
-        
+
         if bytes[i] == b'\'' && in_single_quote {
             in_single_quote = false;
             result.push('\'');
             i += 1;
             continue;
         }
-        
+
         if in_single_quote {
             result.push(bytes[i] as char);
             i += 1;
             continue;
         }
-        
+
         if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
             i += 2;
             continue;
         }
-        
+
         result.push(bytes[i] as char);
         i += 1;
     }
-    
+
     result
 }
 
@@ -449,7 +443,10 @@ fn inject_arithmetic(stmt: &mut crate::ast::Statement, arith_map: &[(String, Str
     }
 
     // Helper to inject into an assignment value
-    fn inject_into_assignment(assignment: &mut crate::ast::Assignment, arith_map: &[(String, String)]) {
+    fn inject_into_assignment(
+        assignment: &mut crate::ast::Assignment,
+        arith_map: &[(String, String)],
+    ) {
         use crate::ast::AssignmentValue;
         match &mut assignment.value {
             AssignmentValue::Word(word) => {
@@ -558,14 +555,14 @@ fn inject_heredoc_contents(
     heredoc_index: &mut usize,
 ) {
     use crate::ast::{HereDocKind, RedirectKind, RedirectTarget, Statement};
-    
+
     fn inject_into_redirects(
         redirects: &mut Vec<crate::ast::Redirect>,
         heredoc_contents: &std::collections::HashMap<usize, crate::heredoc::HeredocContent>,
         heredoc_index: &mut usize,
     ) {
         use crate::ast::WordPart;
-        
+
         for redirect in redirects {
             match (&redirect.kind, &redirect.target) {
                 (RedirectKind::HereDoc(HereDocKind::Normal), RedirectTarget::File(word))
@@ -586,7 +583,7 @@ fn inject_heredoc_contents(
                     } else {
                         None
                     };
-                    
+
                     if let Some(delimiter_key) = delimiter_key {
                         if let Some(content) = heredoc_contents.get(heredoc_index) {
                             redirect.target = RedirectTarget::HereDoc {
@@ -603,7 +600,7 @@ fn inject_heredoc_contents(
             }
         }
     }
-    
+
     match stmt {
         Statement::SimpleCommand(cmd) => {
             inject_into_redirects(&mut cmd.redirects, heredoc_contents, heredoc_index);
@@ -803,8 +800,8 @@ mod tests {
 
     #[test]
     fn test_command_sub_with_args() {
-        use pest::Parser;
         use crate::pest_parser::{ColonyParser, Rule};
+        use pest::Parser;
 
         // Test -1: Can we parse "world" as a Word?
         eprintln!("\n=== Test -1: Parse 'world' as Word ===");
@@ -891,9 +888,18 @@ mod tests {
         match ColonyParser::parse(Rule::SimpleCommand, source) {
             Ok(pairs) => {
                 for pair in pairs {
-                    eprintln!("Rule: {:?}, Text: {:?}, Span: {:?}", pair.as_rule(), pair.as_str(), pair.as_span());
+                    eprintln!(
+                        "Rule: {:?}, Text: {:?}, Span: {:?}",
+                        pair.as_rule(),
+                        pair.as_str(),
+                        pair.as_span()
+                    );
                     for inner in pair.into_inner() {
-                        eprintln!("  Inner Rule: {:?}, Text: {:?}", inner.as_rule(), inner.as_str());
+                        eprintln!(
+                            "  Inner Rule: {:?}, Text: {:?}",
+                            inner.as_rule(),
+                            inner.as_str()
+                        );
                     }
                 }
             }
@@ -917,19 +923,19 @@ mod tests {
         // Navigate through List/Pipeline to get to SimpleCommand
         let cmd = match stmt {
             crate::ast::Statement::SimpleCommand(ref cmd) => cmd,
-            crate::ast::Statement::List(ref list) => {
-                match &*list.first {
-                    crate::ast::Statement::Pipeline(ref pipeline) => {
-                        if let crate::ast::Statement::SimpleCommand(ref cmd) = *pipeline.elements[0].command {
-                            cmd
-                        } else {
-                            panic!("Pipeline doesn't contain SimpleCommand");
-                        }
+            crate::ast::Statement::List(ref list) => match &*list.first {
+                crate::ast::Statement::Pipeline(ref pipeline) => {
+                    if let crate::ast::Statement::SimpleCommand(ref cmd) =
+                        *pipeline.elements[0].command
+                    {
+                        cmd
+                    } else {
+                        panic!("Pipeline doesn't contain SimpleCommand");
                     }
-                    crate::ast::Statement::SimpleCommand(ref cmd) => cmd,
-                    _ => panic!("List doesn't contain expected structure"),
                 }
-            }
+                crate::ast::Statement::SimpleCommand(ref cmd) => cmd,
+                _ => panic!("List doesn't contain expected structure"),
+            },
             _ => panic!("Unexpected statement type"),
         };
 
@@ -940,7 +946,11 @@ mod tests {
             eprintln!("Arg {}: {:?}", i, arg);
         }
 
-        assert_eq!(cmd.args.len(), 2, "Should have 2 arguments: 'hello' and $(echo world)");
+        assert_eq!(
+            cmd.args.len(),
+            2,
+            "Should have 2 arguments: 'hello' and $(echo world)"
+        );
     }
 
     #[test]
@@ -951,7 +961,11 @@ line 2
 EOF"#;
 
         let result = parse(source);
-        assert!(result.is_ok(), "Should parse basic heredoc: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should parse basic heredoc: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -959,7 +973,11 @@ EOF"#;
         let source = "cat <<-EOF\n\tindented content\nEOF";
 
         let result = parse(source);
-        assert!(result.is_ok(), "Should parse <<- heredoc: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should parse <<- heredoc: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -969,7 +987,11 @@ $var should not expand
 EOF"#;
 
         let result = parse(source);
-        assert!(result.is_ok(), "Should parse quoted delimiter: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should parse quoted delimiter: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -980,29 +1002,38 @@ and this too
 EOF"#;
 
         let result = parse(source);
-        assert!(result.is_ok(), "Should parse heredoc in pipeline: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should parse heredoc in pipeline: {:?}",
+            result.err()
+        );
     }
 
     #[test]
     fn test_arith_in_assignment() {
-        use crate::ast::{Statement, WordPart, AssignmentValue};
-        
+        use crate::ast::{AssignmentValue, Statement, WordPart};
+
         let source = "x=$((1+1))";
         let result = parse_statement(source);
         assert!(result.is_ok(), "Should parse: {:?}", result.err());
-        
+
         let stmt = result.unwrap();
-        
+
         if let Statement::List(list) = stmt {
             if let Statement::Pipeline(pipeline) = &*list.first {
                 if let Statement::SimpleCommand(cmd) = &*pipeline.elements[0].command {
                     assert!(!cmd.env_assignments.is_empty(), "Should have assignment");
                     let assignment = &cmd.env_assignments[0];
                     assert_eq!(assignment.name, "x");
-                    
+
                     if let AssignmentValue::Word(word) = &assignment.value {
-                        assert!(word.parts.iter().any(|p| matches!(p, WordPart::ArithRaw(_))), 
-                            "Assignment should contain ArithRaw, got: {:?}", word.parts);
+                        assert!(
+                            word.parts
+                                .iter()
+                                .any(|p| matches!(p, WordPart::ArithRaw(_))),
+                            "Assignment should contain ArithRaw, got: {:?}",
+                            word.parts
+                        );
                     } else {
                         panic!("Expected Word assignment value");
                     }
@@ -1012,29 +1043,39 @@ EOF"#;
         }
         panic!("Unexpected AST structure");
     }
-    
+
     #[test]
     fn test_extglob_ast_building() {
-        use crate::ast::{Statement, WordPart, ExtGlobOp};
-        
+        use crate::ast::{ExtGlobOp, Statement, WordPart};
+
         let source = "echo !(foo).txt";
         let result = parse_statement(source);
         assert!(result.is_ok(), "Should parse extglob: {:?}", result.err());
-        
+
         let stmt = result.unwrap();
         println!("AST: {:?}", stmt);
-        
+
         if let Statement::List(list) = stmt {
             if let Statement::Pipeline(pipeline) = &*list.first {
                 if let Statement::SimpleCommand(cmd) = &*pipeline.elements[0].command {
                     assert_eq!(cmd.args.len(), 1, "Should have 1 argument (!(foo).txt)");
                     let arg_word = &cmd.args[0];
                     println!("Arg word parts: {:?}", arg_word.parts);
-                    
+
                     let has_extglob = arg_word.parts.iter().any(|p| {
-                        matches!(p, WordPart::ExtGlob { operator: ExtGlobOp::Not, .. })
+                        matches!(
+                            p,
+                            WordPart::ExtGlob {
+                                operator: ExtGlobOp::Not,
+                                ..
+                            }
+                        )
                     });
-                    assert!(has_extglob, "Should have ExtGlob Not part, got: {:?}", arg_word.parts);
+                    assert!(
+                        has_extglob,
+                        "Should have ExtGlob Not part, got: {:?}",
+                        arg_word.parts
+                    );
                     return;
                 }
             }

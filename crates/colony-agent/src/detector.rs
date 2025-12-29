@@ -36,12 +36,24 @@ impl NaturalLanguageDetector {
 
         // Question words
         let question_words = [
-            "what", "why", "how", "when", "where", "who",
-            "can you", "could you", "would you", "please",
-            "explain", "tell me", "show me",
+            "what",
+            "why",
+            "how",
+            "when",
+            "where",
+            "who",
+            "can you",
+            "could you",
+            "would you",
+            "please",
+            "explain",
+            "tell me",
+            "show me",
         ];
 
-        question_words.iter().any(|word| lowercase.starts_with(word))
+        question_words
+            .iter()
+            .any(|word| lowercase.starts_with(word))
     }
 }
 
@@ -51,8 +63,12 @@ mod tests {
 
     #[test]
     fn test_explicit_nl_prefix() {
-        assert!(NaturalLanguageDetector::is_natural_language("# what is rust"));
-        assert!(NaturalLanguageDetector::is_natural_language("? how to use cargo"));
+        assert!(NaturalLanguageDetector::is_natural_language(
+            "# what is rust"
+        ));
+        assert!(NaturalLanguageDetector::is_natural_language(
+            "? how to use cargo"
+        ));
     }
 
     #[test]
@@ -65,8 +81,14 @@ mod tests {
 
     #[test]
     fn test_question_patterns() {
-        assert!(NaturalLanguageDetector::is_natural_language("what is the weather"));
-        assert!(NaturalLanguageDetector::is_natural_language("how do I compile this"));
-        assert!(NaturalLanguageDetector::is_natural_language("can you help me"));
+        assert!(NaturalLanguageDetector::is_natural_language(
+            "what is the weather"
+        ));
+        assert!(NaturalLanguageDetector::is_natural_language(
+            "how do I compile this"
+        ));
+        assert!(NaturalLanguageDetector::is_natural_language(
+            "can you help me"
+        ));
     }
 }

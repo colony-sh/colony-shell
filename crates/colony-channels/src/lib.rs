@@ -11,11 +11,13 @@
 
 mod buffer;
 mod channel;
-mod manager;
 mod context;
+mod manager;
 
 pub use buffer::InternalBuffer;
-pub use channel::{Channel, ChannelId, STDCONTEXT, STDLLM, STDERR, STDIN, STDOUT, STDTOOL, STDTRACE};
+pub use channel::{
+    Channel, ChannelId, STDCONTEXT, STDERR, STDIN, STDLLM, STDOUT, STDTOOL, STDTRACE,
+};
 pub use context::ContextChannel;
 pub use manager::ChannelManager;
 

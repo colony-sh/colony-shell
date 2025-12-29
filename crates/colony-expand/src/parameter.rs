@@ -66,14 +66,18 @@ pub enum ExpandedValue {
     Multiple(Vec<String>),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct ExpansionSideEffect {
     pub assignment: Option<(String, String)>,
 }
 
 impl ExpansionSideEffect {
+    #[allow(dead_code)]
     pub fn with_assignment(name: String, value: String) -> Self {
-        Self { assignment: Some((name, value)) }
+        Self {
+            assignment: Some((name, value)),
+        }
     }
 }
 
@@ -86,18 +90,23 @@ impl ExpandedValue {
     }
 }
 
-/// Expand a parameter, returning multiple values for ${arr[@]} expansion
-pub fn expand_parameter_multi(var_ref: &VariableRef, context: &ExpansionContext) -> Result<ExpandedValue> {
-    use colony_parser::{ArraySubscript, VarPrefix};
-    
+/// Expand a parameter, returning multiple values for `${arr[@]}` expansion
+pub fn expand_parameter_multi(
+    var_ref: &VariableRef,
+    context: &ExpansionContext,
+) -> Result<ExpandedValue> {
+    use colony_parser::ArraySubscript;
+
     let variable = context.get_variable(&var_ref.name);
-    
-    if let (Some(crate::Variable::Array(arr)), Some(ArraySubscript::All)) = (&variable, &var_ref.subscript) {
+
+    if let (Some(crate::Variable::Array(arr)), Some(ArraySubscript::All)) =
+        (&variable, &var_ref.subscript)
+    {
         if var_ref.prefix.is_none() && var_ref.modifier.is_none() {
             return Ok(ExpandedValue::Multiple(arr.clone()));
         }
     }
-    
+
     expand_parameter(var_ref, context).map(ExpandedValue::Single)
 }
 
@@ -117,31 +126,36 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                     return Ok(context.positional_param_count().to_string());
                 }
                 return match (&variable, &var_ref.subscript) {
-                    (Some(crate::Variable::Array(arr)), Some(colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star)) => {
-                        Ok(arr.len().to_string())
-                    }
-                    (Some(crate::Variable::AssocArray(map)), Some(colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star)) => {
-                        Ok(map.len().to_string())
-                    }
+                    (
+                        Some(crate::Variable::Array(arr)),
+                        Some(
+                            colony_parser::ArraySubscript::All
+                            | colony_parser::ArraySubscript::Star,
+                        ),
+                    ) => Ok(arr.len().to_string()),
+                    (
+                        Some(crate::Variable::AssocArray(map)),
+                        Some(
+                            colony_parser::ArraySubscript::All
+                            | colony_parser::ArraySubscript::Star,
+                        ),
+                    ) => Ok(map.len().to_string()),
                     (Some(crate::Variable::Array(arr)), None) => {
                         Ok(arr.first().map(|s| s.len()).unwrap_or(0).to_string())
                     }
-                    (Some(crate::Variable::String(s)), _) => {
-                        Ok(s.len().to_string())
-                    }
-                    (None, _) => {
-                        match &var_value {
-                            Some(s) => Ok(s.len().to_string()),
-                            None => Ok("0".to_string()),
-                        }
-                    }
+                    (Some(crate::Variable::String(s)), _) => Ok(s.len().to_string()),
+                    (None, _) => match &var_value {
+                        Some(s) => Ok(s.len().to_string()),
+                        None => Ok("0".to_string()),
+                    },
                     _ => Ok("0".to_string()),
                 };
             }
             VarPrefix::Indices => {
                 return match variable {
                     Some(crate::Variable::Array(arr)) => {
-                        let indices: Vec<String> = arr.iter()
+                        let indices: Vec<String> = arr
+                            .iter()
                             .enumerate()
                             .filter(|(_, v)| !v.is_empty())
                             .map(|(i, _)| i.to_string())
@@ -171,13 +185,15 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                 }
             };
         }
-        
+
         let array = match variable {
             Some(crate::Variable::Array(arr)) => arr,
             Some(crate::Variable::String(s)) => {
                 return match subscript {
                     colony_parser::ArraySubscript::Index(_) => Ok(s.clone()),
-                    colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star => Ok(s.clone()),
+                    colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star => {
+                        Ok(s.clone())
+                    }
                 };
             }
             Some(crate::Variable::AssocArray(_)) => unreachable!(),
@@ -192,46 +208,48 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
         };
 
         let result = match subscript {
-            colony_parser::ArraySubscript::Index(expr) => {
-                match **expr {
-                    colony_parser::Expression::Int(idx, _) => {
-                        let index = if idx < 0 {
-                            let len = array.len() as i64;
-                            (len + idx) as usize
-                        } else {
-                            idx as usize
-                        };
+            colony_parser::ArraySubscript::Index(expr) => match **expr {
+                colony_parser::Expression::Int(idx, _) => {
+                    let index = if idx < 0 {
+                        let len = array.len() as i64;
+                        (len + idx) as usize
+                    } else {
+                        idx as usize
+                    };
+                    array.get(index).cloned().unwrap_or_default()
+                }
+                colony_parser::Expression::Unary {
+                    op: colony_parser::UnaryOp::Neg,
+                    ref operand,
+                    ..
+                } => {
+                    if let colony_parser::Expression::Int(n, _) = **operand {
+                        let len = array.len() as i64;
+                        let index = (len - n) as usize;
                         array.get(index).cloned().unwrap_or_default()
+                    } else {
+                        String::new()
                     }
-                    colony_parser::Expression::Unary { op: colony_parser::UnaryOp::Neg, ref operand, .. } => {
-                        if let colony_parser::Expression::Int(n, _) = **operand {
-                            let len = array.len() as i64;
-                            let index = (len - n) as usize;
+                }
+                colony_parser::Expression::Variable { ref name, .. } => {
+                    if let Some(val) = context.get_var_or_env(name) {
+                        if let Ok(idx) = val.parse::<i64>() {
+                            let index = if idx < 0 {
+                                let len = array.len() as i64;
+                                (len + idx) as usize
+                            } else {
+                                idx as usize
+                            };
                             array.get(index).cloned().unwrap_or_default()
                         } else {
                             String::new()
                         }
+                    } else {
+                        String::new()
                     }
-                    colony_parser::Expression::Variable { ref name, .. } => {
-                        if let Some(val) = context.get_var_or_env(name) {
-                            if let Ok(idx) = val.parse::<i64>() {
-                                let index = if idx < 0 {
-                                    let len = array.len() as i64;
-                                    (len + idx) as usize
-                                } else {
-                                    idx as usize
-                                };
-                                array.get(index).cloned().unwrap_or_default()
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        }
-                    }
-                    _ => String::new()
                 }
-            }
+                _ => String::new(),
+            },
             colony_parser::ArraySubscript::All | colony_parser::ArraySubscript::Star => {
                 if let Some(VarModifier::Slice { offset, length }) = &var_ref.modifier {
                     let offset_val = expand_word_to_i64(offset, context);
@@ -247,32 +265,40 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                     };
                     return Ok(array[start..end].join(" "));
                 }
-                
+
                 if let Some(case_mod) = &var_ref.modifier {
                     match case_mod {
                         VarModifier::UpperCase { all } => {
-                            let modified: Vec<String> = array.iter()
+                            let modified: Vec<String> = array
+                                .iter()
                                 .map(|s| apply_case_modification(s, CaseOp::Upper, *all))
                                 .collect();
                             return Ok(modified.join(" "));
                         }
                         VarModifier::LowerCase { all } => {
-                            let modified: Vec<String> = array.iter()
+                            let modified: Vec<String> = array
+                                .iter()
                                 .map(|s| apply_case_modification(s, CaseOp::Lower, *all))
                                 .collect();
                             return Ok(modified.join(" "));
                         }
                         VarModifier::ToggleCase { all } => {
-                            let modified: Vec<String> = array.iter()
+                            let modified: Vec<String> = array
+                                .iter()
                                 .map(|s| apply_case_modification(s, CaseOp::Toggle, *all))
                                 .collect();
                             return Ok(modified.join(" "));
                         }
-                        VarModifier::Substitute { pattern, replacement, all } => {
+                        VarModifier::Substitute {
+                            pattern,
+                            replacement,
+                            all,
+                        } => {
                             let pat_str = expand_simple_word(pattern, context);
                             let repl_str = expand_simple_word(replacement, context);
                             if !pat_str.is_empty() {
-                                let modified: Vec<String> = array.iter()
+                                let modified: Vec<String> = array
+                                    .iter()
                                     .map(|s| {
                                         if *all {
                                             s.replace(&pat_str, &repl_str)
@@ -287,22 +313,28 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                         _ => {}
                     }
                 }
-                
+
                 array.join(" ")
             }
         };
-        
+
         let result = if let Some(case_mod) = &var_ref.modifier {
             match case_mod {
-                VarModifier::UpperCase { all } => apply_case_modification(&result, CaseOp::Upper, *all),
-                VarModifier::LowerCase { all } => apply_case_modification(&result, CaseOp::Lower, *all),
-                VarModifier::ToggleCase { all } => apply_case_modification(&result, CaseOp::Toggle, *all),
+                VarModifier::UpperCase { all } => {
+                    apply_case_modification(&result, CaseOp::Upper, *all)
+                }
+                VarModifier::LowerCase { all } => {
+                    apply_case_modification(&result, CaseOp::Lower, *all)
+                }
+                VarModifier::ToggleCase { all } => {
+                    apply_case_modification(&result, CaseOp::Toggle, *all)
+                }
                 _ => result,
             }
         } else {
             result
         };
-        
+
         return Ok(result);
     }
 
@@ -313,21 +345,19 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
             Ok(var_value.unwrap_or_default())
         }
 
-        Some(VarModifier::Length) => {
-            match variable {
-                Some(crate::Variable::Array(arr)) => Ok(arr.len().to_string()),
-                Some(crate::Variable::AssocArray(map)) => Ok(map.len().to_string()),
-                Some(crate::Variable::String(s)) => Ok(s.len().to_string()),
-                Some(crate::Variable::NameRef(target)) => {
-                    if let Some(v) = context.get_var_or_env(target) {
-                        Ok(v.len().to_string())
-                    } else {
-                        Ok("0".to_string())
-                    }
+        Some(VarModifier::Length) => match variable {
+            Some(crate::Variable::Array(arr)) => Ok(arr.len().to_string()),
+            Some(crate::Variable::AssocArray(map)) => Ok(map.len().to_string()),
+            Some(crate::Variable::String(s)) => Ok(s.len().to_string()),
+            Some(crate::Variable::NameRef(target)) => {
+                if let Some(v) = context.get_var_or_env(target) {
+                    Ok(v.len().to_string())
+                } else {
+                    Ok("0".to_string())
                 }
-                None => Ok("0".to_string()),
             }
-        }
+            None => Ok("0".to_string()),
+        },
 
         Some(VarModifier::Indices) => {
             // ${!arr[@]} - array indices
@@ -404,7 +434,7 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
 
         Some(VarModifier::Slice { offset, length }) => {
             let offset_val = expand_word_to_i64(offset, context);
-            
+
             if var_ref.name == "@" || var_ref.name == "*" {
                 let params = context.get_all_positional_params();
                 let len = params.len() as i64;
@@ -416,12 +446,14 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                     ((offset_val - 1) as usize).min(params.len())
                 };
                 let end = match length {
-                    Some(l) => (positional_start + expand_word_to_usize(l, context)).min(params.len()),
+                    Some(l) => {
+                        (positional_start + expand_word_to_usize(l, context)).min(params.len())
+                    }
                     None => params.len(),
                 };
                 return Ok(params[positional_start..end].join(" "));
             }
-            
+
             match variable {
                 Some(crate::Variable::Array(arr)) => {
                     let len = arr.len() as i64;
@@ -439,8 +471,15 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                 Some(crate::Variable::AssocArray(map)) => {
                     let values: Vec<_> = map.values().cloned().collect();
                     let len = values.len() as i64;
-                    let start = if offset_val < 0 { (len + offset_val).max(0) as usize } else { (offset_val as usize).min(values.len()) };
-                    let end = match length { Some(l) => (start + expand_word_to_usize(l, context)).min(values.len()), None => values.len() };
+                    let start = if offset_val < 0 {
+                        (len + offset_val).max(0) as usize
+                    } else {
+                        (offset_val as usize).min(values.len())
+                    };
+                    let end = match length {
+                        Some(l) => (start + expand_word_to_usize(l, context)).min(values.len()),
+                        None => values.len(),
+                    };
                     Ok(values[start..end].join(" "))
                 }
                 Some(crate::Variable::String(s)) => {
@@ -461,8 +500,15 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                     if let Some(v) = context.get_var_or_env(target) {
                         let chars: Vec<char> = v.chars().collect();
                         let len = chars.len() as i64;
-                        let start = if offset_val < 0 { (len + offset_val).max(0) as usize } else { (offset_val as usize).min(chars.len()) };
-                        let end = match length { Some(l) => (start + expand_word_to_usize(l, context)).min(chars.len()), None => chars.len() };
+                        let start = if offset_val < 0 {
+                            (len + offset_val).max(0) as usize
+                        } else {
+                            (offset_val as usize).min(chars.len())
+                        };
+                        let end = match length {
+                            Some(l) => (start + expand_word_to_usize(l, context)).min(chars.len()),
+                            None => chars.len(),
+                        };
                         Ok(chars[start..end].iter().collect())
                     } else {
                         Ok(String::new())
@@ -511,17 +557,22 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
             Ok(apply_case_modification(&value, CaseOp::Toggle, *all))
         }
 
-        Some(VarModifier::Substitute { pattern, replacement, all: replace_all }) => {
+        Some(VarModifier::Substitute {
+            pattern,
+            replacement,
+            all: replace_all,
+        }) => {
             let pat_str = expand_simple_word(pattern, context);
             let repl_str = expand_simple_word(replacement, context);
-            
+
             if pat_str.is_empty() {
                 return Ok(var_value.unwrap_or_default());
             }
-            
+
             if var_ref.name == "@" || var_ref.name == "*" {
                 let params = context.get_all_positional_params();
-                let modified: Vec<String> = params.iter()
+                let modified: Vec<String> = params
+                    .iter()
                     .map(|s| {
                         if *replace_all {
                             s.replace(&pat_str, &repl_str)
@@ -532,7 +583,7 @@ pub fn expand_parameter(var_ref: &VariableRef, context: &ExpansionContext) -> Re
                     .collect();
                 return Ok(modified.join(" "));
             }
-            
+
             let value = var_value.unwrap_or_default();
             if *replace_all {
                 Ok(value.replace(&pat_str, &repl_str))
@@ -625,9 +676,9 @@ fn apply_case_modification(value: &str, op: CaseOp, all: bool) -> String {
     if value.is_empty() {
         return String::new();
     }
-    
+
     let mut chars: Vec<char> = value.chars().collect();
-    
+
     if all {
         for c in chars.iter_mut() {
             *c = match op {
@@ -655,7 +706,7 @@ fn apply_case_modification(value: &str, op: CaseOp, all: bool) -> String {
             }
         };
     }
-    
+
     chars.into_iter().collect()
 }
 
@@ -664,14 +715,14 @@ fn get_subscript_key(expr: &colony_parser::Expression, _context: &ExpansionConte
         colony_parser::Expression::Variable { name, .. } => name.clone(),
         colony_parser::Expression::Str(s, _) => s.clone(),
         colony_parser::Expression::Int(n, _) => n.to_string(),
-        _ => String::new()
+        _ => String::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use colony_parser::{Span, VariableRef, VarModifier, Word};
+    use colony_parser::{Span, VarModifier, VariableRef, Word};
 
     fn make_var_ref(name: &str, modifier: Option<VarModifier>) -> VariableRef {
         VariableRef {

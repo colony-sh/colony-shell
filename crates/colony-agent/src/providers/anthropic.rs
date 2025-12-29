@@ -5,14 +5,13 @@
 //! future models.
 
 use crate::provider::{
-    CompletionRequest, CompletionStream, ContentBlock, Message, MessageContent, MessageRole,
-    ModelProvider, ProviderHealth, StreamEvent as ProviderStreamEvent, ToolDefinition,
+    CompletionRequest, CompletionStream, ContentBlock, MessageContent, MessageRole, ModelProvider,
+    ProviderHealth, StreamEvent as ProviderStreamEvent, ToolDefinition,
 };
 use crate::{AgentError, Result};
 use async_trait::async_trait;
 use claude_sdk::{ClaudeClient, ConversationBuilder, StreamEvent as ClaudeStreamEvent};
-use futures::{Stream, StreamExt};
-use std::pin::Pin;
+use futures::StreamExt;
 use tracing::debug;
 
 /// Anthropic provider using claude-sdk
@@ -59,7 +58,8 @@ impl AnthropicProvider {
                         MessageContent::Text(t) => t.clone(),
                         MessageContent::Blocks(blocks) => {
                             // Extract text from blocks
-                            blocks.iter()
+                            blocks
+                                .iter()
                                 .filter_map(|b| match b {
                                     ContentBlock::Text { text } => Some(text.clone()),
                                     _ => None,
@@ -125,7 +125,7 @@ impl ModelProvider for AnthropicProvider {
         let unified_stream = stream.map(|event_result| {
             event_result
                 .map_err(AgentError::from)
-                .and_then(|event| Self::convert_stream_event(event))
+                .and_then(Self::convert_stream_event)
         });
 
         Ok(Box::pin(unified_stream))
@@ -167,7 +167,7 @@ impl AnthropicProvider {
                 if let Some(text) = delta.text() {
                     Ok(ProviderStreamEvent::TextDelta {
                         text: text.to_string(),
-                        index: index as usize,
+                        index,
                     })
                 } else {
                     // Skip non-text deltas
@@ -190,7 +190,7 @@ impl AnthropicProvider {
                 } else {
                     Ok(ProviderStreamEvent::TextDelta {
                         text: String::new(),
-                        index: index as usize,
+                        index,
                     })
                 }
             }
@@ -199,7 +199,7 @@ impl AnthropicProvider {
                 // Block complete - no-op for now
                 Ok(ProviderStreamEvent::TextDelta {
                     text: String::new(),
-                    index: index as usize,
+                    index,
                 })
             }
 

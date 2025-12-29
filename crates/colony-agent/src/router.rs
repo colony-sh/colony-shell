@@ -36,7 +36,7 @@ pub enum ProviderType {
 
 impl ProviderType {
     /// Parse from string (case-insensitive)
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "anthropic" | "claude" => Some(Self::Anthropic),
             "openai" | "gpt" => Some(Self::OpenAI),
@@ -77,8 +77,11 @@ impl ModelRouter {
 
         // Check explicit provider env var
         if let Ok(provider_str) = env::var("COLONY_MODEL_PROVIDER") {
-            if let Some(provider_type) = ProviderType::from_str(&provider_str) {
-                info!("Using provider from COLONY_MODEL_PROVIDER: {:?}", provider_type);
+            if let Some(provider_type) = ProviderType::parse(&provider_str) {
+                info!(
+                    "Using provider from COLONY_MODEL_PROVIDER: {:?}",
+                    provider_type
+                );
                 let model_name = env::var("COLONY_MODEL_NAME")
                     .unwrap_or_else(|_| provider_type.default_model().to_string());
 
@@ -154,9 +157,7 @@ impl ModelRouter {
                     )
                 })?;
 
-                Box::new(
-                    AnthropicProvider::new(api_key, &config.model_name).with_caching(true),
-                )
+                Box::new(AnthropicProvider::new(api_key, &config.model_name).with_caching(true))
             }
 
             ProviderType::OpenAI => {
@@ -286,15 +287,15 @@ mod tests {
     #[test]
     fn test_provider_type_parsing() {
         assert_eq!(
-            ProviderType::from_str("anthropic"),
+            ProviderType::parse("anthropic"),
             Some(ProviderType::Anthropic)
         );
-        assert_eq!(ProviderType::from_str("CLAUDE"), Some(ProviderType::Anthropic));
-        assert_eq!(ProviderType::from_str("openai"), Some(ProviderType::OpenAI));
-        assert_eq!(ProviderType::from_str("GPT"), Some(ProviderType::OpenAI));
-        assert_eq!(ProviderType::from_str("ollama"), Some(ProviderType::Ollama));
-        assert_eq!(ProviderType::from_str("local"), Some(ProviderType::Ollama));
-        assert_eq!(ProviderType::from_str("invalid"), None);
+        assert_eq!(ProviderType::parse("CLAUDE"), Some(ProviderType::Anthropic));
+        assert_eq!(ProviderType::parse("openai"), Some(ProviderType::OpenAI));
+        assert_eq!(ProviderType::parse("GPT"), Some(ProviderType::OpenAI));
+        assert_eq!(ProviderType::parse("ollama"), Some(ProviderType::Ollama));
+        assert_eq!(ProviderType::parse("local"), Some(ProviderType::Ollama));
+        assert_eq!(ProviderType::parse("invalid"), None);
     }
 
     #[test]

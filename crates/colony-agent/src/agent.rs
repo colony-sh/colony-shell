@@ -1,7 +1,9 @@
 //! Agent orchestration with multi-provider LLM support
 
 use crate::{
-    provider::{CompletionRequest, Message, MessageContent, MessageRole, ModelProvider, ToolDefinition},
+    provider::{
+        CompletionRequest, Message, MessageContent, MessageRole, ModelProvider, ToolDefinition,
+    },
     router::ModelRouter,
     tool::{ToolClassification, ToolRegistry},
     AgentError, ProviderType, Result, StreamEvent,
@@ -60,6 +62,12 @@ pub struct ProtocolEmitter {
     // For now, just print to stdout
 }
 
+impl Default for ProtocolEmitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProtocolEmitter {
     pub fn new() -> Self {
         Self {}
@@ -70,9 +78,9 @@ impl ProtocolEmitter {
         // TODO: Emit via OSC 2337
         print!("{}", text);
         use std::io::Write;
-        std::io::stdout().flush().map_err(|e| {
-            AgentError::Protocol(format!("failed to flush stdout: {}", e))
-        })?;
+        std::io::stdout()
+            .flush()
+            .map_err(|e| AgentError::Protocol(format!("failed to flush stdout: {}", e)))?;
         Ok(())
     }
 
@@ -93,7 +101,10 @@ impl ProtocolEmitter {
         // TODO: Wait for response from terminal via tuple space or IPC
 
         // For now, auto-approve (placeholder)
-        warn!("Tool approval not yet implemented, auto-approving: {}", tool_name);
+        warn!(
+            "Tool approval not yet implemented, auto-approving: {}",
+            tool_name
+        );
         Ok(ApprovalResponse::Approved)
     }
 }
@@ -287,9 +298,7 @@ impl Agent {
         let classification = self
             .tools
             .classification(&tool_name)
-            .ok_or_else(|| {
-                AgentError::ToolExecution(format!("unknown tool: {}", tool_name))
-            })?;
+            .ok_or_else(|| AgentError::ToolExecution(format!("unknown tool: {}", tool_name)))?;
 
         // Execute based on classification
         let result = match classification {
@@ -319,8 +328,7 @@ impl Agent {
         };
 
         // Add tool result to message history
-        let result_str = serde_json::to_string(&result)
-            .unwrap_or_else(|_| "{}".to_string());
+        let result_str = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
 
         // Tool results go as user messages in next turn
         // (Provider-specific handling varies, keeping it simple)

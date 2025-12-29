@@ -16,16 +16,10 @@ use crate::{context::ExpansionContext, Field, IntermediateWord};
 /// 2. IFS whitespace (space, tab, newline) at start/end is stripped
 /// 3. Consecutive IFS whitespace is treated as single separator
 /// 4. Non-whitespace IFS characters always create field boundaries
-pub fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<Field> {
+pub(crate) fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<Field> {
     let ifs = context.ifs();
-    let ifs_whitespace: Vec<char> = ifs
-        .chars()
-        .filter(|c| c.is_whitespace())
-        .collect();
-    let ifs_non_whitespace: Vec<char> = ifs
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
+    let ifs_whitespace: Vec<char> = ifs.chars().filter(|c| c.is_whitespace()).collect();
+    let ifs_non_whitespace: Vec<char> = ifs.chars().filter(|c| !c.is_whitespace()).collect();
 
     let mut fields = Vec::new();
     let mut current = String::new();
@@ -38,11 +32,7 @@ pub fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<
                 current_should_glob = false;
             }
         } else {
-            let parts = split_on_ifs(
-                &segment.text,
-                &ifs_whitespace,
-                &ifs_non_whitespace,
-            );
+            let parts = split_on_ifs(&segment.text, &ifs_whitespace, &ifs_non_whitespace);
 
             for (i, part) in parts.into_iter().enumerate() {
                 if i > 0 {
@@ -67,11 +57,7 @@ pub fn split_fields(word: &IntermediateWord, context: &ExpansionContext) -> Vec<
 }
 
 /// Split a string on IFS characters
-fn split_on_ifs(
-    text: &str,
-    ifs_whitespace: &[char],
-    ifs_non_whitespace: &[char],
-) -> Vec<String> {
+fn split_on_ifs(text: &str, ifs_whitespace: &[char], ifs_non_whitespace: &[char]) -> Vec<String> {
     if text.is_empty() {
         return vec![String::new()];
     }

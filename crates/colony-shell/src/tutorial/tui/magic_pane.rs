@@ -75,10 +75,12 @@ impl MagicPane {
             } => {
                 let mut content: Vec<Line> = ast_summary
                     .lines()
-                    .map(|line| Line::from(Span::styled(
-                        line.to_string(),
-                        Style::default().fg(Color::Cyan),
-                    )))
+                    .map(|line| {
+                        Line::from(Span::styled(
+                            line.to_string(),
+                            Style::default().fg(Color::Cyan),
+                        ))
+                    })
                     .collect();
 
                 if depth == TraceDepth::Internals {
@@ -86,9 +88,11 @@ impl MagicPane {
                         let expand_indicator = if self.ast_expanded { "▼" } else { "▶" };
                         content.push(Line::from(Span::styled(
                             format!("{} Full AST (press 'e' to toggle)", expand_indicator),
-                            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                            Style::default()
+                                .fg(Color::DarkGray)
+                                .add_modifier(Modifier::DIM),
                         )));
-                        
+
                         if self.ast_expanded {
                             let formatted = serde_json::to_string_pretty(full).unwrap_or_default();
                             for line in formatted.lines() {
@@ -300,7 +304,8 @@ impl MagicPane {
                 }
 
                 if let Some(vals) = values {
-                    let preview: String = vals.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
+                    let preview: String =
+                        vals.iter().take(5).cloned().collect::<Vec<_>>().join(", ");
                     let suffix = if vals.len() > 5 { "..." } else { "" };
                     content.push(Line::from(Span::styled(
                         format!("  Values: [{}{}]", preview, suffix),

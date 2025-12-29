@@ -130,15 +130,8 @@ impl MemoryStore {
         let embedding = &embeddings[0];
 
         let table = self.get_table().await?;
-        let batch = create_record_batch(
-            &id,
-            content,
-            embedding,
-            &scope,
-            importance,
-            now,
-            metadata,
-        )?;
+        let batch =
+            create_record_batch(&id, content, embedding, &scope, importance, now, metadata)?;
 
         let batches = RecordBatchIterator::new(vec![Ok(batch)], memory_schema());
         table.add(Box::new(batches)).execute().await?;
@@ -522,11 +515,7 @@ mod tests {
         let store = MemoryStore::open(dir.path()).await.unwrap();
 
         store
-            .store(
-                "Global memory",
-                Scope::Global,
-                None,
-            )
+            .store("Global memory", Scope::Global, None)
             .await
             .unwrap();
         store

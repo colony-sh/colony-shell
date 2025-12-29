@@ -20,7 +20,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 struct HeredocMarker {
     /// Position of << or <<- in source
-    start_pos: usize,
+    _start_pos: usize,
     /// End of marker line (after newline)
     end_pos: usize,
     /// Delimiter string
@@ -59,7 +59,9 @@ pub struct HeredocContent {
 /// ```
 ///
 /// The content is stored separately and will be injected into the AST after parsing.
-pub fn preprocess_heredocs(source: &str) -> Result<(String, HashMap<usize, HeredocContent>), String> {
+pub fn preprocess_heredocs(
+    source: &str,
+) -> Result<(String, HashMap<usize, HeredocContent>), String> {
     // Find all heredoc markers
     let markers = find_heredoc_markers(source)?;
 
@@ -93,20 +95,20 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
             i += 1;
             continue;
         }
-        
+
         // Handle double quotes
         if !in_single_quote && bytes[i] == b'"' {
             in_double_quote = !in_double_quote;
             i += 1;
             continue;
         }
-        
+
         // Handle backslash escape in double quotes
         if in_double_quote && bytes[i] == b'\\' && i + 1 < bytes.len() {
-            i += 2;  // Skip escaped character
+            i += 2; // Skip escaped character
             continue;
         }
-        
+
         // Skip everything inside quotes
         if in_single_quote || in_double_quote {
             if bytes[i] == b'\n' {
@@ -115,20 +117,20 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
             i += 1;
             continue;
         }
-        
+
         if i + 1 < bytes.len() && bytes[i] == b'$' && bytes[i + 1] == b'(' {
             i += 2;
             paren_depth += 1;
             in_comsub = true;
             continue;
         }
-        
+
         if in_comsub && bytes[i] == b'(' {
             paren_depth += 1;
             i += 1;
             continue;
         }
-        
+
         if in_comsub && bytes[i] == b')' {
             paren_depth -= 1;
             if paren_depth == 0 {
@@ -137,7 +139,7 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
             i += 1;
             continue;
         }
-        
+
         if in_comsub {
             if bytes[i] == b'\n' {
                 current_line_end = None;
@@ -145,7 +147,7 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
             i += 1;
             continue;
         }
-        
+
         if i + 1 < bytes.len() && bytes[i] == b'<' && bytes[i + 1] == b'<' {
             if i + 2 < bytes.len() && bytes[i + 2] == b'<' {
                 i += 3;
@@ -201,7 +203,7 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
             }
 
             let start_pos = delim_start - (if strip_tabs { 3 } else { 2 });
-            
+
             if current_line_end.is_none() {
                 let mut end = i;
                 while end < bytes.len() && bytes[end] != b'\n' {
@@ -214,7 +216,7 @@ fn find_heredoc_markers(source: &str) -> Result<Vec<HeredocMarker>, String> {
             }
 
             markers.push(HeredocMarker {
-                start_pos,
+                _start_pos: start_pos,
                 end_pos: current_line_end.unwrap(),
                 delimiter,
                 strip_tabs,
@@ -269,7 +271,7 @@ fn extract_and_normalize(
 
         // All markers in this group share the same end_pos (command line end)
         let group_end_pos = group[0].1.end_pos;
-        
+
         // Copy source up to the command line end (only once per group)
         if group_end_pos > last_pos {
             normalized.push_str(&source[last_pos..group_end_pos]);
@@ -310,30 +312,30 @@ fn extract_and_normalize(
                 if !marker.no_expansion {
                     while line_content.ends_with('\\') && pos < bytes.len() {
                         line_content.pop();
-                        
+
                         if pos < bytes.len() && bytes[pos] == b'\n' {
                             pos += 1;
                         }
-                        
+
                         // Lookahead: check if next line is delimiter
                         let next_line_start = pos;
                         while pos < bytes.len() && bytes[pos] != b'\n' {
                             pos += 1;
                         }
-                        
+
                         let next_line = &source[next_line_start..pos];
                         let trimmed_next = if marker.strip_tabs {
                             next_line.trim_start_matches('\t')
                         } else {
                             next_line
                         };
-                        
+
                         if trimmed_next.trim() == marker.delimiter {
                             // Backtrack: delimiter found, stop continuation
                             pos = next_line_start;
                             break;
                         }
-                        
+
                         line_content.push_str(next_line);
                     }
                 }
@@ -346,11 +348,14 @@ fn extract_and_normalize(
                 }
             }
 
-            contents.insert(idx, HeredocContent {
-                content,
-                expand: !marker.no_expansion,
-                strip_tabs: marker.strip_tabs,
-            });
+            contents.insert(
+                idx,
+                HeredocContent {
+                    content,
+                    expand: !marker.no_expansion,
+                    strip_tabs: marker.strip_tabs,
+                },
+            );
         }
 
         last_pos = pos;
@@ -454,7 +459,7 @@ and this
 EOF
 "#;
 
-        let (normalized, contents) = preprocess_heredocs(source).unwrap();
+        let (_normalized, contents) = preprocess_heredocs(source).unwrap();
         assert_eq!(contents.len(), 1);
 
         let content = contents.get(&0).unwrap();
@@ -471,13 +476,13 @@ EOF
 echo "$x""#;
 
         let (normalized, contents) = preprocess_heredocs(source).unwrap();
-        
+
         println!("Normalized source:\n{}", normalized);
         println!("Contents: {} items", contents.len());
         for (idx, content) in contents.iter() {
             println!("  [{}]: {:?}", idx, content.content);
         }
-        
+
         assert_eq!(contents.len(), 0);
         assert_eq!(normalized, source);
     }

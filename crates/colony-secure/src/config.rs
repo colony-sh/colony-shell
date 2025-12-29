@@ -27,7 +27,7 @@ pub struct VariableConfig {
     pub secure: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuditConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -44,15 +44,6 @@ impl Default for PatternConfig {
                 "SSH_AUTH_SOCK".to_string(),
                 "GPG_AGENT_INFO".to_string(),
             ],
-        }
-    }
-}
-
-impl Default for AuditConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            file: None,
         }
     }
 }
@@ -141,12 +132,13 @@ impl SecureConfig {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        let content = toml::to_string_pretty(self).map_err(|e| SecureError::Config(e.to_string()))?;
-        
+        let content =
+            toml::to_string_pretty(self).map_err(|e| SecureError::Config(e.to_string()))?;
+
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         std::fs::write(path, content)?;
         Ok(())
     }
@@ -159,13 +151,13 @@ mod tests {
     #[test]
     fn test_default_patterns() {
         let config = SecureConfig::default();
-        
+
         assert!(config.is_secure("AWS_SECRET_KEY"));
         assert!(config.is_secure("GITHUB_TOKEN"));
         assert!(config.is_secure("DB_PASSWORD"));
         assert!(config.is_secure("API_KEY"));
         assert!(config.is_secure("MY_SECRET"));
-        
+
         assert!(!config.is_secure("PUBLIC_KEY"));
         assert!(!config.is_secure("SSH_AUTH_SOCK"));
         assert!(!config.is_secure("PATH"));
@@ -175,10 +167,10 @@ mod tests {
     #[test]
     fn test_matching_pattern() {
         let config = SecureConfig::default();
-        
+
         let pattern = config.matching_pattern("AWS_SECRET_KEY");
         assert!(pattern.is_some());
-        
+
         let pattern = config.matching_pattern("PATH");
         assert!(pattern.is_none());
     }
@@ -187,7 +179,7 @@ mod tests {
     fn test_explicit_variables() {
         let mut config = SecureConfig::default();
         config.variables.secure.push("MY_CUSTOM_VAR".to_string());
-        
+
         assert!(config.is_secure("MY_CUSTOM_VAR"));
     }
 
@@ -195,7 +187,7 @@ mod tests {
     fn test_not_secure_override() {
         let mut config = SecureConfig::default();
         config.patterns.not_secure.push("TEST_SECRET".to_string());
-        
+
         assert!(!config.is_secure("TEST_SECRET"));
     }
 
@@ -204,11 +196,20 @@ mod tests {
         let mut base = SecureConfig::default();
         let mut project = SecureConfig::default();
         project.variables.secure.push("PROJECT_SECRET".to_string());
-        project.patterns.not_secure.push("IGNORE_ME_KEY".to_string());
-        
+        project
+            .patterns
+            .not_secure
+            .push("IGNORE_ME_KEY".to_string());
+
         base.merge(project);
-        
-        assert!(base.variables.secure.contains(&"PROJECT_SECRET".to_string()));
-        assert!(base.patterns.not_secure.contains(&"IGNORE_ME_KEY".to_string()));
+
+        assert!(base
+            .variables
+            .secure
+            .contains(&"PROJECT_SECRET".to_string()));
+        assert!(base
+            .patterns
+            .not_secure
+            .contains(&"IGNORE_ME_KEY".to_string()));
     }
 }

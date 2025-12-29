@@ -1,6 +1,8 @@
 //! Low-level process execution using nix
 
-use crate::redirect::{apply_redirects, apply_channel_redirects_in_child, prepare_channel_redirects, ChannelPipe};
+use crate::redirect::{
+    apply_channel_redirects_in_child, apply_redirects, prepare_channel_redirects, ChannelPipe,
+};
 use crate::{ExecutionError, Result};
 use colony_expand::ExpansionContext;
 use colony_parser::Redirect;
@@ -44,6 +46,7 @@ pub struct ProcessHandle {
 }
 
 impl ProcessHandle {
+    #[allow(dead_code)]
     fn new(pid: Pid) -> Self {
         Self {
             pid,
@@ -124,12 +127,15 @@ pub fn spawn_process(
             // Parent process - explicitly close write ends, keep read ends
             // CRITICAL: Must close write ends or reads will hang forever
             let parent_pipes = if has_channel_pipes {
-                channel_pipes.into_iter().map(|pipe| {
-                    // Drop write end (close it in parent)
-                    drop(pipe.write_end);
-                    // Keep only read end for parent
-                    ChannelPipe::parent_only(pipe.channel_fd, pipe.read_end)
-                }).collect()
+                channel_pipes
+                    .into_iter()
+                    .map(|pipe| {
+                        // Drop write end (close it in parent)
+                        drop(pipe.write_end);
+                        // Keep only read end for parent
+                        ChannelPipe::parent_only(pipe.channel_fd, pipe.read_end)
+                    })
+                    .collect()
             } else {
                 Vec::new()
             };

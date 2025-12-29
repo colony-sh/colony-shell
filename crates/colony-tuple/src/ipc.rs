@@ -60,9 +60,8 @@
 //! ```
 
 use crate::persistent::{PersistentTupleSpace, StorageError};
-use crate::{Tuple, Value};
+use crate::Tuple;
 use ipc_channel::ipc::IpcSender;
-use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -149,7 +148,7 @@ pub struct IpcTupleSpace {
     storage: PersistentTupleSpace,
 
     /// IPC sender for broadcasting notifications
-    sender: Arc<RwLock<Option<IpcSender<TupleNotification>>>>,
+    sender: Arc<std::sync::Mutex<Option<IpcSender<TupleNotification>>>>,
 
     /// Configuration
     config: IpcConfig,
@@ -175,11 +174,14 @@ impl IpcTupleSpace {
             None
         };
 
-        debug!("Opened IPC tuple space (notifications: {})", sender.is_some());
+        debug!(
+            "Opened IPC tuple space (notifications: {})",
+            sender.is_some()
+        );
 
         Ok(Self {
             storage,
-            sender: Arc::new(RwLock::new(sender)),
+            sender: Arc::new(std::sync::Mutex::new(sender)),
             config,
         })
     }
@@ -201,9 +203,9 @@ impl IpcTupleSpace {
     pub async fn inp(&self, pattern: Tuple) -> Result<Option<Tuple>, IpcError> {
         let result = self.storage.inp(pattern).await?;
 
-        if result.is_some() {
+        if let Some(ref tuple) = result {
             self.notify(TupleNotification::TupleRemoved {
-                length: result.as_ref().unwrap().fields.len(),
+                length: tuple.fields.len(),
             });
         }
 
@@ -257,9 +259,11 @@ impl IpcTupleSpace {
     }
 
     fn notify(&self, notification: TupleNotification) {
-        if let Some(sender) = self.sender.read().as_ref() {
-            if let Err(e) = sender.send(notification) {
-                warn!("Failed to send IPC notification: {}", e);
+        if let Ok(guard) = self.sender.lock() {
+            if let Some(ref sender) = *guard {
+                if let Err(e) = sender.send(notification) {
+                    warn!("Failed to send IPC notification: {}", e);
+                }
             }
         }
     }
@@ -278,6 +282,7 @@ impl Clone for IpcTupleSpace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Value;
 
     #[tokio::test]
     async fn test_ipc_basic_operations() {
@@ -310,10 +315,7 @@ mod tests {
 
         // Write multiple tuples
         for i in 0..5 {
-            space
-                .out(Tuple::from(vec![Value::Int(i)]))
-                .await
-                .unwrap();
+            space.out(Tuple::from(vec![Value::Int(i)])).await.unwrap();
         }
 
         assert_eq!(space.len().await, 5);

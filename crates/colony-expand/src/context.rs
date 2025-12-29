@@ -1,14 +1,14 @@
 //! Expansion context - provides shell state for expansions
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use std::cell::Cell;
 #[cfg(feature = "secure")]
 use std::path::Path;
+use std::path::PathBuf;
 #[cfg(feature = "secure")]
 use std::sync::OnceLock;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -20,12 +20,12 @@ static SECURE_KEY_CACHE: OnceLock<Option<[u8; 32]>> = OnceLock::new();
 
 #[cfg(feature = "secure")]
 fn get_cached_secure_key() -> Option<&'static [u8; 32]> {
-    SECURE_KEY_CACHE.get_or_init(|| {
-        match colony_secure::Keychain::new() {
+    SECURE_KEY_CACHE
+        .get_or_init(|| match colony_secure::Keychain::new() {
             Ok(keychain) => keychain.get_key().ok(),
             Err(_) => None,
-        }
-    }).as_ref()
+        })
+        .as_ref()
 }
 
 #[cfg(feature = "secure")]
@@ -131,6 +131,7 @@ impl SystemVars {
     }
 
     #[cfg(not(target_os = "macos"))]
+    #[allow(dead_code)]
     fn get_darwin_version() -> String {
         String::new()
     }
@@ -176,13 +177,27 @@ impl ShellOptions {
 impl fmt::Display for ShellOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut flags = String::new();
-        if self.noclobber { flags.push('C'); }
-        if self.errexit { flags.push('e'); }
-        if self.noglob { flags.push('f'); }
-        if self.noexec { flags.push('n'); }
-        if self.nounset { flags.push('u'); }
-        if self.verbose { flags.push('v'); }
-        if self.xtrace { flags.push('x'); }
+        if self.noclobber {
+            flags.push('C');
+        }
+        if self.errexit {
+            flags.push('e');
+        }
+        if self.noglob {
+            flags.push('f');
+        }
+        if self.noexec {
+            flags.push('n');
+        }
+        if self.nounset {
+            flags.push('u');
+        }
+        if self.verbose {
+            flags.push('v');
+        }
+        if self.xtrace {
+            flags.push('x');
+        }
         write!(f, "{}", flags)
     }
 }
@@ -277,7 +292,7 @@ impl ShoptOptions {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Get option by name
     pub fn get(&self, name: &str) -> Option<bool> {
         match name {
@@ -308,43 +323,115 @@ impl ShoptOptions {
             _ => None,
         }
     }
-    
+
     /// Set option by name. Returns true if option exists.
     pub fn set(&mut self, name: &str, value: bool) -> bool {
         match name {
-            "extglob" => { self.extglob = value; true }
-            "globstar" => { self.globstar = value; true }
-            "nullglob" => { self.nullglob = value; true }
-            "dotglob" => { self.dotglob = value; true }
-            "failglob" => { self.failglob = value; true }
-            "nocaseglob" => { self.nocaseglob = value; true }
-            "nocasematch" => { self.nocasematch = value; true }
-            "lastpipe" => { self.lastpipe = value; true }
-            "expand_aliases" => { self.expand_aliases = value; true }
-            "sourcepath" => { self.sourcepath = value; true }
-            "checkwinsize" => { self.checkwinsize = value; true }
-            "histexpand" => { self.histexpand = value; true }
-            "progcomp" => { self.progcomp = value; true }
-            "cdspell" => { self.cdspell = value; true }
-            "checkjobs" => { self.checkjobs = value; true }
-            "cmdhist" => { self.cmdhist = value; true }
-            "dirspell" => { self.dirspell = value; true }
-            "histreedit" => { self.histreedit = value; true }
-            "hostcomplete" => { self.hostcomplete = value; true }
-            "lithist" => { self.lithist = value; true }
-            "no_empty_cmd_completion" => { self.no_empty_cmd_completion = value; true }
-            "promptvars" => { self.promptvars = value; true }
-            "shift_verbose" => { self.shift_verbose = value; true }
-            "xpg_echo" => { self.xpg_echo = value; true }
+            "extglob" => {
+                self.extglob = value;
+                true
+            }
+            "globstar" => {
+                self.globstar = value;
+                true
+            }
+            "nullglob" => {
+                self.nullglob = value;
+                true
+            }
+            "dotglob" => {
+                self.dotglob = value;
+                true
+            }
+            "failglob" => {
+                self.failglob = value;
+                true
+            }
+            "nocaseglob" => {
+                self.nocaseglob = value;
+                true
+            }
+            "nocasematch" => {
+                self.nocasematch = value;
+                true
+            }
+            "lastpipe" => {
+                self.lastpipe = value;
+                true
+            }
+            "expand_aliases" => {
+                self.expand_aliases = value;
+                true
+            }
+            "sourcepath" => {
+                self.sourcepath = value;
+                true
+            }
+            "checkwinsize" => {
+                self.checkwinsize = value;
+                true
+            }
+            "histexpand" => {
+                self.histexpand = value;
+                true
+            }
+            "progcomp" => {
+                self.progcomp = value;
+                true
+            }
+            "cdspell" => {
+                self.cdspell = value;
+                true
+            }
+            "checkjobs" => {
+                self.checkjobs = value;
+                true
+            }
+            "cmdhist" => {
+                self.cmdhist = value;
+                true
+            }
+            "dirspell" => {
+                self.dirspell = value;
+                true
+            }
+            "histreedit" => {
+                self.histreedit = value;
+                true
+            }
+            "hostcomplete" => {
+                self.hostcomplete = value;
+                true
+            }
+            "lithist" => {
+                self.lithist = value;
+                true
+            }
+            "no_empty_cmd_completion" => {
+                self.no_empty_cmd_completion = value;
+                true
+            }
+            "promptvars" => {
+                self.promptvars = value;
+                true
+            }
+            "shift_verbose" => {
+                self.shift_verbose = value;
+                true
+            }
+            "xpg_echo" => {
+                self.xpg_echo = value;
+                true
+            }
             _ => false,
         }
     }
-    
+
     /// Get all option names (sorted alphabetically)
     pub fn all_options() -> &'static [&'static str] {
         &[
             "cdspell",
-            "checkjobs", 
+            "checkjobs",
             "checkwinsize",
             "cmdhist",
             "dirspell",
@@ -371,6 +458,7 @@ impl ShoptOptions {
     }
 }
 
+#[allow(dead_code)]
 /// Alias for backward compatibility
 pub type ShopOptions = ShoptOptions;
 
@@ -396,29 +484,45 @@ impl VarAttributes {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Returns true if any attribute is set
     pub fn has_any(&self) -> bool {
-        self.integer || self.lowercase || self.uppercase || 
-        self.readonly || self.export || self.trace
+        self.integer
+            || self.lowercase
+            || self.uppercase
+            || self.readonly
+            || self.export
+            || self.trace
     }
-    
+
     /// Format attributes as declare flags (e.g., "-ir" for integer+readonly)
     pub fn to_flags(&self) -> String {
         let mut flags = String::new();
-        if self.integer { flags.push('i'); }
-        if self.lowercase { flags.push('l'); }
-        if self.uppercase { flags.push('u'); }
-        if self.readonly { flags.push('r'); }
-        if self.export { flags.push('x'); }
-        if self.trace { flags.push('t'); }
+        if self.integer {
+            flags.push('i');
+        }
+        if self.lowercase {
+            flags.push('l');
+        }
+        if self.uppercase {
+            flags.push('u');
+        }
+        if self.readonly {
+            flags.push('r');
+        }
+        if self.export {
+            flags.push('x');
+        }
+        if self.trace {
+            flags.push('t');
+        }
         if flags.is_empty() {
             String::new()
         } else {
             format!("-{}", flags)
         }
     }
-    
+
     /// Parse attribute flags from declare-style string (e.g., "ilr" or "-ilr")
     pub fn from_flags(flags: &str) -> Self {
         let flags = flags.trim_start_matches('-');
@@ -461,11 +565,11 @@ impl Variable {
             Variable::NameRef(target) => !target.is_empty(),
         }
     }
-    
+
     pub fn is_nameref(&self) -> bool {
         matches!(self, Variable::NameRef(_))
     }
-    
+
     pub fn nameref_target(&self) -> Option<&str> {
         match self {
             Variable::NameRef(target) => Some(target),
@@ -494,7 +598,7 @@ impl TrapSignal {
     pub fn parse(s: &str) -> Option<Self> {
         let s_upper = s.to_uppercase();
         let s_upper: &str = s_upper.strip_prefix("SIG").unwrap_or(&s_upper);
-        
+
         match s_upper {
             "EXIT" | "0" => Some(TrapSignal::Exit),
             "ERR" => Some(TrapSignal::Err),
@@ -531,7 +635,7 @@ impl TrapSignal {
             }),
         }
     }
-    
+
     pub fn name(&self) -> &'static str {
         match self {
             TrapSignal::Exit => "EXIT",
@@ -563,16 +667,16 @@ impl TrapSignal {
             TrapSignal::Signal(_) => "UNKNOWN",
         }
     }
-    
+
     pub fn can_trap(&self) -> bool {
         !matches!(self, TrapSignal::Signal(9) | TrapSignal::Signal(19))
     }
-    
+
     pub fn all_signal_names() -> &'static [&'static str] {
         &[
-            "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE",
-            "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM",
-            "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU",
+            "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1", "SEGV",
+            "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN",
+            "TTOU",
         ]
     }
 }
@@ -779,7 +883,7 @@ impl Clone for ExpansionContext {
         } else {
             None
         };
-        
+
         Self {
             variables: self.variables.clone(),
             var_attributes: self.var_attributes.clone(),
@@ -857,16 +961,20 @@ impl ExpansionContext {
             current_script_path: None,
         };
 
-        ctx.variables.insert("BASH_VERSINFO".to_string(), Variable::Array(vec![
-            "5".to_string(),
-            "2".to_string(),
-            "0".to_string(),
-            "1".to_string(),
-            "release".to_string(),
-            machtype_for_versinfo,
-        ]));
+        ctx.variables.insert(
+            "BASH_VERSINFO".to_string(),
+            Variable::Array(vec![
+                "5".to_string(),
+                "2".to_string(),
+                "0".to_string(),
+                "1".to_string(),
+                "release".to_string(),
+                machtype_for_versinfo,
+            ]),
+        );
 
-        ctx.variables.insert("OPTIND".to_string(), Variable::String("1".to_string()));
+        ctx.variables
+            .insert("OPTIND".to_string(), Variable::String("1".to_string()));
 
         ctx
     }
@@ -875,43 +983,7 @@ impl ExpansionContext {
     pub fn get_variable(&self, name: &str) -> Option<&Variable> {
         // Check shell variables first
         if let Some(var) = self.variables.get(name) {
-            return Some(var);
-        }
-
-        // Fall back to environment variables (handled by get_var_or_env instead)
-        None
-    }
-    
-    /// Resolve nameref chain and return the final target variable name
-    /// Returns None if there's a circular reference (cycle detection)
-    /// Max depth of 10 to prevent infinite loops from circular refs
-    pub fn resolve_nameref(&self, name: &str) -> Option<String> {
-        let mut current = name.to_string();
-        let mut depth = 0;
-        const MAX_DEPTH: usize = 10;
-        
-        while depth < MAX_DEPTH {
-            if let Some(var) = self.variables.get(&current) {
-                if let Variable::NameRef(target) = var {
-                    if target == name || target == &current {
-                        return None;
-                    }
-                    current = target.clone();
-                    depth += 1;
-                } else {
-                    return Some(current);
-                }
-            } else {
-                return Some(current);
-            }
-        }
-        None
-    }
-    
-    /// Get variable resolving namerefs to their targets
-    pub fn get_variable_resolved(&self, name: &str) -> Option<&Variable> {
-        if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(target) = var {
+            if let Variable::NameRef(_target) = var {
                 if let Some(resolved) = self.resolve_nameref(name) {
                     return self.variables.get(&resolved);
                 }
@@ -925,18 +997,18 @@ impl ExpansionContext {
     /// Get variable or environment variable as string
     pub fn get_var_or_env(&self, name: &str) -> Option<String> {
         let value = self.get_var_or_env_raw(name);
-        
+
         #[cfg(feature = "secure")]
         {
             value.map(maybe_decrypt_value)
         }
-        
+
         #[cfg(not(feature = "secure"))]
         {
             value
         }
     }
-    
+
     fn get_var_or_env_raw(&self, name: &str) -> Option<String> {
         match name {
             "0" => return Some(self.shell_name.clone()),
@@ -985,7 +1057,7 @@ impl ExpansionContext {
         }
 
         if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(target) = var {
+            if let Variable::NameRef(_target) = var {
                 if let Some(resolved) = self.resolve_nameref(name) {
                     if let Some(target_var) = self.variables.get(&resolved) {
                         return Some(target_var.as_str().to_string());
@@ -1001,14 +1073,16 @@ impl ExpansionContext {
     }
 
     fn get_username_from_uid(&self) -> Option<String> {
-        if let Ok(user) = nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(self.system_vars.uid)) {
+        if let Ok(user) =
+            nix::unistd::User::from_uid(nix::unistd::Uid::from_raw(self.system_vars.uid))
+        {
             return user.map(|u| u.name);
         }
         None
     }
 
     fn get_random(&self) -> u16 {
-        let mut rng = self.rng.take().unwrap_or_else(|| StdRng::from_entropy());
+        let mut rng = self.rng.take().unwrap_or_else(StdRng::from_entropy);
         let value: u16 = rng.gen_range(0..32768);
         self.rng.set(Some(rng));
         value
@@ -1017,7 +1091,7 @@ impl ExpansionContext {
     fn get_srandom(&self) -> u32 {
         let mut buf = [0u8; 4];
         getrandom::getrandom(&mut buf).unwrap_or_else(|_| {
-            let mut rng = self.rng.take().unwrap_or_else(|| StdRng::from_entropy());
+            let mut rng = self.rng.take().unwrap_or_else(StdRng::from_entropy);
             buf = rng.gen::<[u8; 4]>();
             self.rng.set(Some(rng));
         });
@@ -1062,12 +1136,10 @@ impl ExpansionContext {
 
     /// Set a shell variable
     pub fn set_variable(&mut self, name: String, value: Variable) {
-        if let Some(existing) = self.variables.get(&name) {
-            if let Variable::NameRef(target) = existing {
-                if let Some(resolved) = self.resolve_nameref(&name) {
-                    self.variables.insert(resolved, value);
-                    return;
-                }
+        if let Some(Variable::NameRef(_target)) = self.variables.get(&name) {
+            if let Some(resolved) = self.resolve_nameref(&name) {
+                self.variables.insert(resolved, value);
+                return;
             }
         }
         self.variables.insert(name, value);
@@ -1079,7 +1151,7 @@ impl ExpansionContext {
         if self.is_readonly(&name) {
             return false;
         }
-        
+
         match name.as_str() {
             "IFS" => self.ifs = value.clone(),
             "HOME" => self.home = Some(PathBuf::from(&value)),
@@ -1097,78 +1169,70 @@ impl ExpansionContext {
             }
             _ => {}
         }
-        
+
         let transformed = self.apply_attribute_transforms(&name, value.clone());
-        
-        if let Some(existing) = self.variables.get(&name) {
-            if let Variable::NameRef(_) = existing {
-                if let Some(resolved) = self.resolve_nameref(&name) {
-                    if self.is_readonly(&resolved) {
-                        return false;
-                    }
-                    match resolved.as_str() {
-                        "IFS" => self.ifs = transformed.clone(),
-                        "HOME" => self.home = Some(PathBuf::from(&transformed)),
-                        _ => {}
-                    }
-                    let final_value = self.apply_attribute_transforms(&resolved, transformed);
-                    self.variables.insert(resolved, Variable::String(final_value));
-                    return true;
+
+        if let Some(Variable::NameRef(_)) = self.variables.get(&name) {
+            if let Some(resolved) = self.resolve_nameref(&name) {
+                if self.is_readonly(&resolved) {
+                    return false;
                 }
+                match resolved.as_str() {
+                    "IFS" => self.ifs = transformed.clone(),
+                    "HOME" => self.home = Some(PathBuf::from(&transformed)),
+                    _ => {}
+                }
+                let final_value = self.apply_attribute_transforms(&resolved, transformed);
+                self.variables
+                    .insert(resolved, Variable::String(final_value));
+                return true;
             }
         }
-        
+
         if self.is_exported(&name) {
             self.environment.insert(name.clone(), transformed.clone());
         }
-        
+
         self.variables.insert(name, Variable::String(transformed));
         true
     }
-    
-    /// Set a nameref variable
-    pub fn set_nameref(&mut self, name: String, target: String) {
-        self.variables.insert(name, Variable::NameRef(target));
-    }
-    
-    pub fn set_array_element(&mut self, name: &str, index: usize, value: &str) {
-        match self.variables.get_mut(name) {
-            Some(Variable::Array(arr)) => {
-                if index >= arr.len() {
-                    arr.resize(index + 1, String::new());
+
+    pub fn resolve_nameref(&self, name: &str) -> Option<String> {
+        let mut current = name.to_string();
+        let mut depth = 0;
+        loop {
+            if depth > 16 {
+                return None;
+            }
+            match self.variables.get(&current) {
+                Some(Variable::NameRef(target)) if !target.is_empty() => {
+                    current = target.clone();
+                    depth += 1;
                 }
-                arr[index] = value.to_string();
-            }
-            Some(Variable::AssocArray(map)) => {
-                map.insert(index.to_string(), value.to_string());
-            }
-            _ => {
-                let mut arr = vec![String::new(); index + 1];
-                arr[index] = value.to_string();
-                self.variables.insert(name.to_string(), Variable::Array(arr));
+                _ => return Some(current),
             }
         }
     }
-    
+
+    pub fn set_nameref(&mut self, name: String, target: String) {
+        self.variables.insert(name, Variable::NameRef(target));
+    }
+
     /// Unset a nameref itself (not its target)
     pub fn unset_nameref(&mut self, name: &str) {
-        if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(_) = var {
-                self.variables.remove(name);
-            }
+        if let Some(Variable::NameRef(_)) = self.variables.get(name) {
+            self.variables.remove(name);
         }
     }
 
     /// Unset a variable (follows nameref to target)
     /// Also removes any attributes (integer, readonly, etc.) associated with the variable
     pub fn unset_variable(&mut self, name: &str) {
-        if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(_) = var {
-                if let Some(resolved) = self.resolve_nameref(name) {
-                    self.variables.remove(&resolved);
-                    self.var_attributes.remove(&resolved);
-                    return;
-                }
+        if let Some(Variable::NameRef(_)) = self.variables.get(name) {
+            if let Some(resolved) = self.resolve_nameref(name) {
+                self.variables.remove(&resolved);
+                self.var_attributes.remove(&resolved);
+                return;
             }
         }
         self.variables.remove(name);
@@ -1196,7 +1260,8 @@ impl ExpansionContext {
     }
 
     pub fn exported_env(&self) -> Vec<(String, String)> {
-        self.environment.iter()
+        self.environment
+            .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
@@ -1274,12 +1339,12 @@ impl ExpansionContext {
     pub fn is_function(&self, name: &str) -> bool {
         self.functions.contains_key(name)
     }
-    
+
     /// Get all defined functions
     pub fn functions(&self) -> &HashMap<String, colony_parser::FunctionDef> {
         &self.functions
     }
-    
+
     /// Mark a function for export to child processes
     pub fn export_function(&mut self, name: &str) -> bool {
         if self.functions.contains_key(name) {
@@ -1289,17 +1354,17 @@ impl ExpansionContext {
             false
         }
     }
-    
+
     /// Remove export flag from a function
     pub fn unexport_function(&mut self, name: &str) {
         self.exported_functions.remove(name);
     }
-    
+
     /// Check if a function is marked for export
     pub fn is_function_exported(&self, name: &str) -> bool {
         self.exported_functions.contains(name)
     }
-    
+
     /// Get all exported function names
     pub fn exported_function_names(&self) -> impl Iterator<Item = &String> {
         self.exported_functions.iter()
@@ -1422,7 +1487,8 @@ impl ExpansionContext {
                 self.variables.insert(name.to_string(), var);
             }
             None => {
-                self.variables.insert(name.to_string(), Variable::String(String::new()));
+                self.variables
+                    .insert(name.to_string(), Variable::String(String::new()));
             }
         }
     }
@@ -1451,7 +1517,8 @@ impl ExpansionContext {
     }
 
     pub fn clear_non_ignored_traps(&mut self) {
-        self.traps.retain(|_, action| matches!(action, TrapAction::Ignore));
+        self.traps
+            .retain(|_, action| matches!(action, TrapAction::Ignore));
     }
 
     pub fn in_trap(&self) -> bool {
@@ -1578,9 +1645,9 @@ impl ExpansionContext {
         if expr.is_empty() {
             return "0".to_string();
         }
-        
+
         let resolved = self.resolve_arithmetic_variables(expr);
-        
+
         match crate::expand_arithmetic_immut(&resolved, self) {
             Ok(result) => result,
             Err(_) => "0".to_string(),
@@ -1590,7 +1657,7 @@ impl ExpansionContext {
     fn resolve_arithmetic_variables(&self, expr: &str) -> String {
         let mut result = String::new();
         let mut chars = expr.chars().peekable();
-        
+
         while let Some(ch) = chars.next() {
             if ch.is_ascii_alphabetic() || ch == '_' {
                 let mut name = String::new();
@@ -1615,15 +1682,15 @@ impl ExpansionContext {
                 result.push(ch);
             }
         }
-        
+
         result
     }
 
     pub fn set_var_with_attrs(
-        &mut self, 
-        name: String, 
-        value: String, 
-        attrs: Option<VarAttributes>
+        &mut self,
+        name: String,
+        value: String,
+        attrs: Option<VarAttributes>,
     ) -> Result<(), &'static str> {
         if self.is_readonly(&name) {
             return Err("readonly variable");
@@ -1650,7 +1717,7 @@ impl ExpansionContext {
         attrs: VarAttributes,
     ) -> Result<(), &'static str> {
         let existing_attrs = self.var_attributes.get(name).cloned();
-        
+
         if let Some(existing) = &existing_attrs {
             if existing.readonly && !attrs.readonly {
                 return Err("readonly variable");
@@ -1658,32 +1725,51 @@ impl ExpansionContext {
         }
 
         let mut final_attrs = existing_attrs.unwrap_or_default();
-        
-        if attrs.integer { final_attrs.integer = true; }
-        if attrs.lowercase { final_attrs.lowercase = true; }
-        if attrs.uppercase { final_attrs.uppercase = true; }
-        if attrs.readonly { final_attrs.readonly = true; }
-        if attrs.export { final_attrs.export = true; }
-        if attrs.trace { final_attrs.trace = true; }
+
+        if attrs.integer {
+            final_attrs.integer = true;
+        }
+        if attrs.lowercase {
+            final_attrs.lowercase = true;
+        }
+        if attrs.uppercase {
+            final_attrs.uppercase = true;
+        }
+        if attrs.readonly {
+            final_attrs.readonly = true;
+        }
+        if attrs.export {
+            final_attrs.export = true;
+        }
+        if attrs.trace {
+            final_attrs.trace = true;
+        }
 
         self.set_var_attributes(name, final_attrs);
 
         if let Some(val) = value {
             let transformed = self.apply_attribute_transforms(name, val);
-            
+
             if self.is_exported(name) || final_attrs.export {
-                self.environment.insert(name.to_string(), transformed.clone());
+                self.environment
+                    .insert(name.to_string(), transformed.clone());
             }
-            
-            self.variables.insert(name.to_string(), Variable::String(transformed));
+
+            self.variables
+                .insert(name.to_string(), Variable::String(transformed));
         } else if !self.variables.contains_key(name) {
-            self.variables.insert(name.to_string(), Variable::String(String::new()));
+            self.variables
+                .insert(name.to_string(), Variable::String(String::new()));
         }
 
         Ok(())
     }
 
-    pub fn remove_attributes(&mut self, name: &str, remove: VarAttributes) -> Result<(), &'static str> {
+    pub fn remove_attributes(
+        &mut self,
+        name: &str,
+        remove: VarAttributes,
+    ) -> Result<(), &'static str> {
         if let Some(existing) = self.var_attributes.get(name) {
             if existing.readonly && remove.readonly {
                 return Err("readonly variable");
@@ -1691,15 +1777,23 @@ impl ExpansionContext {
         }
 
         if let Some(attrs) = self.var_attributes.get_mut(name) {
-            if remove.integer { attrs.integer = false; }
-            if remove.lowercase { attrs.lowercase = false; }
-            if remove.uppercase { attrs.uppercase = false; }
-            if remove.export { 
-                attrs.export = false; 
+            if remove.integer {
+                attrs.integer = false;
+            }
+            if remove.lowercase {
+                attrs.lowercase = false;
+            }
+            if remove.uppercase {
+                attrs.uppercase = false;
+            }
+            if remove.export {
+                attrs.export = false;
                 self.environment.remove(name);
             }
-            if remove.trace { attrs.trace = false; }
-            
+            if remove.trace {
+                attrs.trace = false;
+            }
+
             if !attrs.has_any() {
                 self.var_attributes.remove(name);
             }
@@ -1717,19 +1811,21 @@ impl ExpansionContext {
         Ok(())
     }
 
-    pub fn variables_with_attrs(&self) -> impl Iterator<Item = (&String, &Variable, Option<&VarAttributes>)> {
-        self.variables.iter().map(|(name, var)| {
-            (name, var, self.var_attributes.get(name))
-        })
+    pub fn variables_with_attrs(
+        &self,
+    ) -> impl Iterator<Item = (&String, &Variable, Option<&VarAttributes>)> {
+        self.variables
+            .iter()
+            .map(|(name, var)| (name, var, self.var_attributes.get(name)))
     }
-    
+
     pub fn sync_variables_from(&mut self, other: &ExpansionContext) {
         for (name, value) in &other.variables {
             if !self.is_readonly(name) {
                 self.variables.insert(name.clone(), value.clone());
             }
         }
-        
+
         for (name, attrs) in &other.var_attributes {
             self.var_attributes.insert(name.clone(), *attrs);
         }
@@ -1755,7 +1851,7 @@ impl ExpansionContext {
                     }
                 }
             }
-            
+
             if let Some(local_attrs) = self.local_attrs_stack.pop() {
                 for (name, saved_attrs) in local_attrs {
                     match saved_attrs {
@@ -1768,7 +1864,7 @@ impl ExpansionContext {
                     }
                 }
             }
-            
+
             self.function_depth -= 1;
         }
     }
@@ -1789,7 +1885,7 @@ impl ExpansionContext {
                 locals.insert(name.to_string(), SavedVariable { previous });
             }
         }
-        
+
         if let Some(local_attrs) = self.local_attrs_stack.last_mut() {
             if !local_attrs.contains_key(name) {
                 let previous_attrs = self.var_attributes.get(name).cloned();
@@ -1805,13 +1901,15 @@ impl ExpansionContext {
             Some(var) => {
                 if let Variable::String(s) = var {
                     let transformed = self.apply_attribute_transforms(name, s);
-                    self.variables.insert(name.to_string(), Variable::String(transformed));
+                    self.variables
+                        .insert(name.to_string(), Variable::String(transformed));
                 } else {
                     self.variables.insert(name.to_string(), var);
                 }
             }
             None => {
-                self.variables.insert(name.to_string(), Variable::String(String::new()));
+                self.variables
+                    .insert(name.to_string(), Variable::String(String::new()));
             }
         }
     }
@@ -1830,69 +1928,76 @@ mod tests {
     #[test]
     fn test_integer_attribute_arithmetic_evaluation() {
         let mut ctx = ExpansionContext::new();
-        
+
         // Set integer attribute first
         let attrs = VarAttributes {
             integer: true,
             ..Default::default()
         };
         ctx.set_var_attributes("num", attrs);
-        
+
         // Verify attribute is set
         assert!(ctx.is_integer("num"), "num should be an integer variable");
-        assert!(ctx.get_var_attributes("num").is_some(), "num should have attributes");
-        
+        assert!(
+            ctx.get_var_attributes("num").is_some(),
+            "num should have attributes"
+        );
+
         // Now set variable - should evaluate arithmetic
         ctx.set_var("num".to_string(), "5+3".to_string());
-        
+
         // Should be evaluated to 8
-        assert_eq!(ctx.get_var_or_env("num"), Some("8".to_string()), "5+3 should evaluate to 8 for integer variable");
+        assert_eq!(
+            ctx.get_var_or_env("num"),
+            Some("8".to_string()),
+            "5+3 should evaluate to 8 for integer variable"
+        );
     }
 
     #[test]
     fn test_lowercase_attribute() {
         let mut ctx = ExpansionContext::new();
-        
+
         let attrs = VarAttributes {
             lowercase: true,
             ..Default::default()
         };
         ctx.set_var_attributes("str", attrs);
         ctx.set_var("str".to_string(), "HELLO".to_string());
-        
+
         assert_eq!(ctx.get_var_or_env("str"), Some("hello".to_string()));
     }
 
     #[test]
     fn test_uppercase_attribute() {
         let mut ctx = ExpansionContext::new();
-        
+
         let attrs = VarAttributes {
             uppercase: true,
             ..Default::default()
         };
         ctx.set_var_attributes("str", attrs);
         ctx.set_var("str".to_string(), "hello".to_string());
-        
+
         assert_eq!(ctx.get_var_or_env("str"), Some("HELLO".to_string()));
     }
 
     #[test]
     fn test_readonly_attribute_blocks_set() {
         let mut ctx = ExpansionContext::new();
-        
+
         ctx.set_var("const".to_string(), "original".to_string());
-        
+
         let attrs = VarAttributes {
             readonly: true,
             ..Default::default()
         };
         ctx.set_var_attributes("const", attrs);
-        
+
         // Attempt to modify should fail (return false)
         let result = ctx.set_var("const".to_string(), "modified".to_string());
         assert!(!result, "set_var should return false for readonly variable");
-        
+
         // Value should remain unchanged
         assert_eq!(ctx.get_var_or_env("const"), Some("original".to_string()));
     }

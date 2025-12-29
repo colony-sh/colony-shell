@@ -6,6 +6,7 @@ pub struct CommandExplainer {
     commands: HashMap<&'static str, CommandInfo>,
 }
 
+#[allow(dead_code)]
 pub struct CommandInfo {
     pub name: &'static str,
     pub brief: &'static str,
@@ -232,7 +233,10 @@ impl CommandExplainer {
             CommandInfo {
                 name: "chown",
                 brief: "Change file owner and group",
-                common_flags: &[("-R", "recursive"), ("user:group", "set both owner and group")],
+                common_flags: &[
+                    ("-R", "recursive"),
+                    ("user:group", "set both owner and group"),
+                ],
             },
         );
 

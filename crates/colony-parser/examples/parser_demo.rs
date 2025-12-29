@@ -51,7 +51,8 @@ fn describe_program(prog: &colony_parser::Program) -> String {
 
         match stmt {
             Statement::SimpleCommand(cmd) => {
-                desc.push_str(&format!("SimpleCommand: {} with {} arg(s)\n",
+                desc.push_str(&format!(
+                    "SimpleCommand: {} with {} arg(s)\n",
                     cmd.name.as_literal().unwrap_or("<complex>"),
                     cmd.args.len()
                 ));
@@ -67,7 +68,10 @@ fn describe_program(prog: &colony_parser::Program) -> String {
                 }
             }
             Statement::List(list) => {
-                desc.push_str(&format!("CommandList with {} additional command(s)\n", list.rest.len()));
+                desc.push_str(&format!(
+                    "CommandList with {} additional command(s)\n",
+                    list.rest.len()
+                ));
                 for (op, _) in &list.rest {
                     desc.push_str(&format!("      operator: {:?}\n", op));
                 }
@@ -80,7 +84,10 @@ fn describe_program(prog: &colony_parser::Program) -> String {
             }
             Statement::If(if_stmt) => {
                 desc.push_str("If statement\n");
-                desc.push_str(&format!("      then: {} statement(s)\n", if_stmt.then_body.len()));
+                desc.push_str(&format!(
+                    "      then: {} statement(s)\n",
+                    if_stmt.then_body.len()
+                ));
                 if let Some(ref else_body) = if_stmt.else_body {
                     desc.push_str(&format!("      else: {} statement(s)\n", else_body.len()));
                 }
@@ -89,13 +96,21 @@ fn describe_program(prog: &colony_parser::Program) -> String {
                 desc.push_str(&format!("While loop with {} statement(s)\n", w.body.len()));
             }
             Statement::For(f) => {
-                desc.push_str(&format!("For loop: var={}, body={} statement(s)\n", f.var, f.body.len()));
+                desc.push_str(&format!(
+                    "For loop: var={}, body={} statement(s)\n",
+                    f.var,
+                    f.body.len()
+                ));
             }
             Statement::VarDecl(v) => {
                 desc.push_str(&format!("Variable declaration: {} = <expr>\n", v.name));
             }
             Statement::FunctionDef(func) => {
-                desc.push_str(&format!("Function: {}() with {} statement(s)\n", func.name, func.body.len()));
+                desc.push_str(&format!(
+                    "Function: {}() with {} statement(s)\n",
+                    func.name,
+                    func.body.len()
+                ));
             }
             _ => desc.push_str("Other statement type\n"),
         }

@@ -55,14 +55,22 @@ impl BuiltinRedirectGuard {
         for &fd in &affected_fds {
             match fcntl(fd, FcntlArg::F_DUPFD(SAVED_FD_MIN)) {
                 Ok(saved_fd) => {
-                    tracing::debug!("BuiltinRedirectGuard: F_DUPFD({}, {}) = {}", fd, SAVED_FD_MIN, saved_fd);
+                    tracing::debug!(
+                        "BuiltinRedirectGuard: F_DUPFD({}, {}) = {}",
+                        fd,
+                        SAVED_FD_MIN,
+                        saved_fd
+                    );
                     saved_fds.push(SavedFd {
                         original_fd: fd,
                         saved_fd,
                     });
                 }
                 Err(nix::errno::Errno::EBADF) => {
-                    tracing::debug!("BuiltinRedirectGuard: fd {} doesn't exist, will be created by redirect", fd);
+                    tracing::debug!(
+                        "BuiltinRedirectGuard: fd {} doesn't exist, will be created by redirect",
+                        fd
+                    );
                 }
                 Err(e) => {
                     // Clean up any FDs we've already saved
@@ -98,7 +106,10 @@ impl Drop for BuiltinRedirectGuard {
 
             // Close the saved copy
             if let Err(e) = close(saved.saved_fd) {
-                eprintln!("Warning: Failed to close saved fd {}: {}", saved.saved_fd, e);
+                eprintln!(
+                    "Warning: Failed to close saved fd {}: {}",
+                    saved.saved_fd, e
+                );
             }
         }
     }
@@ -111,11 +122,9 @@ fn get_affected_fds(redirects: &[Redirect]) -> Vec<RawFd> {
 
     for redirect in redirects {
         // Determine source FD
-        let source_fd = redirect.fd.unwrap_or_else(|| {
-            match redirect.kind {
-                RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) => 0,
-                _ => 1,
-            }
+        let source_fd = redirect.fd.unwrap_or(match redirect.kind {
+            RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) => 0,
+            _ => 1,
         });
 
         if !fds.contains(&source_fd) {

@@ -3,10 +3,7 @@
 //! The tracer is the bridge between the executor and the TUI/file output.
 //! It emits JSON events that describe what's happening during script execution.
 
-use crate::tutorial::events::{
-    BranchType, ComplexityLevel, ExpansionPhase, LoopType, TraceEvent,
-};
-use colony_parser::Statement;
+use crate::tutorial::events::{BranchType, ExpansionPhase, LoopType, TraceEvent};
 use serde_json;
 use std::collections::HashSet;
 use std::io::{self, Write};
@@ -16,6 +13,7 @@ use std::sync::mpsc::Sender;
 use std::time::Instant;
 
 /// File descriptor for stdtrace (Colony's trace channel)
+#[allow(dead_code)]
 pub const STDTRACE_FD: RawFd = 6;
 
 /// Trace depth levels
@@ -52,6 +50,7 @@ impl Default for TracerConfig {
 }
 
 /// Output destination for trace events
+#[allow(dead_code)]
 pub enum TraceOutput {
     /// Write to fd 6 (stdtrace)
     Fd6,
@@ -64,6 +63,7 @@ pub enum TraceOutput {
 }
 
 /// Emits structured trace events during script execution
+#[allow(dead_code)]
 pub struct TraceEmitter {
     config: TracerConfig,
     output: TraceOutput,
@@ -77,6 +77,7 @@ pub struct TraceEmitter {
     script_start: Option<Instant>,
 }
 
+#[allow(dead_code)]
 impl TraceEmitter {
     /// Create a new tracer that writes to fd 6
     pub fn new_fd6(config: TracerConfig) -> Self {
@@ -236,7 +237,12 @@ impl TraceEmitter {
     }
 
     /// Emit parse event
-    pub fn emit_parse(&mut self, line: u32, ast_summary: String, ast_full: Option<serde_json::Value>) {
+    pub fn emit_parse(
+        &mut self,
+        line: u32,
+        ast_summary: String,
+        ast_full: Option<serde_json::Value>,
+    ) {
         let ast_full = if self.config.depth == TraceDepth::Internals {
             ast_full
         } else {
@@ -268,7 +274,13 @@ impl TraceEmitter {
     }
 
     /// Emit assignment event
-    pub fn emit_assign(&mut self, line: u32, name: String, value: String, previous: Option<String>) {
+    pub fn emit_assign(
+        &mut self,
+        line: u32,
+        name: String,
+        value: String,
+        previous: Option<String>,
+    ) {
         self.emit(TraceEvent::Assign {
             line,
             name,
@@ -435,8 +447,10 @@ mod tests {
 
     #[test]
     fn test_teach_mode() {
-        let mut config = TracerConfig::default();
-        config.teach_mode = true;
+        let config = TracerConfig {
+            teach_mode: true,
+            ..Default::default()
+        };
         let mut tracer = TraceEmitter::new_buffer(config);
 
         // First occurrence should emit
