@@ -43,11 +43,22 @@ use std::io::{self, Write};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ProtocolMessage {
-    Agent { status: String },
-    Widget { kind: String, data: serde_json::Value },
-    Memory { operation: String },
-    Output { content_type: String },
-    Session { action: String },
+    Agent {
+        status: String,
+    },
+    Widget {
+        kind: String,
+        data: serde_json::Value,
+    },
+    Memory {
+        operation: String,
+    },
+    Output {
+        content_type: String,
+    },
+    Session {
+        action: String,
+    },
     SecureAccess {
         request_id: u64,
         variable: String,

@@ -1,6 +1,8 @@
 //! Channel manager with registry and alias resolution
 
-use crate::{Channel, ChannelError, ChannelId, ContextChannel, Result, STDCONTEXT, STDLLM, STDTOOL, STDTRACE};
+use crate::{
+    Channel, ChannelError, ChannelId, ContextChannel, Result, STDCONTEXT, STDLLM, STDTOOL, STDTRACE,
+};
 use std::collections::HashMap;
 
 /// Manages all channels with fd and alias resolution
@@ -119,9 +121,9 @@ impl ChannelManager {
 
     /// Write to a channel by alias
     pub fn write_to_alias(&mut self, alias: &str, data: &[u8]) -> Result<usize> {
-        let id = self.resolve(alias).ok_or_else(|| {
-            ChannelError::InvalidOperation(format!("Unknown alias: {}", alias))
-        })?;
+        let id = self
+            .resolve(alias)
+            .ok_or_else(|| ChannelError::InvalidOperation(format!("Unknown alias: {}", alias)))?;
 
         self.write_to(id, data)
     }

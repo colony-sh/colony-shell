@@ -45,13 +45,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Querying tuples...");
 
     // Query by pattern
-    let pattern = Tuple::pattern(&[Value::Str("event".to_string()), Value::Wildcard, Value::Wildcard]);
+    let pattern = Tuple::pattern(&[
+        Value::Str("event".to_string()),
+        Value::Wildcard,
+        Value::Wildcard,
+    ]);
 
     if let Some(event) = space.rdp(pattern).await? {
         println!("Found event tuple: {:?}", event.fields);
     }
 
-    let pattern = Tuple::pattern(&[Value::Str("lock".to_string()), Value::Wildcard, Value::Wildcard]);
+    let pattern = Tuple::pattern(&[
+        Value::Str("lock".to_string()),
+        Value::Wildcard,
+        Value::Wildcard,
+    ]);
 
     if let Some(lock) = space.rdp(pattern.clone()).await? {
         println!("Found lock tuple: {:?}", lock.fields);

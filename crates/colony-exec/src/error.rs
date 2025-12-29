@@ -45,10 +45,10 @@ pub enum ExecutionError {
 
     #[error("Continue")]
     Continue,
-    
+
     #[error("Exit with code {0}")]
     Exit(i32),
-    
+
     #[error("errexit triggered with code {0}")]
     Errexit(i32),
 }

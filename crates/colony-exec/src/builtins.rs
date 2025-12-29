@@ -18,7 +18,7 @@
 
 use crate::{ExecutionError, JobTable, Result};
 use colony_channels::ChannelManager;
-use colony_expand::{ExpansionContext, Expander, Variable, CompletionSpec, CompletionAction};
+use colony_expand::{CompletionAction, CompletionSpec, Expander, ExpansionContext, Variable};
 use colony_parser::SimpleCommand;
 use colony_tuple::{Tuple, TupleSpace, Value};
 use std::env;
@@ -37,8 +37,8 @@ pub enum BuiltinResult {
 impl BuiltinResult {
     pub fn exit_code(&self) -> i32 {
         match self {
-            BuiltinResult::Success(code) 
-            | BuiltinResult::Failure(code) 
+            BuiltinResult::Success(code)
+            | BuiltinResult::Failure(code)
             | BuiltinResult::Exit(code) => *code,
             BuiltinResult::Source(_, _) => 0,
             BuiltinResult::Eval(_) => 0,
@@ -52,11 +52,11 @@ impl BuiltinResult {
     pub fn is_exit(&self) -> bool {
         matches!(self, BuiltinResult::Exit(_))
     }
-    
+
     pub fn is_source(&self) -> bool {
         matches!(self, BuiltinResult::Source(_, _))
     }
-    
+
     pub fn is_eval(&self) -> bool {
         matches!(self, BuiltinResult::Eval(_))
     }
@@ -65,30 +65,51 @@ impl BuiltinResult {
 pub fn is_builtin(name: &str) -> bool {
     matches!(
         name,
-        "cd" | "export" | "unset" | "exit" | "pwd" | "echo" | "type"
-        | "alias" | "unalias" | "." | "source"
-        | "fg" | "bg" | "jobs" | "wait" | "disown"
-        | "[" | "test"
-        | ":"
-        | "context"
-        | "declare" | "local" | "readonly" | "typeset"
-        | "true" | "false"
-        | "read"
-        | "history"
-        | "recho"
-        | "set"
-        | "shopt"
-        | "printf"
-        | "exec"
-        | "trap"
-        | "return"
-        | "getopts"
-        | "shift"
-        | "dirs" | "pushd" | "popd"
-        | "complete" | "compgen"
-        | "mapfile" | "readarray"
-        | "eval"
-        | "hash"
+        "cd" | "export"
+            | "unset"
+            | "exit"
+            | "pwd"
+            | "echo"
+            | "type"
+            | "alias"
+            | "unalias"
+            | "."
+            | "source"
+            | "fg"
+            | "bg"
+            | "jobs"
+            | "wait"
+            | "disown"
+            | "["
+            | "test"
+            | ":"
+            | "context"
+            | "declare"
+            | "local"
+            | "readonly"
+            | "typeset"
+            | "true"
+            | "false"
+            | "read"
+            | "history"
+            | "recho"
+            | "set"
+            | "shopt"
+            | "printf"
+            | "exec"
+            | "trap"
+            | "return"
+            | "getopts"
+            | "shift"
+            | "dirs"
+            | "pushd"
+            | "popd"
+            | "complete"
+            | "compgen"
+            | "mapfile"
+            | "readarray"
+            | "eval"
+            | "hash"
     )
 }
 
@@ -130,19 +151,22 @@ pub fn execute_builtin(
 
     // Expand arguments - include extra fields from name expansion (e.g., "$@" -> multiple fields)
     let mut args: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
-    let is_assignment_builtin = matches!(name.as_str(), "export" | "declare" | "local" | "readonly" | "typeset");
-    
+    let is_assignment_builtin = matches!(
+        name.as_str(),
+        "export" | "declare" | "local" | "readonly" | "typeset"
+    );
+
     for (_i, arg_word) in cmd.args.iter().enumerate() {
         // For assignment builtins, check if this arg looks like an assignment
-        let use_assignment_expansion = is_assignment_builtin && 
-            arg_word.parts.iter().any(|p| {
+        let use_assignment_expansion = is_assignment_builtin
+            && arg_word.parts.iter().any(|p| {
                 if let colony_parser::WordPart::Literal(s) = p {
                     s.contains('=')
                 } else {
                     false
                 }
             });
-        
+
         if use_assignment_expansion {
             match expander.expand_word_for_assignment(arg_word) {
                 Ok(text) => args.push(text),
@@ -158,7 +182,7 @@ pub fn execute_builtin(
             }
         }
     }
-    
+
     context.sync_variables_from(expander.context());
 
     let result = match name.as_str() {
@@ -201,7 +225,7 @@ pub fn execute_builtin(
         "mapfile" | "readarray" => builtin_mapfile(&args, context),
         "eval" => builtin_eval(&args),
         "readonly" => builtin_readonly(&args, context),
-        "typeset" => builtin_declare(&args, context),  // typeset is alias for declare
+        "typeset" => builtin_declare(&args, context), // typeset is alias for declare
         "disown" => builtin_disown(&args, jobs),
         "hash" => builtin_hash(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
@@ -217,7 +241,11 @@ pub fn execute_builtin(
 /// - One arg: cd to specified directory
 ///
 /// **Reactive:** Emits ("dir_change", old_dir, new_dir) tuple (Rule 46)
-fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+fn builtin_cd(
+    args: &[String],
+    context: &mut ExpansionContext,
+    tuple_space: &TupleSpace,
+) -> Result<BuiltinResult> {
     let old_dir = env::current_dir()
         .ok()
         .and_then(|p| p.to_str().map(String::from))
@@ -226,23 +254,27 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &Tup
     let target = if args.is_empty() {
         context
             .get_env("HOME")
-            .ok_or_else(|| ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "HOME not set",
-            )))?
+            .ok_or_else(|| {
+                ExecutionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "HOME not set",
+                ))
+            })?
             .to_string()
     } else if args[0] == "-" {
         context
             .get_env("OLDPWD")
-            .ok_or_else(|| ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "OLDPWD not set",
-            )))?
+            .ok_or_else(|| {
+                ExecutionError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "OLDPWD not set",
+                ))
+            })?
             .to_string()
     } else {
         args[0].clone()
     };
-    
+
     let print_dir = args.first().map(|s| s == "-").unwrap_or(false);
 
     env::set_current_dir(&target).map_err(|e| {
@@ -279,12 +311,16 @@ fn builtin_cd(args: &[String], context: &mut ExpansionContext, tuple_space: &Tup
 /// -f: Export functions (export -f funcname)
 /// -n: Remove export attribute (export -n name, export -fn funcname)
 /// -p: Print all exported variables/functions
-fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+fn builtin_export(
+    args: &[String],
+    context: &mut ExpansionContext,
+    tuple_space: &TupleSpace,
+) -> Result<BuiltinResult> {
     let mut export_functions = false;
     let mut unexport = false;
     let mut print_mode = false;
     let mut names: Vec<&str> = Vec::new();
-    
+
     for arg in args {
         if arg.starts_with('-') && arg.len() > 1 && !arg.contains('=') {
             for c in arg[1..].chars() {
@@ -299,14 +335,14 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
             names.push(arg);
         }
     }
-    
+
     if export_functions && unexport {
         for name in &names {
             context.unexport_function(name);
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if export_functions {
         if names.is_empty() || print_mode {
             for name in context.exported_function_names() {
@@ -317,7 +353,7 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
             }
             return Ok(BuiltinResult::Success(0));
         }
-        
+
         let mut exit_code = 0;
         for name in &names {
             if context.is_function(name) {
@@ -327,9 +363,13 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
                 exit_code = 1;
             }
         }
-        return Ok(if exit_code == 0 { BuiltinResult::Success(0) } else { BuiltinResult::Failure(1) });
+        return Ok(if exit_code == 0 {
+            BuiltinResult::Success(0)
+        } else {
+            BuiltinResult::Failure(1)
+        });
     }
-    
+
     if unexport {
         for name in &names {
             env::remove_var(name);
@@ -341,7 +381,7 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if print_mode || names.is_empty() {
         for (key, value) in env::vars() {
             println!("declare -x {}=\"{}\"", key, value);
@@ -382,11 +422,15 @@ fn builtin_export(args: &[String], context: &mut ExpansionContext, tuple_space: 
 /// Usage: unset VAR [VAR2 ...]
 ///
 /// **Reactive:** Emits ("env_change", var, old, null) tuple (Rule 43)
-fn builtin_unset(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+fn builtin_unset(
+    args: &[String],
+    context: &mut ExpansionContext,
+    tuple_space: &TupleSpace,
+) -> Result<BuiltinResult> {
     let mut unset_nameref_only = false;
     let mut unset_function = false;
     let mut var_names: Vec<&str> = Vec::new();
-    
+
     for arg in args {
         match arg.as_str() {
             "-n" => unset_nameref_only = true,
@@ -396,23 +440,26 @@ fn builtin_unset(args: &[String], context: &mut ExpansionContext, tuple_space: &
             _ => var_names.push(arg),
         }
     }
-    
+
     for var_name in var_names {
         if unset_function {
             context.unset_function(var_name);
             continue;
         }
-        
+
         if unset_nameref_only {
             context.unset_nameref(var_name);
             continue;
         }
-        
+
         if context.is_readonly(var_name) {
-            eprintln!("colony: unset: {}: cannot unset: readonly variable", var_name);
+            eprintln!(
+                "colony: unset: {}: cannot unset: readonly variable",
+                var_name
+            );
             return Ok(BuiltinResult::Success(1));
         }
-        
+
         let old_value = context.get_var_or_env(var_name).unwrap_or_default();
 
         context.unset_variable(var_name);
@@ -484,22 +531,26 @@ fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
     let mut no_newline = false;
     let mut interpret_escapes = false;
     let mut text_args_start = 0;
-    
+
     // Parse options - only at the start
     for (i, arg) in args.iter().enumerate() {
         if !arg.starts_with('-') || arg == "-" {
             text_args_start = i;
             break;
         }
-        
+
         // Check if all chars after '-' are valid option chars
         let opt_chars: Vec<char> = arg[1..].chars().collect();
-        if opt_chars.is_empty() || !opt_chars.iter().all(|c| *c == 'n' || *c == 'e' || *c == 'E') {
+        if opt_chars.is_empty()
+            || !opt_chars
+                .iter()
+                .all(|c| *c == 'n' || *c == 'e' || *c == 'E')
+        {
             // Not a valid option, treat as text
             text_args_start = i;
             break;
         }
-        
+
         // Apply options
         for c in opt_chars {
             match c {
@@ -511,22 +562,22 @@ fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
         }
         text_args_start = i + 1;
     }
-    
+
     let text_args = &args[text_args_start..];
     let text = text_args.join(" ");
-    
+
     let output = if interpret_escapes {
         expand_echo_escapes(&text)
     } else {
         (text, false)
     };
-    
-    use std::os::unix::io::FromRawFd;
+
     use std::io::Write;
-    
+    use std::os::unix::io::FromRawFd;
+
     // SAFETY: borrowing fd 1 to write, using forget() to avoid closing on drop
     let mut stdout = unsafe { std::fs::File::from_raw_fd(1) };
-    
+
     if output.1 {
         let _ = stdout.write_all(output.0.as_bytes());
     } else if no_newline {
@@ -545,7 +596,7 @@ fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
 fn expand_echo_escapes(s: &str) -> (String, bool) {
     let mut result = String::new();
     let mut chars = s.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
@@ -612,7 +663,7 @@ fn expand_echo_escapes(s: &str) -> (String, bool) {
             result.push(c);
         }
     }
-    
+
     (result, false)
 }
 
@@ -658,26 +709,26 @@ fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<Builti
     if args.is_empty() {
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     let mut positional_params: Vec<String> = Vec::new();
     let mut seen_double_dash = false;
     let mut i = 0;
-    
+
     while i < args.len() {
         let arg = &args[i];
-        
+
         if seen_double_dash {
             positional_params.push(arg.clone());
             i += 1;
             continue;
         }
-        
+
         if arg == "--" {
             seen_double_dash = true;
             i += 1;
             continue;
         }
-        
+
         if arg == "-o" || arg == "+o" {
             let enable = arg == "-o";
             i += 1;
@@ -687,7 +738,7 @@ fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<Builti
             i += 1;
             continue;
         }
-        
+
         if arg.starts_with('-') && arg.len() > 1 && arg != "-" {
             if arg.starts_with("-o") && arg.len() > 2 {
                 set_option_by_name(context, &arg[2..], true);
@@ -729,11 +780,11 @@ fn builtin_set(args: &[String], context: &mut ExpansionContext) -> Result<Builti
         }
         i += 1;
     }
-    
+
     if seen_double_dash || !positional_params.is_empty() {
         context.set_positional_params(positional_params);
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -754,10 +805,8 @@ fn set_option_by_name(context: &mut ExpansionContext, name: &str, enable: bool) 
 
 /// Shell reserved keywords
 const KEYWORDS: &[&str] = &[
-    "if", "then", "else", "elif", "fi",
-    "case", "esac", "for", "while", "until", "do", "done",
-    "in", "function", "select", "time", "coproc",
-    "!", "{", "}", "[[", "]]",
+    "if", "then", "else", "elif", "fi", "case", "esac", "for", "while", "until", "do", "done",
+    "in", "function", "select", "time", "coproc", "!", "{", "}", "[[", "]]",
 ];
 
 fn is_keyword(name: &str) -> bool {
@@ -781,10 +830,10 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
     let mut path_only = false;
     let mut force_path = false;
     let mut type_only = false;
-    
+
     let mut names: Vec<&String> = Vec::new();
     let mut parsing_opts = true;
-    
+
     for arg in args {
         if parsing_opts && arg.starts_with('-') && arg.len() > 1 && arg != "--" {
             if arg == "--" {
@@ -809,17 +858,17 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
             names.push(arg);
         }
     }
-    
+
     if names.is_empty() {
         // No names provided is not an error, just return success
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     let mut exit_code = 0;
-    
+
     for name in &names {
         let mut found = false;
-        
+
         // -P forces PATH search only
         if force_path {
             if let Ok(path) = crate::path::resolve_command(name, env::var("PATH").ok().as_deref()) {
@@ -845,7 +894,7 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
                     }
                 }
             }
-            
+
             // Check keyword (unless -p)
             if !path_only && is_keyword(name) {
                 if type_only {
@@ -858,7 +907,7 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
                     continue;
                 }
             }
-            
+
             // Check function (unless -f or -p)
             if !suppress_functions && !path_only {
                 if context.get_function(name).is_some() {
@@ -883,7 +932,7 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
                     }
                 }
             }
-            
+
             // Check builtin (unless -p)
             if !path_only && is_builtin(name) {
                 if type_only {
@@ -896,14 +945,16 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
                     continue;
                 }
             }
-            
-            let is_alias_func_or_builtin = context.get_alias(name).is_some() 
-                || context.get_function(name).is_some() 
+
+            let is_alias_func_or_builtin = context.get_alias(name).is_some()
+                || context.get_function(name).is_some()
                 || is_builtin(name);
-            
+
             if path_only && is_alias_func_or_builtin {
                 found = true;
-            } else if let Ok(path) = crate::path::resolve_command(name, env::var("PATH").ok().as_deref()) {
+            } else if let Ok(path) =
+                crate::path::resolve_command(name, env::var("PATH").ok().as_deref())
+            {
                 if type_only {
                     println!("file");
                 } else if path_only {
@@ -914,7 +965,7 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
                 found = true;
             }
         }
-        
+
         if !found {
             if !type_only {
                 eprintln!("type: {}: not found", name);
@@ -922,7 +973,7 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
             exit_code = 1;
         }
     }
-    
+
     if exit_code == 0 {
         Ok(BuiltinResult::Success(0))
     } else {
@@ -1012,16 +1063,16 @@ fn builtin_source(args: &[String], context: &mut ExpansionContext) -> Result<Bui
         eprintln!("source: filename argument required");
         return Ok(BuiltinResult::Failure(2));
     }
-    
+
     let filename = &args[0];
     let source_args = args[1..].to_vec();
-    
+
     let file_path = if filename.contains('/') {
         PathBuf::from(filename)
     } else {
         let path_var = context.get_env("PATH").unwrap_or_default();
         let mut found_path = None;
-        
+
         for dir in path_var.split(':') {
             let candidate = PathBuf::from(dir).join(filename);
             if candidate.is_file() {
@@ -1029,14 +1080,14 @@ fn builtin_source(args: &[String], context: &mut ExpansionContext) -> Result<Bui
                 break;
             }
         }
-        
+
         if found_path.is_none() {
             let cwd_candidate = PathBuf::from(filename);
             if cwd_candidate.is_file() {
                 found_path = Some(cwd_candidate);
             }
         }
-        
+
         match found_path {
             Some(path) => path,
             None => {
@@ -1045,12 +1096,12 @@ fn builtin_source(args: &[String], context: &mut ExpansionContext) -> Result<Bui
             }
         }
     };
-    
+
     if !file_path.is_file() {
         eprintln!("source: {}: No such file or directory", file_path.display());
         return Ok(BuiltinResult::Failure(1));
     }
-    
+
     Ok(BuiltinResult::Source(file_path, source_args))
 }
 
@@ -1136,7 +1187,7 @@ fn builtin_jobs(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
 fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
     use nix::sys::wait::{waitpid, WaitStatus};
     use nix::unistd::Pid;
-    
+
     // No arguments: wait for all children (blocking)
     if args.is_empty() {
         let mut last_status = 0;
@@ -1162,7 +1213,7 @@ fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
         }
         return Ok(BuiltinResult::Success(last_status));
     }
-    
+
     // Process each PID argument
     let mut last_status = 0;
     for arg in args {
@@ -1171,7 +1222,7 @@ fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
             // Job ID handling - for now skip
             continue;
         }
-        
+
         // Parse as PID
         let pid: i32 = match arg.parse() {
             Ok(p) => p,
@@ -1181,7 +1232,7 @@ fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
                 continue;
             }
         };
-        
+
         // Wait for the specific process
         match waitpid(Pid::from_raw(pid), None) {
             Ok(WaitStatus::Exited(_, code)) => {
@@ -1206,14 +1257,14 @@ fn builtin_wait(args: &[String], _jobs: &JobTable) -> Result<BuiltinResult> {
             }
         }
     }
-    
+
     Ok(BuiltinResult::Success(last_status))
 }
 
 fn builtin_disown(args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
     let mut remove_all = false;
     let mut job_specs: Vec<&str> = Vec::new();
-    
+
     for arg in args {
         match arg.as_str() {
             "-a" => remove_all = true,
@@ -1227,14 +1278,14 @@ fn builtin_disown(args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
             }
         }
     }
-    
+
     if remove_all {
         for job in jobs.list_jobs() {
             jobs.remove_job(job.id);
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if job_specs.is_empty() {
         if let Some(job) = jobs.list_jobs().last() {
             jobs.remove_job(job.id);
@@ -1248,7 +1299,7 @@ fn builtin_disown(args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
             }
         }
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -1265,12 +1316,20 @@ fn parse_job_spec(spec: &str, jobs: &JobTable) -> Option<usize> {
                 None
             }
         } else if let Ok(n) = rest.parse::<usize>() {
-            if jobs.get_job(n).is_some() { Some(n) } else { None }
+            if jobs.get_job(n).is_some() {
+                Some(n)
+            } else {
+                None
+            }
         } else {
-            jobs.list_jobs().iter().find(|j| j.command.starts_with(rest)).map(|j| j.id)
+            jobs.list_jobs()
+                .iter()
+                .find(|j| j.command.starts_with(rest))
+                .map(|j| j.id)
         }
     } else if let Ok(pid) = spec.parse::<i32>() {
-        jobs.find_by_pid(nix::unistd::Pid::from_raw(pid)).map(|j| j.id)
+        jobs.find_by_pid(nix::unistd::Pid::from_raw(pid))
+            .map(|j| j.id)
     } else {
         None
     }
@@ -1282,7 +1341,7 @@ fn builtin_hash(_args: &[String], _context: &mut ExpansionContext) -> Result<Bui
 
 fn builtin_readonly(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     use colony_expand::VarAttributes;
-    
+
     if args.is_empty() {
         for (name, var, attr) in context.variables_with_attrs() {
             if attr.map(|a| a.readonly).unwrap_or(false) {
@@ -1292,10 +1351,10 @@ fn builtin_readonly(args: &[String], context: &mut ExpansionContext) -> Result<B
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     let mut print_mode = false;
     let mut var_specs: Vec<&str> = Vec::new();
-    
+
     for arg in args {
         if arg == "-p" {
             print_mode = true;
@@ -1304,7 +1363,7 @@ fn builtin_readonly(args: &[String], context: &mut ExpansionContext) -> Result<B
             var_specs.push(arg);
         }
     }
-    
+
     if print_mode && var_specs.is_empty() {
         for (name, var, attr) in context.variables_with_attrs() {
             if attr.map(|a| a.readonly).unwrap_or(false) {
@@ -1314,22 +1373,25 @@ fn builtin_readonly(args: &[String], context: &mut ExpansionContext) -> Result<B
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
-    let attrs = VarAttributes { readonly: true, ..Default::default() };
-    
+
+    let attrs = VarAttributes {
+        readonly: true,
+        ..Default::default()
+    };
+
     for spec in var_specs {
         let (name, value_opt) = if let Some(eq_pos) = spec.find('=') {
             (&spec[..eq_pos], Some(&spec[eq_pos + 1..]))
         } else {
             (spec, None)
         };
-        
+
         if let Err(e) = context.declare_with_attrs(name, value_opt.map(String::from), attrs) {
             eprintln!("readonly: {}: {}", name, e);
             return Ok(BuiltinResult::Failure(1));
         }
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -1348,7 +1410,7 @@ fn builtin_readonly(args: &[String], context: &mut ExpansionContext) -> Result<B
 /// - [ -d dir ] - true if directory exists
 fn builtin_test(args: &[String], cmd_name: &str) -> Result<BuiltinResult> {
     let is_bracket = cmd_name == "[";
-    
+
     let args = if args.last().map(|s| s.as_str()) == Some("]") {
         &args[..args.len() - 1]
     } else if is_bracket {
@@ -1376,32 +1438,32 @@ fn evaluate_test_expr(args: &[String]) -> Result<bool> {
     if args.is_empty() {
         return Ok(false);
     }
-    
+
     let mut idx = 0;
     evaluate_test_or(&args, &mut idx)
 }
 
 fn evaluate_test_or(args: &[String], idx: &mut usize) -> Result<bool> {
     let mut result = evaluate_test_and(args, idx)?;
-    
+
     while *idx < args.len() && args[*idx] == "-o" {
         *idx += 1;
         let right = evaluate_test_and(args, idx)?;
         result = result || right;
     }
-    
+
     Ok(result)
 }
 
 fn evaluate_test_and(args: &[String], idx: &mut usize) -> Result<bool> {
     let mut result = evaluate_test_unary(args, idx)?;
-    
+
     while *idx < args.len() && args[*idx] == "-a" {
         *idx += 1;
         let right = evaluate_test_unary(args, idx)?;
         result = result && right;
     }
-    
+
     Ok(result)
 }
 
@@ -1409,13 +1471,13 @@ fn evaluate_test_unary(args: &[String], idx: &mut usize) -> Result<bool> {
     if *idx >= args.len() {
         return Ok(false);
     }
-    
+
     if args[*idx] == "!" {
         *idx += 1;
         let result = evaluate_test_unary(args, idx)?;
         return Ok(!result);
     }
-    
+
     if args[*idx] == "(" {
         *idx += 1;
         let result = evaluate_test_or(args, idx)?;
@@ -1424,7 +1486,7 @@ fn evaluate_test_unary(args: &[String], idx: &mut usize) -> Result<bool> {
         }
         return Ok(result);
     }
-    
+
     evaluate_test_primary(args, idx)
 }
 
@@ -1432,17 +1494,20 @@ fn evaluate_test_primary(args: &[String], idx: &mut usize) -> Result<bool> {
     if *idx >= args.len() {
         return Ok(false);
     }
-    
+
     let arg = &args[*idx];
-    
+
     if arg.starts_with('-') && arg.len() == 2 {
         let op = arg.as_str();
         if *idx + 1 < args.len() {
             let next = &args[*idx + 1];
-            
+
             if *idx + 2 < args.len() {
                 let next_next = &args[*idx + 2];
-                if matches!(next_next.as_str(), "=" | "==" | "!=" | "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge" | "<" | ">") {
+                if matches!(
+                    next_next.as_str(),
+                    "=" | "==" | "!=" | "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge" | "<" | ">"
+                ) {
                     let left = arg;
                     *idx += 1;
                     let op = &args[*idx];
@@ -1452,7 +1517,7 @@ fn evaluate_test_primary(args: &[String], idx: &mut usize) -> Result<bool> {
                     return evaluate_binary_op(left, op, right);
                 }
             }
-            
+
             let result = match op {
                 "-n" => !next.is_empty(),
                 "-z" => next.is_empty(),
@@ -1510,9 +1575,7 @@ fn evaluate_test_primary(args: &[String], idx: &mut usize) -> Result<bool> {
                         false
                     }
                 }
-                "-v" => {
-                    false
-                }
+                "-v" => false,
                 _ => {
                     *idx += 1;
                     let op2 = &args[*idx];
@@ -1526,21 +1589,36 @@ fn evaluate_test_primary(args: &[String], idx: &mut usize) -> Result<bool> {
             return Ok(result);
         }
     }
-    
+
     if *idx + 2 < args.len() {
         let left = &args[*idx];
         let op = &args[*idx + 1];
         let right = &args[*idx + 2];
-        
-        let is_known_binary_op = matches!(op.as_str(), "=" | "==" | "!=" | "-eq" | "-ne" | "-lt" | "-le" | "-gt" | "-ge" | "<" | ">" | "-nt" | "-ot" | "-ef");
+
+        let is_known_binary_op = matches!(
+            op.as_str(),
+            "=" | "=="
+                | "!="
+                | "-eq"
+                | "-ne"
+                | "-lt"
+                | "-le"
+                | "-gt"
+                | "-ge"
+                | "<"
+                | ">"
+                | "-nt"
+                | "-ot"
+                | "-ef"
+        );
         let looks_like_binary_op = op.starts_with('-') && op.len() > 1;
-        
+
         if is_known_binary_op || looks_like_binary_op {
             *idx += 3;
             return evaluate_binary_op(left, op, right);
         }
     }
-    
+
     let result = !arg.is_empty();
     *idx += 1;
     Ok(result)
@@ -1736,9 +1814,9 @@ fn builtin_context(args: &[String], channels: &mut ChannelManager) -> Result<Bui
 }
 
 fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    use std::collections::HashMap;
     use colony_expand::VarAttributes;
-    
+    use std::collections::HashMap;
+
     let mut is_assoc = false;
     let mut is_indexed_array = false;
     let mut is_nameref = false;
@@ -1750,7 +1828,7 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
     let mut reassembled_args: Vec<String> = Vec::new();
     let mut in_parens = false;
     let mut current_arg = String::new();
-    
+
     for arg in args {
         if (arg.starts_with('-') || arg.starts_with('+')) && arg.len() > 1 && !arg.contains('=') {
             removing_attrs = arg.starts_with('+');
@@ -1760,7 +1838,10 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                     'A' => is_assoc = true,
                     'n' => is_nameref = !removing_attrs,
                     'f' => function_mode = true,
-                    'F' => { function_mode = true; function_names_only = true; }
+                    'F' => {
+                        function_mode = true;
+                        function_names_only = true;
+                    }
                     'i' => attrs.integer = !removing_attrs,
                     'l' => attrs.lowercase = !removing_attrs,
                     'u' => attrs.uppercase = !removing_attrs,
@@ -1774,7 +1855,7 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             }
             continue;
         }
-        
+
         if in_parens {
             current_arg.push(' ');
             current_arg.push_str(arg);
@@ -1790,7 +1871,7 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             reassembled_args.push(arg.clone());
         }
     }
-    
+
     if print_mode {
         if reassembled_args.is_empty() {
             for (name, var, attr) in context.variables_with_attrs() {
@@ -1801,7 +1882,8 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         } else {
             for name in &reassembled_args {
                 if let Some(value) = context.get_var_or_env(name) {
-                    let attr_flags = context.get_var_attributes(name)
+                    let attr_flags = context
+                        .get_var_attributes(name)
                         .map(|a| a.to_flags())
                         .unwrap_or_else(|| "--".to_string());
                     println!("declare {} {}=\"{}\"", attr_flags, name, value);
@@ -1810,12 +1892,16 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if function_mode {
         if reassembled_args.is_empty() {
             for (name, func) in context.functions() {
                 if function_names_only {
-                    let export_flag = if context.is_function_exported(name) { "x" } else { "" };
+                    let export_flag = if context.is_function_exported(name) {
+                        "x"
+                    } else {
+                        ""
+                    };
                     println!("declare -f{} {}", export_flag, name);
                 } else {
                     let body = format_function_body(&func.body);
@@ -1827,7 +1913,11 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             for name in &reassembled_args {
                 if let Some(func) = context.get_function(name) {
                     if function_names_only {
-                        let export_flag = if context.is_function_exported(name) { "x" } else { "" };
+                        let export_flag = if context.is_function_exported(name) {
+                            "x"
+                        } else {
+                            ""
+                        };
                         println!("declare -f{} {}", export_flag, name);
                     } else {
                         let body = format_function_body(&func.body);
@@ -1843,18 +1933,18 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if reassembled_args.is_empty() && attrs.has_any() {
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     for var_spec in reassembled_args {
         let (name, value_opt) = if let Some(eq_pos) = var_spec.find('=') {
             (&var_spec[..eq_pos], Some(&var_spec[eq_pos + 1..]))
         } else {
             (var_spec.as_str(), None)
         };
-        
+
         if removing_attrs {
             if let Err(e) = context.remove_attributes(name, attrs) {
                 eprintln!("declare: {}: {}", name, e);
@@ -1862,17 +1952,17 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             }
             continue;
         }
-        
+
         if is_assoc {
             if let Some(value_part) = value_opt {
                 if value_part.starts_with('(') && value_part.ends_with(')') {
-                    let inner = &value_part[1..value_part.len()-1];
+                    let inner = &value_part[1..value_part.len() - 1];
                     let mut map = HashMap::new();
                     for item in inner.split_whitespace() {
                         if item.starts_with('[') {
                             if let Some(end) = item.find("]=") {
                                 let key = &item[1..end];
-                                let val = &item[end+2..];
+                                let val = &item[end + 2..];
                                 map.insert(key.to_string(), val.to_string());
                             }
                         }
@@ -1886,28 +1976,32 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             }
             continue;
         }
-        
+
         if is_nameref {
             let target = value_opt.unwrap_or("").to_string();
             context.set_nameref(name.to_string(), target);
             continue;
         }
-        
+
         if is_indexed_array {
             if let Some(value_part) = value_opt {
                 if value_part.starts_with('(') && value_part.ends_with(')') {
-                    let inner = &value_part[1..value_part.len()-1];
-                    let elements: Vec<String> = inner.split_whitespace().map(String::from).collect();
+                    let inner = &value_part[1..value_part.len() - 1];
+                    let elements: Vec<String> =
+                        inner.split_whitespace().map(String::from).collect();
                     context.set_variable(name.to_string(), Variable::Array(elements));
                 } else {
-                    context.set_variable(name.to_string(), Variable::Array(vec![value_part.to_string()]));
+                    context.set_variable(
+                        name.to_string(),
+                        Variable::Array(vec![value_part.to_string()]),
+                    );
                 }
             } else {
                 context.set_variable(name.to_string(), Variable::Array(Vec::new()));
             }
             continue;
         }
-        
+
         if attrs.has_any() {
             if let Err(e) = context.declare_with_attrs(name, value_opt.map(String::from), attrs) {
                 eprintln!("declare: {}: {}", name, e);
@@ -1917,13 +2011,13 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             context.set_var(name.to_string(), value.to_string());
         }
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
 fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     use colony_expand::VarAttributes;
-    
+
     if !context.in_function() {
         eprintln!("local: can only be used in a function");
         return Ok(BuiltinResult::Failure(1));
@@ -1936,7 +2030,7 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
     let mut is_nameref = false;
     let mut attrs = VarAttributes::default();
     let mut var_args: Vec<&str> = Vec::new();
-    
+
     for arg in args {
         if arg.starts_with('-') && arg.len() > 1 {
             for c in arg[1..].chars() {
@@ -1960,7 +2054,7 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
         if let Some(eq_pos) = arg.find('=') {
             let name = &arg[..eq_pos];
             let mut value = arg[eq_pos + 1..].to_string();
-            
+
             if attrs.integer {
                 if let Ok(n) = colony_expand::expand_arithmetic(&value, context) {
                     value = n.to_string();
@@ -1972,13 +2066,13 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
             if attrs.uppercase {
                 value = value.to_uppercase();
             }
-            
+
             if is_nameref {
                 context.declare_local(name, Some(Variable::NameRef(value)));
             } else {
                 context.declare_local(name, Some(Variable::String(value)));
             }
-            
+
             if attrs.has_any() {
                 context.set_var_attributes(name, attrs);
             }
@@ -1998,7 +2092,7 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
 fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     use std::io::{self, BufRead, Read};
     use std::os::unix::io::FromRawFd;
-    
+
     let mut raw_mode = false;
     let mut var_names: Vec<&str> = Vec::new();
     let mut input_fd: Option<i32> = None;
@@ -2007,7 +2101,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     let mut timeout_secs: Option<f64> = None;
     let mut array_mode = false;
     let mut array_name: Option<&str> = None;
-    
+
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
@@ -2065,14 +2159,14 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         }
         i += 1;
     }
-    
+
     if var_names.is_empty() && !array_mode {
         var_names.push("REPLY");
     }
-    
+
     let line_delimiter = delimiter.unwrap_or('\n');
     let mut line = String::new();
-    
+
     if let Some(n) = nchars {
         let stdin = io::stdin();
         let mut stdin_lock = stdin.lock();
@@ -2101,7 +2195,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     } else if let Some(fd) = input_fd {
         let file = unsafe { std::fs::File::from_raw_fd(fd) };
         let mut reader = io::BufReader::new(file);
-        
+
         if raw_mode {
             let mut buf = Vec::new();
             match reader.read_until(line_delimiter as u8, &mut buf) {
@@ -2161,7 +2255,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     } else {
         let stdin = io::stdin();
         let mut stdin_lock = stdin.lock();
-    
+
         if raw_mode || delimiter.is_some() {
             let mut buf = Vec::new();
             match stdin_lock.read_until(line_delimiter as u8, &mut buf) {
@@ -2209,14 +2303,14 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
             }
         }
     }
-    
+
     if line.ends_with('\n') {
         line.pop();
     }
     if line.ends_with('\r') {
         line.pop();
     }
-    
+
     if !raw_mode {
         let mut processed = String::with_capacity(line.len());
         let mut chars = line.chars().peekable();
@@ -2234,24 +2328,26 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         }
         line = processed;
     }
-    
+
     let ifs = context.ifs();
     let ifs_chars: Vec<char> = ifs.chars().collect();
-    let ifs_whitespace: Vec<char> = ifs_chars.iter()
+    let ifs_whitespace: Vec<char> = ifs_chars
+        .iter()
         .filter(|c| c.is_whitespace())
         .copied()
         .collect();
-    
+
     if var_names.len() == 1 && var_names[0] == "REPLY" {
         context.set_var("REPLY".to_string(), line);
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if array_mode {
         if let Some(name) = array_name {
             let ifs = context.ifs();
             let ifs_chars: Vec<char> = ifs.chars().collect();
-            let words: Vec<String> = line.split(|c| ifs_chars.contains(&c))
+            let words: Vec<String> = line
+                .split(|c| ifs_chars.contains(&c))
                 .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect();
@@ -2259,15 +2355,15 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if var_names.len() == 1 {
         let trimmed = line.trim_matches(|c: char| ifs_whitespace.contains(&c));
         context.set_var(var_names[0].to_string(), trimmed.to_string());
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     let trimmed = line.trim_start_matches(|c: char| ifs_whitespace.contains(&c));
-    
+
     let mut field_starts: Vec<usize> = Vec::new();
     let mut fields: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -2275,7 +2371,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     let chars: Vec<char> = trimmed.chars().collect();
     let mut j = 0;
     let mut char_pos = 0;
-    
+
     while j < chars.len() {
         let c = chars[j];
         if ifs_chars.contains(&c) {
@@ -2303,12 +2399,13 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         field_starts.push(current_start);
         fields.push(current);
     }
-    
+
     for (idx, name) in var_names.iter().enumerate() {
         if idx < fields.len() {
             if idx == var_names.len() - 1 && idx + 1 < fields.len() {
                 let start_pos = field_starts[idx];
-                let rest = &trimmed[start_pos..].trim_end_matches(|c: char| ifs_whitespace.contains(&c));
+                let rest =
+                    &trimmed[start_pos..].trim_end_matches(|c: char| ifs_whitespace.contains(&c));
                 context.set_var(name.to_string(), rest.to_string());
             } else {
                 context.set_var(name.to_string(), fields[idx].clone());
@@ -2317,7 +2414,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
             context.set_var(name.to_string(), String::new());
         }
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -2335,15 +2432,15 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
 /// If ARRAY is not supplied, the default array name is MAPFILE.
 fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     use std::io::{self, BufRead};
-    
+
     // Parse options
     let mut strip_newlines = false;
-    let mut count_limit: usize = 0;  // 0 means no limit
+    let mut count_limit: usize = 0; // 0 means no limit
     let mut origin: usize = 0;
     let mut skip_count: usize = 0;
-    let mut delimiter: u8 = b'\n';  // default newline
+    let mut delimiter: u8 = b'\n'; // default newline
     let mut array_name = "MAPFILE".to_string();
-    
+
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
@@ -2435,14 +2532,14 @@ fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         }
         i += 1;
     }
-    
+
     // Read lines from stdin
     let stdin = io::stdin();
     let mut stdin_lock = stdin.lock();
     let mut lines: Vec<String> = Vec::new();
     let mut skipped = 0;
     let mut read_count = 0;
-    
+
     // Read using the delimiter
     loop {
         let mut buffer = Vec::new();
@@ -2453,19 +2550,19 @@ fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             // Use read_until for custom delimiter
             stdin_lock.read_until(delimiter, &mut buffer)
         };
-        
+
         match bytes_read {
             Ok(0) => break, // EOF
             Ok(_) => {
                 // Convert buffer to string
                 let mut line = String::from_utf8_lossy(&buffer).to_string();
-                
+
                 // Skip lines if needed
                 if skipped < skip_count {
                     skipped += 1;
                     continue;
                 }
-                
+
                 // Strip delimiter if -t flag is set
                 if strip_newlines {
                     if delimiter == b'\n' {
@@ -2488,10 +2585,10 @@ fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                         }
                     }
                 }
-                
+
                 lines.push(line);
                 read_count += 1;
-                
+
                 // Check if we've reached the count limit
                 if count_limit > 0 && read_count >= count_limit {
                     break;
@@ -2500,10 +2597,10 @@ fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             Err(e) => return Err(ExecutionError::IoError(e)),
         }
     }
-    
+
     // Create the array, preserving existing elements if origin > 0
     let mut elements: Vec<String> = Vec::new();
-    
+
     if origin > 0 {
         if let Some(Variable::Array(arr)) = context.get_variable(&array_name) {
             for (idx, val) in arr.iter().enumerate() {
@@ -2518,13 +2615,13 @@ fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             elements.push(String::new());
         }
     }
-    
+
     // Append the read lines
     elements.extend(lines);
-    
+
     // Set the array in context
     context.set_variable(array_name.clone(), Variable::Array(elements));
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -2570,7 +2667,7 @@ fn builtin_printf(args: &[String], context: &mut ExpansionContext) -> Result<Bui
 
     let format = &args[arg_idx];
     let format_args = &args[arg_idx + 1..];
-    
+
     let output = format_printf(format, format_args)?;
 
     if let Some(var_name) = store_var {
@@ -2598,8 +2695,8 @@ fn format_function_body(body: &[colony_parser::Statement]) -> String {
 }
 
 fn format_statement(stmt: &colony_parser::Statement) -> String {
-    use colony_parser::{Statement, ListOp};
-    
+    use colony_parser::{ListOp, Statement};
+
     match stmt {
         Statement::SimpleCommand(cmd) => {
             let mut parts: Vec<String> = vec![format_word(&cmd.name)];
@@ -2612,7 +2709,9 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
             parts.join(" ")
         }
         Statement::Pipeline(pipeline) => {
-            let cmds: Vec<String> = pipeline.elements.iter()
+            let cmds: Vec<String> = pipeline
+                .elements
+                .iter()
                 .map(|elem| format_statement(&elem.command))
                 .collect();
             cmds.join(" | ")
@@ -2637,7 +2736,10 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
             let mut result = format!("if {}; then\n", cond);
             result.push_str(&format_statements_indented(&if_stmt.then_body));
             for elif in &if_stmt.elif_branches {
-                result.push_str(&format!("\nelif {}; then\n", format_condition(&elif.condition)));
+                result.push_str(&format!(
+                    "\nelif {}; then\n",
+                    format_condition(&elif.condition)
+                ));
                 result.push_str(&format_statements_indented(&elif.body));
             }
             if let Some(else_body) = &if_stmt.else_body {
@@ -2648,26 +2750,34 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
             result
         }
         Statement::While(while_stmt) => {
-            format!("while {}; do\n{}\ndone", 
+            format!(
+                "while {}; do\n{}\ndone",
                 format_condition(&while_stmt.condition),
-                format_statements_indented(&while_stmt.body))
+                format_statements_indented(&while_stmt.body)
+            )
         }
         Statement::Until(until_stmt) => {
-            format!("until {}; do\n{}\ndone",
+            format!(
+                "until {}; do\n{}\ndone",
                 format_condition(&until_stmt.condition),
-                format_statements_indented(&until_stmt.body))
+                format_statements_indented(&until_stmt.body)
+            )
         }
         Statement::For(for_stmt) => {
             if for_stmt.words.is_empty() {
-                format!("for {}; do\n{}\ndone",
+                format!(
+                    "for {}; do\n{}\ndone",
                     for_stmt.var,
-                    format_statements_indented(&for_stmt.body))
+                    format_statements_indented(&for_stmt.body)
+                )
             } else {
                 let words: Vec<String> = for_stmt.words.iter().map(format_word).collect();
-                format!("for {} in {}; do\n{}\ndone",
+                format!(
+                    "for {} in {}; do\n{}\ndone",
                     for_stmt.var,
                     words.join(" "),
-                    format_statements_indented(&for_stmt.body))
+                    format_statements_indented(&for_stmt.body)
+                )
             }
         }
         Statement::Case(case_stmt) => {
@@ -2682,7 +2792,11 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
             result
         }
         Statement::FunctionDef(func) => {
-            format!("{} () {{\n{}\n}}", func.name, format_function_body(&func.body))
+            format!(
+                "{} () {{\n{}\n}}",
+                func.name,
+                format_function_body(&func.body)
+            )
         }
         Statement::BraceGroup(group) => {
             format!("{{\n{}\n}}", format_statements_indented(&group.body))
@@ -2700,7 +2814,7 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
                 "return".to_string()
             }
         }
-        _ => "# unsupported".to_string()
+        _ => "# unsupported".to_string(),
     }
 }
 
@@ -2712,14 +2826,16 @@ fn format_condition(cond: &colony_parser::Condition) -> String {
 }
 
 fn format_statements_indented(stmts: &[colony_parser::Statement]) -> String {
-    stmts.iter()
+    stmts
+        .iter()
         .map(|s| format!("    {}", format_statement(s)))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 fn format_statements_double_indented(stmts: &[colony_parser::Statement]) -> String {
-    stmts.iter()
+    stmts
+        .iter()
         .map(|s| format!("        {}", format_statement(s)))
         .collect::<Vec<_>>()
         .join("\n")
@@ -2727,7 +2843,7 @@ fn format_statements_double_indented(stmts: &[colony_parser::Statement]) -> Stri
 
 fn format_word(word: &colony_parser::Word) -> String {
     use colony_parser::WordPart;
-    
+
     let mut result = String::new();
     for part in &word.parts {
         match part {
@@ -2782,7 +2898,7 @@ fn format_word(word: &colony_parser::Word) -> String {
 
 fn format_redirect(redir: &colony_parser::Redirect) -> String {
     use colony_parser::{RedirectKind, RedirectTarget};
-    
+
     let fd = redir.fd.map(|n| n.to_string()).unwrap_or_default();
     let op = match redir.kind {
         RedirectKind::Output => ">",
@@ -2807,17 +2923,19 @@ fn format_redirect(redir: &colony_parser::Redirect) -> String {
 
 fn format_expr(expr: &colony_parser::Expression) -> String {
     use colony_parser::Expression;
-    
+
     match expr {
         Expression::Int(n, _) => n.to_string(),
         Expression::Float(f, _) => f.to_string(),
         Expression::Str(s, _) => format!("\"{}\"", s),
         Expression::Bool(b, _) => b.to_string(),
         Expression::Variable { name, .. } => format!("${}", name),
-        Expression::Binary { left, op, right, .. } => {
+        Expression::Binary {
+            left, op, right, ..
+        } => {
             format!("{} {:?} {}", format_expr(left), op, format_expr(right))
         }
-        _ => String::new()
+        _ => String::new(),
     }
 }
 
@@ -2850,7 +2968,11 @@ fn format_printf(format: &str, args: &[String]) -> Result<String> {
                         let mut octal = String::new();
                         octal.push(chars[i]);
                         i += 1;
-                        while i < chars.len() && chars[i] >= '0' && chars[i] <= '7' && octal.len() < 3 {
+                        while i < chars.len()
+                            && chars[i] >= '0'
+                            && chars[i] <= '7'
+                            && octal.len() < 3
+                        {
                             octal.push(chars[i]);
                             i += 1;
                         }
@@ -2964,7 +3086,17 @@ fn format_printf(format: &str, args: &[String]) -> Result<String> {
                 }
                 'd' | 'i' => {
                     let num: i64 = arg.parse().unwrap_or(0);
-                    format_number(num, 10, false, width, precision, left_justify, zero_pad, plus_sign, space_sign)
+                    format_number(
+                        num,
+                        10,
+                        false,
+                        width,
+                        precision,
+                        left_justify,
+                        zero_pad,
+                        plus_sign,
+                        space_sign,
+                    )
                 }
                 'u' => {
                     let num: u64 = arg.parse().unwrap_or(0);
@@ -2973,21 +3105,48 @@ fn format_printf(format: &str, args: &[String]) -> Result<String> {
                 'o' => {
                     let num: u64 = arg.parse().unwrap_or(0);
                     let prefix = if alternate && num != 0 { "0" } else { "" };
-                    format_unsigned_with_prefix(num, 8, false, width, left_justify, zero_pad, prefix)
+                    format_unsigned_with_prefix(
+                        num,
+                        8,
+                        false,
+                        width,
+                        left_justify,
+                        zero_pad,
+                        prefix,
+                    )
                 }
                 'x' => {
                     let num: u64 = arg.parse().unwrap_or(0);
                     let prefix = if alternate && num != 0 { "0x" } else { "" };
-                    format_unsigned_with_prefix(num, 16, false, width, left_justify, zero_pad, prefix)
+                    format_unsigned_with_prefix(
+                        num,
+                        16,
+                        false,
+                        width,
+                        left_justify,
+                        zero_pad,
+                        prefix,
+                    )
                 }
                 'X' => {
                     let num: u64 = arg.parse().unwrap_or(0);
                     let prefix = if alternate && num != 0 { "0X" } else { "" };
-                    format_unsigned_with_prefix(num, 16, true, width, left_justify, zero_pad, prefix)
+                    format_unsigned_with_prefix(
+                        num,
+                        16,
+                        true,
+                        width,
+                        left_justify,
+                        zero_pad,
+                        prefix,
+                    )
                 }
                 'c' => {
                     // First character
-                    arg.chars().next().map(|c| c.to_string()).unwrap_or_default()
+                    arg.chars()
+                        .next()
+                        .map(|c| c.to_string())
+                        .unwrap_or_default()
                 }
                 'b' => {
                     // %b expands escape sequences in the argument
@@ -3032,16 +3191,21 @@ fn format_number(
     } else {
         ""
     };
-    
+
     let abs_num = num.abs();
     let num_str = abs_num.to_string();
-    
+
     if width > 0 {
         let content_len = sign.len() + num_str.len();
         if content_len < width {
             let padding = width - content_len;
             if zero_pad && !left_justify {
-                format!("{}{:0>width$}", sign, num_str, width = num_str.len() + padding)
+                format!(
+                    "{}{:0>width$}",
+                    sign,
+                    num_str,
+                    width = num_str.len() + padding
+                )
             } else if left_justify {
                 format!("{}{}{}", sign, num_str, " ".repeat(padding))
             } else {
@@ -3086,13 +3250,18 @@ fn format_unsigned_with_prefix(
         }
         _ => num.to_string(),
     };
-    
+
     let full = format!("{}{}", prefix, num_str);
-    
+
     if width > 0 && full.len() < width {
         let padding = width - full.len();
         if zero_pad && !left_justify {
-            format!("{}{:0>width$}", prefix, num_str, width = num_str.len() + padding)
+            format!(
+                "{}{:0>width$}",
+                prefix,
+                num_str,
+                width = num_str.len() + padding
+            )
         } else if left_justify {
             format!("{}{}", full, " ".repeat(padding))
         } else {
@@ -3165,10 +3334,12 @@ fn expand_escapes(s: &str) -> String {
 
 fn shell_quote(s: &str) -> String {
     // If the string is simple, just add single quotes
-    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '/') {
+    if s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '/')
+    {
         return s.to_string();
     }
-    
+
     // Use $'...' quoting for strings with special characters
     let mut output = String::from("$'");
     for c in s.chars() {
@@ -3197,7 +3368,7 @@ fn builtin_exec(
     context: &mut ExpansionContext,
 ) -> Result<BuiltinResult> {
     use crate::redirect::apply_redirects;
-    
+
     if !redirects.is_empty() {
         match apply_redirects(redirects, context) {
             Ok(_opened_fds) => {
@@ -3209,19 +3380,19 @@ fn builtin_exec(
             }
         }
     }
-    
+
     if args.is_empty() {
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     eprintln!("exec: replacing shell with command not yet implemented");
     eprintln!("exec: would execute: {} {}", args[0], args[1..].join(" "));
     Ok(BuiltinResult::Failure(1))
 }
 
 fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
-    use colony_expand::{TrapSignal, TrapAction};
-    
+    use colony_expand::{TrapAction, TrapSignal};
+
     if args.is_empty() {
         let traps = context.traps();
         if traps.is_empty() {
@@ -3230,17 +3401,19 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
         for (signal, action) in traps {
             match action {
                 TrapAction::Ignore => println!("trap -- '' {}", signal),
-                TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                TrapAction::Command(cmd) => {
+                    println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal)
+                }
                 TrapAction::Default => {}
             }
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     let mut print_mode = false;
     let mut list_mode = false;
     let mut skip_count = 0;
-    
+
     for (i, arg) in args.iter().enumerate() {
         if arg == "-p" {
             print_mode = true;
@@ -3253,7 +3426,7 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
             break;
         }
     }
-    
+
     if list_mode {
         let names = TrapSignal::all_signal_names();
         for (i, name) in names.iter().enumerate() {
@@ -3267,16 +3440,18 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     let remaining_args = &args[skip_count..];
-    
+
     if print_mode {
         if remaining_args.is_empty() {
             let traps = context.traps();
             for (signal, action) in traps {
                 match action {
                     TrapAction::Ignore => println!("trap -- '' {}", signal),
-                    TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                    TrapAction::Command(cmd) => {
+                        println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal)
+                    }
                     TrapAction::Default => {}
                 }
             }
@@ -3286,7 +3461,9 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
                     if let Some(action) = context.get_trap(&signal) {
                         match action {
                             TrapAction::Ignore => println!("trap -- '' {}", signal),
-                            TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                            TrapAction::Command(cmd) => {
+                                println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal)
+                            }
                             TrapAction::Default => {}
                         }
                     }
@@ -3298,19 +3475,21 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if remaining_args.is_empty() {
         let traps = context.traps();
         for (signal, action) in traps {
             match action {
                 TrapAction::Ignore => println!("trap -- '' {}", signal),
-                TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                TrapAction::Command(cmd) => {
+                    println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal)
+                }
                 TrapAction::Default => {}
             }
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if remaining_args.len() == 1 {
         let first = &remaining_args[0];
         if first == "-" {
@@ -3321,7 +3500,9 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
             if let Some(action) = context.get_trap(&signal) {
                 match action {
                     TrapAction::Ignore => println!("trap -- '' {}", signal),
-                    TrapAction::Command(cmd) => println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal),
+                    TrapAction::Command(cmd) => {
+                        println!("trap -- '{}' {}", cmd.replace('\'', "'\\''"), signal)
+                    }
                     TrapAction::Default => {}
                 }
             }
@@ -3330,10 +3511,10 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
         eprintln!("trap: {}: invalid signal specification", first);
         return Ok(BuiltinResult::Failure(1));
     }
-    
+
     let action_str = &remaining_args[0];
     let signal_names = &remaining_args[1..];
-    
+
     let action = if action_str == "-" {
         TrapAction::Default
     } else if action_str.is_empty() {
@@ -3341,7 +3522,7 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
     } else {
         TrapAction::Command(action_str.clone())
     };
-    
+
     for sig_name in signal_names {
         match TrapSignal::parse(sig_name) {
             Some(signal) => {
@@ -3357,7 +3538,7 @@ fn builtin_trap(args: &[String], context: &mut ExpansionContext) -> Result<Built
             }
         }
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -3367,7 +3548,7 @@ fn builtin_return(args: &[String], context: &ExpansionContext) -> Result<Builtin
     } else {
         args[0].parse::<i32>().unwrap_or(255)
     };
-    
+
     Err(ExecutionError::Return(code))
 }
 
@@ -3396,57 +3577,58 @@ fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         eprintln!("getopts: usage: getopts optstring name [arg ...]");
         return Ok(BuiltinResult::Failure(1));
     }
-    
+
     if args.len() < 2 {
         eprintln!("getopts: usage: getopts optstring name [arg ...]");
         return Ok(BuiltinResult::Failure(1));
     }
-    
+
     let optstring = &args[0];
     let name = &args[1];
-    
+
     // Determine if we're using custom args or positional params
     let use_custom_args = args.len() > 2;
-    
+
     // Get current OPTIND (defaults to 1)
     let mut optind: usize = context
         .get_var_or_env("OPTIND")
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    
+
     // Get getopts internal state (position within combined options like -abc)
     // Format: "argindex:charpos" where charpos is position within current arg string
     let (mut arg_index, mut char_pos) = parse_getopts_state(context, optind);
-    
+
     // Determine if silent mode (optstring starts with :)
     let (silent_mode, effective_optstring) = if optstring.starts_with(':') {
         (true, &optstring[1..])
     } else {
         (false, optstring.as_str())
     };
-    
+
     // Get OPTERR (0 = suppress errors, default = 1)
     let opterr = context
         .get_var_or_env("OPTERR")
         .and_then(|s| s.parse::<i32>().ok())
-        .unwrap_or(1) != 0;
-    
+        .unwrap_or(1)
+        != 0;
+
     // Get the arguments to parse
     let arguments: Vec<String> = if use_custom_args {
         args[2..].to_vec()
     } else {
         context.get_all_positional_params().to_vec()
     };
-    
+
     // Clear OPTARG by default
     context.set_var("OPTARG".to_string(), String::new());
-    
+
     // Check if we're done parsing
     if arg_index > arguments.len() {
         context.set_var(name.clone(), "?".to_string());
         return Ok(BuiltinResult::Success(1));
     }
-    
+
     // Get current argument (1-indexed, so arg_index-1)
     let current_arg = if arg_index > 0 && arg_index <= arguments.len() {
         &arguments[arg_index - 1]
@@ -3455,14 +3637,14 @@ fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         context.set_var(name.clone(), "?".to_string());
         return Ok(BuiltinResult::Success(1));
     };
-    
+
     // Check if current argument is an option (starts with -)
     if !current_arg.starts_with('-') || current_arg == "-" {
         // Not an option - done parsing
         context.set_var(name.clone(), "?".to_string());
         return Ok(BuiltinResult::Success(1));
     }
-    
+
     // Check for -- (end of options)
     if current_arg == "--" {
         context.set_var("OPTIND".to_string(), (arg_index + 1).to_string());
@@ -3471,38 +3653,38 @@ fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         context.unset_variable("_GETOPTS_STATE");
         return Ok(BuiltinResult::Success(1));
     }
-    
+
     // Get the option character at current position
     let arg_chars: Vec<char> = current_arg.chars().collect();
-    
+
     // char_pos starts at 1 (skip the leading -)
     if char_pos < 1 {
         char_pos = 1;
     }
-    
+
     if char_pos >= arg_chars.len() {
         // Move to next argument
         arg_index += 1;
         char_pos = 1;
         optind = arg_index;
-        
+
         // Recurse with updated state
         context.set_var("OPTIND".to_string(), optind.to_string());
         save_getopts_state(context, arg_index, char_pos);
         return builtin_getopts(args, context);
     }
-    
+
     let opt_char = arg_chars[char_pos];
-    
+
     // Check if this option is in optstring
     let opt_pos = effective_optstring.find(opt_char);
-    
+
     match opt_pos {
         Some(pos) => {
             // Valid option found
-            let needs_arg = pos + 1 < effective_optstring.len() 
+            let needs_arg = pos + 1 < effective_optstring.len()
                 && effective_optstring.chars().nth(pos + 1) == Some(':');
-            
+
             if needs_arg {
                 // Option requires an argument
                 let opt_arg = if char_pos + 1 < arg_chars.len() {
@@ -3524,7 +3706,7 @@ fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                         None
                     }
                 };
-                
+
                 match opt_arg {
                     Some(arg) => {
                         context.set_var(name.clone(), opt_char.to_string());
@@ -3553,14 +3735,14 @@ fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             } else {
                 // Option doesn't require argument
                 context.set_var(name.clone(), opt_char.to_string());
-                
+
                 // Move to next character or next argument
                 char_pos += 1;
                 if char_pos >= arg_chars.len() {
                     arg_index += 1;
                     char_pos = 1;
                 }
-                
+
                 context.set_var("OPTIND".to_string(), arg_index.to_string());
                 save_getopts_state(context, arg_index, char_pos);
                 Ok(BuiltinResult::Success(0))
@@ -3577,14 +3759,14 @@ fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                 }
                 context.set_var(name.clone(), "?".to_string());
             }
-            
+
             // Move to next character or next argument
             char_pos += 1;
             if char_pos >= arg_chars.len() {
                 arg_index += 1;
                 char_pos = 1;
             }
-            
+
             context.set_var("OPTIND".to_string(), arg_index.to_string());
             save_getopts_state(context, arg_index, char_pos);
             Ok(BuiltinResult::Success(0))
@@ -3599,25 +3781,28 @@ fn parse_getopts_state(context: &ExpansionContext, optind: usize) -> (usize, usi
         if parts.len() == 2 {
             let saved_optind: usize = parts[0].parse().unwrap_or(optind);
             let char_pos: usize = parts[1].parse().unwrap_or(1);
-            
+
             // If OPTIND was reset (e.g., OPTIND=1), reset internal state too
             if optind == 1 && saved_optind != 1 {
                 return (1, 1);
             }
-            
+
             // If OPTIND matches, use saved char position
             if saved_optind == optind || (optind == saved_optind) {
                 return (saved_optind, char_pos);
             }
         }
     }
-    
+
     (optind, 1)
 }
 
 /// Save getopts internal state to _GETOPTS_STATE variable
 fn save_getopts_state(context: &mut ExpansionContext, arg_index: usize, char_pos: usize) {
-    context.set_var("_GETOPTS_STATE".to_string(), format!("{}:{}", arg_index, char_pos));
+    context.set_var(
+        "_GETOPTS_STATE".to_string(),
+        format!("{}:{}", arg_index, char_pos),
+    );
 }
 
 fn builtin_shift(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
@@ -3626,17 +3811,17 @@ fn builtin_shift(args: &[String], context: &mut ExpansionContext) -> Result<Buil
     } else {
         args[0].parse().unwrap_or(1)
     };
-    
+
     let current_params = context.get_all_positional_params().to_vec();
-    
+
     if n > current_params.len() {
         eprintln!("shift: shift count must be <= $#");
         return Ok(BuiltinResult::Failure(1));
     }
-    
+
     let new_params: Vec<String> = current_params.into_iter().skip(n).collect();
     context.set_positional_params(new_params);
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
@@ -3655,7 +3840,8 @@ fn tilde_abbreviate(path: &std::path::Path, home: Option<&std::path::Path>) -> S
 fn parse_stack_index(arg: &str, stack_len: usize) -> Option<usize> {
     if arg.starts_with('+') {
         arg[1..].parse::<usize>().ok().filter(|&n| n < stack_len)
-    } else if arg.starts_with('-') && arg.len() > 1 && arg.chars().nth(1).unwrap().is_ascii_digit() {
+    } else if arg.starts_with('-') && arg.len() > 1 && arg.chars().nth(1).unwrap().is_ascii_digit()
+    {
         let n = arg[1..].parse::<usize>().ok()?;
         if n < stack_len {
             Some(stack_len - 1 - n)
@@ -3683,7 +3869,11 @@ fn builtin_dirs(args: &[String], context: &mut ExpansionContext) -> Result<Built
                 with_index = true;
                 one_per_line = true;
             }
-            s if s.starts_with('+') || (s.starts_with('-') && s.len() > 1 && s.chars().nth(1).unwrap().is_ascii_digit()) => {
+            s if s.starts_with('+')
+                || (s.starts_with('-')
+                    && s.len() > 1
+                    && s.chars().nth(1).unwrap().is_ascii_digit()) =>
+            {
                 index_arg = Some(s);
             }
             _ => {
@@ -3698,7 +3888,10 @@ fn builtin_dirs(args: &[String], context: &mut ExpansionContext) -> Result<Built
     let home = context.home();
 
     if clear {
-        let cwd = stack.first().cloned().unwrap_or_else(|| env::current_dir().unwrap_or_default());
+        let cwd = stack
+            .first()
+            .cloned()
+            .unwrap_or_else(|| env::current_dir().unwrap_or_default());
         context.dir_stack_mut().clear();
         context.dir_stack_mut().push(cwd);
         return Ok(BuiltinResult::Success(0));
@@ -3758,7 +3951,11 @@ fn builtin_dirs(args: &[String], context: &mut ExpansionContext) -> Result<Built
     Ok(BuiltinResult::Success(0))
 }
 
-fn builtin_pushd(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+fn builtin_pushd(
+    args: &[String],
+    context: &mut ExpansionContext,
+    tuple_space: &TupleSpace,
+) -> Result<BuiltinResult> {
     let mut no_cd = false;
     let mut target: Option<&str> = None;
     let mut index_arg: Option<&str> = None;
@@ -3766,7 +3963,11 @@ fn builtin_pushd(args: &[String], context: &mut ExpansionContext, tuple_space: &
     for arg in args {
         match arg.as_str() {
             "-n" => no_cd = true,
-            s if s.starts_with('+') || (s.starts_with('-') && s.len() > 1 && s.chars().nth(1).unwrap().is_ascii_digit()) => {
+            s if s.starts_with('+')
+                || (s.starts_with('-')
+                    && s.len() > 1
+                    && s.chars().nth(1).unwrap().is_ascii_digit()) =>
+            {
                 index_arg = Some(s);
             }
             s => target = Some(s),
@@ -3784,30 +3985,34 @@ fn builtin_pushd(args: &[String], context: &mut ExpansionContext, tuple_space: &
                     print_dir_stack(context, home.as_deref());
                     return Ok(BuiltinResult::Success(0));
                 }
-                
+
                 let stack = context.dir_stack_mut();
-                let rotated: Vec<PathBuf> = stack[idx..].iter().chain(stack[..idx].iter()).cloned().collect();
+                let rotated: Vec<PathBuf> = stack[idx..]
+                    .iter()
+                    .chain(stack[..idx].iter())
+                    .cloned()
+                    .collect();
                 *stack = rotated;
 
                 if !no_cd {
                     let new_dir = stack[0].clone();
                     let old_dir = env::current_dir().unwrap_or_default();
-                    
+
                     if let Err(e) = env::set_current_dir(&new_dir) {
                         eprintln!("pushd: {}: {}", new_dir.display(), e);
                         return Ok(BuiltinResult::Failure(1));
                     }
-                    
+
                     context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
                     context.set_env("PWD", new_dir.to_str().unwrap_or(""));
-                    
+
                     tuple_space.out(Tuple::from(vec![
                         Value::Str("dir_change".to_string()),
                         Value::Str(old_dir.display().to_string()),
                         Value::Str(new_dir.display().to_string()),
                     ]));
                 }
-                
+
                 print_dir_stack(context, home.as_deref());
                 return Ok(BuiltinResult::Success(0));
             }
@@ -3824,38 +4029,41 @@ fn builtin_pushd(args: &[String], context: &mut ExpansionContext, tuple_space: &
             eprintln!("pushd: no other directory");
             return Ok(BuiltinResult::Failure(1));
         }
-        
+
         let stack = context.dir_stack_mut();
         stack.swap(0, 1);
 
         if !no_cd {
             let new_dir = stack[0].clone();
             let old_dir = env::current_dir().unwrap_or_default();
-            
+
             if let Err(e) = env::set_current_dir(&new_dir) {
                 stack.swap(0, 1);
                 eprintln!("pushd: {}: {}", new_dir.display(), e);
                 return Ok(BuiltinResult::Failure(1));
             }
-            
+
             context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
             context.set_env("PWD", new_dir.to_str().unwrap_or(""));
-            
+
             tuple_space.out(Tuple::from(vec![
                 Value::Str("dir_change".to_string()),
                 Value::Str(old_dir.display().to_string()),
                 Value::Str(new_dir.display().to_string()),
             ]));
         }
-        
+
         print_dir_stack(context, home.as_deref());
         return Ok(BuiltinResult::Success(0));
     }
 
     let target_path = PathBuf::from(target.unwrap());
-    
+
     if !target_path.is_dir() {
-        eprintln!("pushd: {}: No such file or directory", target_path.display());
+        eprintln!(
+            "pushd: {}: No such file or directory",
+            target_path.display()
+        );
         return Ok(BuiltinResult::Failure(1));
     }
 
@@ -3869,11 +4077,11 @@ fn builtin_pushd(args: &[String], context: &mut ExpansionContext, tuple_space: &
             eprintln!("pushd: {}: {}", target_canonical.display(), e);
             return Ok(BuiltinResult::Failure(1));
         }
-        
+
         context.dir_stack_mut().insert(0, target_canonical.clone());
         context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
         context.set_env("PWD", target_canonical.to_str().unwrap_or(""));
-        
+
         tuple_space.out(Tuple::from(vec![
             Value::Str("dir_change".to_string()),
             Value::Str(old_dir.display().to_string()),
@@ -3885,14 +4093,22 @@ fn builtin_pushd(args: &[String], context: &mut ExpansionContext, tuple_space: &
     Ok(BuiltinResult::Success(0))
 }
 
-fn builtin_popd(args: &[String], context: &mut ExpansionContext, tuple_space: &TupleSpace) -> Result<BuiltinResult> {
+fn builtin_popd(
+    args: &[String],
+    context: &mut ExpansionContext,
+    tuple_space: &TupleSpace,
+) -> Result<BuiltinResult> {
     let mut no_cd = false;
     let mut index_arg: Option<&str> = None;
 
     for arg in args {
         match arg.as_str() {
             "-n" => no_cd = true,
-            s if s.starts_with('+') || (s.starts_with('-') && s.len() > 1 && s.chars().nth(1).unwrap().is_ascii_digit()) => {
+            s if s.starts_with('+')
+                || (s.starts_with('-')
+                    && s.len() > 1
+                    && s.chars().nth(1).unwrap().is_ascii_digit()) =>
+            {
                 index_arg = Some(s);
             }
             _ => {
@@ -3924,20 +4140,24 @@ fn builtin_popd(args: &[String], context: &mut ExpansionContext, tuple_space: &T
     };
 
     let removed = context.dir_stack_mut().remove(remove_idx);
-    
+
     if remove_idx == 0 && !no_cd {
         let old_dir = removed;
-        let new_dir = context.dir_stack().first().cloned().unwrap_or_else(|| env::current_dir().unwrap_or_default());
-        
+        let new_dir = context
+            .dir_stack()
+            .first()
+            .cloned()
+            .unwrap_or_else(|| env::current_dir().unwrap_or_default());
+
         if let Err(e) = env::set_current_dir(&new_dir) {
             context.dir_stack_mut().insert(0, old_dir);
             eprintln!("popd: {}: {}", new_dir.display(), e);
             return Ok(BuiltinResult::Failure(1));
         }
-        
+
         context.set_env("OLDPWD", old_dir.to_str().unwrap_or(""));
         context.set_env("PWD", new_dir.to_str().unwrap_or(""));
-        
+
         tuple_space.out(Tuple::from(vec![
             Value::Str("dir_change".to_string()),
             Value::Str(old_dir.display().to_string()),
@@ -3951,10 +4171,7 @@ fn builtin_popd(args: &[String], context: &mut ExpansionContext, tuple_space: &T
 
 fn print_dir_stack(context: &ExpansionContext, home: Option<&std::path::Path>) {
     let stack = context.dir_stack();
-    let entries: Vec<String> = stack
-        .iter()
-        .map(|p| tilde_abbreviate(p, home))
-        .collect();
+    let entries: Vec<String> = stack.iter().map(|p| tilde_abbreviate(p, home)).collect();
     println!("{}", entries.join(" "));
 }
 
@@ -3972,13 +4189,13 @@ fn print_dir_stack(context: &ExpansionContext, home: Option<&std::path::Path>) {
 /// Returns 0 if all options are set/unset successfully.
 fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     use colony_expand::ShoptOptions;
-    
+
     let mut set_mode = false;
     let mut unset_mode = false;
     let mut print_mode = false;
     let mut quiet_mode = false;
     let mut option_names: Vec<&str> = Vec::new();
-    
+
     for arg in args {
         if arg.starts_with('-') && arg.len() > 1 {
             for c in arg[1..].chars() {
@@ -3998,16 +4215,16 @@ fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<Buil
             option_names.push(arg);
         }
     }
-    
+
     // Get shopt options
     let shopt = context.shopt_options_mut();
-    
+
     // If both -s and -u are set, that's an error
     if set_mode && unset_mode {
         eprintln!("shopt: cannot set and unset options simultaneously");
         return Ok(BuiltinResult::Failure(1));
     }
-    
+
     // Set or unset specified options
     if set_mode || unset_mode {
         if option_names.is_empty() {
@@ -4028,10 +4245,10 @@ fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<Buil
             }
             return Ok(BuiltinResult::Success(0));
         }
-        
+
         let value = set_mode;
         let mut exit_code = 0;
-        
+
         for name in &option_names {
             if !shopt.set(name, value) {
                 if !quiet_mode {
@@ -4040,14 +4257,14 @@ fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<Buil
                 exit_code = 1;
             }
         }
-        
+
         return Ok(if exit_code == 0 {
             BuiltinResult::Success(0)
         } else {
             BuiltinResult::Failure(1)
         });
     }
-    
+
     // Query/display mode
     if option_names.is_empty() {
         // Display all options
@@ -4065,7 +4282,7 @@ fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<Buil
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     // Display specific options
     let mut all_set = true;
     for name in &option_names {
@@ -4087,7 +4304,7 @@ fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<Buil
             return Ok(BuiltinResult::Failure(1));
         }
     }
-    
+
     // In query mode without -s/-u, return 0 if all named options are set
     Ok(if all_set {
         BuiltinResult::Success(0)
@@ -4101,11 +4318,11 @@ fn builtin_complete(args: &[String], context: &mut ExpansionContext) -> Result<B
     let mut print_mode = false;
     let mut remove_mode = false;
     let mut commands: Vec<String> = Vec::new();
-    
+
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
-        
+
         if arg == "-p" {
             print_mode = true;
             i += 1;
@@ -4244,7 +4461,7 @@ fn builtin_complete(args: &[String], context: &mut ExpansionContext) -> Result<B
             return Ok(BuiltinResult::Failure(1));
         }
     }
-    
+
     if print_mode || (commands.is_empty() && !remove_mode && spec.is_empty()) {
         if commands.is_empty() {
             for (cmd, spec) in context.completions() {
@@ -4262,24 +4479,24 @@ fn builtin_complete(args: &[String], context: &mut ExpansionContext) -> Result<B
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     if remove_mode {
         for cmd in &commands {
             context.remove_completion(cmd);
         }
         return Ok(BuiltinResult::Success(0));
     }
-    
+
     for cmd in commands {
         context.set_completion(cmd, spec.clone());
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
 fn print_completion_spec(cmd: &str, spec: &CompletionSpec) {
     let mut parts = vec!["complete".to_string()];
-    
+
     for action in &spec.actions {
         match action {
             CompletionAction::Alias => parts.push("-a".to_string()),
@@ -4306,60 +4523,60 @@ fn print_completion_spec(cmd: &str, spec: &CompletionSpec) {
             CompletionAction::Binding => parts.push("-A binding".to_string()),
         }
     }
-    
+
     for opt in &spec.options {
         parts.push("-o".to_string());
         parts.push(opt.clone());
     }
-    
+
     if let Some(ref func) = spec.function {
         parts.push("-F".to_string());
         parts.push(func.clone());
     }
-    
+
     if let Some(ref words) = spec.wordlist {
         parts.push("-W".to_string());
         parts.push(format!("'{}'", words));
     }
-    
+
     if let Some(ref glob) = spec.globpat {
         parts.push("-G".to_string());
         parts.push(format!("'{}'", glob));
     }
-    
+
     if let Some(ref cmd_str) = spec.command {
         parts.push("-C".to_string());
         parts.push(format!("'{}'", cmd_str));
     }
-    
+
     if let Some(ref prefix) = spec.prefix {
         parts.push("-P".to_string());
         parts.push(format!("'{}'", prefix));
     }
-    
+
     if let Some(ref suffix) = spec.suffix {
         parts.push("-S".to_string());
         parts.push(format!("'{}'", suffix));
     }
-    
+
     if let Some(ref filter) = spec.filter_pattern {
         parts.push("-X".to_string());
         parts.push(format!("'{}'", filter));
     }
-    
+
     parts.push(cmd.to_string());
-    
+
     println!("{}", parts.join(" "));
 }
 
 fn builtin_compgen(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
     let mut spec = CompletionSpec::new();
     let mut word_prefix: Option<String> = None;
-    
+
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
-        
+
         if arg == "--" {
             i += 1;
             if i < args.len() {
@@ -4469,9 +4686,9 @@ fn builtin_compgen(args: &[String], context: &mut ExpansionContext) -> Result<Bu
             return Ok(BuiltinResult::Failure(1));
         }
     }
-    
+
     let completions = generate_completions(&spec, context, word_prefix.as_deref());
-    
+
     for comp in completions {
         let mut result = String::new();
         if let Some(ref prefix) = spec.prefix {
@@ -4483,14 +4700,18 @@ fn builtin_compgen(args: &[String], context: &mut ExpansionContext) -> Result<Bu
         }
         println!("{}", result);
     }
-    
+
     Ok(BuiltinResult::Success(0))
 }
 
-fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_prefix: Option<&str>) -> Vec<String> {
+fn generate_completions(
+    spec: &CompletionSpec,
+    context: &ExpansionContext,
+    word_prefix: Option<&str>,
+) -> Vec<String> {
     let mut completions = Vec::new();
     let prefix = word_prefix.unwrap_or("");
-    
+
     if let Some(ref wordlist) = spec.wordlist {
         for word in wordlist.split_whitespace() {
             if word.starts_with(prefix) {
@@ -4498,7 +4719,7 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
             }
         }
     }
-    
+
     if let Some(ref glob_pattern) = spec.globpat {
         if let Ok(entries) = glob::glob(glob_pattern) {
             for entry in entries.flatten() {
@@ -4509,7 +4730,7 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
             }
         }
     }
-    
+
     for action in &spec.actions {
         match action {
             CompletionAction::Alias => {
@@ -4552,7 +4773,11 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
                 }
             }
             CompletionAction::Directory => {
-                let pattern = if prefix.is_empty() { "*" } else { &format!("{}*", prefix) };
+                let pattern = if prefix.is_empty() {
+                    "*"
+                } else {
+                    &format!("{}*", prefix)
+                };
                 if let Ok(entries) = glob::glob(pattern) {
                     for entry in entries.flatten() {
                         if entry.is_dir() {
@@ -4569,7 +4794,11 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
                 }
             }
             CompletionAction::File => {
-                let pattern = if prefix.is_empty() { "*" } else { &format!("{}*", prefix) };
+                let pattern = if prefix.is_empty() {
+                    "*"
+                } else {
+                    &format!("{}*", prefix)
+                };
                 if let Ok(entries) = glob::glob(pattern) {
                     for entry in entries.flatten() {
                         completions.push(entry.display().to_string());
@@ -4596,9 +4825,11 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
                 }
             }
             CompletionAction::Keyword => {
-                for kw in &["if", "then", "else", "elif", "fi", "case", "esac", "for", "while", 
-                            "until", "do", "done", "in", "function", "select", "time", "coproc",
-                            "{", "}", "!", "[[", "]]"] {
+                for kw in &[
+                    "if", "then", "else", "elif", "fi", "case", "esac", "for", "while", "until",
+                    "do", "done", "in", "function", "select", "time", "coproc", "{", "}", "!",
+                    "[[", "]]",
+                ] {
                     if kw.starts_with(prefix) {
                         completions.push(kw.to_string());
                     }
@@ -4627,25 +4858,38 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
                 }
             }
             CompletionAction::Signal => {
-                for sig in &["HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", 
-                            "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM",
-                            "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU",
-                            "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "PWR", "SYS"] {
+                for sig in &[
+                    "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1",
+                    "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP",
+                    "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO",
+                    "PWR", "SYS",
+                ] {
                     if sig.starts_with(prefix) || format!("SIG{}", sig).starts_with(prefix) {
                         completions.push(sig.to_string());
                     }
                 }
             }
             CompletionAction::SetOpt => {
-                for opt in &["errexit", "nounset", "xtrace", "noglob", "noexec", "verbose"] {
+                for opt in &[
+                    "errexit", "nounset", "xtrace", "noglob", "noexec", "verbose",
+                ] {
                     if opt.starts_with(prefix) {
                         completions.push(opt.to_string());
                     }
                 }
             }
             CompletionAction::ShOpt => {
-                for opt in &["extglob", "globstar", "nullglob", "dotglob", "failglob", 
-                            "nocaseglob", "nocasematch", "expand_aliases", "histappend"] {
+                for opt in &[
+                    "extglob",
+                    "globstar",
+                    "nullglob",
+                    "dotglob",
+                    "failglob",
+                    "nocaseglob",
+                    "nocasematch",
+                    "expand_aliases",
+                    "histappend",
+                ] {
                     if opt.starts_with(prefix) {
                         completions.push(opt.to_string());
                     }
@@ -4654,7 +4898,7 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
             _ => {}
         }
     }
-    
+
     if let Some(ref filter) = spec.filter_pattern {
         completions.retain(|c| {
             !glob::Pattern::new(filter)
@@ -4662,23 +4906,73 @@ fn generate_completions(spec: &CompletionSpec, context: &ExpansionContext, word_
                 .unwrap_or(false)
         });
     }
-    
+
     completions.sort();
     completions.dedup();
-    
+
     completions
 }
 
 fn get_builtin_names() -> Vec<&'static str> {
     vec![
-        ".", ":", "[", "alias", "bg", "break", "builtin", "cd", "command", 
-        "compgen", "complete", "compopt", "continue", "declare", "dirs",
-        "disown", "echo", "enable", "eval", "exec", "exit", "export", 
-        "false", "fc", "fg", "getopts", "hash", "help", "history", "jobs",
-        "kill", "let", "local", "logout", "mapfile", "popd", "printf",
-        "pushd", "pwd", "read", "readarray", "readonly", "return", "set",
-        "shift", "shopt", "source", "suspend", "test", "times", "trap",
-        "true", "type", "typeset", "ulimit", "umask", "unalias", "unset",
+        ".",
+        ":",
+        "[",
+        "alias",
+        "bg",
+        "break",
+        "builtin",
+        "cd",
+        "command",
+        "compgen",
+        "complete",
+        "compopt",
+        "continue",
+        "declare",
+        "dirs",
+        "disown",
+        "echo",
+        "enable",
+        "eval",
+        "exec",
+        "exit",
+        "export",
+        "false",
+        "fc",
+        "fg",
+        "getopts",
+        "hash",
+        "help",
+        "history",
+        "jobs",
+        "kill",
+        "let",
+        "local",
+        "logout",
+        "mapfile",
+        "popd",
+        "printf",
+        "pushd",
+        "pwd",
+        "read",
+        "readarray",
+        "readonly",
+        "return",
+        "set",
+        "shift",
+        "shopt",
+        "source",
+        "suspend",
+        "test",
+        "times",
+        "trap",
+        "true",
+        "type",
+        "typeset",
+        "ulimit",
+        "umask",
+        "unalias",
+        "unset",
         "wait",
     ]
 }
@@ -4981,39 +5275,39 @@ mod tests {
     #[test]
     fn test_set_option_minus_e_enables_errexit() {
         let mut context = ExpansionContext::new();
-        
+
         assert!(!context.shell_options().errexit);
-        
+
         let result = builtin_set(&["-e".to_string()], &mut context);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
-        
+
         assert!(context.shell_options().errexit);
     }
 
     #[test]
     fn test_set_option_plus_e_disables_errexit() {
         let mut context = ExpansionContext::new();
-        
+
         context.shell_options_mut().errexit = true;
         assert!(context.shell_options().errexit);
-        
+
         let result = builtin_set(&["+e".to_string()], &mut context);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
-        
+
         assert!(!context.shell_options().errexit);
     }
 
     #[test]
     fn test_set_option_minus_x_enables_xtrace() {
         let mut context = ExpansionContext::new();
-        
+
         assert!(!context.shell_options().xtrace);
-        
+
         let result = builtin_set(&["-x".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(context.shell_options().xtrace);
     }
 
@@ -5021,23 +5315,23 @@ mod tests {
     fn test_set_option_plus_x_disables_xtrace() {
         let mut context = ExpansionContext::new();
         context.shell_options_mut().xtrace = true;
-        
+
         let result = builtin_set(&["+x".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(!context.shell_options().xtrace);
     }
 
     #[test]
     fn test_set_combined_options() {
         let mut context = ExpansionContext::new();
-        
+
         assert!(!context.shell_options().errexit);
         assert!(!context.shell_options().xtrace);
-        
+
         let result = builtin_set(&["-ex".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(context.shell_options().errexit);
         assert!(context.shell_options().xtrace);
     }
@@ -5047,10 +5341,10 @@ mod tests {
         let mut context = ExpansionContext::new();
         context.shell_options_mut().errexit = true;
         context.shell_options_mut().xtrace = true;
-        
+
         let result = builtin_set(&["+ex".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(!context.shell_options().errexit);
         assert!(!context.shell_options().xtrace);
     }
@@ -5058,58 +5352,66 @@ mod tests {
     #[test]
     fn test_set_option_u_nounset() {
         let mut context = ExpansionContext::new();
-        
+
         assert!(!context.shell_options().nounset);
-        
+
         let result = builtin_set(&["-u".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(context.shell_options().nounset);
     }
 
     #[test]
     fn test_set_option_f_noglob() {
         let mut context = ExpansionContext::new();
-        
+
         assert!(!context.shell_options().noglob);
-        
+
         let result = builtin_set(&["-f".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(context.shell_options().noglob);
     }
 
     #[test]
     fn test_set_option_n_noexec() {
         let mut context = ExpansionContext::new();
-        
+
         assert!(!context.shell_options().noexec);
-        
+
         let result = builtin_set(&["-n".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(context.shell_options().noexec);
     }
 
     #[test]
     fn test_set_option_v_verbose() {
         let mut context = ExpansionContext::new();
-        
+
         assert!(!context.shell_options().verbose);
-        
+
         let result = builtin_set(&["-v".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(context.shell_options().verbose);
     }
 
     #[test]
     fn test_set_double_dash_positional_params() {
         let mut context = ExpansionContext::new();
-        
-        let result = builtin_set(&["--".to_string(), "a".to_string(), "b".to_string(), "c".to_string()], &mut context);
+
+        let result = builtin_set(
+            &[
+                "--".to_string(),
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+            ],
+            &mut context,
+        );
         assert!(result.is_ok());
-        
+
         assert_eq!(context.get_all_positional_params(), &["a", "b", "c"]);
     }
 
@@ -5117,20 +5419,28 @@ mod tests {
     fn test_set_double_dash_clears_params_when_empty() {
         let mut context = ExpansionContext::new();
         context.set_positional_params(vec!["old1".to_string(), "old2".to_string()]);
-        
+
         let result = builtin_set(&["--".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert!(context.get_all_positional_params().is_empty());
     }
 
     #[test]
     fn test_set_options_then_double_dash_params() {
         let mut context = ExpansionContext::new();
-        
-        let result = builtin_set(&["-ex".to_string(), "--".to_string(), "a".to_string(), "b".to_string()], &mut context);
+
+        let result = builtin_set(
+            &[
+                "-ex".to_string(),
+                "--".to_string(),
+                "a".to_string(),
+                "b".to_string(),
+            ],
+            &mut context,
+        );
         assert!(result.is_ok());
-        
+
         assert!(context.shell_options().errexit);
         assert!(context.shell_options().xtrace);
         assert_eq!(context.get_all_positional_params(), &["a", "b"]);
@@ -5140,7 +5450,7 @@ mod tests {
     fn test_set_no_args_preserves_params() {
         let mut context = ExpansionContext::new();
         context.set_positional_params(vec!["existing".to_string()]);
-        
+
         let result = builtin_set(&[], &mut context);
         assert!(result.is_ok());
     }
@@ -5148,20 +5458,20 @@ mod tests {
     #[test]
     fn test_set_positional_params_without_double_dash() {
         let mut context = ExpansionContext::new();
-        
+
         let result = builtin_set(&["foo".to_string(), "bar".to_string()], &mut context);
         assert!(result.is_ok());
-        
+
         assert_eq!(context.get_all_positional_params(), &["foo", "bar"]);
     }
 
     #[test]
     fn test_shell_options_to_string() {
         let mut context = ExpansionContext::new();
-        
+
         context.shell_options_mut().errexit = true;
         context.shell_options_mut().xtrace = true;
-        
+
         let options_str = context.shell_options().to_string();
         assert!(options_str.contains('e'));
         assert!(options_str.contains('x'));
@@ -5173,7 +5483,7 @@ mod tests {
         let mut context = ExpansionContext::new();
         context.shell_options_mut().errexit = true;
         context.shell_options_mut().xtrace = true;
-        
+
         let value = context.get_var_or_env("-");
         assert!(value.is_some());
         let opts = value.unwrap();

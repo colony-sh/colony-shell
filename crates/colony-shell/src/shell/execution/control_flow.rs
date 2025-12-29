@@ -1,16 +1,13 @@
-use colony_exec::{Executor, ExecutionError};
+use colony_exec::{ExecutionError, Executor};
 use colony_expand::Expander;
 use colony_parser::Statement;
 
 use crate::shell::engine::{
-    evaluate_arithmetic_command,
-    evaluate_conditional,
-    evaluate_cstyle_arith_expr,
-    evaluate_cstyle_arith_value,
-    execute_coproc,
+    evaluate_arithmetic_command, evaluate_conditional, evaluate_cstyle_arith_expr,
+    evaluate_cstyle_arith_value, execute_coproc,
 };
-use crate::shell::execution::execute_err_trap;
 use crate::shell::execution::background::run_in_background;
+use crate::shell::execution::execute_err_trap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlFlow {
@@ -95,7 +92,8 @@ pub(crate) async fn execute_list_with_control(
             }
         } else if !this_is_background {
             let (code, flow) =
-                execute_statement_with_errexit_control(stmt, executor, next_is_errexit_exempt).await;
+                execute_statement_with_errexit_control(stmt, executor, next_is_errexit_exempt)
+                    .await;
             last_exit_code = code;
             executor.context_mut().set_last_exit_status(last_exit_code);
             control = flow;
@@ -118,7 +116,9 @@ pub(crate) async fn execute_if_with_control(
     let saved_errexit = executor.context().shell_options().errexit;
     executor.context_mut().shell_options_mut().errexit = false;
     let (condition_exit, _) = match &if_stmt.condition {
-        Condition::Command(cmd) => execute_statement_with_errexit_control(cmd, executor, true).await,
+        Condition::Command(cmd) => {
+            execute_statement_with_errexit_control(cmd, executor, true).await
+        }
         Condition::Expression(_expr) => {
             eprintln!("Expression conditions not yet supported");
             (1, ControlFlow::Normal)
@@ -142,7 +142,9 @@ pub(crate) async fn execute_if_with_control(
         let saved_errexit = executor.context().shell_options().errexit;
         executor.context_mut().shell_options_mut().errexit = false;
         let (elif_exit, _) = match &elif.condition {
-            Condition::Command(cmd) => execute_statement_with_errexit_control(cmd, executor, true).await,
+            Condition::Command(cmd) => {
+                execute_statement_with_errexit_control(cmd, executor, true).await
+            }
             Condition::Expression(_) => (1, ControlFlow::Normal),
         };
         executor.context_mut().shell_options_mut().errexit = saved_errexit;
@@ -200,8 +202,10 @@ pub(crate) async fn execute_for_loop_with_control(
             eprintln!("colony: {}: readonly variable", for_stmt.var);
             return (1, ControlFlow::Normal);
         }
-        
-        executor.context_mut().set_var(for_stmt.var.clone(), field.text);
+
+        executor
+            .context_mut()
+            .set_var(for_stmt.var.clone(), field.text);
 
         for stmt in &for_stmt.body {
             let (code, flow) = execute_statement_with_control(stmt, executor).await;
@@ -292,7 +296,10 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                 let result = match executor.execute_simple_command(cmd).await {
                     Ok(status) => {
                         let code = status.code();
-                        if !errexit_exempt && executor.context().shell_options().errexit && code != 0 {
+                        if !errexit_exempt
+                            && executor.context().shell_options().errexit
+                            && code != 0
+                        {
                             (code, ControlFlow::Exit)
                         } else {
                             (code, ControlFlow::Normal)
@@ -320,7 +327,11 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                 result
             }
             Statement::Pipeline(pipeline) => {
-                let pipeline_has_negation = pipeline.elements.first().map(|e| e.negated).unwrap_or(false);
+                let pipeline_has_negation = pipeline
+                    .elements
+                    .first()
+                    .map(|e| e.negated)
+                    .unwrap_or(false);
                 if pipeline.elements.len() == 1 {
                     let element = &pipeline.elements[0];
                     let saved_errexit = executor.context().shell_options().errexit;
@@ -396,7 +407,10 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
             }
             Statement::BraceGroup(brace_group) => {
                 use colony_exec::builtin_redirect::BuiltinRedirectGuard;
-                let redirect_guard = match BuiltinRedirectGuard::apply(&brace_group.redirects, executor.context_mut()) {
+                let redirect_guard = match BuiltinRedirectGuard::apply(
+                    &brace_group.redirects,
+                    executor.context_mut(),
+                ) {
                     Ok(guard) => guard,
                     Err(e) => {
                         eprintln!("colony: redirect error: {e}");
@@ -430,7 +444,8 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                 };
                 let mut last_exit = 0;
                 for stmt in &subshell.body {
-                    let (exit_code, flow) = execute_statement_with_control(stmt, &mut subshell_executor).await;
+                    let (exit_code, flow) =
+                        execute_statement_with_control(stmt, &mut subshell_executor).await;
                     last_exit = exit_code;
                     match flow {
                         ControlFlow::Normal => {}
@@ -448,12 +463,12 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                 (last_exit, ControlFlow::Normal)
             }
             Statement::FunctionDef(func_def) => {
-                executor.context_mut().define_function(func_def.name.clone(), func_def.clone());
+                executor
+                    .context_mut()
+                    .define_function(func_def.name.clone(), func_def.clone());
                 (0, ControlFlow::Normal)
             }
-            Statement::Return(_ret_stmt) => {
-                (0, ControlFlow::Return)
-            }
+            Statement::Return(_ret_stmt) => (0, ControlFlow::Return),
             Statement::VarDecl(_) | Statement::ProcDef(_) => {
                 eprintln!("This declaration not yet supported");
                 (1, ControlFlow::Normal)

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use colony_agent::{Agent, NaturalLanguageDetector};
 use crate::shell::execution::handle_llm_command;
+use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
 use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
@@ -93,12 +93,15 @@ impl Helper for ColonyHelper {}
 
 pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()> {
     let helper = ColonyHelper::new();
-    let mut rl = Editor::new()
-        .map_err(|e| miette::miette!("failed to create readline: {}", e))?;
+    let mut rl = Editor::new().map_err(|e| miette::miette!("failed to create readline: {}", e))?;
     rl.set_helper(Some(helper));
 
     loop {
-        let prompt = if agent.is_some() { "colony> " } else { "shell> " };
+        let prompt = if agent.is_some() {
+            "colony> "
+        } else {
+            "shell> "
+        };
 
         let readline = rl.readline(prompt);
 
@@ -190,9 +193,11 @@ fn display_tuple_activity(executor: &Executor) {
     ]);
 
     while let Some(tuple) = tuple_space.inp(env_pattern.clone()) {
-        if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) =
-            (tuple.fields.get(1), tuple.fields.get(2), tuple.fields.get(3))
-        {
+        if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) = (
+            tuple.fields.get(1),
+            tuple.fields.get(2),
+            tuple.fields.get(3),
+        ) {
             match new {
                 Value::Null => {
                     println!("🔄 Environment: unset {}", var);

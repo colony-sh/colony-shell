@@ -14,10 +14,9 @@ pub fn preprocess_arithmetic(source: &str) -> (String, Vec<(String, String)>) {
     let mut i = 0;
     let mut arith_counter = 0;
 
-
     while i < chars.len() {
         // Look for $((
-        if i + 2 < chars.len() && chars[i] == '$' && chars[i+1] == '(' && chars[i+2] == '(' {
+        if i + 2 < chars.len() && chars[i] == '$' && chars[i + 1] == '(' && chars[i + 2] == '(' {
             // Found $(( - find matching ))
             i += 3; // Skip $((
 
@@ -36,14 +35,13 @@ pub fn preprocess_arithmetic(source: &str) -> (String, Vec<(String, String)>) {
                 } else if ch == ')' {
                     if paren_count == 0 {
                         // Could be closing ))
-                        if i + 1 < chars.len() && chars[i+1] == ')' {
+                        if i + 1 < chars.len() && chars[i + 1] == ')' {
                             // Found matching ))!
                             i += 2; // Skip ))
 
                             let expr: String = expr_chars.iter().collect();
                             let placeholder = format!("__ARITH_{}__", arith_counter);
                             arith_counter += 1;
-
 
                             // Store original expression
                             arith_map.push((placeholder.clone(), expr));

@@ -76,7 +76,9 @@ mod tests {
     #[test]
     fn test_can_create_parser() {
         let mut parser = Parser::new();
-        parser.set_language(language()).expect("Failed to load language");
+        parser
+            .set_language(language())
+            .expect("Failed to load language");
     }
 
     #[test]

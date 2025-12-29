@@ -11,19 +11,19 @@
 //! - Tool classification: PROGRAMMATIC vs USER_FACING
 //! - Streaming responses via OSC 2337
 
+pub mod agent;
+pub mod detector;
 pub mod provider;
 pub mod providers;
 pub mod router;
 pub mod tool;
-pub mod agent;
-pub mod detector;
 
 pub use agent::{Agent, AgentConfig};
-pub use provider::{ModelProvider, CompletionRequest, StreamEvent};
-pub use providers::{AnthropicProvider, OpenAIProvider, OllamaProvider};
-pub use router::{ModelRouter, RouterConfig, ProviderType};
-pub use tool::{ToolRegistry, ToolClassification, RegisteredTool};
 pub use detector::NaturalLanguageDetector;
+pub use provider::{CompletionRequest, ModelProvider, StreamEvent};
+pub use providers::{AnthropicProvider, OllamaProvider, OpenAIProvider};
+pub use router::{ModelRouter, ProviderType, RouterConfig};
+pub use tool::{RegisteredTool, ToolClassification, ToolRegistry};
 
 /// Agent error types
 #[derive(Debug, thiserror::Error)]

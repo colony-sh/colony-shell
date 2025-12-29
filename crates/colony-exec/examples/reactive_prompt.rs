@@ -104,7 +104,13 @@ fn main() {
     let mut ctx = ExpansionContext::new();
     let jobs = colony_exec::JobTable::new();
     let mut channels = ChannelManager::new();
-    if let Some(result) = execute_builtin(&export_cmd, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
+    if let Some(result) = execute_builtin(
+        &export_cmd,
+        &mut ctx,
+        &jobs,
+        executor.tuple_space(),
+        &mut channels,
+    ) {
         result.ok();
     }
 
@@ -120,7 +126,13 @@ fn main() {
         span: Span::DUMMY,
     };
 
-    if let Some(result) = execute_builtin(&cd_cmd, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
+    if let Some(result) = execute_builtin(
+        &cd_cmd,
+        &mut ctx,
+        &jobs,
+        executor.tuple_space(),
+        &mut channels,
+    ) {
         result.ok();
     }
 
@@ -136,7 +148,13 @@ fn main() {
         span: Span::DUMMY,
     };
 
-    if let Some(result) = execute_builtin(&export_cmd2, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
+    if let Some(result) = execute_builtin(
+        &export_cmd2,
+        &mut ctx,
+        &jobs,
+        executor.tuple_space(),
+        &mut channels,
+    ) {
         result.ok();
     }
 
@@ -152,7 +170,13 @@ fn main() {
         span: Span::DUMMY,
     };
 
-    if let Some(result) = execute_builtin(&unset_cmd, &mut ctx, &jobs, executor.tuple_space(), &mut channels) {
+    if let Some(result) = execute_builtin(
+        &unset_cmd,
+        &mut ctx,
+        &jobs,
+        executor.tuple_space(),
+        &mut channels,
+    ) {
         result.ok();
     }
 

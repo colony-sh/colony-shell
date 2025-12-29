@@ -232,7 +232,10 @@ impl CommandExplainer {
             CommandInfo {
                 name: "chown",
                 brief: "Change file owner and group",
-                common_flags: &[("-R", "recursive"), ("user:group", "set both owner and group")],
+                common_flags: &[
+                    ("-R", "recursive"),
+                    ("user:group", "set both owner and group"),
+                ],
             },
         );
 

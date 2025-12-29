@@ -69,7 +69,9 @@ impl TutorialTui {
     pub fn toggle_pause(&mut self) {
         self.state = match self.state {
             PlaybackState::Playing { .. } => PlaybackState::Paused,
-            PlaybackState::Paused | PlaybackState::Stepping => PlaybackState::Playing { speed_ms: self.playback_speed_ms },
+            PlaybackState::Paused | PlaybackState::Stepping => PlaybackState::Playing {
+                speed_ms: self.playback_speed_ms,
+            },
         };
     }
 
@@ -88,7 +90,7 @@ impl TutorialTui {
     pub fn toggle_teach_mode(&mut self) {
         self.teach_mode = !self.teach_mode;
     }
-    
+
     fn refresh_magic_pane(&mut self) {
         self.magic_pane.clear();
         for event in &self.current_line_events {
@@ -110,7 +112,8 @@ impl TutorialTui {
             TraceEvent::LineEnter { line, .. } => {
                 if !self.current_line_events.is_empty() {
                     let current_line = self.script_pane.current_line();
-                    self.event_history.push((current_line, std::mem::take(&mut self.current_line_events)));
+                    self.event_history
+                        .push((current_line, std::mem::take(&mut self.current_line_events)));
                 }
                 self.script_pane.set_current_line(*line);
                 self.magic_pane.clear();
@@ -124,7 +127,9 @@ impl TutorialTui {
                     }
                 }
             }
-            TraceEvent::Environment { variables, changed, .. } => {
+            TraceEvent::Environment {
+                variables, changed, ..
+            } => {
                 self.env_pane.update(variables.clone(), changed.clone());
             }
             _ => {}
@@ -157,7 +162,9 @@ impl TutorialTui {
     }
 
     fn render_output_pane(&self, frame: &mut Frame, area: Rect) {
-        let lines: Vec<Line> = self.output_lines.iter()
+        let lines: Vec<Line> = self
+            .output_lines
+            .iter()
             .map(|s| Line::from(Span::styled(s.clone(), Style::default().fg(Color::White))))
             .collect();
 
@@ -190,7 +197,11 @@ impl TutorialTui {
         };
 
         let teach_indicator = if self.teach_mode { "📚" } else { "" };
-        let ast_indicator = if self.magic_pane.is_ast_expanded() { "📂" } else { "📁" };
+        let ast_indicator = if self.magic_pane.is_ast_expanded() {
+            "📂"
+        } else {
+            "📁"
+        };
 
         let history_indicator = if let Some(idx) = self.history_index {
             format!(" [{}/{}]", idx + 1, self.event_history.len())
@@ -272,15 +283,15 @@ impl TutorialTui {
         if self.event_history.is_empty() {
             return;
         }
-        
+
         self.state = PlaybackState::Paused;
-        
+
         let new_index = match self.history_index {
             Some(0) => return,
             Some(idx) => idx - 1,
             None => self.event_history.len().saturating_sub(1),
         };
-        
+
         self.history_index = Some(new_index);
         self.show_history_at_index(new_index);
     }
@@ -289,9 +300,9 @@ impl TutorialTui {
         if self.event_history.is_empty() {
             return;
         }
-        
+
         let max_index = self.event_history.len().saturating_sub(1);
-        
+
         match self.history_index {
             Some(idx) if idx < max_index => {
                 let new_index = idx + 1;

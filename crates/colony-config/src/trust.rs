@@ -65,9 +65,8 @@ impl TrustManager {
 
         // Load existing trust data
         let trusted = if trust_file.exists() {
-            let content = fs::read_to_string(&trust_file).map_err(|e| {
-                ConfigError::IoError(format!("failed to read trust file: {}", e))
-            })?;
+            let content = fs::read_to_string(&trust_file)
+                .map_err(|e| ConfigError::IoError(format!("failed to read trust file: {}", e)))?;
 
             toml::from_str(&content).unwrap_or_default()
         } else {
@@ -82,8 +81,9 @@ impl TrustManager {
 
     /// Get trust file path: ~/.config/colony/trusted.toml
     fn trust_file_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| ConfigError::IoError("could not determine config directory".to_string()))?;
+        let config_dir = dirs::config_dir().ok_or_else(|| {
+            ConfigError::IoError("could not determine config directory".to_string())
+        })?;
 
         let colony_dir = config_dir.join("colony");
         fs::create_dir_all(&colony_dir).map_err(|e| {
@@ -96,7 +96,8 @@ impl TrustManager {
     /// Check trust status of a config file
     pub fn check_trust(&self, config_path: &Path, content: &str) -> TrustStatus {
         let dir = config_path.parent().unwrap_or(Path::new("."));
-        let dir_str = dir.canonicalize()
+        let dir_str = dir
+            .canonicalize()
             .ok()
             .and_then(|p| p.to_str().map(String::from))
             .unwrap_or_else(|| dir.display().to_string());
@@ -104,9 +105,9 @@ impl TrustManager {
         let current_hash = Self::hash_content(content);
 
         match self.trusted.directories.get(&dir_str) {
-            Some(entry) if entry.hash == current_hash => TrustStatus::Trusted {
-                hash: current_hash,
-            },
+            Some(entry) if entry.hash == current_hash => {
+                TrustStatus::Trusted { hash: current_hash }
+            }
             Some(entry) => TrustStatus::Changed {
                 path: config_path.to_path_buf(),
                 current_hash,
@@ -124,7 +125,8 @@ impl TrustManager {
     /// Adds directory and content hash to trusted list
     pub fn trust(&mut self, config_path: &Path, content: &str) -> Result<()> {
         let dir = config_path.parent().unwrap_or(Path::new("."));
-        let dir_str = dir.canonicalize()
+        let dir_str = dir
+            .canonicalize()
             .map_err(|e| ConfigError::IoError(format!("failed to canonicalize path: {}", e)))?
             .to_str()
             .ok_or_else(|| ConfigError::IoError("path is not valid UTF-8".to_string()))?
@@ -148,7 +150,8 @@ impl TrustManager {
 
     /// Untrust a directory
     pub fn untrust(&mut self, dir: &Path) -> Result<()> {
-        let dir_str = dir.canonicalize()
+        let dir_str = dir
+            .canonicalize()
             .map_err(|e| ConfigError::IoError(format!("failed to canonicalize path: {}", e)))?
             .to_str()
             .ok_or_else(|| ConfigError::IoError("path is not valid UTF-8".to_string()))?
@@ -171,12 +174,12 @@ impl TrustManager {
 
     /// Save trust data to disk
     fn save(&self) -> Result<()> {
-        let content = toml::to_string_pretty(&self.trusted)
-            .map_err(|e| ConfigError::SerializeError(format!("failed to serialize trust data: {}", e)))?;
-
-        fs::write(&self.trust_file, content).map_err(|e| {
-            ConfigError::IoError(format!("failed to write trust file: {}", e))
+        let content = toml::to_string_pretty(&self.trusted).map_err(|e| {
+            ConfigError::SerializeError(format!("failed to serialize trust data: {}", e))
         })?;
+
+        fs::write(&self.trust_file, content)
+            .map_err(|e| ConfigError::IoError(format!("failed to write trust file: {}", e)))?;
 
         Ok(())
     }

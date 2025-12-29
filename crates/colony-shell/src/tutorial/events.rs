@@ -12,16 +12,10 @@ use std::path::PathBuf;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TraceEvent {
     /// Script execution started
-    ScriptStart {
-        path: PathBuf,
-        lines: u32,
-    },
+    ScriptStart { path: PathBuf, lines: u32 },
 
     /// Entering a new line/statement
-    LineEnter {
-        line: u32,
-        source: String,
-    },
+    LineEnter { line: u32, source: String },
 
     /// Parse information for current statement
     Parse {
@@ -120,10 +114,7 @@ pub enum TraceEvent {
     },
 
     /// Loop exit
-    LoopExit {
-        line: u32,
-        iterations: u32,
-    },
+    LoopExit { line: u32, iterations: u32 },
 
     /// Conditional branch taken
     Branch {
@@ -196,16 +187,10 @@ pub enum TraceEvent {
     },
 
     /// Error during execution
-    Error {
-        line: u32,
-        message: String,
-    },
+    Error { line: u32, message: String },
 
     /// Command output (stdout)
-    Output {
-        line: u32,
-        text: String,
-    },
+    Output { line: u32, text: String },
 
     /// Environment/variable state snapshot
     Environment {
@@ -271,8 +256,8 @@ pub enum BranchType {
     Elif,
     Else,
     Case,
-    And,  // &&
-    Or,   // ||
+    And, // &&
+    Or,  // ||
 }
 
 /// Complexity level for pacing

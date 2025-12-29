@@ -5,8 +5,8 @@
 //! future models.
 
 use crate::provider::{
-    CompletionRequest, CompletionStream, ContentBlock, MessageContent, MessageRole,
-    ModelProvider, ProviderHealth, StreamEvent as ProviderStreamEvent, ToolDefinition,
+    CompletionRequest, CompletionStream, ContentBlock, MessageContent, MessageRole, ModelProvider,
+    ProviderHealth, StreamEvent as ProviderStreamEvent, ToolDefinition,
 };
 use crate::{AgentError, Result};
 use async_trait::async_trait;
@@ -58,7 +58,8 @@ impl AnthropicProvider {
                         MessageContent::Text(t) => t.clone(),
                         MessageContent::Blocks(blocks) => {
                             // Extract text from blocks
-                            blocks.iter()
+                            blocks
+                                .iter()
                                 .filter_map(|b| match b {
                                     ContentBlock::Text { text } => Some(text.clone()),
                                     _ => None,

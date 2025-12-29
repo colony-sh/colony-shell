@@ -50,7 +50,7 @@ impl Default for AliasContext {
 }
 
 /// Preprocess source code to expand aliases at command positions
-/// 
+///
 /// Returns the expanded source code where aliases in command position
 /// have been substituted with their values.
 pub fn preprocess_aliases(source: &str, ctx: &mut AliasContext) -> String {
@@ -64,7 +64,7 @@ pub fn preprocess_aliases(source: &str, ctx: &mut AliasContext) -> String {
     while !remaining.is_empty() {
         let (before, cmd_start, after) = find_command_position(remaining);
         result.push_str(before);
-        
+
         if cmd_start.is_empty() && after.is_empty() {
             break;
         }
@@ -86,22 +86,22 @@ fn find_command_position(source: &str) -> (&str, &str, &str) {
     let mut i = 0;
     let mut in_single_quote = false;
     let mut in_double_quote = false;
-    
+
     while i < bytes.len() {
         let c = bytes[i];
-        
+
         if c == b'\'' && !in_double_quote {
             in_single_quote = !in_single_quote;
             i += 1;
             continue;
         }
-        
+
         if c == b'"' && !in_single_quote {
             in_double_quote = !in_double_quote;
             i += 1;
             continue;
         }
-        
+
         if in_single_quote || in_double_quote {
             i += 1;
             continue;
@@ -112,7 +112,7 @@ fn find_command_position(source: &str) -> (&str, &str, &str) {
             let word_start = i + (source[i..].len() - start.len());
             return (&source[..word_start], start, "");
         }
-        
+
         i += 1;
     }
 
@@ -123,14 +123,14 @@ fn is_command_starter(bytes: &[u8], pos: usize) -> bool {
     if pos == 0 {
         return !bytes[0].is_ascii_whitespace();
     }
-    
+
     let prev = bytes[pos - 1];
     let curr = bytes[pos];
-    
+
     if curr.is_ascii_whitespace() {
         return false;
     }
-    
+
     matches!(prev, b';' | b'|' | b'&' | b'\n' | b'(' | b'{' | b'`')
         || (pos >= 2 && bytes[pos - 2] == b'&' && prev == b'&')
         || (pos >= 2 && bytes[pos - 2] == b'|' && prev == b'|')
@@ -146,7 +146,7 @@ fn expand_at_command_position<'a>(
     ctx: &mut AliasContext,
 ) -> (String, &'a str) {
     let (word, rest) = extract_word(word_and_rest);
-    
+
     if word.is_empty() {
         return (String::new(), rest);
     }
@@ -157,11 +157,11 @@ fn expand_at_command_position<'a>(
 
     if let Some(alias_value) = ctx.get(&word).map(|s| s.to_string()) {
         ctx.start_expanding(&word);
-        
+
         let ends_with_space = alias_value.ends_with(' ') || alias_value.ends_with('\t');
-        
+
         let mut expanded = alias_value.clone();
-        
+
         if ends_with_space {
             let next_rest = skip_whitespace(rest);
             let (next_word, next_rest_after) = extract_word(next_rest);
@@ -174,7 +174,7 @@ fn expand_at_command_position<'a>(
                 }
             }
         }
-        
+
         expanded.push_str(rest);
         ctx.stop_expanding(&word);
         (expanded, "")
@@ -225,7 +225,10 @@ fn extract_word(s: &str) -> (&str, &str) {
 }
 
 fn is_metachar(c: u8) -> bool {
-    matches!(c, b';' | b'|' | b'&' | b'<' | b'>' | b'(' | b')' | b'`' | b'\n')
+    matches!(
+        c,
+        b';' | b'|' | b'&' | b'<' | b'>' | b'(' | b')' | b'`' | b'\n'
+    )
 }
 
 #[cfg(test)]
@@ -235,7 +238,9 @@ mod tests {
     #[test]
     fn test_simple_alias() {
         let mut ctx = AliasContext::from_map(
-            [("ll".to_string(), "ls -la".to_string())].into_iter().collect()
+            [("ll".to_string(), "ls -la".to_string())]
+                .into_iter()
+                .collect(),
         );
         let result = preprocess_aliases("ll", &mut ctx);
         assert_eq!(result, "ls -la");
@@ -244,7 +249,9 @@ mod tests {
     #[test]
     fn test_alias_with_args() {
         let mut ctx = AliasContext::from_map(
-            [("ll".to_string(), "ls -la".to_string())].into_iter().collect()
+            [("ll".to_string(), "ls -la".to_string())]
+                .into_iter()
+                .collect(),
         );
         let result = preprocess_aliases("ll /tmp", &mut ctx);
         assert_eq!(result, "ls -la /tmp");
@@ -253,7 +260,9 @@ mod tests {
     #[test]
     fn test_alias_after_semicolon() {
         let mut ctx = AliasContext::from_map(
-            [("e".to_string(), "echo".to_string())].into_iter().collect()
+            [("e".to_string(), "echo".to_string())]
+                .into_iter()
+                .collect(),
         );
         let result = preprocess_aliases("true; e hello", &mut ctx);
         assert_eq!(result, "true; echo hello");
@@ -262,7 +271,9 @@ mod tests {
     #[test]
     fn test_alias_after_pipe() {
         let mut ctx = AliasContext::from_map(
-            [("e".to_string(), "echo".to_string())].into_iter().collect()
+            [("e".to_string(), "echo".to_string())]
+                .into_iter()
+                .collect(),
         );
         let result = preprocess_aliases("true | e hello", &mut ctx);
         assert_eq!(result, "true | echo hello");
@@ -271,7 +282,9 @@ mod tests {
     #[test]
     fn test_no_alias_in_quotes() {
         let mut ctx = AliasContext::from_map(
-            [("e".to_string(), "echo".to_string())].into_iter().collect()
+            [("e".to_string(), "echo".to_string())]
+                .into_iter()
+                .collect(),
         );
         let result = preprocess_aliases("echo 'e hello'", &mut ctx);
         assert_eq!(result, "echo 'e hello'");
@@ -279,19 +292,22 @@ mod tests {
 
     #[test]
     fn test_self_referential_alias() {
-        let mut ctx = AliasContext::from_map(
-            [("ls".to_string(), "ls".to_string())].into_iter().collect()
-        );
+        let mut ctx =
+            AliasContext::from_map([("ls".to_string(), "ls".to_string())].into_iter().collect());
         let result = preprocess_aliases("ls -la", &mut ctx);
         assert_eq!(result, "ls -la");
     }
 
     #[test]
     fn test_trailing_space_expansion() {
-        let mut ctx = AliasContext::from_map([
-            ("prefix".to_string(), "echo ".to_string()),
-            ("msg".to_string(), "hello".to_string()),
-        ].into_iter().collect());
+        let mut ctx = AliasContext::from_map(
+            [
+                ("prefix".to_string(), "echo ".to_string()),
+                ("msg".to_string(), "hello".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        );
         let result = preprocess_aliases("prefix msg", &mut ctx);
         assert_eq!(result, "echo hello");
     }
@@ -299,7 +315,9 @@ mod tests {
     #[test]
     fn test_alias_with_pipe_in_value() {
         let mut ctx = AliasContext::from_map(
-            [("countlines".to_string(), "wc -l".to_string())].into_iter().collect()
+            [("countlines".to_string(), "wc -l".to_string())]
+                .into_iter()
+                .collect(),
         );
         let result = preprocess_aliases("cat file | countlines", &mut ctx);
         assert_eq!(result, "cat file | wc -l");

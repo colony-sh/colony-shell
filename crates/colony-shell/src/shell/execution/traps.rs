@@ -6,12 +6,15 @@ use crate::shell::execution::ControlFlow;
 pub(crate) type ExecWithControlFn = for<'a> fn(
     &'a colony_parser::Statement,
     &'a mut Executor,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = (i32, ControlFlow)> + 'a>>;
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = (i32, ControlFlow)> + 'a>,
+>;
 
-pub(crate) type ExecForCodeFn = for<'a> fn(
-    &'a colony_parser::Statement,
-    &'a mut Executor,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>>;
+pub(crate) type ExecForCodeFn =
+    for<'a> fn(
+        &'a colony_parser::Statement,
+        &'a mut Executor,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>>;
 
 pub(crate) async fn execute_exit_trap(
     executor: &mut Executor,
@@ -19,7 +22,8 @@ pub(crate) async fn execute_exit_trap(
 ) -> Option<i32> {
     use colony_parser::pest_api::parse;
 
-    let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Exit).cloned() else {
+    let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Exit).cloned()
+    else {
         return None;
     };
 
@@ -37,13 +41,11 @@ pub(crate) async fn execute_exit_trap(
     None
 }
 
-pub(crate) async fn execute_err_trap(
-    executor: &mut Executor,
-    execute_for_code: ExecForCodeFn,
-) {
+pub(crate) async fn execute_err_trap(executor: &mut Executor, execute_for_code: ExecForCodeFn) {
     use colony_parser::pest_api::parse;
 
-    let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Err).cloned() else {
+    let Some(TrapAction::Command(cmd)) = executor.context().get_trap(&TrapSignal::Err).cloned()
+    else {
         return;
     };
 

@@ -3,7 +3,7 @@
 use crate::path::resolve_command;
 use crate::process::{spawn_process, ExitStatus};
 use crate::{ExecutionError, Result};
-use colony_expand::{ExpansionContext, Expander};
+use colony_expand::{Expander, ExpansionContext};
 use colony_parser::SimpleCommand;
 
 fn build_env_with_exported_functions(context: &ExpansionContext) -> Vec<(String, String)> {
@@ -49,7 +49,8 @@ fn execute_command_blocking(
         return Err(ExecutionError::CommandNotFound("<empty>".to_string()));
     }
     let mut command_name = name_fields[0].text.clone();
-    let extra_args_from_name: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
+    let extra_args_from_name: Vec<String> =
+        name_fields[1..].iter().map(|f| f.text.clone()).collect();
 
     // 1b. Check for alias expansion
     if let Some(alias_value) = context.get_alias(&command_name) {
@@ -68,7 +69,7 @@ fn execute_command_blocking(
             for alias_arg in &alias_words[1..] {
                 args.push(alias_arg.to_string());
             }
-            
+
             // Add extra args from "$@" expansion
             args.extend(extra_args_from_name.clone());
 
@@ -116,7 +117,7 @@ fn execute_command_blocking(
     let program_path = resolve_command(&command_name, path_env)?;
 
     let mut env = build_env_with_exported_functions(context);
-    
+
     for assignment in &cmd.env_assignments {
         if assignment.subscript.is_none() {
             if let colony_parser::AssignmentValue::Word(word) = &assignment.value {

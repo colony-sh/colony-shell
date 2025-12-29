@@ -26,10 +26,9 @@ impl FastEmbedProvider {
     }
 
     pub fn with_model(model_name: EmbeddingModel) -> Result<Self> {
-        let model = TextEmbedding::try_new(
-            InitOptions::new(model_name).with_show_download_progress(true),
-        )
-        .map_err(|e| MemoryError::Embedding(e.to_string()))?;
+        let model =
+            TextEmbedding::try_new(InitOptions::new(model_name).with_show_download_progress(true))
+                .map_err(|e| MemoryError::Embedding(e.to_string()))?;
 
         Ok(Self {
             model: Arc::new(Mutex::new(model)),

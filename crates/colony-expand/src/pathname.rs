@@ -14,15 +14,15 @@
 //! - !(pattern-list) - matches anything except the patterns
 
 use crate::Result;
-use regex::Regex;
 use fancy_regex::Regex as FancyRegex;
+use regex::Regex;
 use std::path::Path;
 
 fn normalize_pattern(pattern: &str) -> String {
     let mut result = String::with_capacity(pattern.len());
     let chars: Vec<char> = pattern.chars().collect();
     let mut i = 0;
-    
+
     while i < chars.len() {
         if chars[i] == '[' && i + 1 < chars.len() && chars[i + 1] == '^' {
             result.push('[');
@@ -33,7 +33,7 @@ fn normalize_pattern(pattern: &str) -> String {
             i += 1;
         }
     }
-    
+
     result
 }
 
@@ -102,12 +102,12 @@ fn expand_posix_classes(pattern: &str) -> String {
             let bracket_start = i;
             let mut bracket_content = String::new();
             i += 1;
-            
+
             let negated = i < chars.len() && (chars[i] == '!' || chars[i] == '^');
             if negated {
                 i += 1;
             }
-            
+
             while i < chars.len() && chars[i] != ']' {
                 if chars[i] == '[' && i + 1 < chars.len() && chars[i + 1] == ':' {
                     let class_start = i + 2;
@@ -124,7 +124,8 @@ fn expand_posix_classes(pattern: &str) -> String {
                         }
                         i += 2;
                     } else {
-                        bracket_content.push_str(&chars[class_start - 2..=i].iter().collect::<String>());
+                        bracket_content
+                            .push_str(&chars[class_start - 2..=i].iter().collect::<String>());
                         i += 1;
                     }
                 } else {
@@ -132,7 +133,7 @@ fn expand_posix_classes(pattern: &str) -> String {
                     i += 1;
                 }
             }
-            
+
             if i < chars.len() && chars[i] == ']' {
                 result.push('[');
                 if negated {
@@ -160,7 +161,7 @@ fn glob_to_regex_part(glob_part: &str) -> String {
     let mut regex = String::new();
     let chars: Vec<char> = glob_part.chars().collect();
     let mut i = 0;
-    
+
     while i < chars.len() {
         match chars[i] {
             '*' => regex.push_str(".*"),
@@ -219,7 +220,7 @@ fn glob_to_regex_part(glob_part: &str) -> String {
         }
         i += 1;
     }
-    
+
     regex
 }
 
@@ -227,7 +228,7 @@ fn find_matching_paren(s: &str, start: usize) -> Option<usize> {
     let chars: Vec<char> = s.chars().collect();
     let mut depth = 0;
     let mut i = start;
-    
+
     while i < chars.len() {
         match chars[i] {
             '(' => depth += 1,
@@ -249,14 +250,14 @@ fn find_matching_paren(s: &str, start: usize) -> Option<usize> {
 /// For `!(foo).txt` produces `^(?!foo\.txt$).*\.txt$` (match anything ending in .txt except foo.txt)
 fn extglob_to_regex(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
-    
+
     if chars.len() >= 2 && chars[0] == '!' && chars[1] == '(' {
         if let Some(paren_end) = find_matching_paren(pattern, 1) {
             let inner_pattern = &pattern[2..paren_end];
             let suffix = &pattern[paren_end + 1..];
-            
+
             let alternatives: Vec<&str> = split_pattern_list(inner_pattern);
-            
+
             let excluded: Vec<String> = alternatives
                 .iter()
                 .map(|alt| {
@@ -264,14 +265,14 @@ fn extglob_to_regex(pattern: &str) -> String {
                     extglob_to_regex_inner(&full_excluded)
                 })
                 .collect();
-            
+
             let suffix_regex = glob_to_regex_part(suffix);
-            
+
             let mut regex = String::from("^");
             for excl in &excluded {
                 regex.push_str(&format!("(?!{}$)", excl));
             }
-            
+
             if suffix.is_empty() {
                 regex.push_str(".+");
             } else {
@@ -279,17 +280,17 @@ fn extglob_to_regex(pattern: &str) -> String {
                 regex.push_str(&suffix_regex);
             }
             regex.push('$');
-            
+
             return regex;
         }
     }
-    
+
     let mut regex = String::from("^");
     let mut i = 0;
-    
+
     while i < chars.len() {
         let c = chars[i];
-        
+
         if i + 1 < chars.len() && chars[i + 1] == '(' {
             match c {
                 '?' | '*' | '+' | '@' | '!' => {
@@ -297,13 +298,13 @@ fn extglob_to_regex(pattern: &str) -> String {
                     if let Some(paren_end) = find_matching_paren(pattern, paren_start) {
                         let inner: String = chars[paren_start + 1..paren_end].iter().collect();
                         let alternatives: Vec<&str> = split_pattern_list(&inner);
-                        
+
                         let alt_regexes: Vec<String> = alternatives
                             .iter()
                             .map(|alt| extglob_to_regex_inner(alt))
                             .collect();
                         let alt_group = format!("(?:{})", alt_regexes.join("|"));
-                        
+
                         match c {
                             '?' => regex.push_str(&format!("{}?", alt_group)),
                             '*' => regex.push_str(&format!("{}*", alt_group)),
@@ -315,7 +316,7 @@ fn extglob_to_regex(pattern: &str) -> String {
                             }
                             _ => {}
                         }
-                        
+
                         i = paren_end + 1;
                         continue;
                     }
@@ -323,7 +324,7 @@ fn extglob_to_regex(pattern: &str) -> String {
                 _ => {}
             }
         }
-        
+
         match c {
             '*' => regex.push_str(".*"),
             '?' => regex.push('.'),
@@ -362,7 +363,7 @@ fn extglob_to_regex(pattern: &str) -> String {
         }
         i += 1;
     }
-    
+
     regex.push('$');
     regex
 }
@@ -371,10 +372,10 @@ fn extglob_to_regex_inner(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
     let mut regex = String::new();
     let mut i = 0;
-    
+
     while i < chars.len() {
         let c = chars[i];
-        
+
         if i + 1 < chars.len() && chars[i + 1] == '(' {
             match c {
                 '?' | '*' | '+' | '@' | '!' => {
@@ -382,13 +383,13 @@ fn extglob_to_regex_inner(pattern: &str) -> String {
                     if let Some(paren_end) = find_matching_paren(pattern, paren_start) {
                         let inner: String = chars[paren_start + 1..paren_end].iter().collect();
                         let alternatives: Vec<&str> = split_pattern_list(&inner);
-                        
+
                         let alt_regexes: Vec<String> = alternatives
                             .iter()
                             .map(|alt| extglob_to_regex_inner(alt))
                             .collect();
                         let alt_group = format!("(?:{})", alt_regexes.join("|"));
-                        
+
                         match c {
                             '?' => regex.push_str(&format!("{}?", alt_group)),
                             '*' => regex.push_str(&format!("{}*", alt_group)),
@@ -399,7 +400,7 @@ fn extglob_to_regex_inner(pattern: &str) -> String {
                             }
                             _ => {}
                         }
-                        
+
                         i = paren_end + 1;
                         continue;
                     }
@@ -407,7 +408,7 @@ fn extglob_to_regex_inner(pattern: &str) -> String {
                 _ => {}
             }
         }
-        
+
         match c {
             '*' => regex.push_str(".*"),
             '?' => regex.push('.'),
@@ -432,7 +433,7 @@ fn extglob_to_regex_inner(pattern: &str) -> String {
         }
         i += 1;
     }
-    
+
     regex
 }
 
@@ -441,7 +442,7 @@ fn split_pattern_list(s: &str) -> Vec<&str> {
     let mut depth = 0;
     let mut start = 0;
     let chars: Vec<char> = s.chars().collect();
-    
+
     for (i, &c) in chars.iter().enumerate() {
         match c {
             '(' => depth += 1,
@@ -473,9 +474,7 @@ pub fn expand_pathname(pattern: &str) -> Result<Vec<String>> {
             let mut results: Vec<String> = paths
                 .filter_map(|entry| entry.ok())
                 .filter(|path| {
-                    let filename = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                     !filename.starts_with('.') || pattern.contains("/.")
                 })
@@ -489,9 +488,7 @@ pub fn expand_pathname(pattern: &str) -> Result<Vec<String>> {
                 Ok(results)
             }
         }
-        Err(_) => {
-            Ok(vec![pattern.to_string()])
-        }
+        Err(_) => Ok(vec![pattern.to_string()]),
     }
 }
 
@@ -501,19 +498,23 @@ fn expand_extglob_pathname(pattern: &str) -> Result<Vec<String>> {
     } else {
         ("", pattern)
     };
-    
-    let dir = if dir_part.is_empty() { "." } else { dir_part.trim_end_matches('/') };
-    
+
+    let dir = if dir_part.is_empty() {
+        "."
+    } else {
+        dir_part.trim_end_matches('/')
+    };
+
     if contains_extglob(dir_part) {
         let dir_expanded = expand_extglob_dir(dir_part)?;
         let mut all_results = Vec::new();
-        
+
         for expanded_dir in dir_expanded {
             let full_pattern = format!("{}/{}", expanded_dir.trim_end_matches('/'), file_pattern);
             let results = expand_extglob_pathname(&full_pattern)?;
             all_results.extend(results);
         }
-        
+
         if all_results.is_empty() {
             return Ok(vec![pattern.to_string()]);
         }
@@ -521,31 +522,31 @@ fn expand_extglob_pathname(pattern: &str) -> Result<Vec<String>> {
         all_results.dedup();
         return Ok(all_results);
     }
-    
+
     let regex_pattern = extglob_to_regex(file_pattern);
     let has_negation = file_pattern.contains("!(");
-    
+
     let read_dir = match std::fs::read_dir(dir) {
         Ok(rd) => rd,
         Err(_) => return Ok(vec![pattern.to_string()]),
     };
-    
+
     let results: Vec<String> = if has_negation {
         let regex = match FancyRegex::new(&regex_pattern) {
             Ok(r) => r,
             Err(_) => return Ok(vec![pattern.to_string()]),
         };
-        
+
         read_dir
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| {
                 let file_name = entry.file_name();
                 let name = file_name.to_str()?;
-                
+
                 if name.starts_with('.') && !file_pattern.starts_with('.') {
                     return None;
                 }
-                
+
                 if regex.is_match(name).unwrap_or(false) {
                     let path = if dir_part.is_empty() {
                         name.to_string()
@@ -563,17 +564,17 @@ fn expand_extglob_pathname(pattern: &str) -> Result<Vec<String>> {
             Ok(r) => r,
             Err(_) => return Ok(vec![pattern.to_string()]),
         };
-        
+
         read_dir
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| {
                 let file_name = entry.file_name();
                 let name = file_name.to_str()?;
-                
+
                 if name.starts_with('.') && !file_pattern.starts_with('.') {
                     return None;
                 }
-                
+
                 if regex.is_match(name) {
                     let path = if dir_part.is_empty() {
                         name.to_string()
@@ -587,7 +588,7 @@ fn expand_extglob_pathname(pattern: &str) -> Result<Vec<String>> {
             })
             .collect()
     };
-    
+
     if results.is_empty() {
         Ok(vec![pattern.to_string()])
     } else {
@@ -600,7 +601,7 @@ fn expand_extglob_pathname(pattern: &str) -> Result<Vec<String>> {
 fn expand_extglob_dir(dir_pattern: &str) -> Result<Vec<String>> {
     let parts: Vec<&str> = dir_pattern.split('/').collect();
     let mut current_paths = vec![String::new()];
-    
+
     for (i, part) in parts.iter().enumerate() {
         if part.is_empty() {
             if i == 0 {
@@ -608,12 +609,12 @@ fn expand_extglob_dir(dir_pattern: &str) -> Result<Vec<String>> {
             }
             continue;
         }
-        
+
         let mut new_paths = Vec::new();
-        
+
         for base in &current_paths {
             let search_dir = if base.is_empty() { "." } else { base.as_str() };
-            
+
             if !contains_glob_chars(part) {
                 let new_path = if base.is_empty() || base == "/" {
                     format!("{}{}", base, part)
@@ -647,20 +648,20 @@ fn expand_extglob_dir(dir_pattern: &str) -> Result<Vec<String>> {
                 }
             }
         }
-        
+
         if new_paths.is_empty() {
             return Ok(vec![dir_pattern.to_string()]);
         }
-        
+
         current_paths = new_paths;
     }
-    
+
     Ok(current_paths)
 }
 
 pub fn match_extglob_pattern(pattern: &str, text: &str) -> bool {
     let chars: Vec<char> = pattern.chars().collect();
-    
+
     if chars.len() >= 2 && chars[0] == '!' && chars[1] == '(' {
         if let Some(paren_end) = find_matching_paren(pattern, 1) {
             if paren_end == pattern.len() - 1 {
@@ -672,11 +673,11 @@ pub fn match_extglob_pattern(pattern: &str, text: &str) -> bool {
                     } else {
                         format!("@({})", alt)
                     };
-                    
+
                     if match_extglob_pattern(&positive_pattern, text) {
                         return false;
                     }
-                    
+
                     let simple_regex = format!("^{}$", glob_to_regex_part(alt));
                     if let Ok(re) = Regex::new(&simple_regex) {
                         if re.is_match(text) {
@@ -688,7 +689,7 @@ pub fn match_extglob_pattern(pattern: &str, text: &str) -> bool {
             }
         }
     }
-    
+
     let regex_pattern = extglob_to_regex(pattern);
     match Regex::new(&regex_pattern) {
         Ok(regex) => regex.is_match(text),
@@ -713,7 +714,7 @@ pub fn expand_pathname_with_options(pattern: &str, options: &ShoptOptions) -> Re
     if !contains_glob_chars(pattern) {
         return Ok(vec![pattern.to_string()]);
     }
-    
+
     if options.globstar && contains_globstar(pattern) {
         return expand_globstar_pathname(pattern, options);
     }
@@ -724,7 +725,7 @@ pub fn expand_pathname_with_options(pattern: &str, options: &ShoptOptions) -> Re
 
     let mut normalized = normalize_pattern(pattern);
     normalized = expand_posix_classes(&normalized);
-    
+
     if !options.globstar && contains_globstar(&normalized) {
         normalized = normalized.replace("**", "*");
     }
@@ -734,9 +735,7 @@ pub fn expand_pathname_with_options(pattern: &str, options: &ShoptOptions) -> Re
             let mut results: Vec<String> = paths
                 .filter_map(|entry| entry.ok())
                 .filter(|path| {
-                    let filename = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
                     options.dotglob || !filename.starts_with('.') || pattern.contains("/.")
                 })
@@ -766,32 +765,32 @@ pub fn expand_pathname_with_options(pattern: &str, options: &ShoptOptions) -> Re
 
 fn expand_globstar_pathname(pattern: &str, options: &ShoptOptions) -> Result<Vec<String>> {
     let parts: Vec<&str> = pattern.split('/').collect();
-    
+
     let globstar_idx = parts.iter().position(|&p| p == "**");
     let globstar_idx = match globstar_idx {
         Some(idx) => idx,
         None => return expand_pathname(pattern),
     };
-    
+
     let prefix_parts = &parts[..globstar_idx];
     let suffix_parts = &parts[globstar_idx + 1..];
-    
+
     let base_dir = if prefix_parts.is_empty() {
         ".".to_string()
     } else {
         prefix_parts.join("/")
     };
-    
+
     let suffix_pattern = if suffix_parts.is_empty() {
         None
     } else {
         Some(suffix_parts.join("/"))
     };
-    
+
     let dirs_only = pattern.ends_with("**/");
-    
+
     let mut results = Vec::new();
-    
+
     if !std::path::Path::new(&base_dir).exists() {
         if options.nullglob {
             return Ok(vec![]);
@@ -799,7 +798,7 @@ fn expand_globstar_pathname(pattern: &str, options: &ShoptOptions) -> Result<Vec
             return Ok(vec![pattern.to_string()]);
         }
     }
-    
+
     for entry in WalkDir::new(&base_dir)
         .follow_links(false)
         .into_iter()
@@ -812,10 +811,10 @@ fn expand_globstar_pathname(pattern: &str, options: &ShoptOptions) -> Result<Vec
             Ok(e) => e,
             Err(_) => continue,
         };
-        
+
         let path = entry.path();
         let path_str = path.display().to_string();
-        
+
         let relative_path = if base_dir == "." {
             path_str.clone()
         } else if path_str.starts_with(&base_dir) {
@@ -829,11 +828,11 @@ fn expand_globstar_pathname(pattern: &str, options: &ShoptOptions) -> Result<Vec
         } else {
             path_str.clone()
         };
-        
+
         if dirs_only && !path.is_dir() {
             continue;
         }
-        
+
         match &suffix_pattern {
             None => {
                 let result = if prefix_parts.is_empty() {
@@ -844,7 +843,7 @@ fn expand_globstar_pathname(pattern: &str, options: &ShoptOptions) -> Result<Vec
                 } else {
                     path_str
                 };
-                
+
                 if dirs_only {
                     results.push(format!("{}/", result.trim_end_matches('/')));
                 } else {
@@ -864,7 +863,7 @@ fn expand_globstar_pathname(pattern: &str, options: &ShoptOptions) -> Result<Vec
             }
         }
     }
-    
+
     if results.is_empty() {
         if options.nullglob {
             Ok(vec![])
@@ -901,7 +900,7 @@ mod tests {
         let result = expand_pathname("*.nonexistent_xyz").unwrap();
         assert_eq!(result, vec!["*.nonexistent_xyz"]);
     }
-    
+
     #[test]
     fn test_normalize_caret_negation() {
         assert_eq!(normalize_pattern("file[^abc].txt"), "file[!abc].txt");
@@ -909,7 +908,7 @@ mod tests {
         assert_eq!(normalize_pattern("[abc]"), "[abc]");
         assert_eq!(normalize_pattern("plain.txt"), "plain.txt");
     }
-    
+
     #[test]
     fn test_detects_extglob() {
         assert!(contains_extglob("@(foo|bar)"));
@@ -920,7 +919,7 @@ mod tests {
         assert!(!contains_extglob("foo"));
         assert!(!contains_extglob("foo(bar)"));
     }
-    
+
     #[test]
     fn test_extglob_to_regex_at() {
         let regex = extglob_to_regex("@(foo|bar)");
@@ -930,7 +929,7 @@ mod tests {
         assert!(!re.is_match("baz"));
         assert!(!re.is_match("foobar"));
     }
-    
+
     #[test]
     fn test_extglob_to_regex_question() {
         let regex = extglob_to_regex("foo?(bar)");
@@ -939,7 +938,7 @@ mod tests {
         assert!(re.is_match("foobar"));
         assert!(!re.is_match("foobarbar"));
     }
-    
+
     #[test]
     fn test_extglob_to_regex_star() {
         let regex = extglob_to_regex("foo*(bar)");
@@ -948,7 +947,7 @@ mod tests {
         assert!(re.is_match("foobar"));
         assert!(re.is_match("foobarbar"));
     }
-    
+
     #[test]
     fn test_extglob_to_regex_plus() {
         let regex = extglob_to_regex("foo+(bar)");
@@ -957,47 +956,68 @@ mod tests {
         assert!(re.is_match("foobar"));
         assert!(re.is_match("foobarbar"));
     }
-    
+
     #[test]
     fn test_match_extglob_pattern() {
         assert!(match_extglob_pattern("@(foo|bar)", "foo"));
         assert!(match_extglob_pattern("@(foo|bar)", "bar"));
         assert!(!match_extglob_pattern("@(foo|bar)", "baz"));
-        
+
         assert!(match_extglob_pattern("foo?(bar)", "foo"));
         assert!(match_extglob_pattern("foo?(bar)", "foobar"));
-        
+
         assert!(match_extglob_pattern("!(foo)", "bar"));
         assert!(!match_extglob_pattern("!(foo)", "foo"));
     }
-    
+
     #[test]
     fn test_contains_extglob_negation() {
         assert!(contains_extglob("!(foo).txt"));
         assert!(contains_extglob("!(foo|bar).txt"));
         assert!(contains_extglob("*.!(txt|log)"));
     }
-    
+
     #[test]
     fn test_extglob_negation_with_suffix() {
         let regex = extglob_to_regex("!(foo).txt");
         println!("Generated regex for !(foo).txt: {}", regex);
         let re = FancyRegex::new(&regex).unwrap();
-        
-        assert!(re.is_match("bar.txt").unwrap(), "bar.txt should match !(foo).txt");
-        assert!(re.is_match("baz.txt").unwrap(), "baz.txt should match !(foo).txt");
-        assert!(!re.is_match("foo.txt").unwrap(), "foo.txt should NOT match !(foo).txt");
-        assert!(!re.is_match("bar.md").unwrap(), "bar.md should NOT match !(foo).txt");
+
+        assert!(
+            re.is_match("bar.txt").unwrap(),
+            "bar.txt should match !(foo).txt"
+        );
+        assert!(
+            re.is_match("baz.txt").unwrap(),
+            "baz.txt should match !(foo).txt"
+        );
+        assert!(
+            !re.is_match("foo.txt").unwrap(),
+            "foo.txt should NOT match !(foo).txt"
+        );
+        assert!(
+            !re.is_match("bar.md").unwrap(),
+            "bar.md should NOT match !(foo).txt"
+        );
     }
-    
+
     #[test]
     fn test_extglob_negation_multiple() {
         let regex = extglob_to_regex("!(foo|bar).txt");
         println!("Generated regex for !(foo|bar).txt: {}", regex);
         let re = FancyRegex::new(&regex).unwrap();
-        
-        assert!(re.is_match("baz.txt").unwrap(), "baz.txt should match !(foo|bar).txt");
-        assert!(!re.is_match("foo.txt").unwrap(), "foo.txt should NOT match !(foo|bar).txt");
-        assert!(!re.is_match("bar.txt").unwrap(), "bar.txt should NOT match !(foo|bar).txt");
+
+        assert!(
+            re.is_match("baz.txt").unwrap(),
+            "baz.txt should match !(foo|bar).txt"
+        );
+        assert!(
+            !re.is_match("foo.txt").unwrap(),
+            "foo.txt should NOT match !(foo|bar).txt"
+        );
+        assert!(
+            !re.is_match("bar.txt").unwrap(),
+            "bar.txt should NOT match !(foo|bar).txt"
+        );
     }
 }

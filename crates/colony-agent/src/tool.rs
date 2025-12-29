@@ -74,9 +74,8 @@ impl ToolRegistry {
             .map(|rt| {
                 let mut tool = rt.definition.clone();
                 // Set disable_user_input based on classification
-                tool.disable_user_input = Some(
-                    rt.classification == ToolClassification::Programmatic
-                );
+                tool.disable_user_input =
+                    Some(rt.classification == ToolClassification::Programmatic);
                 tool
             })
             .collect()
@@ -84,7 +83,8 @@ impl ToolRegistry {
 
     /// Execute a tool by name
     pub fn execute(&self, name: &str, input: Value) -> Result<Value, ToolExecutionError> {
-        let tool = self.get(name)
+        let tool = self
+            .get(name)
             .ok_or_else(|| ToolExecutionError::NotFound(name.to_string()))?;
 
         tool.handler.execute(input)

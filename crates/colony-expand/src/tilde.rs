@@ -13,25 +13,17 @@ use crate::{ExpansionContext, ExpansionError, Result};
 /// - `~user` → user's home directory (via getpwnam on Unix)
 pub fn expand_tilde(user: Option<&str>, context: &ExpansionContext) -> Result<String> {
     match user {
-        None => {
-            context
-                .home()
-                .map(|p| p.display().to_string())
-                .ok_or_else(|| ExpansionError::UndefinedVariable("HOME".to_string()))
-        }
-        Some("+") => {
-            context
-                .get_var_or_env("PWD")
-                .ok_or_else(|| ExpansionError::UndefinedVariable("PWD".to_string()))
-        }
-        Some("-") => {
-            context
-                .get_var_or_env("OLDPWD")
-                .ok_or_else(|| ExpansionError::UndefinedVariable("OLDPWD".to_string()))
-        }
-        Some(username) => {
-            expand_user_home(username)
-        }
+        None => context
+            .home()
+            .map(|p| p.display().to_string())
+            .ok_or_else(|| ExpansionError::UndefinedVariable("HOME".to_string())),
+        Some("+") => context
+            .get_var_or_env("PWD")
+            .ok_or_else(|| ExpansionError::UndefinedVariable("PWD".to_string())),
+        Some("-") => context
+            .get_var_or_env("OLDPWD")
+            .ok_or_else(|| ExpansionError::UndefinedVariable("OLDPWD".to_string())),
+        Some(username) => expand_user_home(username),
     }
 }
 
@@ -39,17 +31,17 @@ pub fn expand_tilde(user: Option<&str>, context: &ExpansionContext) -> Result<St
 ///
 fn expand_user_home(username: &str) -> Result<String> {
     use nix::unistd::User;
-    
+
     let user = User::from_name(username)
         .map_err(|e| ExpansionError::InvalidParameter(format!("~{}: {}", username, e)))?
         .ok_or_else(|| ExpansionError::InvalidParameter(format!("~{}: unknown user", username)))?;
-    
-    user.dir
-        .to_str()
-        .map(String::from)
-        .ok_or_else(|| ExpansionError::InvalidParameter(
-            format!("~{}: home directory is not valid UTF-8", username)
+
+    user.dir.to_str().map(String::from).ok_or_else(|| {
+        ExpansionError::InvalidParameter(format!(
+            "~{}: home directory is not valid UTF-8",
+            username
         ))
+    })
 }
 
 #[cfg(test)]

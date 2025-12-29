@@ -7,8 +7,8 @@
 //! - Builtins: fg, bg, jobs, wait
 
 use crate::{ExecutionError, ExitStatus, Result};
-use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet, Signal, sigaction};
-use nix::unistd::{Pid, setpgid, tcsetpgrp};
+use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
+use nix::unistd::{setpgid, tcsetpgrp, Pid};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -120,11 +120,7 @@ impl JobTable {
 
     /// Find job by process group ID
     pub fn find_by_pgid(&self, pgid: Pid) -> Option<Job> {
-        self.jobs
-            .read()
-            .values()
-            .find(|j| j.pgid == pgid)
-            .cloned()
+        self.jobs.read().values().find(|j| j.pgid == pgid).cloned()
     }
 
     /// Find job by PID (searches all processes in all jobs)
@@ -157,32 +153,31 @@ pub fn init_job_control() -> Result<()> {
     // Children will inherit these and we'll change them as needed
 
     unsafe {
-        let ignore = SigAction::new(
-            SigHandler::SigIgn,
-            SaFlags::empty(),
-            SigSet::empty(),
-        );
+        let ignore = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
 
         // Ignore SIGINT (Ctrl-C) - let foreground job handle it
-        sigaction(Signal::SIGINT, &ignore)
-            .map_err(|e| ExecutionError::IoError(std::io::Error::new(
+        sigaction(Signal::SIGINT, &ignore).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("sigaction SIGINT: {}", e),
-            )))?;
+            ))
+        })?;
 
         // Ignore SIGTSTP (Ctrl-Z) - let foreground job handle it
-        sigaction(Signal::SIGTSTP, &ignore)
-            .map_err(|e| ExecutionError::IoError(std::io::Error::new(
+        sigaction(Signal::SIGTSTP, &ignore).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("sigaction SIGTSTP: {}", e),
-            )))?;
+            ))
+        })?;
 
         // Ignore SIGTTOU (background write to terminal)
-        sigaction(Signal::SIGTTOU, &ignore)
-            .map_err(|e| ExecutionError::IoError(std::io::Error::new(
+        sigaction(Signal::SIGTTOU, &ignore).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("sigaction SIGTTOU: {}", e),
-            )))?;
+            ))
+        })?;
     }
 
     Ok(())
@@ -324,7 +319,11 @@ mod tests {
         let table = JobTable::new();
 
         let pgid = Pid::from_raw(9999);
-        let pids = vec![Pid::from_raw(9999), Pid::from_raw(10000), Pid::from_raw(10001)];
+        let pids = vec![
+            Pid::from_raw(9999),
+            Pid::from_raw(10000),
+            Pid::from_raw(10001),
+        ];
         let _job_id = table.add_job(pgid, pids.clone(), "test".to_string());
 
         // Should find job by any of its PIDs

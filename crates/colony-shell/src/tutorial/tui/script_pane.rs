@@ -8,14 +8,9 @@ use ratatui::{
 use std::collections::HashSet;
 
 const KEYWORDS: &[&str] = &[
-    "if", "then", "else", "elif", "fi",
-    "for", "while", "until", "do", "done",
-    "case", "esac", "in",
-    "function", "select",
-    "return", "exit", "break", "continue",
-    "local", "export", "readonly", "declare", "typeset",
-    "eval", "exec", "source", ".",
-    "coproc", "time",
+    "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac",
+    "in", "function", "select", "return", "exit", "break", "continue", "local", "export",
+    "readonly", "declare", "typeset", "eval", "exec", "source", ".", "coproc", "time",
 ];
 
 #[derive(Clone, Copy, PartialEq)]
@@ -45,7 +40,10 @@ fn highlight_line(line: &str) -> Vec<HighlightedSpan> {
 
         if ch == '#' {
             let comment: String = chars[i..].iter().collect();
-            spans.push(HighlightedSpan { text: comment, kind: TokenKind::Comment });
+            spans.push(HighlightedSpan {
+                text: comment,
+                kind: TokenKind::Comment,
+            });
             break;
         }
 
@@ -59,7 +57,10 @@ fn highlight_line(line: &str) -> Vec<HighlightedSpan> {
                 i += 1;
             }
             let text: String = chars[start..i].iter().collect();
-            spans.push(HighlightedSpan { text, kind: TokenKind::SingleQuote });
+            spans.push(HighlightedSpan {
+                text,
+                kind: TokenKind::SingleQuote,
+            });
             continue;
         }
 
@@ -77,7 +78,10 @@ fn highlight_line(line: &str) -> Vec<HighlightedSpan> {
                 i += 1;
             }
             let text: String = chars[start..i].iter().collect();
-            spans.push(HighlightedSpan { text, kind: TokenKind::DoubleQuote });
+            spans.push(HighlightedSpan {
+                text,
+                kind: TokenKind::DoubleQuote,
+            });
             continue;
         }
 
@@ -89,54 +93,90 @@ fn highlight_line(line: &str) -> Vec<HighlightedSpan> {
                     let mut depth = 1;
                     i += 1;
                     while i < chars.len() && depth > 0 {
-                        if chars[i] == '{' { depth += 1; }
-                        else if chars[i] == '}' { depth -= 1; }
+                        if chars[i] == '{' {
+                            depth += 1;
+                        } else if chars[i] == '}' {
+                            depth -= 1;
+                        }
                         i += 1;
                     }
                 } else if chars[i] == '(' {
                     if i + 1 < chars.len() && chars[i + 1] == '(' {
                         i += 2;
-                        while i < chars.len() && !(i + 1 < chars.len() && chars[i] == ')' && chars[i + 1] == ')') {
+                        while i < chars.len()
+                            && !(i + 1 < chars.len() && chars[i] == ')' && chars[i + 1] == ')')
+                        {
                             i += 1;
                         }
-                        if i + 1 < chars.len() { i += 2; }
+                        if i + 1 < chars.len() {
+                            i += 2;
+                        }
                     } else {
                         let mut depth = 1;
                         i += 1;
                         while i < chars.len() && depth > 0 {
-                            if chars[i] == '(' { depth += 1; }
-                            else if chars[i] == ')' { depth -= 1; }
+                            if chars[i] == '(' {
+                                depth += 1;
+                            } else if chars[i] == ')' {
+                                depth -= 1;
+                            }
                             i += 1;
                         }
                     }
                 } else {
-                    while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '?' || chars[i] == '@' || chars[i] == '*' || chars[i] == '#' || chars[i] == '$' || chars[i] == '!' || chars[i] == '-') {
+                    while i < chars.len()
+                        && (chars[i].is_alphanumeric()
+                            || chars[i] == '_'
+                            || chars[i] == '?'
+                            || chars[i] == '@'
+                            || chars[i] == '*'
+                            || chars[i] == '#'
+                            || chars[i] == '$'
+                            || chars[i] == '!'
+                            || chars[i] == '-')
+                    {
                         i += 1;
-                        if i == start + 2 && !chars[start + 1].is_alphabetic() && chars[start + 1] != '_' {
+                        if i == start + 2
+                            && !chars[start + 1].is_alphabetic()
+                            && chars[start + 1] != '_'
+                        {
                             break;
                         }
                     }
                 }
             }
             let text: String = chars[start..i].iter().collect();
-            spans.push(HighlightedSpan { text, kind: TokenKind::Variable });
+            spans.push(HighlightedSpan {
+                text,
+                kind: TokenKind::Variable,
+            });
             continue;
         }
 
         if ch == '|' || ch == '&' || ch == ';' || ch == '<' || ch == '>' {
             let start = i;
             i += 1;
-            if i < chars.len() && ((ch == '|' && chars[i] == '|') || (ch == '&' && chars[i] == '&') || (ch == '>' && chars[i] == '>') || (ch == '<' && chars[i] == '<')) {
+            if i < chars.len()
+                && ((ch == '|' && chars[i] == '|')
+                    || (ch == '&' && chars[i] == '&')
+                    || (ch == '>' && chars[i] == '>')
+                    || (ch == '<' && chars[i] == '<'))
+            {
                 i += 1;
             }
             let text: String = chars[start..i].iter().collect();
-            spans.push(HighlightedSpan { text, kind: TokenKind::Operator });
+            spans.push(HighlightedSpan {
+                text,
+                kind: TokenKind::Operator,
+            });
             continue;
         }
 
         if ch.is_alphabetic() || ch == '_' {
             let start = i;
-            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '-') {
+            while i < chars.len()
+                && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '-')
+            {
                 i += 1;
             }
             let text: String = chars[start..i].iter().collect();
@@ -155,11 +195,17 @@ fn highlight_line(line: &str) -> Vec<HighlightedSpan> {
                 i += 1;
             }
             let text: String = chars[start..i].iter().collect();
-            spans.push(HighlightedSpan { text, kind: TokenKind::Number });
+            spans.push(HighlightedSpan {
+                text,
+                kind: TokenKind::Number,
+            });
             continue;
         }
 
-        spans.push(HighlightedSpan { text: ch.to_string(), kind: TokenKind::Normal });
+        spans.push(HighlightedSpan {
+            text: ch.to_string(),
+            kind: TokenKind::Normal,
+        });
         i += 1;
     }
 
@@ -167,19 +213,24 @@ fn highlight_line(line: &str) -> Vec<HighlightedSpan> {
 }
 
 fn spans_to_ratatui(highlighted: Vec<HighlightedSpan>, base_style: Style) -> Vec<Span<'static>> {
-    highlighted.into_iter().map(|hs| {
-        let style = match hs.kind {
-            TokenKind::Keyword => base_style.fg(Color::Yellow).add_modifier(Modifier::BOLD),
-            TokenKind::Comment => base_style.fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
-            TokenKind::SingleQuote => base_style.fg(Color::Green),
-            TokenKind::DoubleQuote => base_style.fg(Color::Green),
-            TokenKind::Variable => base_style.fg(Color::Cyan),
-            TokenKind::Operator => base_style.fg(Color::Magenta),
-            TokenKind::Number => base_style.fg(Color::LightBlue),
-            TokenKind::Normal => base_style,
-        };
-        Span::styled(hs.text, style)
-    }).collect()
+    highlighted
+        .into_iter()
+        .map(|hs| {
+            let style = match hs.kind {
+                TokenKind::Keyword => base_style.fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                TokenKind::Comment => base_style
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+                TokenKind::SingleQuote => base_style.fg(Color::Green),
+                TokenKind::DoubleQuote => base_style.fg(Color::Green),
+                TokenKind::Variable => base_style.fg(Color::Cyan),
+                TokenKind::Operator => base_style.fg(Color::Magenta),
+                TokenKind::Number => base_style.fg(Color::LightBlue),
+                TokenKind::Normal => base_style,
+            };
+            Span::styled(hs.text, style)
+        })
+        .collect()
 }
 
 pub struct ScriptPane {
@@ -234,7 +285,7 @@ impl ScriptPane {
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let inner_height = area.height.saturating_sub(2) as u32;
         self.visible_height = inner_height;
-        
+
         self.ensure_line_visible(self.current_line);
 
         let mut text_lines: Vec<Line> = Vec::new();
@@ -277,7 +328,10 @@ impl ScriptPane {
             };
 
             let highlighted = highlight_line(line_content);
-            let mut spans = vec![Span::styled(format!("{} {:3} ", marker, line_num), line_num_style)];
+            let mut spans = vec![Span::styled(
+                format!("{} {:3} ", marker, line_num),
+                line_num_style,
+            )];
             spans.extend(spans_to_ratatui(highlighted, base_style));
 
             text_lines.push(Line::from(spans));

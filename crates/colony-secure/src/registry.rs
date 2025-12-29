@@ -148,7 +148,10 @@ impl SecureRegistry {
             Err(_) => return AccessResult::Denied,
         };
 
-        match self.approvals.check_approval(script_path, &script_hash, variable) {
+        match self
+            .approvals
+            .check_approval(script_path, &script_hash, variable)
+        {
             Ok(true) => {
                 self.lineage.grant_approval(process_id, variable);
                 AccessResult::Allowed(value)
@@ -161,7 +164,11 @@ impl SecureRegistry {
         }
     }
 
-    pub fn handle_approval_response(&self, request_id: u64, decision: ApprovalDecision) -> Result<Option<String>> {
+    pub fn handle_approval_response(
+        &self,
+        request_id: u64,
+        decision: ApprovalDecision,
+    ) -> Result<Option<String>> {
         let pending = {
             let mut requests = self.pending_requests.write();
             requests.remove(&request_id)
@@ -240,14 +247,14 @@ pub fn compute_script_hash(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_compute_script_hash() {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(file, "#!/bin/bash\necho hello").unwrap();
-        
+
         let hash = compute_script_hash(file.path()).unwrap();
         assert!(hash.starts_with("sha256:"));
         assert_eq!(hash.len(), 7 + 64);
@@ -260,7 +267,7 @@ mod tests {
             "secret123".to_string(),
             SecureVarSource::Explicit,
         );
-        
+
         assert_eq!(var.name, "AWS_SECRET_KEY");
         assert_eq!(var.value, "secret123");
         assert_eq!(var.source, SecureVarSource::Explicit);

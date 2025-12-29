@@ -27,7 +27,9 @@ pub(crate) async fn run_in_background(
             let pid = child.as_raw() as u32;
             executor.context().set_last_bg_pid(pid);
 
-            let job_id = executor.jobs().add_job(child, vec![child], cmd_string.clone());
+            let job_id = executor
+                .jobs()
+                .add_job(child, vec![child], cmd_string.clone());
             executor.jobs().update_status(job_id, JobStatus::Background);
             info!(job_id, pid, cmd = %cmd_string, "background job started");
 
@@ -51,7 +53,8 @@ pub(crate) async fn run_in_background(
                 }
             }
 
-            let exit_code = colony_exec::execute_statement_for_process_sub(stmt, &mut child_context);
+            let exit_code =
+                colony_exec::execute_statement_for_process_sub(stmt, &mut child_context);
             // SAFETY: _exit() is async-signal-safe and appropriate for
             // terminating a child process. We use _exit instead of exit to
             // avoid running atexit handlers in the child.

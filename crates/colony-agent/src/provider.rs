@@ -88,16 +88,10 @@ pub struct ToolDefinition {
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     /// Text delta (streaming text generation)
-    TextDelta {
-        text: String,
-        index: usize,
-    },
+    TextDelta { text: String, index: usize },
 
     /// Tool call started
-    ToolCallStart {
-        id: String,
-        name: String,
-    },
+    ToolCallStart { id: String, name: String },
 
     /// Tool call completed with input
     ToolCallComplete {
@@ -110,9 +104,7 @@ pub enum StreamEvent {
     Done,
 
     /// Error occurred
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 /// Type alias for completion stream
@@ -129,7 +121,7 @@ pub trait ModelProvider: Send + Sync {
 
     /// Check if this provider supports streaming responses
     fn supports_streaming(&self) -> bool {
-        true  // Most modern LLM APIs support streaming
+        true // Most modern LLM APIs support streaming
     }
 
     /// Maximum context window size in tokens

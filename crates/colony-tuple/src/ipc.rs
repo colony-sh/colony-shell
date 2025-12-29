@@ -175,7 +175,10 @@ impl IpcTupleSpace {
             None
         };
 
-        debug!("Opened IPC tuple space (notifications: {})", sender.is_some());
+        debug!(
+            "Opened IPC tuple space (notifications: {})",
+            sender.is_some()
+        );
 
         Ok(Self {
             storage,
@@ -310,10 +313,7 @@ mod tests {
 
         // Write multiple tuples
         for i in 0..5 {
-            space
-                .out(Tuple::from(vec![Value::Int(i)]))
-                .await
-                .unwrap();
+            space.out(Tuple::from(vec![Value::Int(i)])).await.unwrap();
         }
 
         assert_eq!(space.len().await, 5);

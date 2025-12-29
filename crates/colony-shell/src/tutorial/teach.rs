@@ -18,35 +18,35 @@ pub enum Concept {
     ParameterPattern,       // ${var#pattern}, ${var%pattern}
 
     // Quoting
-    SingleQuote,            // 'literal'
-    DoubleQuote,            // "interpolated"
-    AnsiCQuote,             // $'escape\nsequences'
-    BackslashEscape,        // \char
+    SingleQuote,     // 'literal'
+    DoubleQuote,     // "interpolated"
+    AnsiCQuote,      // $'escape\nsequences'
+    BackslashEscape, // \char
 
     // Command substitution
-    DollarParenSub,         // $(command)
-    BacktickSub,            // `command`
+    DollarParenSub, // $(command)
+    BacktickSub,    // `command`
 
     // Arithmetic
-    ArithmeticExpansion,    // $((expr))
-    ArithmeticCommand,      // ((expr))
+    ArithmeticExpansion, // $((expr))
+    ArithmeticCommand,   // ((expr))
 
     // Redirections
-    OutputRedirect,         // >
-    AppendRedirect,         // >>
-    InputRedirect,          // <
-    HereDoc,                // <<
-    HereString,             // <<<
-    FdDup,                  // >&N, <&N
-    FdClose,                // >&-, <&-
+    OutputRedirect, // >
+    AppendRedirect, // >>
+    InputRedirect,  // <
+    HereDoc,        // <<
+    HereString,     // <<<
+    FdDup,          // >&N, <&N
+    FdClose,        // >&-, <&-
 
     // Pipes and lists
-    Pipeline,               // |
-    AndList,                // &&
-    OrList,                 // ||
-    Background,             // &
-    Subshell,               // (commands)
-    BraceGroup,             // { commands; }
+    Pipeline,   // |
+    AndList,    // &&
+    OrList,     // ||
+    Background, // &
+    Subshell,   // (commands)
+    BraceGroup, // { commands; }
 
     // Control flow
     IfStatement,
@@ -63,35 +63,35 @@ pub enum Concept {
     ReturnStatement,
 
     // Globs
-    GlobStar,               // *
-    GlobQuestion,           // ?
-    GlobBracket,            // [...]
-    ExtGlob,                // ?()|*()|+()|@()|!()
-    GlobStar2,              // ** (recursive)
+    GlobStar,     // *
+    GlobQuestion, // ?
+    GlobBracket,  // [...]
+    ExtGlob,      // ?()|*()|+()|@()|!()
+    GlobStar2,    // ** (recursive)
 
     // Arrays
-    IndexedArray,           // arr=(a b c), ${arr[0]}
-    AssocArray,             // declare -A, ${arr[key]}
-    ArrayAt,                // ${arr[@]}, ${arr[*]}
-    ArrayLength,            // ${#arr[@]}
+    IndexedArray, // arr=(a b c), ${arr[0]}
+    AssocArray,   // declare -A, ${arr[key]}
+    ArrayAt,      // ${arr[@]}, ${arr[*]}
+    ArrayLength,  // ${#arr[@]}
 
     // Special variables
-    PositionalParams,       // $1, $2, etc.
-    AllParams,              // $@, $*
-    ParamCount,             // $#
-    LastExitCode,           // $?
-    CurrentPid,             // $$
-    LastBackgroundPid,      // $!
-    ShellOptions,           // $-
+    PositionalParams,  // $1, $2, etc.
+    AllParams,         // $@, $*
+    ParamCount,        // $#
+    LastExitCode,      // $?
+    CurrentPid,        // $$
+    LastBackgroundPid, // $!
+    ShellOptions,      // $-
 
     // Process substitution
-    ProcessSubInput,        // <(command)
-    ProcessSubOutput,       // >(command)
+    ProcessSubInput,  // <(command)
+    ProcessSubOutput, // >(command)
 
     // Conditionals
-    TestBuiltin,            // [ expr ]
-    TestBracket,            // [[ expr ]]
-    
+    TestBuiltin, // [ expr ]
+    TestBracket, // [[ expr ]]
+
     // Misc
     Alias,
     Trap,
@@ -182,7 +182,8 @@ impl Concept {
     /// Get the detailed explanation for this concept
     pub fn explanation(&self) -> &'static str {
         match self {
-            Self::ParameterDefault => r#"${parameter:-word} expands to 'word' if parameter is unset or null.
+            Self::ParameterDefault => {
+                r#"${parameter:-word} expands to 'word' if parameter is unset or null.
 
   Syntax: ${var:-default}
   
@@ -192,9 +193,11 @@ impl Concept {
   The variable itself is NOT modified.
   
   Example:
-    name=${1:-guest}  # Use first arg, or "guest" if not provided"#,
+    name=${1:-guest}  # Use first arg, or "guest" if not provided"#
+            }
 
-            Self::ParameterAssignDefault => r#"${parameter:=word} assigns 'word' to parameter if unset or null.
+            Self::ParameterAssignDefault => {
+                r#"${parameter:=word} assigns 'word' to parameter if unset or null.
 
   Syntax: ${var:=default}
   
@@ -204,9 +207,11 @@ impl Concept {
   The variable IS modified (unlike :-)
   
   Example:
-    : ${DEBUG:=0}  # Set DEBUG to 0 if not already set"#,
+    : ${DEBUG:=0}  # Set DEBUG to 0 if not already set"#
+            }
 
-            Self::ParameterError => r#"${parameter:?word} exits with error if parameter is unset or null.
+            Self::ParameterError => {
+                r#"${parameter:?word} exits with error if parameter is unset or null.
 
   Syntax: ${var:?error message}
   
@@ -216,9 +221,11 @@ impl Concept {
   Useful for required variables in scripts.
   
   Example:
-    : ${REQUIRED_VAR:?must be set}"#,
+    : ${REQUIRED_VAR:?must be set}"#
+            }
 
-            Self::ParameterAlternate => r#"${parameter:+word} expands to 'word' only if parameter IS set.
+            Self::ParameterAlternate => {
+                r#"${parameter:+word} expands to 'word' only if parameter IS set.
 
   Syntax: ${var:+alternate}
   
@@ -228,9 +235,11 @@ impl Concept {
   The opposite of :- (use when set, not when unset)
   
   Example:
-    echo ${DEBUG:+[DEBUG MODE]}"#,
+    echo ${DEBUG:+[DEBUG MODE]}"#
+            }
 
-            Self::Pipeline => r#"A pipeline connects commands with | (pipe).
+            Self::Pipeline => {
+                r#"A pipeline connects commands with | (pipe).
 
   Syntax: cmd1 | cmd2 | cmd3
   
@@ -240,9 +249,11 @@ impl Concept {
   (unless pipefail is set).
   
   Example:
-    cat file.txt | grep pattern | wc -l"#,
+    cat file.txt | grep pattern | wc -l"#
+            }
 
-            Self::DollarParenSub => r#"$(command) runs command and substitutes its output.
+            Self::DollarParenSub => {
+                r#"$(command) runs command and substitutes its output.
 
   Syntax: $(command)
   
@@ -253,9 +264,11 @@ impl Concept {
   
   Example:
     today=$(date +%Y-%m-%d)
-    files=$(find . -name "*.rs" | wc -l)"#,
+    files=$(find . -name "*.rs" | wc -l)"#
+            }
 
-            Self::ForLoop => r#"for loop iterates over a list of words.
+            Self::ForLoop => {
+                r#"for loop iterates over a list of words.
 
   Syntax: for var in word1 word2 ...; do commands; done
   
@@ -265,9 +278,11 @@ impl Concept {
   Example:
     for f in *.txt; do
       echo "Processing $f"
-    done"#,
+    done"#
+            }
 
-            Self::IfStatement => r#"if statement executes commands conditionally.
+            Self::IfStatement => {
+                r#"if statement executes commands conditionally.
 
   Syntax: if condition; then commands; [elif condition; then commands;] [else commands;] fi
   
@@ -279,9 +294,11 @@ impl Concept {
       echo "File exists"
     else
       echo "File not found"
-    fi"#,
+    fi"#
+            }
 
-            Self::TestBuiltin => r#"[ ] is the test builtin for conditional expressions.
+            Self::TestBuiltin => {
+                r#"[ ] is the test builtin for conditional expressions.
 
   Common tests:
     -f file    File exists and is regular
@@ -295,9 +312,11 @@ impl Concept {
   Example:
     if [ -f "$file" ] && [ -r "$file" ]; then
       cat "$file"
-    fi"#,
+    fi"#
+            }
 
-            Self::HereDoc => r#"<<DELIM reads input until a line matching DELIM.
+            Self::HereDoc => {
+                r#"<<DELIM reads input until a line matching DELIM.
 
   Syntax: cmd <<DELIM
           content
@@ -311,18 +330,22 @@ impl Concept {
     cat <<EOF
     Hello, $USER
     Today is $(date)
-    EOF"#,
+    EOF"#
+            }
 
-            Self::SingleQuote => r#"'...' preserves literal value of all characters.
+            Self::SingleQuote => {
+                r#"'...' preserves literal value of all characters.
 
   No expansion, no escaping (except '' for a single quote).
   
   Example:
     echo '$HOME'     # prints: $HOME
     echo 'line1
-    line2'           # preserves newline"#,
+    line2'           # preserves newline"#
+            }
 
-            Self::DoubleQuote => r#""..." allows $, `, \, and ! to be interpreted.
+            Self::DoubleQuote => {
+                r#""..." allows $, `, \, and ! to be interpreted.
 
   Variables and command substitution work inside.
   Backslash only escapes $, `, ", \, and newline.
@@ -330,7 +353,8 @@ impl Concept {
   Example:
     echo "Home is $HOME"      # expands $HOME
     echo "Files: $(ls)"       # command substitution
-    echo "A \"quote\""        # escaped quote"#,
+    echo "A \"quote\""        # escaped quote"#
+            }
 
             // Default for concepts without detailed explanations
             _ => "See bash manual for details on this construct.",

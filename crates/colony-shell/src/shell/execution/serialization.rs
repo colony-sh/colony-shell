@@ -1,4 +1,4 @@
-use colony_parser::{Statement, Word, WordPart, VariableRef};
+use colony_parser::{Statement, VariableRef, Word, WordPart};
 
 pub(crate) fn statement_to_shell_string(stmt: &Statement) -> String {
     fn varref_to_string(v: &VariableRef) -> String {

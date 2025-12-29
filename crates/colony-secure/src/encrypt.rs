@@ -31,9 +31,9 @@ pub fn encrypt(plaintext: &str, key: &[u8; KEY_SIZE]) -> Result<String> {
 }
 
 pub fn decrypt(encrypted: &str, key: &[u8; KEY_SIZE]) -> Result<String> {
-    let encoded = encrypted
-        .strip_prefix(ENCRYPTED_PREFIX)
-        .ok_or_else(|| SecureError::Encryption("Invalid encrypted format: missing prefix".into()))?;
+    let encoded = encrypted.strip_prefix(ENCRYPTED_PREFIX).ok_or_else(|| {
+        SecureError::Encryption("Invalid encrypted format: missing prefix".into())
+    })?;
 
     let combined = BASE64
         .decode(encoded)
@@ -49,9 +49,9 @@ pub fn decrypt(encrypted: &str, key: &[u8; KEY_SIZE]) -> Result<String> {
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| SecureError::Encryption(format!("Invalid key: {}", e)))?;
 
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| SecureError::Encryption("Decryption failed: invalid key or corrupted data".into()))?;
+    let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|_| {
+        SecureError::Encryption("Decryption failed: invalid key or corrupted data".into())
+    })?;
 
     String::from_utf8(plaintext)
         .map_err(|e| SecureError::Encryption(format!("Invalid UTF-8 in decrypted data: {}", e)))

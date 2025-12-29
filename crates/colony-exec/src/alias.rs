@@ -32,7 +32,12 @@ pub enum AliasExpansionResult {
 /// Check if a string contains shell metacharacters that require re-parsing
 fn contains_metacharacters(s: &str) -> bool {
     // Characters that change shell interpretation beyond simple word splitting
-    s.chars().any(|c| matches!(c, ';' | '|' | '&' | '(' | ')' | '<' | '>' | '`' | '$' | '\n'))
+    s.chars().any(|c| {
+        matches!(
+            c,
+            ';' | '|' | '&' | '(' | ')' | '<' | '>' | '`' | '$' | '\n'
+        )
+    })
 }
 
 /// Expand an alias for the given command name
@@ -67,9 +72,7 @@ pub fn expand_alias(
     if contains_metacharacters(&alias_value) {
         // Re-parse the alias value as shell code
         match colony_parser::pest_api::parse(&alias_value) {
-            Ok(program) => {
-                AliasExpansionResult::Reparsed(program.statements)
-            }
+            Ok(program) => AliasExpansionResult::Reparsed(program.statements),
             Err(_) => {
                 // If parsing fails, fall back to simple word splitting
                 simple_expansion(&alias_value, expand_next)
@@ -82,7 +85,8 @@ pub fn expand_alias(
 
 /// Perform simple word-splitting expansion (no metacharacters)
 fn simple_expansion(alias_value: &str, expand_next: bool) -> AliasExpansionResult {
-    let words: Vec<String> = alias_value.split_whitespace()
+    let words: Vec<String> = alias_value
+        .split_whitespace()
         .map(|s| s.to_string())
         .collect();
 
@@ -118,14 +122,14 @@ pub fn expand_command_alias(
 ) -> Result<Option<Vec<Statement>>, ()> {
     match expand_alias(command_name, context, expanding) {
         AliasExpansionResult::NoAlias => Ok(None),
-        
+
         AliasExpansionResult::CycleDetected => {
             // Cycle detected - don't expand, just use the command as-is
             // This matches POSIX behavior where self-referential aliases
             // resolve to the external command
             Ok(None)
         }
-        
+
         AliasExpansionResult::Reparsed(mut statements) => {
             // The alias value was re-parsed into statements
             // We need to append the original command's arguments to the last command
@@ -139,22 +143,26 @@ pub fn expand_command_alias(
             }
             Ok(Some(statements))
         }
-        
-        AliasExpansionResult::SimpleExpansion { new_command, alias_args: _alias_args, expand_next } => {
+
+        AliasExpansionResult::SimpleExpansion {
+            new_command,
+            alias_args: _alias_args,
+            expand_next,
+        } => {
             // Mark this alias as being expanded (for cycle detection)
             expanding.insert(command_name.to_string());
-            
+
             // Check if we need to also expand the new command (recursive alias)
             // But only if it's a different name (self-reference is handled by CycleDetected)
             if new_command != command_name {
-                if let AliasExpansionResult::Reparsed(statements) = 
-                    expand_alias(&new_command, context, expanding) 
+                if let AliasExpansionResult::Reparsed(statements) =
+                    expand_alias(&new_command, context, expanding)
                 {
                     expanding.remove(command_name);
                     return Ok(Some(statements));
                 }
             }
-            
+
             // Handle trailing space - check if next word should be expanded
             if expand_next && !cmd.args.is_empty() {
                 if let Some(first_arg) = cmd.args.first() {
@@ -170,7 +178,7 @@ pub fn expand_command_alias(
                                     .split_whitespace()
                                     .map(|s| s.to_string())
                                     .collect();
-                                
+
                                 if !arg_expanded.is_empty() {
                                     // The first argument's alias also expanded
                                     // We don't modify cmd here - the caller will handle it
@@ -181,7 +189,7 @@ pub fn expand_command_alias(
                     }
                 }
             }
-            
+
             expanding.remove(command_name);
             Ok(None)
         }
@@ -202,21 +210,19 @@ pub fn build_expanded_command(
 ) -> SimpleCommand {
     let mut new_cmd = original_cmd.clone();
     new_cmd.name = Word::literal(new_command, original_cmd.span.clone());
-    
+
     // Build new args: alias_args first, then original args
     let mut new_args = Vec::new();
     for alias_arg in alias_args {
         new_args.push(Word::literal(alias_arg, original_cmd.span.clone()));
     }
-    
+
     // Handle trailing space expansion for the first original argument
-    let alias_value = context.get_alias(
-        original_cmd.name.as_literal().unwrap_or("")
-    );
+    let alias_value = context.get_alias(original_cmd.name.as_literal().unwrap_or(""));
     let expand_next = alias_value
         .map(|v| v.ends_with(' ') || v.ends_with('\t'))
         .unwrap_or(false);
-    
+
     let mut skip_first_arg = false;
     if expand_next && !original_cmd.args.is_empty() {
         if let Some(first_arg) = original_cmd.args.first() {
@@ -237,7 +243,7 @@ pub fn build_expanded_command(
             }
         }
     }
-    
+
     // Add remaining original args
     let args_to_add = if skip_first_arg {
         &original_cmd.args[1..]
@@ -245,7 +251,7 @@ pub fn build_expanded_command(
         &original_cmd.args[..]
     };
     new_args.extend(args_to_add.iter().cloned());
-    
+
     new_cmd.args = new_args;
     new_cmd
 }
@@ -268,10 +274,10 @@ mod tests {
     fn test_cycle_detection() {
         let mut context = ExpansionContext::new();
         context.set_alias("ls".to_string(), "ls".to_string());
-        
+
         let mut expanding = HashSet::new();
         expanding.insert("ls".to_string());
-        
+
         let result = expand_alias("ls", &context, &expanding);
         assert!(matches!(result, AliasExpansionResult::CycleDetected));
     }
@@ -280,13 +286,16 @@ mod tests {
     fn test_simple_expansion() {
         let mut context = ExpansionContext::new();
         context.set_alias("ll".to_string(), "ls -la".to_string());
-        
+
         let expanding = HashSet::new();
         let result = expand_alias("ll", &context, &expanding);
-        
-        match result {
-        AliasExpansionResult::SimpleExpansion { new_command, alias_args: _alias_args, expand_next } => {
 
+        match result {
+            AliasExpansionResult::SimpleExpansion {
+                new_command,
+                alias_args: _alias_args,
+                expand_next,
+            } => {
                 assert_eq!(new_command, "ls");
                 assert_eq!(alias_args, vec!["-la"]);
                 assert!(!expand_next);
@@ -299,10 +308,10 @@ mod tests {
     fn test_trailing_space() {
         let mut context = ExpansionContext::new();
         context.set_alias("sudo".to_string(), "sudo ".to_string());
-        
+
         let expanding = HashSet::new();
         let result = expand_alias("sudo", &context, &expanding);
-        
+
         match result {
             AliasExpansionResult::SimpleExpansion { expand_next, .. } => {
                 assert!(expand_next);
@@ -315,10 +324,10 @@ mod tests {
     fn test_metacharacter_reparsing() {
         let mut context = ExpansionContext::new();
         context.set_alias("both".to_string(), "echo one; echo two".to_string());
-        
+
         let expanding = HashSet::new();
         let result = expand_alias("both", &context, &expanding);
-        
+
         assert!(matches!(result, AliasExpansionResult::Reparsed(_)));
     }
 }

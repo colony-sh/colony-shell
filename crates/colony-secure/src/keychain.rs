@@ -11,8 +11,9 @@ pub struct Keychain {
 
 impl Keychain {
     pub fn new() -> Result<Self> {
-        let entry = Entry::new(SERVICE_NAME, KEY_NAME)
-            .map_err(|e| SecureError::Keychain(format!("Failed to create keychain entry: {}", e)))?;
+        let entry = Entry::new(SERVICE_NAME, KEY_NAME).map_err(|e| {
+            SecureError::Keychain(format!("Failed to create keychain entry: {}", e))
+        })?;
         Ok(Self { entry })
     }
 

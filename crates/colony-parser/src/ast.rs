@@ -375,25 +375,13 @@ pub enum ArraySubscript {
 #[derive(Clone, Debug, Serialize)]
 pub enum VarModifier {
     /// ${var:-word} or ${var-word}
-    Default {
-        word: Box<Word>,
-        check_null: bool,
-    },
+    Default { word: Box<Word>, check_null: bool },
     /// ${var:=word} or ${var=word}
-    Assign {
-        word: Box<Word>,
-        check_null: bool,
-    },
+    Assign { word: Box<Word>, check_null: bool },
     /// ${var:?word} or ${var?word}
-    Error {
-        word: Box<Word>,
-        check_null: bool,
-    },
+    Error { word: Box<Word>, check_null: bool },
     /// ${var:+word} or ${var+word}
-    Alternate {
-        word: Box<Word>,
-        check_null: bool,
-    },
+    Alternate { word: Box<Word>, check_null: bool },
     /// ${#var} or ${#arr[@]}
     Length,
     /// ${!arr[@]} - array indices

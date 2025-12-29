@@ -3,9 +3,7 @@
 //! The tracer is the bridge between the executor and the TUI/file output.
 //! It emits JSON events that describe what's happening during script execution.
 
-use crate::tutorial::events::{
-    BranchType, ExpansionPhase, LoopType, TraceEvent,
-};
+use crate::tutorial::events::{BranchType, ExpansionPhase, LoopType, TraceEvent};
 use serde_json;
 use std::collections::HashSet;
 use std::io::{self, Write};
@@ -235,7 +233,12 @@ impl TraceEmitter {
     }
 
     /// Emit parse event
-    pub fn emit_parse(&mut self, line: u32, ast_summary: String, ast_full: Option<serde_json::Value>) {
+    pub fn emit_parse(
+        &mut self,
+        line: u32,
+        ast_summary: String,
+        ast_full: Option<serde_json::Value>,
+    ) {
         let ast_full = if self.config.depth == TraceDepth::Internals {
             ast_full
         } else {
@@ -267,7 +270,13 @@ impl TraceEmitter {
     }
 
     /// Emit assignment event
-    pub fn emit_assign(&mut self, line: u32, name: String, value: String, previous: Option<String>) {
+    pub fn emit_assign(
+        &mut self,
+        line: u32,
+        name: String,
+        value: String,
+        previous: Option<String>,
+    ) {
         self.emit(TraceEvent::Assign {
             line,
             name,

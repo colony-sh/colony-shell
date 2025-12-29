@@ -92,9 +92,9 @@ mod tests {
     #[test]
     fn test_direct_approval() {
         let lineage = ProcessLineage::new();
-        
+
         assert!(!lineage.has_approval(1000, "SECRET"));
-        
+
         lineage.grant_approval(1000, "SECRET");
         assert!(lineage.has_approval(1000, "SECRET"));
         assert!(!lineage.has_approval(1000, "OTHER"));
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn test_inherited_approval() {
         let lineage = ProcessLineage::new();
-        
+
         lineage.grant_approval(1000, "AWS_KEY");
         lineage.register_child(1000, 1001);
         lineage.register_child(1001, 1002);
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn test_get_ancestors() {
         let lineage = ProcessLineage::new();
-        
+
         lineage.register_child(100, 200);
         lineage.register_child(200, 300);
         lineage.register_child(300, 400);
@@ -130,14 +130,14 @@ mod tests {
     #[test]
     fn test_cleanup_process() {
         let lineage = ProcessLineage::new();
-        
+
         lineage.grant_approval(1000, "SECRET");
         lineage.register_child(1000, 1001);
 
         assert!(lineage.has_approval(1000, "SECRET"));
-        
+
         lineage.cleanup_process(1000);
-        
+
         assert!(!lineage.has_approval(1000, "SECRET"));
     }
 }

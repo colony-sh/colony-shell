@@ -5,8 +5,8 @@
 
 use crate::tutorial::events::ComplexityLevel;
 use colony_parser::{
-    CaseStatement, ForStatement, IfStatement, Pipeline, SimpleCommand, Statement,
-    UntilStatement, WhileStatement, Word, WordPart,
+    CaseStatement, ForStatement, IfStatement, Pipeline, SimpleCommand, Statement, UntilStatement,
+    WhileStatement, Word, WordPart,
 };
 
 /// Scores the complexity of a statement for pacing purposes
@@ -164,13 +164,11 @@ impl ComplexityScorer {
 
             WordPart::ProcessSub { .. } => ComplexityLevel::High,
 
-            WordPart::DoubleQuoted(parts) => {
-                parts
-                    .iter()
-                    .map(|p| Self::score_word_part(p))
-                    .max()
-                    .unwrap_or(ComplexityLevel::Low)
-            }
+            WordPart::DoubleQuoted(parts) => parts
+                .iter()
+                .map(|p| Self::score_word_part(p))
+                .max()
+                .unwrap_or(ComplexityLevel::Low),
 
             WordPart::ExtGlob { .. } => ComplexityLevel::Medium,
 
@@ -251,8 +249,17 @@ mod tests {
 
     #[test]
     fn test_pause_duration() {
-        assert_eq!(ComplexityScorer::pause_duration_ms(ComplexityLevel::Low), 500);
-        assert_eq!(ComplexityScorer::pause_duration_ms(ComplexityLevel::Medium), 1500);
-        assert_eq!(ComplexityScorer::pause_duration_ms(ComplexityLevel::High), 3000);
+        assert_eq!(
+            ComplexityScorer::pause_duration_ms(ComplexityLevel::Low),
+            500
+        );
+        assert_eq!(
+            ComplexityScorer::pause_duration_ms(ComplexityLevel::Medium),
+            1500
+        );
+        assert_eq!(
+            ComplexityScorer::pause_duration_ms(ComplexityLevel::High),
+            3000
+        );
     }
 }

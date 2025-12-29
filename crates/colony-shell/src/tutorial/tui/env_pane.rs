@@ -53,7 +53,9 @@ impl EnvPane {
         for (name, value) in sorted_vars {
             let is_changed = self.changed.contains(name);
             let name_style = if is_changed {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Cyan)
             };
@@ -67,7 +69,10 @@ impl EnvPane {
             lines.push(Line::from(vec![
                 Span::styled(format!("{}", name), name_style),
                 Span::styled("=", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("\"{}\"", display_value), Style::default().fg(Color::Green)),
+                Span::styled(
+                    format!("\"{}\"", display_value),
+                    Style::default().fg(Color::Green),
+                ),
             ]));
         }
 
@@ -82,7 +87,11 @@ impl EnvPane {
         self.viewport_height = area.height.saturating_sub(2);
 
         let scroll_info = if self.total_lines > self.viewport_height {
-            format!(" Env [{}/{}] ", self.scroll_offset + 1, self.total_lines.saturating_sub(self.viewport_height) + 1)
+            format!(
+                " Env [{}/{}] ",
+                self.scroll_offset + 1,
+                self.total_lines.saturating_sub(self.viewport_height) + 1
+            )
         } else {
             format!(" Env ({}) ", self.variables.len())
         };

@@ -187,7 +187,14 @@ impl PersistentTupleSpace {
             db.execute(
                 "INSERT INTO tuples (id, fields, created_at, expires_at, source, length)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![id, fields_json, created_at, None::<i64>, None::<String>, length],
+                params![
+                    id,
+                    fields_json,
+                    created_at,
+                    None::<i64>,
+                    None::<String>,
+                    length
+                ],
             )?;
         }
 
@@ -599,10 +606,7 @@ mod tests {
     async fn test_rdp_non_destructive_persistent() {
         let (space, _tmpdir) = test_space().await;
 
-        space
-            .out(Tuple::from(vec![Value::Int(100)]))
-            .await
-            .unwrap();
+        space.out(Tuple::from(vec![Value::Int(100)])).await.unwrap();
 
         let pattern = Tuple::pattern(&[Value::Wildcard]);
 
@@ -653,10 +657,7 @@ mod tests {
 
         // Fill to capacity
         for i in 0..5 {
-            space
-                .out(Tuple::from(vec![Value::Int(i)]))
-                .await
-                .unwrap();
+            space.out(Tuple::from(vec![Value::Int(i)])).await.unwrap();
         }
 
         // Should reject 6th tuple

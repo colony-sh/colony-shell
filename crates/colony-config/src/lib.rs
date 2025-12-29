@@ -6,11 +6,11 @@
 //! - Tool classifications
 //! - Security: Explicit trust required before loading
 
-mod trust;
 mod discovery;
+mod trust;
 
-pub use trust::{TrustManager, TrustStatus};
 pub use discovery::{discover_config, ConfigLocation};
+pub use trust::{TrustManager, TrustStatus};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -308,7 +308,10 @@ conventions = ["Use parking_lot", "No unwrap()"]
         assert!(config.agent.is_some());
 
         let agent = config.agent.unwrap();
-        assert_eq!(agent.personality, Some("You are a Rust expert.".to_string()));
+        assert_eq!(
+            agent.personality,
+            Some("You are a Rust expert.".to_string())
+        );
         assert_eq!(agent.preferred_provider, Some("anthropic".to_string()));
         assert_eq!(agent.temperature, Some(0.7));
 

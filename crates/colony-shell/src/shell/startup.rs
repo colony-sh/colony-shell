@@ -6,13 +6,9 @@ use std::path::PathBuf;
 
 type Result<T> = std::result::Result<T, ExpansionError>;
 
-pub(crate) async fn maybe_source_file(
-    path: &str,
-    executor: &mut Executor,
-    verbose: bool,
-) -> bool {
+pub(crate) async fn maybe_source_file(path: &str, executor: &mut Executor, verbose: bool) -> bool {
     let expanded = match expand_tilde(Some(path), executor.context()) {
-        Ok(p) => PathBuf::from(p),  // Convert String to PathBuf
+        Ok(p) => PathBuf::from(p), // Convert String to PathBuf
         Err(e) => {
             if verbose {
                 eprintln!("colony: failed to expand {}: {}", path, e);

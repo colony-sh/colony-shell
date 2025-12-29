@@ -1,14 +1,11 @@
+use crate::shell::execution::{
+    execute_exit_trap, execute_statement_for_code, execute_statement_with_control,
+    statement_to_shell_string, ControlFlow,
+};
 use colony_exec::Executor;
 use colony_parser::{AliasContext, Statement};
 use miette::Result;
 use nix::unistd::Pid; // only if still used by coproc
-use crate::shell::execution::{
-    execute_exit_trap,
-    execute_statement_for_code,
-    execute_statement_with_control,
-    statement_to_shell_string,
-    ControlFlow,
-};
 
 // ========================= Engine Overview =========================
 // Purpose: Thin façade around shell::execution modules plus legacy helpers
@@ -43,13 +40,15 @@ pub(crate) async fn execute_command_with_status(line: &str, executor: &mut Execu
         last_exit = code;
         executor.context_mut().set_last_exit_status(code);
         if flow == ControlFlow::Exit {
-            if let Some(trap_code) = execute_exit_trap(executor, execute_statement_with_control).await {
+            if let Some(trap_code) =
+                execute_exit_trap(executor, execute_statement_with_control).await
+            {
                 return trap_code;
             }
             return code;
         }
     }
-    
+
     if let Some(trap_code) = execute_exit_trap(executor, execute_statement_with_control).await {
         return trap_code;
     }
@@ -64,7 +63,7 @@ pub(crate) async fn execute_shell_command(line: &str, executor: &mut Executor) -
 
     let exit_code = execute_statement_for_code(&stmt, executor).await;
     executor.context_mut().set_last_exit_status(exit_code);
-    
+
     if exit_code != 0 {
         eprintln!("Command exited with code {}", exit_code);
     }
@@ -73,9 +72,12 @@ pub(crate) async fn execute_shell_command(line: &str, executor: &mut Executor) -
 }
 
 /// Launch a coprocess: set up pipes, fork, exec the coproc command, and register handles.
-pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, executor: &mut Executor) -> Result<i32, String> {
+pub(crate) async fn execute_coproc(
+    coproc: &colony_parser::CoprocCommand,
+    executor: &mut Executor,
+) -> Result<i32, String> {
     use nix::sys::signal::{signal, SigHandler, Signal};
-    use nix::unistd::{fork, ForkResult, pipe, dup2, close, execvp, setpgid};
+    use nix::unistd::{close, dup2, execvp, fork, pipe, setpgid, ForkResult};
     use std::ffi::CString;
     use std::os::fd::AsRawFd;
 
@@ -140,21 +142,31 @@ pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, execut
 
             if let Err(err) = setpgid(Pid::from_raw(0), Pid::from_raw(0)) {
                 eprintln!("coproc setpgid failed: {err}");
-                unsafe { nix::libc::_exit(1); }
+                unsafe {
+                    nix::libc::_exit(1);
+                }
             }
 
             if let Some((c_exe, c_flag, c_cmd)) = shell_exec {
-                let args: Vec<&std::ffi::CStr> = vec![c_exe.as_c_str(), c_flag.as_c_str(), c_cmd.as_c_str()];
+                let args: Vec<&std::ffi::CStr> =
+                    vec![c_exe.as_c_str(), c_flag.as_c_str(), c_cmd.as_c_str()];
                 let _ = execvp(&c_exe, &args);
                 eprintln!("coproc exec failed");
-                unsafe { nix::libc::_exit(127); }
+                unsafe {
+                    nix::libc::_exit(127);
+                }
             } else if let Some((c_cmd, c_args)) = external_exec {
-                let c_args_ref: Vec<&std::ffi::CStr> = c_args.iter().map(|s| s.as_c_str()).collect();
+                let c_args_ref: Vec<&std::ffi::CStr> =
+                    c_args.iter().map(|s| s.as_c_str()).collect();
                 let _ = execvp(&c_cmd, &c_args_ref);
                 eprintln!("coproc exec failed");
-                unsafe { nix::libc::_exit(127); }
+                unsafe {
+                    nix::libc::_exit(127);
+                }
             } else {
-                unsafe { nix::libc::_exit(1); }
+                unsafe {
+                    nix::libc::_exit(1);
+                }
             }
         }
         Ok(ForkResult::Parent { child }) => {
@@ -164,7 +176,9 @@ pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, execut
             let read_fd = stdout_pipe.0.as_raw_fd();
             let write_fd = stdin_pipe.1.as_raw_fd();
 
-            executor.context_mut().set_var(format!("{}_PID", coproc_name), child.as_raw().to_string());
+            executor
+                .context_mut()
+                .set_var(format!("{}_PID", coproc_name), child.as_raw().to_string());
 
             std::mem::forget(stdout_pipe.0);
             std::mem::forget(stdin_pipe.1);
@@ -189,7 +203,7 @@ pub(crate) fn evaluate_cstyle_arith_expr(expr: &str, executor: &mut Executor) ->
     if expr.is_empty() {
         return 0;
     }
-    
+
     let exprs: Vec<&str> = expr.split(',').collect();
     if exprs.len() > 1 {
         let mut result = 0;
@@ -198,7 +212,7 @@ pub(crate) fn evaluate_cstyle_arith_expr(expr: &str, executor: &mut Executor) ->
         }
         return result;
     }
-    
+
     evaluate_cstyle_arith_single(expr, executor)
 }
 
@@ -209,9 +223,12 @@ pub(crate) fn evaluate_cstyle_arith_value(expr: &str, executor: &Executor) -> i6
 }
 
 /// Evaluate a [ … ] conditional expression against the current executor context.
-pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor) -> bool {
-    use colony_parser::{CondExpr, CondBinaryOp, CondUnaryOp};
-    
+pub(crate) fn evaluate_conditional(
+    expr: &colony_parser::CondExpr,
+    executor: &mut Executor,
+) -> bool {
+    use colony_parser::{CondBinaryOp, CondExpr, CondUnaryOp};
+
     match expr {
         CondExpr::And(left, right) => {
             evaluate_conditional(left, executor) && evaluate_conditional(right, executor)
@@ -219,13 +236,16 @@ pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mu
         CondExpr::Or(left, right) => {
             evaluate_conditional(left, executor) || evaluate_conditional(right, executor)
         }
-        CondExpr::Not(inner) => {
-            !evaluate_conditional(inner, executor)
-        }
-        CondExpr::Binary { left, op, right, right_quoted } => {
+        CondExpr::Not(inner) => !evaluate_conditional(inner, executor),
+        CondExpr::Binary {
+            left,
+            op,
+            right,
+            right_quoted,
+        } => {
             let left_expanded = expand_cond_operand(left, executor);
             let right_expanded = expand_cond_operand(right, executor);
-            
+
             match op {
                 CondBinaryOp::Eq => {
                     if *right_quoted {
@@ -241,30 +261,30 @@ pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mu
                         !glob_match(&right_expanded, &left_expanded)
                     }
                 }
-                CondBinaryOp::Match => {
-                    match regex::Regex::new(&right_expanded) {
-                        Ok(re) => {
-                            if let Some(caps) = re.captures(&left_expanded) {
-                                let mut bash_rematch = Vec::new();
-                                for i in 0..caps.len() {
-                                    bash_rematch.push(caps.get(i).map(|m| m.as_str()).unwrap_or("").to_string());
-                                }
-                                executor.context_mut().set_variable(
-                                    "BASH_REMATCH".to_string(),
-                                    colony_expand::Variable::Array(bash_rematch),
+                CondBinaryOp::Match => match regex::Regex::new(&right_expanded) {
+                    Ok(re) => {
+                        if let Some(caps) = re.captures(&left_expanded) {
+                            let mut bash_rematch = Vec::new();
+                            for i in 0..caps.len() {
+                                bash_rematch.push(
+                                    caps.get(i).map(|m| m.as_str()).unwrap_or("").to_string(),
                                 );
-                                true
-                            } else {
-                                executor.context_mut().set_variable(
-                                    "BASH_REMATCH".to_string(),
-                                    colony_expand::Variable::Array(vec![]),
-                                );
-                                false
                             }
+                            executor.context_mut().set_variable(
+                                "BASH_REMATCH".to_string(),
+                                colony_expand::Variable::Array(bash_rematch),
+                            );
+                            true
+                        } else {
+                            executor.context_mut().set_variable(
+                                "BASH_REMATCH".to_string(),
+                                colony_expand::Variable::Array(vec![]),
+                            );
+                            false
                         }
-                        Err(_) => false,
                     }
-                }
+                    Err(_) => false,
+                },
                 CondBinaryOp::Lt => left_expanded < right_expanded,
                 CondBinaryOp::Gt => left_expanded > right_expanded,
                 CondBinaryOp::IntEq => {
@@ -312,8 +332,8 @@ pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mu
                     }
                 }
                 CondBinaryOp::SameFile => {
-                    use std::os::unix::fs::MetadataExt;
                     use std::fs;
+                    use std::os::unix::fs::MetadataExt;
                     match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
                         (Ok(m1), Ok(m2)) => m1.dev() == m2.dev() && m1.ino() == m2.ino(),
                         _ => false,
@@ -324,7 +344,7 @@ pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mu
         CondExpr::Unary { op, arg } => {
             let arg_expanded = expand_cond_operand(arg, executor);
             let path = std::path::Path::new(&arg_expanded);
-            
+
             match op {
                 CondUnaryOp::NonZeroLen => !arg_expanded.is_empty(),
                 CondUnaryOp::ZeroLen => arg_expanded.is_empty(),
@@ -343,46 +363,59 @@ pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mu
                 }
                 CondUnaryOp::Executable => {
                     use std::os::unix::fs::PermissionsExt;
-                    path.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.permissions().mode() & 0o111 != 0)
+                        .unwrap_or(false)
                 }
-                CondUnaryOp::NonEmpty => {
-                    path.metadata().map(|m| m.len() > 0).unwrap_or(false)
-                }
+                CondUnaryOp::NonEmpty => path.metadata().map(|m| m.len() > 0).unwrap_or(false),
                 CondUnaryOp::IsSymlink => path.is_symlink(),
                 CondUnaryOp::IsPipe => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_fifo()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_fifo())
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::IsSocket => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_socket()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_socket())
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::IsBlock => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_block_device()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_block_device())
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::IsChar => {
                     use std::os::unix::fs::FileTypeExt;
-                    path.metadata().map(|m| m.file_type().is_char_device()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.file_type().is_char_device())
+                        .unwrap_or(false)
                 }
-                CondUnaryOp::IsTerminal => {
-                    arg_expanded.parse::<i32>().map(|fd| unsafe { libc::isatty(fd) } != 0).unwrap_or(false)
-                }
+                CondUnaryOp::IsTerminal => arg_expanded
+                    .parse::<i32>()
+                    .map(|fd| unsafe { libc::isatty(fd) } != 0)
+                    .unwrap_or(false),
                 CondUnaryOp::OwnedByEuid => {
                     use std::os::unix::fs::MetadataExt;
-                    path.metadata().map(|m| m.uid() == unsafe { libc::geteuid() }).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.uid() == unsafe { libc::geteuid() })
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::OwnedByEgid => {
                     use std::os::unix::fs::MetadataExt;
-                    path.metadata().map(|m| m.gid() == unsafe { libc::getegid() }).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.gid() == unsafe { libc::getegid() })
+                        .unwrap_or(false)
                 }
                 CondUnaryOp::ModifiedSinceRead => {
                     use std::os::unix::fs::MetadataExt;
-                    path.metadata().map(|m| m.mtime() > m.atime()).unwrap_or(false)
+                    path.metadata()
+                        .map(|m| m.mtime() > m.atime())
+                        .unwrap_or(false)
                 }
-                CondUnaryOp::VarIsSet => {
-                    executor.context().get_var_or_env(&arg_expanded).is_some()
-                }
+                CondUnaryOp::VarIsSet => executor.context().get_var_or_env(&arg_expanded).is_some(),
             }
         }
         CondExpr::String(s) => {
@@ -395,75 +428,83 @@ pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mu
 /// Recursive evaluator for arithmetic subexpressions (operators ||, &&, comparisons, +, -, *, /, %).
 fn evaluate_arithmetic_expr(expr: &str) -> i64 {
     let expr = expr.trim();
-    
+
     if let Some(idx) = expr.find("||") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left != 0 || right != 0 { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("&&") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left != 0 && right != 0 { 1 } else { 0 };
     }
-    
+
     if let Some(idx) = expr.find(">=") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left >= right { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("<=") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left <= right { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("==") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left == right { 1 } else { 0 };
     }
     if let Some(idx) = expr.find("!=") {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+2..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 2..]);
         return if left != right { 1 } else { 0 };
     }
     if let Some(idx) = expr.rfind('>') {
-        if idx > 0 && !expr[..idx].ends_with('>') && !expr[..idx].ends_with('|') && !expr[..idx].ends_with('=') {
+        if idx > 0
+            && !expr[..idx].ends_with('>')
+            && !expr[..idx].ends_with('|')
+            && !expr[..idx].ends_with('=')
+        {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return if left > right { 1 } else { 0 };
         }
     }
     if let Some(idx) = expr.rfind('<') {
-        if idx > 0 && !expr[..idx].ends_with('<') && !expr[..idx].ends_with('|') && !expr[..idx].ends_with('=') {
+        if idx > 0
+            && !expr[..idx].ends_with('<')
+            && !expr[..idx].ends_with('|')
+            && !expr[..idx].ends_with('=')
+        {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return if left < right { 1 } else { 0 };
         }
     }
-    
+
     if let Some(idx) = expr.rfind('+') {
         if idx > 0 {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return left + right;
         }
     }
     if let Some(idx) = expr.rfind('-') {
         if idx > 0 {
             let left = evaluate_arithmetic_expr(&expr[..idx]);
-            let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+            let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
             return left - right;
         }
     }
     if let Some(idx) = expr.rfind('*') {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
         return left * right;
     }
     if let Some(idx) = expr.rfind('/') {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
         if right != 0 {
             return left / right;
         }
@@ -471,21 +512,21 @@ fn evaluate_arithmetic_expr(expr: &str) -> i64 {
     }
     if let Some(idx) = expr.rfind('%') {
         let left = evaluate_arithmetic_expr(&expr[..idx]);
-        let right = evaluate_arithmetic_expr(&expr[idx+1..]);
+        let right = evaluate_arithmetic_expr(&expr[idx + 1..]);
         if right != 0 {
             return left % right;
         }
         return 0;
     }
-    
+
     if expr.starts_with('(') && expr.ends_with(')') {
-        return evaluate_arithmetic_expr(&expr[1..expr.len()-1]);
+        return evaluate_arithmetic_expr(&expr[1..expr.len() - 1]);
     }
-    
+
     if let Some(stripped) = expr.strip_prefix('-') {
         return -evaluate_arithmetic_expr(stripped);
     }
-    
+
     expr.parse().unwrap_or(0)
 }
 
@@ -495,86 +536,109 @@ fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
     if expr.is_empty() {
         return 0;
     }
-    
+
     if expr.starts_with("++") {
         let var = &expr[2..].trim();
         let current = get_var_as_i64(var, executor);
         let new_val = current + 1;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if expr.starts_with("--") {
         let var = &expr[2..].trim();
         let current = get_var_as_i64(var, executor);
         let new_val = current - 1;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
-    
+
     if expr.ends_with("++") {
-        let var = expr[..expr.len()-2].trim();
+        let var = expr[..expr.len() - 2].trim();
         let current = get_var_as_i64(var, executor);
-        executor.context_mut().set_var(var.to_string(), (current + 1).to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), (current + 1).to_string());
         return current;
     }
     if expr.ends_with("--") {
-        let var = expr[..expr.len()-2].trim();
+        let var = expr[..expr.len() - 2].trim();
         let current = get_var_as_i64(var, executor);
-        executor.context_mut().set_var(var.to_string(), (current - 1).to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), (current - 1).to_string());
         return current;
     }
-    
+
     if let Some(idx) = expr.find("+=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let delta = evaluate_cstyle_arith_value(val_expr, executor);
         let new_val = current + delta;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if let Some(idx) = expr.find("-=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let delta = evaluate_cstyle_arith_value(val_expr, executor);
         let new_val = current - delta;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if let Some(idx) = expr.find("*=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let factor = evaluate_cstyle_arith_value(val_expr, executor);
         let new_val = current * factor;
-        executor.context_mut().set_var(var.to_string(), new_val.to_string());
+        executor
+            .context_mut()
+            .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
     if let Some(idx) = expr.find("/=") {
         let var = expr[..idx].trim();
-        let val_expr = expr[idx+2..].trim();
+        let val_expr = expr[idx + 2..].trim();
         let current = get_var_as_i64(var, executor);
         let divisor = evaluate_cstyle_arith_value(val_expr, executor);
         if divisor != 0 {
             let new_val = current / divisor;
-            executor.context_mut().set_var(var.to_string(), new_val.to_string());
+            executor
+                .context_mut()
+                .set_var(var.to_string(), new_val.to_string());
             return new_val;
         }
         return 0;
     }
-    
+
     if let Some(idx) = expr.find('=') {
-        if idx > 0 && !matches!(expr.chars().nth(idx.saturating_sub(1)), Some('!') | Some('<') | Some('>') | Some('=')) 
-            && !matches!(expr.chars().nth(idx+1), Some('=')) {
+        if idx > 0
+            && !matches!(
+                expr.chars().nth(idx.saturating_sub(1)),
+                Some('!') | Some('<') | Some('>') | Some('=')
+            )
+            && !matches!(expr.chars().nth(idx + 1), Some('='))
+        {
             let var = expr[..idx].trim();
-            let val_expr = expr[idx+1..].trim();
+            let val_expr = expr[idx + 1..].trim();
             let new_val = evaluate_cstyle_arith_value(val_expr, executor);
-            executor.context_mut().set_var(var.to_string(), new_val.to_string());
+            executor
+                .context_mut()
+                .set_var(var.to_string(), new_val.to_string());
             return new_val;
         }
     }
-    
+
     evaluate_cstyle_arith_value(expr, executor)
 }
 
@@ -583,21 +647,28 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
     let mut result = String::new();
     let chars_vec: Vec<char> = expr.chars().collect();
     let mut i = 0;
-    
+
     while i < chars_vec.len() {
         let c = chars_vec[i];
-        if c == '$' && i + 1 < chars_vec.len() && chars_vec[i+1] == '(' {
+        if c == '$' && i + 1 < chars_vec.len() && chars_vec[i + 1] == '(' {
             i += 2;
             let start = i;
             let mut paren_depth = 1;
             while i < chars_vec.len() && paren_depth > 0 {
-                if chars_vec[i] == '(' { paren_depth += 1; }
-                else if chars_vec[i] == ')' { paren_depth -= 1; }
-                if paren_depth > 0 { i += 1; }
+                if chars_vec[i] == '(' {
+                    paren_depth += 1;
+                } else if chars_vec[i] == ')' {
+                    paren_depth -= 1;
+                }
+                if paren_depth > 0 {
+                    i += 1;
+                }
             }
             let cmd_str: String = chars_vec[start..i].iter().collect();
-            if i < chars_vec.len() { i += 1; }
-            
+            if i < chars_vec.len() {
+                i += 1;
+            }
+
             if let Ok(program) = colony_parser::pest_api::parse(&cmd_str) {
                 let mut ctx = executor.context().clone();
                 let mut output = String::new();
@@ -617,14 +688,20 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
                     var_name.push(chars_vec[i]);
                     i += 1;
                 }
-                if i < chars_vec.len() { i += 1; }
+                if i < chars_vec.len() {
+                    i += 1;
+                }
             } else {
-                while i < chars_vec.len() && (chars_vec[i].is_alphanumeric() || chars_vec[i] == '_') {
+                while i < chars_vec.len() && (chars_vec[i].is_alphanumeric() || chars_vec[i] == '_')
+                {
                     var_name.push(chars_vec[i]);
                     i += 1;
                 }
             }
-            let val = executor.context().get_var_or_env(&var_name).unwrap_or_default();
+            let val = executor
+                .context()
+                .get_var_or_env(&var_name)
+                .unwrap_or_default();
             result.push_str(&val);
         } else if c.is_alphabetic() || c == '_' {
             let mut var_name = String::from(c);
@@ -652,8 +729,10 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
                 }
                 let expanded_index = expand_arithmetic_vars(&index, executor);
                 let idx: usize = evaluate_arithmetic_expr(&expanded_index) as usize;
-                
-                if let Some(colony_expand::Variable::Array(arr)) = executor.context().get_variable(&var_name) {
+
+                if let Some(colony_expand::Variable::Array(arr)) =
+                    executor.context().get_variable(&var_name)
+                {
                     if let Some(val) = arr.get(idx) {
                         result.push_str(val);
                     } else {
@@ -674,16 +753,16 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
             i += 1;
         }
     }
-    
+
     result
 }
 
 /// Expand a conditional operand (handles quotes, vars).
 fn expand_cond_operand(s: &str, executor: &Executor) -> String {
     if s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2 {
-        s[1..s.len()-1].to_string()
+        s[1..s.len() - 1].to_string()
     } else if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-        expand_double_quoted(&s[1..s.len()-1], executor)
+        expand_double_quoted(&s[1..s.len() - 1], executor)
     } else if s.starts_with('$') {
         expand_variable_ref(s, executor)
     } else {
@@ -695,7 +774,7 @@ fn expand_cond_operand(s: &str, executor: &Executor) -> String {
 fn expand_double_quoted(content: &str, executor: &Executor) -> String {
     let mut result = String::new();
     let mut chars = content.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         if c == '$' {
             let mut var_str = String::from("$");
@@ -713,8 +792,12 @@ fn expand_double_quoted(content: &str, executor: &Executor) -> String {
                 while depth > 0 {
                     if let Some(ch) = chars.next() {
                         var_str.push(ch);
-                        if ch == '(' { depth += 1; }
-                        if ch == ')' { depth -= 1; }
+                        if ch == '(' {
+                            depth += 1;
+                        }
+                        if ch == ')' {
+                            depth -= 1;
+                        }
                     } else {
                         break;
                     }
@@ -743,29 +826,29 @@ fn expand_double_quoted(content: &str, executor: &Executor) -> String {
             result.push(c);
         }
     }
-    
+
     result
 }
 
 /// Expand a variable reference, handling ${} and array subscripts.
 fn expand_variable_ref(s: &str, executor: &Executor) -> String {
     use colony_expand::Variable;
-    
+
     if !s.starts_with('$') {
         return s.to_string();
     }
-    
+
     let content = if s.starts_with("${") && s.ends_with('}') {
-        &s[2..s.len()-1]
+        &s[2..s.len() - 1]
     } else {
         &s[1..]
     };
-    
+
     if let Some(bracket_pos) = content.find('[') {
         if let Some(end_pos) = content.find(']') {
             let var_name = &content[..bracket_pos];
-            let index_str = &content[bracket_pos+1..end_pos];
-            
+            let index_str = &content[bracket_pos + 1..end_pos];
+
             if let Some(Variable::Array(arr)) = executor.context().get_variable(var_name) {
                 if let Ok(index) = index_str.parse::<usize>() {
                     return arr.get(index).cloned().unwrap_or_default();
@@ -776,15 +859,18 @@ fn expand_variable_ref(s: &str, executor: &Executor) -> String {
             return String::new();
         }
     }
-    
-    executor.context().get_var_or_env(content).unwrap_or_default()
+
+    executor
+        .context()
+        .get_var_or_env(content)
+        .unwrap_or_default()
 }
 
 /// Perform shell-style glob match of pattern against text.
 fn glob_match(pattern: &str, text: &str) -> bool {
     let mut pattern_chars = pattern.chars().peekable();
     let mut text_chars = text.chars().peekable();
-    
+
     while let Some(p) = pattern_chars.next() {
         match p {
             '*' => {
@@ -794,7 +880,10 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                 let remaining_pattern: String = pattern_chars.collect();
                 let text_remaining: Vec<char> = text_chars.collect();
                 for i in 0..=text_remaining.len() {
-                    if glob_match(&remaining_pattern, &text_remaining[i..].iter().collect::<String>()) {
+                    if glob_match(
+                        &remaining_pattern,
+                        &text_remaining[i..].iter().collect::<String>(),
+                    ) {
                         return true;
                     }
                 }
@@ -810,16 +899,17 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                     Some(c) => c,
                     None => return false,
                 };
-                
-                let negated = pattern_chars.peek() == Some(&'!') || pattern_chars.peek() == Some(&'^');
+
+                let negated =
+                    pattern_chars.peek() == Some(&'!') || pattern_chars.peek() == Some(&'^');
                 if negated {
                     pattern_chars.next();
                 }
-                
+
                 let mut matches = false;
                 let mut prev_char: Option<char> = None;
                 let mut first_char = true;
-                
+
                 loop {
                     match pattern_chars.next() {
                         Some(']') if !first_char => break,
@@ -839,21 +929,22 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                                     class_name.push(pattern_chars.next().unwrap());
                                 }
                             }
-                            matches = matches || match class_name.as_str() {
-                                "alpha" => text_char.is_alphabetic(),
-                                "digit" => text_char.is_ascii_digit(),
-                                "alnum" => text_char.is_alphanumeric(),
-                                "space" => text_char.is_whitespace(),
-                                "lower" => text_char.is_lowercase(),
-                                "upper" => text_char.is_uppercase(),
-                                "punct" => text_char.is_ascii_punctuation(),
-                                "xdigit" => text_char.is_ascii_hexdigit(),
-                                "blank" => text_char == ' ' || text_char == '\t',
-                                "cntrl" => text_char.is_ascii_control(),
-                                "graph" => text_char.is_ascii_graphic(),
-                                "print" => !text_char.is_ascii_control() || text_char == ' ',
-                                _ => false,
-                            };
+                            matches = matches
+                                || match class_name.as_str() {
+                                    "alpha" => text_char.is_alphabetic(),
+                                    "digit" => text_char.is_ascii_digit(),
+                                    "alnum" => text_char.is_alphanumeric(),
+                                    "space" => text_char.is_whitespace(),
+                                    "lower" => text_char.is_lowercase(),
+                                    "upper" => text_char.is_uppercase(),
+                                    "punct" => text_char.is_ascii_punctuation(),
+                                    "xdigit" => text_char.is_ascii_hexdigit(),
+                                    "blank" => text_char == ' ' || text_char == '\t',
+                                    "cntrl" => text_char.is_ascii_control(),
+                                    "graph" => text_char.is_ascii_graphic(),
+                                    "print" => !text_char.is_ascii_control() || text_char == ' ',
+                                    _ => false,
+                                };
                             prev_char = None;
                         }
                         Some('-') if prev_char.is_some() && pattern_chars.peek() != Some(&']') => {
@@ -874,15 +965,15 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                         None => return false,
                     }
                 }
-                
+
                 if let Some(pc) = prev_char {
                     matches = matches || text_char == pc;
                 }
-                
+
                 if negated {
                     matches = !matches;
                 }
-                
+
                 if !matches {
                     return false;
                 }
@@ -901,13 +992,15 @@ fn glob_match(pattern: &str, text: &str) -> bool {
             }
         }
     }
-    
+
     text_chars.next().is_none()
 }
 
 /// Fetch variable as i64 (defaults to 0 on missing/parsing errors).
 fn get_var_as_i64(var: &str, executor: &Executor) -> i64 {
-    executor.context().get_var_or_env(var)
+    executor
+        .context()
+        .get_var_or_env(var)
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
 }

@@ -36,7 +36,7 @@ fn pre_expand_variables(expr: &str, context: &ExpansionContext) -> String {
     let mut result = String::new();
     let chars: Vec<char> = expr.chars().collect();
     let mut i = 0;
-    
+
     while i < chars.len() {
         if chars[i] == '$' {
             i += 1;
@@ -90,7 +90,7 @@ fn pre_expand_variables(expr: &str, context: &ExpansionContext) -> String {
             i += 1;
         }
     }
-    
+
     result
 }
 
@@ -106,43 +106,43 @@ enum Token {
     Slash,
     Percent,
     // Exponentiation
-    Power,      // **
+    Power, // **
     // Comparison
-    Lt,         // <
-    Le,         // <=
-    Gt,         // >
-    Ge,         // >=
-    Eq,         // ==
-    Ne,         // !=
+    Lt, // <
+    Le, // <=
+    Gt, // >
+    Ge, // >=
+    Eq, // ==
+    Ne, // !=
     // Bitwise
-    Amp,        // &
-    Pipe,       // |
-    Caret,      // ^
-    Tilde,      // ~
-    Shl,        // <<
-    Shr,        // >>
+    Amp,   // &
+    Pipe,  // |
+    Caret, // ^
+    Tilde, // ~
+    Shl,   // <<
+    Shr,   // >>
     // Logical
-    Not,        // !
-    And,        // &&
-    Or,         // ||
+    Not, // !
+    And, // &&
+    Or,  // ||
     // Ternary
-    Question,   // ?
-    Colon,      // :
+    Question, // ?
+    Colon,    // :
     // Increment/Decrement
     PlusPlus,   // ++
     MinusMinus, // --
     // Assignment
-    Assign,     // =
-    PlusEq,     // +=
-    MinusEq,    // -=
-    StarEq,     // *=
-    SlashEq,    // /=
-    PercentEq,  // %=
-    AmpEq,      // &=
-    PipeEq,     // |=
-    CaretEq,    // ^=
-    ShlEq,      // <<=
-    ShrEq,      // >>=
+    Assign,    // =
+    PlusEq,    // +=
+    MinusEq,   // -=
+    StarEq,    // *=
+    SlashEq,   // /=
+    PercentEq, // %=
+    AmpEq,     // &=
+    PipeEq,    // |=
+    CaretEq,   // ^=
+    ShlEq,     // <<=
+    ShrEq,     // >>=
     // Grouping
     LParen,
     RParen,
@@ -347,8 +347,9 @@ fn tokenize_arith(expr: &str) -> Result<Vec<Token>> {
                             i += 1;
                         }
                         let hex_str: String = chars[hex_start..i].iter().collect();
-                        let value = i64::from_str_radix(&hex_str, 16)
-                            .map_err(|_| ExpansionError::ArithmeticError(format!("Invalid hex: 0x{}", hex_str)))?;
+                        let value = i64::from_str_radix(&hex_str, 16).map_err(|_| {
+                            ExpansionError::ArithmeticError(format!("Invalid hex: 0x{}", hex_str))
+                        })?;
                         tokens.push(Token::Number(value));
                         continue;
                     } else if chars[i + 1] == 'b' || chars[i + 1] == 'B' {
@@ -359,8 +360,12 @@ fn tokenize_arith(expr: &str) -> Result<Vec<Token>> {
                             i += 1;
                         }
                         let bin_str: String = chars[bin_start..i].iter().collect();
-                        let value = i64::from_str_radix(&bin_str, 2)
-                            .map_err(|_| ExpansionError::ArithmeticError(format!("Invalid binary: 0b{}", bin_str)))?;
+                        let value = i64::from_str_radix(&bin_str, 2).map_err(|_| {
+                            ExpansionError::ArithmeticError(format!(
+                                "Invalid binary: 0b{}",
+                                bin_str
+                            ))
+                        })?;
                         tokens.push(Token::Number(value));
                         continue;
                     } else if chars[i + 1].is_ascii_digit() {
@@ -371,8 +376,9 @@ fn tokenize_arith(expr: &str) -> Result<Vec<Token>> {
                             i += 1;
                         }
                         let oct_str: String = chars[oct_start..i].iter().collect();
-                        let value = i64::from_str_radix(&oct_str, 8)
-                            .map_err(|_| ExpansionError::ArithmeticError(format!("Invalid octal: 0{}", oct_str)))?;
+                        let value = i64::from_str_radix(&oct_str, 8).map_err(|_| {
+                            ExpansionError::ArithmeticError(format!("Invalid octal: 0{}", oct_str))
+                        })?;
                         tokens.push(Token::Number(value));
                         continue;
                     }
@@ -382,8 +388,9 @@ fn tokenize_arith(expr: &str) -> Result<Vec<Token>> {
                     i += 1;
                 }
                 let num_str: String = chars[start..i].iter().collect();
-                let value = num_str.parse::<i64>()
-                    .map_err(|_| ExpansionError::ArithmeticError(format!("Invalid number: {}", num_str)))?;
+                let value = num_str.parse::<i64>().map_err(|_| {
+                    ExpansionError::ArithmeticError(format!("Invalid number: {}", num_str))
+                })?;
                 tokens.push(Token::Number(value));
             }
             'a'..='z' | 'A'..='Z' | '_' => {
@@ -419,7 +426,7 @@ fn eval_arithmetic(expr: &str, context: &mut ExpansionContext) -> Result<i64> {
 // Operator precedence (lowest to highest):
 // 1. Comma
 // 2. Assignment (=, +=, etc.) - right associative
-// 3. Ternary (?:) - right associative  
+// 3. Ternary (?:) - right associative
 // 4. Logical OR (||)
 // 5. Logical AND (&&)
 // 6. Bitwise OR (|)
@@ -443,7 +450,9 @@ fn eval_arithmetic(expr: &str, context: &mut ExpansionContext) -> Result<i64> {
 /// Skip primary expression (numbers, variables, parentheses) without evaluation
 fn skip_primary(tokens: &[Token], pos: usize) -> Result<usize> {
     if pos >= tokens.len() {
-        return Err(ExpansionError::ArithmeticError("Unexpected end of expression".to_string()));
+        return Err(ExpansionError::ArithmeticError(
+            "Unexpected end of expression".to_string(),
+        ));
     }
 
     match &tokens[pos] {
@@ -480,14 +489,17 @@ fn skip_primary(tokens: &[Token], pos: usize) -> Result<usize> {
             }
             Ok(paren_pos)
         }
-        _ => Err(ExpansionError::ArithmeticError(format!("Unexpected token in skip: {:?}", tokens[pos]))),
+        _ => Err(ExpansionError::ArithmeticError(format!(
+            "Unexpected token in skip: {:?}",
+            tokens[pos]
+        ))),
     }
 }
 
 /// Skip postfix operators (++, --)
 fn skip_postfix(tokens: &[Token], pos: usize) -> Result<usize> {
     let new_pos = skip_primary(tokens, pos)?;
-    
+
     // Check for postfix operators
     if new_pos < tokens.len() {
         match &tokens[new_pos] {
@@ -502,13 +514,13 @@ fn skip_postfix(tokens: &[Token], pos: usize) -> Result<usize> {
 /// Skip unary expression (!, ~, -, +, ++var, --var)
 fn skip_unary(tokens: &[Token], pos: usize) -> Result<usize> {
     if pos >= tokens.len() {
-        return Err(ExpansionError::ArithmeticError("Unexpected end of expression".to_string()));
+        return Err(ExpansionError::ArithmeticError(
+            "Unexpected end of expression".to_string(),
+        ));
     }
-    
+
     match &tokens[pos] {
-        Token::Not | Token::Tilde | Token::Minus | Token::Plus => {
-            skip_unary(tokens, pos + 1)
-        }
+        Token::Not | Token::Tilde | Token::Minus | Token::Plus => skip_unary(tokens, pos + 1),
         Token::PlusPlus | Token::MinusMinus => {
             // Pre-increment/decrement: skip ++ and the variable
             if pos + 1 < tokens.len() {
@@ -530,7 +542,9 @@ fn skip_unary(tokens: &[Token], pos: usize) -> Result<usize> {
                     return Ok(pos + 2);
                 }
             }
-            Err(ExpansionError::ArithmeticError("++ requires variable".to_string()))
+            Err(ExpansionError::ArithmeticError(
+                "++ requires variable".to_string(),
+            ))
         }
         _ => skip_postfix(tokens, pos),
     }
@@ -539,7 +553,7 @@ fn skip_unary(tokens: &[Token], pos: usize) -> Result<usize> {
 /// Skip exponentiation expression
 fn skip_exponent(tokens: &[Token], pos: usize) -> Result<usize> {
     let new_pos = skip_unary(tokens, pos)?;
-    
+
     if new_pos < tokens.len() && tokens[new_pos] == Token::Power {
         // Skip the ** operator and parse the right side recursively
         skip_exponent(tokens, new_pos + 1)
@@ -551,7 +565,7 @@ fn skip_exponent(tokens: &[Token], pos: usize) -> Result<usize> {
 /// Skip multiplicative expression (*, /, %)
 fn skip_multiplicative(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_exponent(tokens, pos)?;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Star | Token::Slash | Token::Percent => {
@@ -560,14 +574,14 @@ fn skip_multiplicative(tokens: &[Token], mut pos: usize) -> Result<usize> {
             _ => break,
         }
     }
-    
+
     Ok(pos)
 }
 
 /// Skip additive expression (+, -)
 fn skip_additive(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_multiplicative(tokens, pos)?;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Plus | Token::Minus => {
@@ -576,14 +590,14 @@ fn skip_additive(tokens: &[Token], mut pos: usize) -> Result<usize> {
             _ => break,
         }
     }
-    
+
     Ok(pos)
 }
 
 /// Skip shift expression (<<, >>)
 fn skip_shift(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_additive(tokens, pos)?;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Shl | Token::Shr => {
@@ -592,14 +606,14 @@ fn skip_shift(tokens: &[Token], mut pos: usize) -> Result<usize> {
             _ => break,
         }
     }
-    
+
     Ok(pos)
 }
 
 /// Skip comparison expression (<, <=, >, >=)
 fn skip_comparison(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_shift(tokens, pos)?;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Lt | Token::Le | Token::Gt | Token::Ge => {
@@ -608,14 +622,14 @@ fn skip_comparison(tokens: &[Token], mut pos: usize) -> Result<usize> {
             _ => break,
         }
     }
-    
+
     Ok(pos)
 }
 
 /// Skip equality expression (==, !=)
 fn skip_equality(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_comparison(tokens, pos)?;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Eq | Token::Ne => {
@@ -624,101 +638,110 @@ fn skip_equality(tokens: &[Token], mut pos: usize) -> Result<usize> {
             _ => break,
         }
     }
-    
+
     Ok(pos)
 }
 
 /// Skip bitwise AND expression (&)
 fn skip_bitwise_and(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_equality(tokens, pos)?;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Amp {
         pos = skip_equality(tokens, pos + 1)?;
     }
-    
+
     Ok(pos)
 }
 
 /// Skip bitwise XOR expression (^)
 fn skip_bitwise_xor(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_bitwise_and(tokens, pos)?;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Caret {
         pos = skip_bitwise_and(tokens, pos + 1)?;
     }
-    
+
     Ok(pos)
 }
 
 /// Skip bitwise OR expression (|)
 fn skip_bitwise_or(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_bitwise_xor(tokens, pos)?;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Pipe {
         pos = skip_bitwise_xor(tokens, pos + 1)?;
     }
-    
+
     Ok(pos)
 }
 
 /// Skip logical AND expression (&&) - used by logical OR short-circuit
 fn skip_logical_and(tokens: &[Token], mut pos: usize) -> Result<usize> {
     pos = skip_bitwise_or(tokens, pos)?;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::And {
         pos = skip_bitwise_or(tokens, pos + 1)?;
     }
-    
+
     Ok(pos)
 }
 
 /// Parse comma expression (lowest precedence)
-fn parse_comma(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_comma(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut result, new_pos) = parse_assignment(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Comma {
         pos += 1;
         let (val, new_pos) = parse_assignment(tokens, pos, context)?;
         result = val;
         pos = new_pos;
     }
-    
+
     Ok((result, pos))
 }
 
 /// Parse assignment expression (right associative)
-fn parse_assignment(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_assignment(
+    tokens: &[Token],
+    pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     // Check if this is an assignment (variable followed by assignment operator)
     if pos < tokens.len() {
         if let Token::Variable(ref name) = tokens[pos] {
             // Check for array subscript
-            let (var_name, subscript, after_var) = if pos + 1 < tokens.len() && tokens[pos + 1] == Token::LBracket {
-                let mut bracket_pos = pos + 2;
-                let subscript_start = bracket_pos;
-                let mut depth = 1;
-                while bracket_pos < tokens.len() && depth > 0 {
-                    match &tokens[bracket_pos] {
-                        Token::LBracket => depth += 1,
-                        Token::RBracket => depth -= 1,
-                        _ => {}
+            let (var_name, subscript, after_var) =
+                if pos + 1 < tokens.len() && tokens[pos + 1] == Token::LBracket {
+                    let mut bracket_pos = pos + 2;
+                    let subscript_start = bracket_pos;
+                    let mut depth = 1;
+                    while bracket_pos < tokens.len() && depth > 0 {
+                        match &tokens[bracket_pos] {
+                            Token::LBracket => depth += 1,
+                            Token::RBracket => depth -= 1,
+                            _ => {}
+                        }
+                        if depth > 0 {
+                            bracket_pos += 1;
+                        }
                     }
-                    if depth > 0 {
-                        bracket_pos += 1;
-                    }
-                }
-                // Evaluate subscript
-                let subscript_tokens = &tokens[subscript_start..bracket_pos];
-                let (idx, _) = if subscript_tokens.is_empty() {
-                    (0i64, 0)
+                    // Evaluate subscript
+                    let subscript_tokens = &tokens[subscript_start..bracket_pos];
+                    let (idx, _) = if subscript_tokens.is_empty() {
+                        (0i64, 0)
+                    } else {
+                        parse_comma(subscript_tokens, 0, context)?
+                    };
+                    (name.clone(), Some(idx as usize), bracket_pos + 1)
                 } else {
-                    parse_comma(subscript_tokens, 0, context)?
+                    (name.clone(), None, pos + 1)
                 };
-                (name.clone(), Some(idx as usize), bracket_pos + 1)
-            } else {
-                (name.clone(), None, pos + 1)
-            };
-            
+
             if after_var < tokens.len() {
                 let (assign_op, op_end) = match &tokens[after_var] {
                     Token::Assign => (Some(AssignOp::Set), after_var + 1),
@@ -734,14 +757,14 @@ fn parse_assignment(tokens: &[Token], pos: usize, context: &mut ExpansionContext
                     Token::ShrEq => (Some(AssignOp::Shr), after_var + 1),
                     _ => (None, after_var),
                 };
-                
+
                 if let Some(op) = assign_op {
                     // Parse the right side (recursively for right associativity)
                     let (rhs, final_pos) = parse_assignment(tokens, op_end, context)?;
-                    
+
                     // Get current value for compound assignment
                     let current = get_var_value(&var_name, subscript, context);
-                    
+
                     let new_value = match op {
                         AssignOp::Set => rhs,
                         AssignOp::Add => current + rhs,
@@ -749,13 +772,17 @@ fn parse_assignment(tokens: &[Token], pos: usize, context: &mut ExpansionContext
                         AssignOp::Mul => current * rhs,
                         AssignOp::Div => {
                             if rhs == 0 {
-                                return Err(ExpansionError::ArithmeticError("Division by zero".to_string()));
+                                return Err(ExpansionError::ArithmeticError(
+                                    "Division by zero".to_string(),
+                                ));
                             }
                             current / rhs
                         }
                         AssignOp::Mod => {
                             if rhs == 0 {
-                                return Err(ExpansionError::ArithmeticError("Modulo by zero".to_string()));
+                                return Err(ExpansionError::ArithmeticError(
+                                    "Modulo by zero".to_string(),
+                                ));
                             }
                             current % rhs
                         }
@@ -765,16 +792,16 @@ fn parse_assignment(tokens: &[Token], pos: usize, context: &mut ExpansionContext
                         AssignOp::Shl => current << rhs,
                         AssignOp::Shr => current >> rhs,
                     };
-                    
+
                     // Set the variable
                     set_var_value(&var_name, subscript, new_value, context);
-                    
+
                     return Ok((new_value, final_pos));
                 }
             }
         }
     }
-    
+
     // Not an assignment, parse as ternary
     parse_ternary(tokens, pos, context)
 }
@@ -803,7 +830,8 @@ fn get_var_value(name: &str, subscript: Option<usize>, context: &ExpansionContex
             0
         }
     } else {
-        context.get_var_or_env(name)
+        context
+            .get_var_or_env(name)
             .and_then(|s| s.parse().ok())
             .unwrap_or(0)
     }
@@ -831,30 +859,40 @@ fn set_var_value(name: &str, subscript: Option<usize>, value: i64, context: &mut
 }
 
 /// Parse ternary expression (right associative)
-fn parse_ternary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_ternary(
+    tokens: &[Token],
+    pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (cond, mut new_pos) = parse_logical_or(tokens, pos, context)?;
-    
+
     if new_pos < tokens.len() && tokens[new_pos] == Token::Question {
         new_pos += 1;
         let (true_val, after_true) = parse_ternary(tokens, new_pos, context)?;
-        
+
         if after_true >= tokens.len() || tokens[after_true] != Token::Colon {
-            return Err(ExpansionError::ArithmeticError("Expected ':' in ternary".to_string()));
+            return Err(ExpansionError::ArithmeticError(
+                "Expected ':' in ternary".to_string(),
+            ));
         }
-        
+
         let (false_val, after_false) = parse_ternary(tokens, after_true + 1, context)?;
-        
+
         let result = if cond != 0 { true_val } else { false_val };
         return Ok((result, after_false));
     }
-    
+
     Ok((cond, new_pos))
 }
 
-fn parse_logical_or(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_logical_or(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_logical_and(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Or {
         pos += 1;
         if left != 0 {
@@ -866,14 +904,18 @@ fn parse_logical_or(tokens: &[Token], mut pos: usize, context: &mut ExpansionCon
             pos = new_pos;
         }
     }
-    
+
     Ok((left, pos))
 }
 
-fn parse_logical_and(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_logical_and(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_bitwise_or(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::And {
         pos += 1;
         if left == 0 {
@@ -885,60 +927,76 @@ fn parse_logical_and(tokens: &[Token], mut pos: usize, context: &mut ExpansionCo
             pos = new_pos;
         }
     }
-    
+
     Ok((left, pos))
 }
 
 /// Parse bitwise OR (|)
-fn parse_bitwise_or(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_bitwise_or(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_bitwise_xor(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Pipe {
         pos += 1;
         let (right, new_pos) = parse_bitwise_xor(tokens, pos, context)?;
         left |= right;
         pos = new_pos;
     }
-    
+
     Ok((left, pos))
 }
 
 /// Parse bitwise XOR (^)
-fn parse_bitwise_xor(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_bitwise_xor(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_bitwise_and(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Caret {
         pos += 1;
         let (right, new_pos) = parse_bitwise_and(tokens, pos, context)?;
         left ^= right;
         pos = new_pos;
     }
-    
+
     Ok((left, pos))
 }
 
 /// Parse bitwise AND (&)
-fn parse_bitwise_and(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_bitwise_and(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_equality(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() && tokens[pos] == Token::Amp {
         pos += 1;
         let (right, new_pos) = parse_equality(tokens, pos, context)?;
         left &= right;
         pos = new_pos;
     }
-    
+
     Ok((left, pos))
 }
 
 /// Parse equality (==, !=)
-fn parse_equality(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_equality(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_comparison(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Eq => {
@@ -956,15 +1014,19 @@ fn parse_equality(tokens: &[Token], mut pos: usize, context: &mut ExpansionConte
             _ => break,
         }
     }
-    
+
     Ok((left, pos))
 }
 
 /// Parse comparison (<, <=, >, >=)
-fn parse_comparison(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_comparison(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_shift(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Lt => {
@@ -994,15 +1056,19 @@ fn parse_comparison(tokens: &[Token], mut pos: usize, context: &mut ExpansionCon
             _ => break,
         }
     }
-    
+
     Ok((left, pos))
 }
 
 /// Parse shift (<<, >>)
-fn parse_shift(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_shift(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_additive(tokens, pos, context)?;
     pos = new_pos;
-    
+
     while pos < tokens.len() {
         match &tokens[pos] {
             Token::Shl => {
@@ -1020,12 +1086,16 @@ fn parse_shift(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext)
             _ => break,
         }
     }
-    
+
     Ok((left, pos))
 }
 
 /// Parse additive (+, -)
-fn parse_additive(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_additive(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_multiplicative(tokens, pos, context)?;
     pos = new_pos;
 
@@ -1051,7 +1121,11 @@ fn parse_additive(tokens: &[Token], mut pos: usize, context: &mut ExpansionConte
 }
 
 /// Parse multiplicative (*, /, %)
-fn parse_multiplicative(tokens: &[Token], mut pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_multiplicative(
+    tokens: &[Token],
+    mut pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (mut left, new_pos) = parse_exponent(tokens, pos, context)?;
     pos = new_pos;
 
@@ -1067,7 +1141,9 @@ fn parse_multiplicative(tokens: &[Token], mut pos: usize, context: &mut Expansio
                 pos += 1;
                 let (right, new_pos) = parse_exponent(tokens, pos, context)?;
                 if right == 0 {
-                    return Err(ExpansionError::ArithmeticError("Division by zero".to_string()));
+                    return Err(ExpansionError::ArithmeticError(
+                        "Division by zero".to_string(),
+                    ));
                 }
                 left /= right;
                 pos = new_pos;
@@ -1076,7 +1152,9 @@ fn parse_multiplicative(tokens: &[Token], mut pos: usize, context: &mut Expansio
                 pos += 1;
                 let (right, new_pos) = parse_exponent(tokens, pos, context)?;
                 if right == 0 {
-                    return Err(ExpansionError::ArithmeticError("Modulo by zero".to_string()));
+                    return Err(ExpansionError::ArithmeticError(
+                        "Modulo by zero".to_string(),
+                    ));
                 }
                 left %= right;
                 pos = new_pos;
@@ -1089,16 +1167,20 @@ fn parse_multiplicative(tokens: &[Token], mut pos: usize, context: &mut Expansio
 }
 
 /// Parse exponentiation (**) - right associative
-fn parse_exponent(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_exponent(
+    tokens: &[Token],
+    pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (base, new_pos) = parse_unary(tokens, pos, context)?;
-    
+
     if new_pos < tokens.len() && tokens[new_pos] == Token::Power {
         // Right associative: parse the rest as exponent recursively
         let (exp, final_pos) = parse_exponent(tokens, new_pos + 1, context)?;
         let result = pow(base, exp);
         return Ok((result, final_pos));
     }
-    
+
     Ok((base, new_pos))
 }
 
@@ -1121,11 +1203,17 @@ fn pow(base: i64, exp: i64) -> i64 {
 }
 
 /// Parse unary (!, ~, -, +, ++var, --var)
-fn parse_unary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_unary(
+    tokens: &[Token],
+    pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     if pos >= tokens.len() {
-        return Err(ExpansionError::ArithmeticError("Unexpected end of expression".to_string()));
+        return Err(ExpansionError::ArithmeticError(
+            "Unexpected end of expression".to_string(),
+        ));
     }
-    
+
     match &tokens[pos] {
         Token::Not => {
             let (val, new_pos) = parse_unary(tokens, pos + 1, context)?;
@@ -1139,14 +1227,13 @@ fn parse_unary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> 
             let (val, new_pos) = parse_unary(tokens, pos + 1, context)?;
             Ok((-val, new_pos))
         }
-        Token::Plus => {
-            parse_unary(tokens, pos + 1, context)
-        }
+        Token::Plus => parse_unary(tokens, pos + 1, context),
         Token::PlusPlus => {
             // Pre-increment
             if pos + 1 < tokens.len() {
                 if let Token::Variable(ref name) = tokens[pos + 1] {
-                    let current = context.get_var_or_env(name)
+                    let current = context
+                        .get_var_or_env(name)
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
                     let new_val = current + 1;
@@ -1154,13 +1241,16 @@ fn parse_unary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> 
                     return Ok((new_val, pos + 2));
                 }
             }
-            Err(ExpansionError::ArithmeticError("++ requires variable".to_string()))
+            Err(ExpansionError::ArithmeticError(
+                "++ requires variable".to_string(),
+            ))
         }
         Token::MinusMinus => {
             // Pre-decrement
             if pos + 1 < tokens.len() {
                 if let Token::Variable(ref name) = tokens[pos + 1] {
-                    let current = context.get_var_or_env(name)
+                    let current = context
+                        .get_var_or_env(name)
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
                     let new_val = current - 1;
@@ -1168,16 +1258,22 @@ fn parse_unary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> 
                     return Ok((new_val, pos + 2));
                 }
             }
-            Err(ExpansionError::ArithmeticError("-- requires variable".to_string()))
+            Err(ExpansionError::ArithmeticError(
+                "-- requires variable".to_string(),
+            ))
         }
         _ => parse_postfix(tokens, pos, context),
     }
 }
 
 /// Parse postfix (var++, var--, array[idx])
-fn parse_postfix(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_postfix(
+    tokens: &[Token],
+    pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     let (val, new_pos) = parse_primary(tokens, pos, context)?;
-    
+
     // Check for postfix operators on variables
     if let Some(Token::Variable(ref name)) = tokens.get(pos) {
         // Skip array subscript if present
@@ -1194,7 +1290,7 @@ fn parse_postfix(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -
                 after_var += 1;
             }
         }
-        
+
         if after_var < tokens.len() {
             match &tokens[after_var] {
                 Token::PlusPlus => {
@@ -1213,14 +1309,20 @@ fn parse_postfix(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -
             }
         }
     }
-    
+
     Ok((val, new_pos))
 }
 
 /// Parse primary (numbers, variables, parentheses)
-fn parse_primary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -> Result<(i64, usize)> {
+fn parse_primary(
+    tokens: &[Token],
+    pos: usize,
+    context: &mut ExpansionContext,
+) -> Result<(i64, usize)> {
     if pos >= tokens.len() {
-        return Err(ExpansionError::ArithmeticError("Unexpected end of expression".to_string()));
+        return Err(ExpansionError::ArithmeticError(
+            "Unexpected end of expression".to_string(),
+        ));
     }
 
     match &tokens[pos] {
@@ -1249,17 +1351,17 @@ fn parse_primary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -
                     let (idx, _) = parse_comma(subscript_tokens, 0, context)?;
                     idx as usize
                 };
-                
+
                 // Get array value
                 let value = if let Some(crate::Variable::Array(arr)) = context.get_variable(name) {
                     arr.get(idx).and_then(|s| s.parse().ok()).unwrap_or(0)
                 } else {
                     0
                 };
-                
+
                 return Ok((value, bracket_pos + 1));
             }
-            
+
             // Simple variable
             let value = match context.get_var_or_env(name) {
                 Some(s) => s.parse::<i64>().unwrap_or(0),
@@ -1270,11 +1372,16 @@ fn parse_primary(tokens: &[Token], pos: usize, context: &mut ExpansionContext) -
         Token::LParen => {
             let (result, new_pos) = parse_comma(tokens, pos + 1, context)?;
             if new_pos >= tokens.len() || tokens[new_pos] != Token::RParen {
-                return Err(ExpansionError::ArithmeticError("Missing closing )".to_string()));
+                return Err(ExpansionError::ArithmeticError(
+                    "Missing closing )".to_string(),
+                ));
             }
             Ok((result, new_pos + 1))
         }
-        _ => Err(ExpansionError::ArithmeticError(format!("Unexpected token: {:?}", tokens[pos]))),
+        _ => Err(ExpansionError::ArithmeticError(format!(
+            "Unexpected token: {:?}",
+            tokens[pos]
+        ))),
     }
 }
 
@@ -1300,7 +1407,10 @@ mod tests {
         // Multiplication before addition
         assert_eq!(expand_arithmetic("2 + 3 * 4", &mut context).unwrap(), "14");
         // Parentheses override precedence
-        assert_eq!(expand_arithmetic("(2 + 3) * 4", &mut context).unwrap(), "20");
+        assert_eq!(
+            expand_arithmetic("(2 + 3) * 4", &mut context).unwrap(),
+            "20"
+        );
     }
 
     #[test]
@@ -1324,16 +1434,20 @@ mod tests {
     #[test]
     fn test_arithmetic_exponentiation() {
         let mut context = ExpansionContext::new();
-        
+
         assert_eq!(expand_arithmetic("2 ** 3", &mut context).unwrap(), "8");
-        assert_eq!(expand_arithmetic("2 ** 3 ** 2", &mut context).unwrap(), "512"); // 2^(3^2) = 2^9 = 512
-        assert_eq!(expand_arithmetic("3 * 2 ** 3", &mut context).unwrap(), "24"); // 3 * 8 = 24
+        assert_eq!(
+            expand_arithmetic("2 ** 3 ** 2", &mut context).unwrap(),
+            "512"
+        ); // 2^(3^2) = 2^9 = 512
+        assert_eq!(expand_arithmetic("3 * 2 ** 3", &mut context).unwrap(), "24");
+        // 3 * 8 = 24
     }
 
     #[test]
     fn test_arithmetic_comparison() {
         let mut context = ExpansionContext::new();
-        
+
         assert_eq!(expand_arithmetic("5 > 3", &mut context).unwrap(), "1");
         assert_eq!(expand_arithmetic("5 < 3", &mut context).unwrap(), "0");
         assert_eq!(expand_arithmetic("5 >= 5", &mut context).unwrap(), "1");
@@ -1345,7 +1459,7 @@ mod tests {
     #[test]
     fn test_arithmetic_logical() {
         let mut context = ExpansionContext::new();
-        
+
         assert_eq!(expand_arithmetic("!0", &mut context).unwrap(), "1");
         assert_eq!(expand_arithmetic("!1", &mut context).unwrap(), "0");
         assert_eq!(expand_arithmetic("1 && 1", &mut context).unwrap(), "1");
@@ -1357,7 +1471,7 @@ mod tests {
     #[test]
     fn test_arithmetic_bitwise() {
         let mut context = ExpansionContext::new();
-        
+
         assert_eq!(expand_arithmetic("~0", &mut context).unwrap(), "-1");
         assert_eq!(expand_arithmetic("5 & 3", &mut context).unwrap(), "1");
         assert_eq!(expand_arithmetic("5 | 3", &mut context).unwrap(), "7");
@@ -1369,22 +1483,31 @@ mod tests {
     #[test]
     fn test_arithmetic_ternary() {
         let mut context = ExpansionContext::new();
-        
-        assert_eq!(expand_arithmetic("1 ? 10 : 20", &mut context).unwrap(), "10");
-        assert_eq!(expand_arithmetic("0 ? 10 : 20", &mut context).unwrap(), "20");
-        assert_eq!(expand_arithmetic("5 > 3 ? 100 : 200", &mut context).unwrap(), "100");
+
+        assert_eq!(
+            expand_arithmetic("1 ? 10 : 20", &mut context).unwrap(),
+            "10"
+        );
+        assert_eq!(
+            expand_arithmetic("0 ? 10 : 20", &mut context).unwrap(),
+            "20"
+        );
+        assert_eq!(
+            expand_arithmetic("5 > 3 ? 100 : 200", &mut context).unwrap(),
+            "100"
+        );
     }
 
     #[test]
     fn test_arithmetic_assignment() {
         let mut context = ExpansionContext::new();
-        
+
         assert_eq!(expand_arithmetic("x = 5", &mut context).unwrap(), "5");
         assert_eq!(context.get_var_or_env("x").unwrap(), "5");
-        
+
         assert_eq!(expand_arithmetic("x += 3", &mut context).unwrap(), "8");
         assert_eq!(context.get_var_or_env("x").unwrap(), "8");
-        
+
         assert_eq!(expand_arithmetic("x -= 3", &mut context).unwrap(), "5");
         assert_eq!(context.get_var_or_env("x").unwrap(), "5");
     }
@@ -1393,10 +1516,10 @@ mod tests {
     fn test_arithmetic_increment() {
         let mut context = ExpansionContext::new();
         context.set_var("x".to_string(), "5".to_string());
-        
+
         assert_eq!(expand_arithmetic("++x", &mut context).unwrap(), "6");
         assert_eq!(context.get_var_or_env("x").unwrap(), "6");
-        
+
         assert_eq!(expand_arithmetic("x++", &mut context).unwrap(), "6");
         assert_eq!(context.get_var_or_env("x").unwrap(), "7");
     }
@@ -1404,7 +1527,7 @@ mod tests {
     #[test]
     fn test_arithmetic_hex_octal() {
         let mut context = ExpansionContext::new();
-        
+
         assert_eq!(expand_arithmetic("0x10", &mut context).unwrap(), "16");
         assert_eq!(expand_arithmetic("010", &mut context).unwrap(), "8");
         assert_eq!(expand_arithmetic("0b1010", &mut context).unwrap(), "10");
@@ -1413,22 +1536,22 @@ mod tests {
     #[test]
     fn test_arithmetic_short_circuit() {
         let mut context = ExpansionContext::new();
-        
+
         // AND short-circuit: if left is 0 (false), right should NOT be evaluated
         context.set_var("x".to_string(), "5".to_string());
         assert_eq!(expand_arithmetic("0 && (x=10)", &mut context).unwrap(), "0");
         assert_eq!(context.get_var_or_env("x").unwrap(), "5"); // x unchanged
-        
+
         // AND non-short-circuit: if left is 1 (true), right IS evaluated
         context.set_var("x".to_string(), "5".to_string());
         assert_eq!(expand_arithmetic("1 && (x=10)", &mut context).unwrap(), "1");
         assert_eq!(context.get_var_or_env("x").unwrap(), "10"); // x changed
-        
+
         // OR short-circuit: if left is 1 (true), right should NOT be evaluated
         context.set_var("x".to_string(), "5".to_string());
         assert_eq!(expand_arithmetic("1 || (x=10)", &mut context).unwrap(), "1");
         assert_eq!(context.get_var_or_env("x").unwrap(), "5"); // x unchanged
-        
+
         // OR non-short-circuit: if left is 0 (false), right IS evaluated
         context.set_var("x".to_string(), "5".to_string());
         assert_eq!(expand_arithmetic("0 || (x=10)", &mut context).unwrap(), "1");
