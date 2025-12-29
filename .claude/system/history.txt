@@ -1880,3 +1880,10 @@
 [2025-12-28 16:20] STATUS: 2332/2348 BATS tests passing (99.3%)
 [2025-12-28 16:25] REMAINING FAILURES: 16 tests in quote, read, error, varenv, extglob, pipeline, declare, alias, lastpipe
 [2025-12-28 16:30] NEXT: Continue fixing remaining 16 test failures
+[2025-12-28 16:35] FIX: Multiple negation (! ! false) - grammar allows "!"* and counts parity
+[2025-12-28 16:40] FIX: local -i integer attribute - evaluates arithmetic on assignment
+[2025-12-28 16:45] COMMIT: ee4518e - Multiple negation and local -i fixes
+[2025-12-28 16:50] FIX: Extglob !() with prefix patterns like *.!(txt|log)
+[2025-12-28 16:55] COMMIT: b110345 - Extglob negation patterns with prefix
+[2025-12-28 17:00] STATUS: 2336/2348 BATS tests passing (99.5%)
+[2025-12-28 17:05] REMAINING: 12 failures - quote backslash, read -d NUL, readonly, extglob edge cases, lastpipe

@@ -1114,6 +1114,11 @@ async fn execute_for_loop_with_control(
     // Iterate over values
     let mut last_exit = 0;
     for field in values {
+        if executor.context().is_readonly(&for_stmt.var) {
+            eprintln!("colony: {}: readonly variable", for_stmt.var);
+            return (1, ControlFlow::Normal);
+        }
+        
         // Set loop variable
         executor
             .context_mut()
@@ -2126,6 +2131,11 @@ async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut
     // Iterate over values
     let mut last_exit = 0;
     for field in values {
+        if executor.context().is_readonly(&for_stmt.var) {
+            eprintln!("colony: {}: readonly variable", for_stmt.var);
+            return 1;
+        }
+        
         // Set loop variable (Field has .text)
         executor
             .context_mut()

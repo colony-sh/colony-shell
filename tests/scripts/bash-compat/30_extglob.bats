@@ -341,7 +341,7 @@ teardown() {
 @test "extglob combined: !() with *" {
     touch "$TEST_TEMP/keep.txt"
     touch "$TEST_TEMP/skip.bak"
-    run "$COLONY" -c "cd $TEST_TEMP && echo !(*).bak"
+    run "$COLONY" -c "cd $TEST_TEMP && echo !(*.bak)"
     [ "$status" -eq 0 ]
     # This should match everything that doesn't end in .bak
     [[ ! "$output" =~ ".bak" ]]
