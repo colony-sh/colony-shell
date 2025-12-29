@@ -1,9 +1,11 @@
+# CLAUDE.md
 
 ## Session Start Protocol
 
 At the beginning of EVERY coding session, execute these steps IN ORDER:
 
 ### 1. Check Git Status
+
 ```bash
 git status
 git log --oneline -10
@@ -12,6 +14,7 @@ git log --oneline -10
 Review what's changed since last session. Note any uncommitted work.
 
 ### 2. Read System Files
+
 ```bash
 cat .claude/system/rules.txt
 cat .claude/system/features.json
@@ -23,6 +26,7 @@ Understand: What are the constraints? What features exist and their status? What
 ### 3. Identify Current Focus
 
 From features.json, find:
+
 - Features with status "in_progress" — these are active work
 - Features with status "blocked" — check if blockers are resolved
 - Next "new" feature by priority (lowest number = highest priority) whose dependencies are "complete"
@@ -30,6 +34,7 @@ From features.json, find:
 ### 4. Announce Plan
 
 Before writing any code, state:
+
 - What you found in git history and system files
 - What feature you're working on and why
 - What specific task you'll do this session
@@ -42,6 +47,7 @@ Before writing any code, state:
 ### Updating features.json
 
 When starting work on a feature:
+
 ```json
 {
   "id": "F001",
@@ -51,15 +57,20 @@ When starting work on a feature:
 ```
 
 When completing a feature:
+
 ```json
 {
-  "id": "F001", 
+  "id": "F001",
   "status": "complete",
-  "notes": ["Started YYYY-MM-DD: Initial lexer structure", "Completed YYYY-MM-DD: All tests passing"]
+  "notes": [
+    "Started YYYY-MM-DD: Initial lexer structure",
+    "Completed YYYY-MM-DD: All tests passing"
+  ]
 }
 ```
 
 When blocked:
+
 ```json
 {
   "id": "F001",
@@ -71,6 +82,7 @@ When blocked:
 ### Updating history.txt
 
 Log significant actions as you work:
+
 ```
 [2025-01-15 14:30] START: Beginning work on F001 (Lexer)
 [2025-01-15 14:45] PROGRESS: Token enum defined, basic word tokenization working
@@ -84,6 +96,7 @@ Log significant actions as you work:
 ### Updating rules.txt
 
 Add rules when you discover important constraints:
+
 ```
 27. Heredoc content must be read AFTER the command line is fully parsed — not inline
 28. SIGCHLD handler must be async-signal-safe — no allocations
@@ -103,6 +116,7 @@ Before ending a session:
 ---
 
 ## Example Session Flow
+
 ```
 Agent: Starting session. Let me check git and system files...
 
@@ -148,4 +162,9 @@ Next session: Implement compound commands (if/while/for) parsing.
 - When stuck, set status to "blocked" with clear description
 
 Your effectiveness depends on maintaining this system. Future you (and other agents) rely on accurate tracking to understand context quickly.
+
 - DO NOT STOP A TASK DUE TO COMPLEXITY! ALWAYS SEE IT THROUGH UNLESS THE USER STOPS YOU!
+
+## Rust Style Guide
+
+@RUST_STYLE_GUIDE.md
