@@ -1011,6 +1011,10 @@ impl Executor {
         
         let mut last_exit = 0;
         for value in words_expanded {
+            if self.context.is_readonly(&for_stmt.var) {
+                eprintln!("colony: {}: readonly variable", for_stmt.var);
+                return Ok(1);
+            }
             self.context.set_var(for_stmt.var.clone(), value);
             
             for stmt in &for_stmt.body {

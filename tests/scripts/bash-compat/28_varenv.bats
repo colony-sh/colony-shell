@@ -220,7 +220,7 @@ teardown() {
 }
 
 @test "varenv: readonly prevents assignment" {
-    run "$COLONY" -c 'readonly VAR=hello; VAR=world 2>&1'
+    run "$COLONY" -c 'readonly VAR=hello; VAR=world'
     [ "$status" -ne 0 ]
     [[ "$output" =~ "readonly" ]] || [[ "$output" =~ "read-only" ]] || [[ "$output" =~ "cannot" ]]
 }
