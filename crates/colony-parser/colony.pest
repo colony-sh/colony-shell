@@ -51,7 +51,8 @@ AndOrList = { Pipeline ~ (AndOrOp ~ Pipeline)* }
 
 AndOrOp = { "&&" | "||" }
 
-Pipeline = { "!"? ~ PipelineElement ~ (PipeOp ~ PipelineElement)* }
+// Support multiple negations: ! ! false, ! ! ! true
+Pipeline = { "!"* ~ PipelineElement ~ (PipeOp ~ PipelineElement)* }
 
 PipelineElement = {
     FunctionDef

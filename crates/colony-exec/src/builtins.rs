@@ -1914,6 +1914,8 @@ fn builtin_declare(args: &[String], context: &mut ExpansionContext) -> Result<Bu
 }
 
 fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    use colony_expand::VarAttributes;
+    
     if !context.in_function() {
         eprintln!("local: can only be used in a function");
         return Ok(BuiltinResult::Failure(1));
@@ -1924,15 +1926,21 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
     }
 
     let mut is_nameref = false;
+    let mut attrs = VarAttributes::default();
     let mut var_args: Vec<&str> = Vec::new();
     
     for arg in args {
-        if arg == "-n" {
-            is_nameref = true;
-        } else if arg.starts_with('-') && arg.len() > 1 {
+        if arg.starts_with('-') && arg.len() > 1 {
             for c in arg[1..].chars() {
-                if c == 'n' {
-                    is_nameref = true;
+                match c {
+                    'n' => is_nameref = true,
+                    'i' => attrs.integer = true,
+                    'l' => attrs.lowercase = true,
+                    'u' => attrs.uppercase = true,
+                    'r' => attrs.readonly = true,
+                    'x' => attrs.export = true,
+                    't' => attrs.trace = true,
+                    _ => {}
                 }
             }
         } else {
@@ -1943,16 +1951,36 @@ fn builtin_local(args: &[String], context: &mut ExpansionContext) -> Result<Buil
     for arg in var_args {
         if let Some(eq_pos) = arg.find('=') {
             let name = &arg[..eq_pos];
-            let value = &arg[eq_pos + 1..];
+            let mut value = arg[eq_pos + 1..].to_string();
+            
+            if attrs.integer {
+                if let Ok(n) = colony_expand::expand_arithmetic(&value, context) {
+                    value = n.to_string();
+                }
+            }
+            if attrs.lowercase {
+                value = value.to_lowercase();
+            }
+            if attrs.uppercase {
+                value = value.to_uppercase();
+            }
+            
             if is_nameref {
-                context.declare_local(name, Some(Variable::NameRef(value.to_string())));
+                context.declare_local(name, Some(Variable::NameRef(value)));
             } else {
-                context.declare_local(name, Some(Variable::String(value.to_string())));
+                context.declare_local(name, Some(Variable::String(value)));
+            }
+            
+            if attrs.has_any() {
+                context.set_var_attributes(name, attrs);
             }
         } else if is_nameref {
             context.declare_local(arg, Some(Variable::NameRef(String::new())));
         } else {
             context.declare_local(arg, None);
+            if attrs.has_any() {
+                context.set_var_attributes(arg, attrs);
+            }
         }
     }
 
