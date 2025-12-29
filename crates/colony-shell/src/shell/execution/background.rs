@@ -1,16 +1,23 @@
 use colony_exec::Executor;
 use tracing::info;
 
-pub(crate) async fn run_in_background(stmt: &colony_parser::Statement, executor: &mut Executor) -> std::result::Result<(usize, u32), String> {
+use crate::shell::execution::statement_to_shell_string;
+
+pub(crate) const MAX_JOBS: usize = 128;
+
+pub(crate) async fn run_in_background(
+    stmt: &colony_parser::Statement,
+    executor: &mut Executor,
+) -> std::result::Result<(usize, u32), String> {
     use colony_exec::JobStatus;
     use nix::sys::signal::{signal, SigHandler, Signal};
     use nix::unistd::{fork, setpgid, ForkResult, Pid};
 
-    if executor.jobs().list_jobs().len() >= crate::shell::execution::control_flow::MAX_JOBS {
+    if executor.jobs().list_jobs().len() >= MAX_JOBS {
         return Err("too many background jobs".to_string());
     }
 
-    let cmd_string = super::serialization::statement_to_shell_string(stmt);
+    let cmd_string = statement_to_shell_string(stmt);
     let mut child_context = executor.context().clone();
 
     match unsafe { fork() } {
@@ -33,14 +40,26 @@ pub(crate) async fn run_in_background(stmt: &colony_parser::Statement, executor:
 
             if let Err(err) = setpgid(Pid::from_raw(0), Pid::from_raw(0)) {
                 eprintln!("setpgid failed: {err}");
-                unsafe { nix::libc::_exit(1); }
+                unsafe {
+                    nix::libc::_exit(1);
+                }
             }
 
             let exit_code = colony_exec::execute_statement_for_process_sub(stmt, &mut child_context);
-            unsafe { nix::libc::_exit(exit_code); }
+            unsafe {
+                nix::libc::_exit(exit_code);
+            }
         }
-        Err(err) => {
-            Err(format!("fork failed: {err}"))
-        }
+        Err(err) => Err(format!("fork failed: {err}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MAX_JOBS;
+
+    #[test]
+    fn max_jobs_limit_matches_expected_cap() {
+        assert_eq!(MAX_JOBS, 128);
     }
 }

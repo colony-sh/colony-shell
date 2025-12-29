@@ -2,8 +2,7 @@ use colony_exec::Executor;
 use colony_expand::{expand_tilde, ExpansionContext, ExpansionError};
 use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
-use std::ffi::{CStr, CString};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 type Result<T> = std::result::Result<T, ExpansionError>;
 

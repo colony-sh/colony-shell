@@ -64,6 +64,40 @@ if let Some(a) = foo()
 }
 ```
 
+### Nested `if let` is Always Wrong
+
+If you write `if let` inside another `if let`, stop and refactor.
+```rust
+// ❌ NEVER do this
+if let Some(x) = foo() {
+    if let Ok(y) = bar(x) {
+        do_thing(y);
+    }
+}
+
+// ✅ Use let-else
+let Some(x) = foo() else { return };
+let Ok(y) = bar(x) else { return };
+do_thing(y);
+```
+
+This applies even when matching enum variants:
+```rust
+// ❌ Nested matching
+if let Some(Action::Command(cmd)) = get_action() {
+    if let Ok(parsed) = parse(&cmd) {
+        execute(parsed);
+    }
+}
+
+// ✅ Sequential let-else
+let Some(Action::Command(cmd)) = get_action() else { return };
+let Ok(parsed) = parse(&cmd) else { return };
+execute(parsed);
+```
+
+**No exceptions.** If you think you need nested `if let`, you don't.
+
 ### Use the Right Combinator
 
 | Goal | Combinator |
