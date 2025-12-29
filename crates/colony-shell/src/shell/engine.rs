@@ -1,21 +1,11 @@
-use colony_exec::{Executor, ExecutionError};
-use colony_expand::{TrapAction, TrapSignal};
+use colony_exec::Executor;
 use colony_parser::{AliasContext, Statement};
 use miette::Result;
-use nix::unistd::Pid;
-use tracing::{info, warn};
-
+use nix::unistd::Pid; // only if still used by coproc
 use crate::shell::execution::{
-    execute_cstyle_for_loop_with_control,
-    execute_err_trap,
     execute_exit_trap,
-    execute_for_loop_with_control,
-    execute_if_with_control,
-    execute_list_with_control,
     execute_statement_for_code,
     execute_statement_with_control,
-    execute_statement_with_errexit_control,
-    run_in_background,
     statement_to_shell_string,
     ControlFlow,
 };
@@ -34,12 +24,7 @@ use crate::shell::execution::{
 //   side-effects (last_exit_status, last_bg_pid) are applied in Executor context.
 // =====================================================================
 
-// ====================== Legacy/Compatibility ========================
-// execute_if_statement is retained for compatibility callers; new control flow
-// paths should use execution::execute_if_with_control instead.
-// =====================================================================
-
-/// Execute a shell command and return its exit code (for -c mode)
+/// Parse and execute a program string (-c path), updating last exit status.
 pub(crate) async fn execute_command_with_status(line: &str, executor: &mut Executor) -> i32 {
     use colony_parser::pest_api::parse_with_aliases;
 
@@ -71,6 +56,7 @@ pub(crate) async fn execute_command_with_status(line: &str, executor: &mut Execu
     last_exit
 }
 
+/// Parse and execute a single statement for REPL/orchestrator, updating last exit status.
 pub(crate) async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {
     let mut alias_ctx = AliasContext::from_map(executor.context().aliases().clone());
     let stmt = colony_parser::pest_api::parse_statement_with_aliases(line, &mut alias_ctx)
@@ -86,6 +72,7 @@ pub(crate) async fn execute_shell_command(line: &str, executor: &mut Executor) -
     Ok(())
 }
 
+/// Launch a coprocess: set up pipes, fork, exec the coproc command, and register handles.
 pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, executor: &mut Executor) -> Result<i32, String> {
     use nix::sys::signal::{signal, SigHandler, Signal};
     use nix::unistd::{fork, ForkResult, pipe, dup2, close, execvp, setpgid};
@@ -190,6 +177,7 @@ pub(crate) async fn execute_coproc(coproc: &colony_parser::CoprocCommand, execut
     }
 }
 
+/// Evaluate a POSIX arithmetic command and return its numeric result.
 pub(crate) fn evaluate_arithmetic_command(expr: &str, executor: &mut Executor) -> i64 {
     match colony_expand::expand_arithmetic(expr, executor.context_mut()) {
         Ok(result) => result.parse().unwrap_or(0),
@@ -197,6 +185,7 @@ pub(crate) fn evaluate_arithmetic_command(expr: &str, executor: &mut Executor) -
     }
 }
 
+/// Evaluate a C-style arithmetic expression (init/update forms) mutating context as needed.
 pub(crate) fn evaluate_cstyle_arith_expr(expr: &str, executor: &mut Executor) -> i64 {
     let expr = expr.trim();
     if expr.is_empty() {
@@ -215,12 +204,13 @@ pub(crate) fn evaluate_cstyle_arith_expr(expr: &str, executor: &mut Executor) ->
     evaluate_cstyle_arith_single(expr, executor)
 }
 
+/// Evaluate a C-style arithmetic value expression without mutating context.
 pub(crate) fn evaluate_cstyle_arith_value(expr: &str, executor: &Executor) -> i64 {
     let expanded = expand_arithmetic_vars(expr, executor);
     evaluate_arithmetic_expr(&expanded)
 }
 
-/// Evaluate a [[ ]] conditional expression
+/// Evaluate a [ … ] conditional expression against the current executor context.
 pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mut Executor) -> bool {
     use colony_parser::{CondExpr, CondBinaryOp, CondUnaryOp};
     
@@ -404,158 +394,7 @@ pub(crate) fn evaluate_conditional(expr: &colony_parser::CondExpr, executor: &mu
     }
 }
 
-/// Execute an if statement (old version for compatibility)
-async fn execute_if_statement(if_stmt: &colony_parser::IfStatement, executor: &mut Executor) -> i32 {
-    use colony_parser::Condition;
-
-    // Evaluate the condition
-    let condition_result = match &if_stmt.condition {
-        Condition::Command(cmd) => {
-            // Execute command and check exit code
-            execute_statement_for_code(cmd, executor).await == 0
-        }
-        Condition::Expression(_expr) => {
-            // Expression conditions not yet implemented
-            eprintln!("Expression conditions not yet supported");
-            false
-        }
-    };
-
-    // Execute appropriate branch
-    if condition_result {
-        // Execute then body
-        let mut last_exit = 0;
-        for stmt in &if_stmt.then_body {
-            last_exit = execute_statement_for_code(stmt, executor).await;
-        }
-        last_exit
-    } else {
-        // Check elif branches
-        for elif in &if_stmt.elif_branches {
-            let elif_result = match &elif.condition {
-                Condition::Command(cmd) => {
-                    execute_statement_for_code(cmd, executor).await == 0
-                }
-                Condition::Expression(_) => false,
-            };
-
-            if elif_result {
-                let mut last_exit = 0;
-                for stmt in &elif.body {
-                    last_exit = execute_statement_for_code(stmt, executor).await;
-                }
-                return last_exit;
-            }
-        }
-
-        // Execute else body if present
-        if let Some(else_body) = &if_stmt.else_body {
-            let mut last_exit = 0;
-            for stmt in else_body {
-                last_exit = execute_statement_for_code(stmt, executor).await;
-            }
-            last_exit
-        } else {
-            0  // No else, return success
-        }
-    }
-}
-
-/// Execute a for loop with break/continue support
-async fn execute_for_loop(for_stmt: &colony_parser::ForStatement, executor: &mut Executor) -> i32 {
-    use colony_expand::Expander;
-
-    // Expand the word list (with command substitution support)
-    let mut expander = Expander::with_executor(executor.context().clone(), |stmt, ctx| {
-        colony_exec::execute_and_capture(stmt, ctx)
-    });
-    let mut values = Vec::new();
-
-    for word in &for_stmt.words {
-        match expander.expand_word(word) {
-            Ok(fields) => {
-                // Fields are the expanded words - just use them directly
-                values.extend(fields);
-            }
-            Err(e) => {
-                eprintln!("expansion error: {}", e);
-                return 1;
-            }
-        }
-    }
-
-    // Iterate over values
-    let mut last_exit = 0;
-    for field in values {
-        // Set loop variable (Field has .text)
-        executor.context_mut().set_var(for_stmt.var.clone(), field.text);
-
-        // Execute body
-        for stmt in &for_stmt.body {
-            // Check for break/continue
-            if let Statement::SimpleCommand(cmd) = stmt {
-                if let Some(name) = cmd.name.as_literal() {
-                    match name {
-                        "break" => return last_exit, // Exit loop immediately
-                        "continue" => break,          // Skip to next iteration
-                        _ => {}
-                    }
-                }
-            }
-
-            // Execute statement
-            last_exit = execute_statement_for_code(stmt, executor).await;
-        }
-    }
-
-    last_exit
-}
-
-async fn execute_cstyle_for_loop(
-    cstyle_for: &colony_parser::CStyleForStatement,
-    executor: &mut Executor,
-) -> i32 {
-    if let Some(ref init) = cstyle_for.init {
-        evaluate_cstyle_arith_expr(init, executor);
-    }
-    
-    let mut last_exit = 0;
-    
-    loop {
-        if let Some(ref cond) = cstyle_for.condition {
-            let cond_result = evaluate_cstyle_arith_value(cond, executor);
-            if cond_result == 0 {
-                break;
-            }
-        }
-        
-        for stmt in &cstyle_for.body {
-            if let Statement::SimpleCommand(cmd) = stmt {
-                if let Some(name) = cmd.name.as_literal() {
-                    match name {
-                        "break" => return last_exit,
-                        "continue" => {
-                            if let Some(ref update) = cstyle_for.update {
-                                evaluate_cstyle_arith_expr(update, executor);
-                            }
-                            continue;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            
-            last_exit = execute_statement_for_code(stmt, executor).await;
-        }
-        
-        if let Some(ref update) = cstyle_for.update {
-            evaluate_cstyle_arith_expr(update, executor);
-        }
-    }
-    
-    last_exit
-}
-
+/// Recursive evaluator for arithmetic subexpressions (operators ||, &&, comparisons, +, -, *, /, %).
 fn evaluate_arithmetic_expr(expr: &str) -> i64 {
     let expr = expr.trim();
     
@@ -652,6 +491,7 @@ fn evaluate_arithmetic_expr(expr: &str) -> i64 {
     expr.parse().unwrap_or(0)
 }
 
+/// Evaluate a single C-style arithmetic term (++, --, compound assignments) mutating context.
 fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
     let expr = expr.trim();
     if expr.is_empty() {
@@ -740,6 +580,7 @@ fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
     evaluate_cstyle_arith_value(expr, executor)
 }
 
+/// Expand variables/command substitutions inside an arithmetic string.
 fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
     let mut result = String::new();
     let chars_vec: Vec<char> = expr.chars().collect();
@@ -839,6 +680,7 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
     result
 }
 
+/// Expand a conditional operand (handles quotes, vars).
 fn expand_cond_operand(s: &str, executor: &Executor) -> String {
     if s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2 {
         s[1..s.len()-1].to_string()
@@ -851,6 +693,7 @@ fn expand_cond_operand(s: &str, executor: &Executor) -> String {
     }
 }
 
+/// Expand vars/command subs inside a double-quoted string.
 fn expand_double_quoted(content: &str, executor: &Executor) -> String {
     let mut result = String::new();
     let mut chars = content.chars().peekable();
@@ -906,6 +749,7 @@ fn expand_double_quoted(content: &str, executor: &Executor) -> String {
     result
 }
 
+/// Expand a variable reference, handling ${} and array subscripts.
 fn expand_variable_ref(s: &str, executor: &Executor) -> String {
     use colony_expand::Variable;
     
@@ -938,6 +782,7 @@ fn expand_variable_ref(s: &str, executor: &Executor) -> String {
     executor.context().get_var_or_env(content).unwrap_or_default()
 }
 
+/// Perform shell-style glob match of pattern against text.
 fn glob_match(pattern: &str, text: &str) -> bool {
     let mut pattern_chars = pattern.chars().peekable();
     let mut text_chars = text.chars().peekable();
@@ -1062,6 +907,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     text_chars.next().is_none()
 }
 
+/// Fetch variable as i64 (defaults to 0 on missing/parsing errors).
 fn get_var_as_i64(var: &str, executor: &Executor) -> i64 {
     executor.context().get_var_or_env(var)
         .and_then(|s| s.parse().ok())
