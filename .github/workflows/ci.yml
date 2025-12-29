@@ -218,25 +218,11 @@ jobs:
           sudo /tmp/bats-core/install.sh /usr/local
 
       - name: Run BATS tests
-        id: bats
         run: |
           export COLONY_BIN="$PWD/target/release/colony"
           export PATH="$PWD/target/release:$PATH"
-          bats tests/scripts/bash-compat/*.bats 2>&1 | tee bats-output.txt
-          # Extract pass/fail counts
-          tail -5 bats-output.txt
+          bats tests/scripts/bash-compat/*.bats
         continue-on-error: true
-
-      - name: Check BATS results
-        run: |
-          if grep -q "^ok [0-9]" bats-output.txt 2>/dev/null; then
-            echo "BATS tests completed successfully"
-            PASSED=$(grep -c "^ok " bats-output.txt || echo 0)
-            FAILED=$(grep -c "^not ok " bats-output.txt || echo 0)
-            echo "Passed: $PASSED, Failed: $FAILED"
-          else
-            echo "No BATS output found"
-          fi
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
