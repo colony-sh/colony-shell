@@ -985,6 +985,10 @@ impl Executor {
                         }
                     }
                 }
+                Statement::Conditional(cond_cmd) => {
+                    let result = self.evaluate_conditional_expr(&cond_cmd.expr);
+                    Ok(if result { 0 } else { 1 })
+                }
                 other => {
                     eprintln!("Statement type not yet supported in function: {:?}", other);
                     Ok(1)
@@ -1194,6 +1198,317 @@ impl Executor {
         match Pattern::new(pattern) {
             Ok(glob_pattern) => glob_pattern.matches(value),
             Err(_) => value == pattern,
+        }
+    }
+    
+    /// Evaluate a [[ ]] conditional expression
+    fn evaluate_conditional_expr(&mut self, expr: &colony_parser::CondExpr) -> bool {
+        use colony_parser::{CondBinaryOp, CondExpr, CondUnaryOp};
+
+        match expr {
+            CondExpr::And(left, right) => {
+                self.evaluate_conditional_expr(left) && self.evaluate_conditional_expr(right)
+            }
+            CondExpr::Or(left, right) => {
+                self.evaluate_conditional_expr(left) || self.evaluate_conditional_expr(right)
+            }
+            CondExpr::Not(inner) => !self.evaluate_conditional_expr(inner),
+            CondExpr::Binary {
+                left,
+                op,
+                right,
+                right_quoted,
+            } => {
+                let left_expanded = self.expand_cond_operand(left);
+                let right_expanded = self.expand_cond_operand(right);
+
+                match op {
+                    CondBinaryOp::Eq => {
+                        if *right_quoted {
+                            left_expanded == right_expanded
+                        } else {
+                            Self::glob_match_cond(&right_expanded, &left_expanded)
+                        }
+                    }
+                    CondBinaryOp::Ne => {
+                        if *right_quoted {
+                            left_expanded != right_expanded
+                        } else {
+                            !Self::glob_match_cond(&right_expanded, &left_expanded)
+                        }
+                    }
+                    CondBinaryOp::Match => {
+                        match regex::Regex::new(&right_expanded) {
+                            Ok(re) => {
+                                if let Some(caps) = re.captures(&left_expanded) {
+                                    let mut bash_rematch = Vec::new();
+                                    for i in 0..caps.len() {
+                                        bash_rematch.push(
+                                            caps.get(i).map(|m| m.as_str()).unwrap_or("").to_string(),
+                                        );
+                                    }
+                                    self.context.set_variable(
+                                        "BASH_REMATCH".to_string(),
+                                        colony_expand::Variable::Array(bash_rematch),
+                                    );
+                                    true
+                                } else {
+                                    self.context.set_variable(
+                                        "BASH_REMATCH".to_string(),
+                                        colony_expand::Variable::Array(vec![]),
+                                    );
+                                    false
+                                }
+                            }
+                            Err(_) => false,
+                        }
+                    }
+                    CondBinaryOp::Lt => left_expanded < right_expanded,
+                    CondBinaryOp::Gt => left_expanded > right_expanded,
+                    CondBinaryOp::IntEq => {
+                        left_expanded.parse::<i64>().ok() == right_expanded.parse::<i64>().ok()
+                    }
+                    CondBinaryOp::IntNe => {
+                        left_expanded.parse::<i64>().ok() != right_expanded.parse::<i64>().ok()
+                    }
+                    CondBinaryOp::IntLt => {
+                        match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => l < r,
+                            _ => false,
+                        }
+                    }
+                    CondBinaryOp::IntLe => {
+                        match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => l <= r,
+                            _ => false,
+                        }
+                    }
+                    CondBinaryOp::IntGt => {
+                        match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => l > r,
+                            _ => false,
+                        }
+                    }
+                    CondBinaryOp::IntGe => {
+                        match (left_expanded.parse::<i64>(), right_expanded.parse::<i64>()) {
+                            (Ok(l), Ok(r)) => l >= r,
+                            _ => false,
+                        }
+                    }
+                    CondBinaryOp::NewerThan => {
+                        use std::fs;
+                        match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
+                            (Ok(m1), Ok(m2)) => m1.modified().ok() > m2.modified().ok(),
+                            _ => false,
+                        }
+                    }
+                    CondBinaryOp::OlderThan => {
+                        use std::fs;
+                        match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
+                            (Ok(m1), Ok(m2)) => m1.modified().ok() < m2.modified().ok(),
+                            _ => false,
+                        }
+                    }
+                    CondBinaryOp::SameFile => {
+                        use std::fs;
+                        use std::os::unix::fs::MetadataExt;
+                        match (fs::metadata(&left_expanded), fs::metadata(&right_expanded)) {
+                            (Ok(m1), Ok(m2)) => m1.dev() == m2.dev() && m1.ino() == m2.ino(),
+                            _ => false,
+                        }
+                    }
+                }
+            }
+            CondExpr::Unary { op, arg } => {
+                let arg_expanded = self.expand_cond_operand(arg);
+                let path = std::path::Path::new(&arg_expanded);
+
+                match op {
+                    CondUnaryOp::NonZeroLen => !arg_expanded.is_empty(),
+                    CondUnaryOp::ZeroLen => arg_expanded.is_empty(),
+                    CondUnaryOp::IsFile => path.is_file(),
+                    CondUnaryOp::IsDir => path.is_dir(),
+                    CondUnaryOp::Exists => path.exists(),
+                    CondUnaryOp::Readable => {
+                        use nix::unistd::access;
+                        use nix::unistd::AccessFlags;
+                        access(path, AccessFlags::R_OK).is_ok()
+                    }
+                    CondUnaryOp::Writable => {
+                        use nix::unistd::access;
+                        use nix::unistd::AccessFlags;
+                        access(path, AccessFlags::W_OK).is_ok()
+                    }
+                    CondUnaryOp::Executable => {
+                        use std::os::unix::fs::PermissionsExt;
+                        path.metadata()
+                            .map(|m| m.permissions().mode() & 0o111 != 0)
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::NonEmpty => path.metadata().map(|m| m.len() > 0).unwrap_or(false),
+                    CondUnaryOp::IsSymlink => path.is_symlink(),
+                    CondUnaryOp::IsPipe => {
+                        use std::os::unix::fs::FileTypeExt;
+                        path.metadata()
+                            .map(|m| m.file_type().is_fifo())
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::IsSocket => {
+                        use std::os::unix::fs::FileTypeExt;
+                        path.metadata()
+                            .map(|m| m.file_type().is_socket())
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::IsBlock => {
+                        use std::os::unix::fs::FileTypeExt;
+                        path.metadata()
+                            .map(|m| m.file_type().is_block_device())
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::IsChar => {
+                        use std::os::unix::fs::FileTypeExt;
+                        path.metadata()
+                            .map(|m| m.file_type().is_char_device())
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::IsTerminal => arg_expanded
+                        .parse::<i32>()
+                        .map(|fd| unsafe { libc::isatty(fd) } != 0)
+                        .unwrap_or(false),
+                    CondUnaryOp::OwnedByEuid => {
+                        use std::os::unix::fs::MetadataExt;
+                        path.metadata()
+                            .map(|m| m.uid() == unsafe { libc::geteuid() })
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::OwnedByEgid => {
+                        use std::os::unix::fs::MetadataExt;
+                        path.metadata()
+                            .map(|m| m.gid() == unsafe { libc::getegid() })
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::ModifiedSinceRead => {
+                        use std::os::unix::fs::MetadataExt;
+                        path.metadata()
+                            .map(|m| m.mtime() > m.atime())
+                            .unwrap_or(false)
+                    }
+                    CondUnaryOp::VarIsSet => self.context.get_var_or_env(&arg_expanded).is_some(),
+                }
+            }
+            CondExpr::String(s) => {
+                let expanded = self.expand_cond_operand(s);
+                !expanded.is_empty()
+            }
+        }
+    }
+    
+    fn expand_cond_operand(&self, s: &str) -> String {
+        if s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2 {
+            s[1..s.len() - 1].to_string()
+        } else if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+            self.expand_double_quoted_cond(&s[1..s.len() - 1])
+        } else if s.starts_with('$') {
+            self.expand_variable_ref_cond(s)
+        } else {
+            s.to_string()
+        }
+    }
+    
+    fn expand_double_quoted_cond(&self, content: &str) -> String {
+        let mut result = String::new();
+        let mut chars = content.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '$' {
+                let mut var_str = String::from("$");
+                if chars.peek() == Some(&'{') {
+                    var_str.push(chars.next().unwrap());
+                    while let Some(&ch) = chars.peek() {
+                        var_str.push(chars.next().unwrap());
+                        if ch == '}' {
+                            break;
+                        }
+                    }
+                } else if chars.peek() == Some(&'(') {
+                    // Skip command substitution for now
+                    var_str.push(chars.next().unwrap());
+                    let mut depth = 1;
+                    while depth > 0 {
+                        if let Some(ch) = chars.next() {
+                            var_str.push(ch);
+                            if ch == '(' {
+                                depth += 1;
+                            }
+                            if ch == ')' {
+                                depth -= 1;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    result.push_str(&var_str);
+                    continue;
+                } else {
+                    while let Some(&ch) = chars.peek() {
+                        if ch.is_alphanumeric() || ch == '_' || ch == '[' || ch == ']' {
+                            var_str.push(chars.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                result.push_str(&self.expand_variable_ref_cond(&var_str));
+            } else if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    if next == '$' || next == '\\' || next == '"' {
+                        result.push(chars.next().unwrap());
+                    } else {
+                        result.push(c);
+                    }
+                } else {
+                    result.push(c);
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+    
+    fn expand_variable_ref_cond(&self, s: &str) -> String {
+        if s.starts_with("${") && s.ends_with('}') {
+            let inner = &s[2..s.len() - 1];
+            if let Some(bracket_pos) = inner.find('[') {
+                let var_name = &inner[..bracket_pos];
+                let rest = &inner[bracket_pos + 1..];
+                if let Some(end) = rest.find(']') {
+                    let index = &rest[..end];
+                    if let Some(colony_expand::Variable::Array(arr)) = self.context.get_variable(var_name) {
+                        if let Ok(idx) = index.parse::<usize>() {
+                            return arr.get(idx).cloned().unwrap_or_default();
+                        }
+                    }
+                    return String::new();
+                }
+            }
+            self.context.get_var_or_env(inner).unwrap_or_default()
+        } else if s.starts_with('$') {
+            let name = &s[1..];
+            if name.starts_with('{') {
+                return s.to_string();
+            }
+            self.context.get_var_or_env(name).unwrap_or_default()
+        } else {
+            s.to_string()
+        }
+    }
+    
+    fn glob_match_cond(pattern: &str, value: &str) -> bool {
+        use glob::Pattern;
+        match Pattern::new(pattern) {
+            Ok(glob_pattern) => glob_pattern.matches(value),
+            Err(_) => pattern == value,
         }
     }
 }

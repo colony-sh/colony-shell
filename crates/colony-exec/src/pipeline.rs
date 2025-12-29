@@ -39,6 +39,7 @@ async fn execute_pipeline_with_lastpipe(
 ) -> Result<ExitStatus> {
     let num_commands = pipeline.elements.len();
     let is_negated = pipeline.elements.first().map_or(false, |e| e.negated);
+    let pipefail = context.shell_options().pipefail;
     
     let pipeline_clone = pipeline.clone();
     let context_clone = context.clone();
@@ -72,16 +73,32 @@ async fn execute_pipeline_with_lastpipe(
         let _ = close(fd);
     }
     
-    tokio::task::spawn_blocking(move || {
+    let head_statuses = tokio::task::spawn_blocking(move || {
+        let mut statuses = Vec::with_capacity(pids.len());
         for pid in pids {
-            let _ = waitpid(pid, None);
+            match waitpid(pid, None) {
+                Ok(WaitStatus::Exited(_pid, code)) => statuses.push(code),
+                Ok(WaitStatus::Signaled(_pid, signal, _)) => statuses.push(128 + signal as i32),
+                _ => statuses.push(0),
+            }
         }
+        statuses
     })
     .await
     .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
     
     let status = last_status?;
-    Ok(negate_exit_status(status, is_negated))
+    let last_code = status.code();
+    
+    let final_status = if pipefail {
+        let mut all_statuses = head_statuses;
+        all_statuses.push(last_code);
+        all_statuses.iter().rev().find(|&&c| c != 0).copied().unwrap_or(0)
+    } else {
+        last_code
+    };
+    
+    Ok(negate_exit_status(ExitStatus::new(final_status), is_negated))
 }
 
 fn execute_pipeline_head_blocking(

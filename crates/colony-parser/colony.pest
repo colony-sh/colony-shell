@@ -1119,19 +1119,19 @@ ArraySpecial = {
 }
 
 VarModifier = {
-    (":-" ~ Word?)                       // default (if unset or null) - MUST be before slice to avoid :- being parsed as slice with negative offset
-  | (":=" ~ Word?)                       // assign (if unset or null)
-  | (":?" ~ Word?)                       // error (if unset or null)
-  | (":+" ~ Word?)                       // alternate (if set and not null)
+    (":-" ~ VarWord?)                     // default (if unset or null) - MUST be before slice to avoid :- being parsed as slice with negative offset
+  | (":=" ~ VarWord?)                     // assign (if unset or null)
+  | (":?" ~ VarWord?)                     // error (if unset or null)
+  | (":+" ~ VarWord?)                     // alternate (if set and not null)
   | (":" ~ SliceOffset ~ (":" ~ SliceLength)?)  // slice ${arr[@]:offset:length}
-  | ("-" ~ Word?)                        // default (if unset only)
-  | ("=" ~ Word?)                        // assign (if unset only)
-  | ("?" ~ Word?)                        // error (if unset only)
-  | ("+" ~ Word?)                        // alternate (if set)
-  | ("##" ~ Word)                        // strip prefix greedy
-  | ("#" ~ Word)                         // strip prefix
-  | ("%%" ~ Word)                        // strip suffix greedy
-  | ("%" ~ Word)                         // strip suffix
+  | ("-" ~ VarWord?)                      // default (if unset only)
+  | ("=" ~ VarWord?)                      // assign (if unset only)
+  | ("?" ~ VarWord?)                      // error (if unset only)
+  | ("+" ~ VarWord?)                      // alternate (if set)
+  | ("##" ~ VarWord)                      // strip prefix greedy
+  | ("#" ~ VarWord)                       // strip prefix
+  | ("%%" ~ VarWord)                      // strip suffix greedy
+  | ("%" ~ VarWord)                       // strip suffix
   | ("//" ~ SubstPattern ~ "/" ~ SubstReplacement?)   // replace all
   | ("/" ~ SubstPattern ~ "/" ~ SubstReplacement?)    // replace first
   | "^^"                                 // uppercase all
@@ -1143,6 +1143,33 @@ VarModifier = {
   | "#"                                  // length (scalar or array)
   | "!"                                  // array indices
   | ("[" ~ Slice ~ "]")                  // slice (old syntax)
+}
+
+// Word for inside variable expansion context - handles \} to escape closing brace
+VarWord = ${
+    VarWordPart+
+}
+
+VarWordPart = _{
+    QuotedString
+  | DollarSingleQuote
+  | DollarExpansion
+  | BacktickCommandSub
+  | ProcessSub
+  | TildeExpansion
+  | ExtGlob
+  | BraceExpansion
+  | UnquotedEscape
+  | VarBareword
+}
+
+// Bareword for variable expansion context - excludes } as delimiter
+VarBareword = @{
+    VarBarewordChar+
+}
+
+VarBarewordChar = @{
+    !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"`" ~ !"\\" ~ !ExtGlobStart ~ !"}" ~ ANY
 }
 
 // Slice offset (simple integer or expression)
