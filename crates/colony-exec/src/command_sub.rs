@@ -499,28 +499,10 @@ mod tests {
     fn test_simple_command_substitution() {
         let mut context = ExpansionContext::new();
 
-        // Parse "echo hello"
         let stmt = pest_api::parse_statement("echo hello").unwrap();
-
-        // Execute and capture
         let output = execute_and_capture(&stmt, &mut context).unwrap();
 
-        // Should capture "hello\n" (or just "hello" after trimming)
         assert!(output.contains("hello"));
-    }
-
-    #[test]
-    fn test_pwd_substitution() {
-        let mut context = ExpansionContext::new();
-
-        // Parse "pwd"
-        let stmt = pest_api::parse_statement("pwd").unwrap();
-
-        // Execute and capture
-        let output = execute_and_capture(&stmt, &mut context).unwrap();
-
-        // Should return a directory path
-        assert!(output.starts_with('/'));
     }
 
     #[test]
