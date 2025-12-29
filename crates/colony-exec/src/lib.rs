@@ -336,10 +336,7 @@ impl Executor {
                     }
                 }
 
-                extra_args.push(colony_parser::Word::literal(
-                    &arg_str,
-                    assignment.span.clone(),
-                ));
+                extra_args.push(colony_parser::Word::literal(&arg_str, assignment.span));
             }
 
             // Prepend the assignment args to the existing args
@@ -454,11 +451,9 @@ impl Executor {
                                         return Err(ExecutionError::Errexit(1));
                                     }
                                 }
-                            } else {
-                                if !self.context.set_var(assignment.name.clone(), value) {
-                                    eprintln!("colony: {}: readonly variable", &assignment.name);
-                                    return Err(ExecutionError::Errexit(1));
-                                }
+                            } else if !self.context.set_var(assignment.name.clone(), value) {
+                                eprintln!("colony: {}: readonly variable", &assignment.name);
+                                return Err(ExecutionError::Errexit(1));
                             }
                         }
                         AssignmentValue::Array(words) => {
@@ -581,11 +576,11 @@ impl Executor {
                 expanding_aliases.insert(command_name.to_string());
 
                 let mut new_cmd = cmd.clone();
-                new_cmd.name = colony_parser::Word::literal(&new_command, cmd.span.clone());
+                new_cmd.name = colony_parser::Word::literal(&new_command, cmd.span);
 
                 let mut new_args = Vec::new();
                 for alias_arg in &alias_args {
-                    new_args.push(colony_parser::Word::literal(alias_arg, cmd.span.clone()));
+                    new_args.push(colony_parser::Word::literal(alias_arg, cmd.span));
                 }
 
                 // Handle trailing space expansion (e.g., alias sudo="sudo ")
@@ -603,12 +598,12 @@ impl Executor {
                                 {
                                     new_args.push(colony_parser::Word::literal(
                                         &arg_cmd,
-                                        first_arg.span.clone(),
+                                        first_arg.span,
                                     ));
                                     for arg in &arg_alias_args {
                                         new_args.push(colony_parser::Word::literal(
                                             arg,
-                                            first_arg.span.clone(),
+                                            first_arg.span,
                                         ));
                                     }
                                     skip_first_arg = true;
@@ -800,7 +795,7 @@ impl Executor {
             Ok(status)
         })
         .await
-        .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(e)))?
     }
 
     /// Sync channel writes from tuple space to channels
@@ -1604,8 +1599,7 @@ impl Executor {
                 }
             }
             self.context.get_var_or_env(inner).unwrap_or_default()
-        } else if s.starts_with('$') {
-            let name = &s[1..];
+        } else if let Some(name) = s.strip_prefix('$') {
             if name.starts_with('{') {
                 return s.to_string();
             }

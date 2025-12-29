@@ -459,7 +459,7 @@ and this
 EOF
 "#;
 
-        let (normalized, contents) = preprocess_heredocs(source).unwrap();
+        let (_normalized, contents) = preprocess_heredocs(source).unwrap();
         assert_eq!(contents.len(), 1);
 
         let content = contents.get(&0).unwrap();

@@ -137,7 +137,7 @@ fn is_command_starter(bytes: &[u8], pos: usize) -> bool {
 }
 
 fn skip_whitespace(s: &str) -> &str {
-    s.trim_start_matches(|c: char| c == ' ' || c == '\t')
+    s.trim_start_matches([' ', '\t'])
 }
 
 fn expand_at_command_position<'a>(
@@ -151,12 +151,12 @@ fn expand_at_command_position<'a>(
         return (String::new(), rest);
     }
 
-    if ctx.is_expanding(&word) {
+    if ctx.is_expanding(word) {
         return (word.to_string() + rest, "");
     }
 
-    if let Some(alias_value) = ctx.get(&word).map(|s| s.to_string()) {
-        ctx.start_expanding(&word);
+    if let Some(alias_value) = ctx.get(word).map(|s| s.to_string()) {
+        ctx.start_expanding(word);
 
         let ends_with_space = alias_value.ends_with(' ') || alias_value.ends_with('\t');
 
@@ -165,18 +165,18 @@ fn expand_at_command_position<'a>(
         if ends_with_space {
             let next_rest = skip_whitespace(rest);
             let (next_word, next_rest_after) = extract_word(next_rest);
-            if !next_word.is_empty() && !ctx.is_expanding(&next_word) {
-                if let Some(next_alias) = ctx.get(&next_word).map(|s| s.to_string()) {
+            if !next_word.is_empty() && !ctx.is_expanding(next_word) {
+                if let Some(next_alias) = ctx.get(next_word).map(|s| s.to_string()) {
                     expanded.push_str(&next_alias);
                     expanded.push_str(next_rest_after);
-                    ctx.stop_expanding(&word);
+                    ctx.stop_expanding(word);
                     return (expanded, "");
                 }
             }
         }
 
         expanded.push_str(rest);
-        ctx.stop_expanding(&word);
+        ctx.stop_expanding(word);
         (expanded, "")
     } else {
         (word.to_string() + rest, "")

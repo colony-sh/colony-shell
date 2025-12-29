@@ -35,10 +35,12 @@ impl EnvPane {
         self.changed.clear();
     }
 
+    #[allow(dead_code)]
     pub fn scroll_up(&mut self, amount: u16) {
         self.scroll_offset = self.scroll_offset.saturating_sub(amount);
     }
 
+    #[allow(dead_code)]
     pub fn scroll_down(&mut self, amount: u16) {
         let max_scroll = self.total_lines.saturating_sub(self.viewport_height);
         self.scroll_offset = (self.scroll_offset + amount).min(max_scroll);
@@ -67,7 +69,7 @@ impl EnvPane {
             };
 
             lines.push(Line::from(vec![
-                Span::styled(format!("{}", name), name_style),
+                Span::styled(name.to_string(), name_style),
                 Span::styled("=", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     format!("\"{}\"", display_value),

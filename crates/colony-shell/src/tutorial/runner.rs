@@ -54,6 +54,7 @@ pub type TutorialResult<T> = Result<T, TutorialError>;
 
 /// Errors that can occur during tutorial execution
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum TutorialError {
     /// IO error (terminal, file)
     Io(io::Error),
@@ -371,11 +372,7 @@ impl TutorialRunner {
         if word.parts.len() == 1 {
             Self::format_word_part(&word.parts[0])
         } else {
-            let parts: Vec<String> = word
-                .parts
-                .iter()
-                .map(|p| Self::format_word_part(p))
-                .collect();
+            let parts: Vec<String> = word.parts.iter().map(Self::format_word_part).collect();
             format!("Word[{}]", parts.join(" + "))
         }
     }
@@ -385,7 +382,7 @@ impl TutorialRunner {
             WordPart::Literal(s) => format!("Lit({})", s),
             WordPart::SingleQuoted(s) => format!("SQ('{}')", s),
             WordPart::DoubleQuoted(inner) => {
-                let parts: Vec<String> = inner.iter().map(|p| Self::format_word_part(p)).collect();
+                let parts: Vec<String> = inner.iter().map(Self::format_word_part).collect();
                 format!("DQ({})", parts.join(" + "))
             }
             WordPart::Variable(var) => {
@@ -495,8 +492,6 @@ impl TutorialRunner {
         tx: &Sender<TraceEvent>,
         ctx: &ExpansionContext,
     ) {
-        use colony_parser::VarModifier;
-
         match part {
             WordPart::Variable(var_ref) => {
                 let input = if var_ref.modifier.is_some() {
@@ -731,7 +726,7 @@ impl TutorialRunner {
                             format!("(assoc: {} entries)", arr.len())
                         }
                     };
-                    let previous = ctx.get_var_or_env(&assign.name).map(String::from);
+                    let previous = ctx.get_var_or_env(&assign.name);
                     tx.send(TraceEvent::Assign {
                         line,
                         name: assign.name.clone(),
@@ -1019,13 +1014,10 @@ impl TutorialRunner {
 
     fn detect_changed_variables(&self, _ctx: &ExpansionContext, stmt: &Statement) -> Vec<String> {
         let mut changed = Vec::new();
-        match stmt {
-            Statement::SimpleCommand(cmd) => {
-                for assign in &cmd.env_assignments {
-                    changed.push(assign.name.clone());
-                }
+        if let Statement::SimpleCommand(cmd) = stmt {
+            for assign in &cmd.env_assignments {
+                changed.push(assign.name.clone());
             }
-            _ => {}
         }
         changed
     }

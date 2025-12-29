@@ -104,7 +104,6 @@ impl ModelProvider for OllamaProvider {
             stream: Some(false), // Non-streaming for initial implementation
             options: Some(OllamaOptions {
                 temperature: request.temperature,
-                ..Default::default()
             }),
         };
 

@@ -122,7 +122,7 @@ fn get_affected_fds(redirects: &[Redirect]) -> Vec<RawFd> {
 
     for redirect in redirects {
         // Determine source FD
-        let source_fd = redirect.fd.unwrap_or_else(|| match redirect.kind {
+        let source_fd = redirect.fd.unwrap_or(match redirect.kind {
             RedirectKind::Input | RedirectKind::ReadWrite | RedirectKind::HereDoc(_) => 0,
             _ => 1,
         });

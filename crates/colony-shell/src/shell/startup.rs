@@ -4,6 +4,7 @@ use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
 use std::path::PathBuf;
 
+#[allow(dead_code)]
 type Result<T> = std::result::Result<T, ExpansionError>;
 
 pub(crate) async fn maybe_source_file(path: &str, executor: &mut Executor, verbose: bool) -> bool {
@@ -49,11 +50,9 @@ pub(crate) fn load_exported_functions(context: &mut ExpansionContext) {
 
             let func_source = format!("{} {}", func_name, value);
 
-            if let Ok(stmt) = parse_statement(&func_source) {
-                if let Statement::FunctionDef(func) = stmt {
-                    context.define_function(func.name.clone(), func);
-                    context.export_function(&func_name);
-                }
+            if let Ok(Statement::FunctionDef(func)) = parse_statement(&func_source) {
+                context.define_function(func.name.clone(), func);
+                context.export_function(func_name);
             }
         }
     }
@@ -71,10 +70,10 @@ pub(crate) async fn run_startup_files(opts: &crate::cli::ShellOptions, executor:
     if is_login && !opts.noprofile {
         maybe_source_file("/etc/profile", executor, verbose).await;
 
-        if !maybe_source_file("~/.bash_profile", executor, verbose).await {
-            if !maybe_source_file("~/.bash_login", executor, verbose).await {
-                maybe_source_file("~/.profile", executor, verbose).await;
-            }
+        if !maybe_source_file("~/.bash_profile", executor, verbose).await
+            && !maybe_source_file("~/.bash_login", executor, verbose).await
+        {
+            maybe_source_file("~/.profile", executor, verbose).await;
         }
     }
 

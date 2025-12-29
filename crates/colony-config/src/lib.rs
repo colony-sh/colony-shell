@@ -47,6 +47,7 @@ pub struct ColonyConfig {
 /// Agent-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct AgentConfig {
     /// Custom system prompt / agent personality for this project
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,18 +68,6 @@ pub struct AgentConfig {
     /// Max tokens override
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-}
-
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            personality: None,
-            preferred_provider: None,
-            preferred_model: None,
-            temperature: None,
-            max_tokens: None,
-        }
-    }
 }
 
 /// Project metadata and conventions

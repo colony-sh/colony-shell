@@ -84,12 +84,12 @@ impl AstBuilder {
                 // Standalone bash assignment: arr=(a b c)
                 // Convert to SimpleCommand with special handling
                 let assignment = Self::build_bash_assignment(pair)?;
-                let span = assignment.span.clone();
+                let span = assignment.span;
 
                 // Create a pseudo-command ":" (POSIX no-op) that does nothing
                 // This allows assignment-only statements to execute
                 Ok(Statement::SimpleCommand(SimpleCommand {
-                    name: Word::literal(":", span.clone()),
+                    name: Word::literal(":", span),
                     args: vec![],
                     redirects: vec![],
                     env_assignments: vec![assignment],
@@ -100,7 +100,7 @@ impl AstBuilder {
                 // Convert to SimpleCommand for execution handling
                 let span = span_from_pair(&pair);
                 Ok(Statement::SimpleCommand(SimpleCommand {
-                    name: Word::literal("break", span.clone()),
+                    name: Word::literal("break", span),
                     args: vec![],
                     redirects: vec![],
                     env_assignments: vec![],
@@ -110,7 +110,7 @@ impl AstBuilder {
             Rule::ContinueStatement => {
                 let span = span_from_pair(&pair);
                 Ok(Statement::SimpleCommand(SimpleCommand {
-                    name: Word::literal("continue", span.clone()),
+                    name: Word::literal("continue", span),
                     args: vec![],
                     redirects: vec![],
                     env_assignments: vec![],
@@ -273,7 +273,7 @@ impl AstBuilder {
         }
 
         let name = if words.is_empty() {
-            Word::literal(":", span.clone())
+            Word::literal(":", span)
         } else {
             words.remove(0)
         };
@@ -402,7 +402,7 @@ impl AstBuilder {
 
         // Convert to CommandList format: first + rest
         let first = Box::new(lists.remove(0));
-        let mut rest: Vec<(ListOp, Statement)> = ops.into_iter().zip(lists.into_iter()).collect();
+        let mut rest: Vec<(ListOp, Statement)> = ops.into_iter().zip(lists).collect();
 
         // If trailing &, add Background op with Empty statement
         if has_trailing_background {
@@ -466,9 +466,7 @@ impl AstBuilder {
         }
     }
 
-    /// Stub implementations for other statement types
-    /// TODO: Implement these fully
-
+    // TODO: Implement these fully
     fn build_if_statement(pair: Pair<Rule>) -> Result<IfStatement, BuildError> {
         let span = span_from_pair(&pair);
         let mut inner = pair.into_inner();
@@ -745,7 +743,7 @@ impl AstBuilder {
                 let first = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
                 let mut result = Self::build_cond_expr(first)?;
 
-                while let Some(next) = inner.next() {
+                for next in inner {
                     let right = Self::build_cond_expr(next)?;
                     result = CondExpr::Or(Box::new(result), Box::new(right));
                 }
@@ -756,7 +754,7 @@ impl AstBuilder {
                 let first = inner.next().ok_or(BuildError::EmptyConditionalCommand)?;
                 let mut result = Self::build_cond_expr(first)?;
 
-                while let Some(next) = inner.next() {
+                for next in inner {
                     let right = Self::build_cond_expr(next)?;
                     result = CondExpr::And(Box::new(result), Box::new(right));
                 }
@@ -770,8 +768,6 @@ impl AstBuilder {
                 if pair_text.starts_with('!') {
                     let expr = Self::build_cond_expr(inner_expr)?;
                     Ok(CondExpr::Not(Box::new(expr)))
-                } else if pair_text.starts_with('(') {
-                    Self::build_cond_expr(inner_expr)
                 } else {
                     Self::build_cond_expr(inner_expr)
                 }
@@ -1284,7 +1280,7 @@ impl AstBuilder {
                 left: Box::new(left),
                 op: default_op,
                 right: Box::new(right),
-                span: span.clone(),
+                span,
             };
         }
 
@@ -1310,7 +1306,7 @@ impl AstBuilder {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
-                span: span.clone(),
+                span,
             };
         }
 
@@ -1338,7 +1334,7 @@ impl AstBuilder {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
-                span: span.clone(),
+                span,
             };
         }
 
@@ -1369,7 +1365,7 @@ impl AstBuilder {
                 left: Box::new(left),
                 op: BinaryOp::Pow,
                 right: Box::new(result),
-                span: span.clone(),
+                span,
             };
         }
 
@@ -1395,7 +1391,7 @@ impl AstBuilder {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
-                span: span.clone(),
+                span,
             };
         }
 
@@ -1424,7 +1420,7 @@ impl AstBuilder {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
-                span: span.clone(),
+                span,
             };
         }
 
@@ -1452,7 +1448,7 @@ impl AstBuilder {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
-                span: span.clone(),
+                span,
             };
         }
 
@@ -1500,7 +1496,7 @@ impl AstBuilder {
                 left = Expression::NullCoalesce {
                     left: Box::new(left),
                     right: Box::new(right),
-                    span: span.clone(),
+                    span,
                 };
             }
         }
@@ -1556,52 +1552,49 @@ impl AstBuilder {
 
         // Apply postfix operators left-to-right
         for op in inner {
-            match op.as_rule() {
-                Rule::PostfixOp => {
-                    let mut op_inner = op.into_inner();
-                    if let Some(op_first) = op_inner.next() {
-                        match op_first.as_str() {
-                            "[" => {
-                                // Index: expr[index]
-                                if let Some(index_expr) = op_inner.next() {
-                                    let index = Self::build_expression_recursive(index_expr)?;
-                                    expr = Expression::Index {
-                                        target: Box::new(expr),
-                                        index: Box::new(index),
-                                        span: span.clone(),
-                                    };
-                                }
+            if op.as_rule() == Rule::PostfixOp {
+                let mut op_inner = op.into_inner();
+                if let Some(op_first) = op_inner.next() {
+                    match op_first.as_str() {
+                        "[" => {
+                            // Index: expr[index]
+                            if let Some(index_expr) = op_inner.next() {
+                                let index = Self::build_expression_recursive(index_expr)?;
+                                expr = Expression::Index {
+                                    target: Box::new(expr),
+                                    index: Box::new(index),
+                                    span,
+                                };
                             }
-                            "." => {
-                                // Field: expr.field
-                                if let Some(field_name) = op_inner.next() {
-                                    let field = field_name.as_str().to_string();
-                                    expr = Expression::Field {
-                                        target: Box::new(expr),
-                                        field,
-                                        span: span.clone(),
-                                    };
-                                }
-                            }
-                            "(" => {
-                                // Call: expr(args)
-                                let _args = Self::build_arg_list(op_inner)?;
-                                // TODO: Convert to FuncCall or MethodCall
-                                // For now, just return expr unchanged
-                            }
-                            "?" => {
-                                // Optional chain: expr?
-                                // TODO: Add OptionalChain expression type
-                            }
-                            "!" => {
-                                // Unwrap: expr!
-                                // TODO: Add Unwrap expression type
-                            }
-                            _ => {}
                         }
+                        "." => {
+                            // Field: expr.field
+                            if let Some(field_name) = op_inner.next() {
+                                let field = field_name.as_str().to_string();
+                                expr = Expression::Field {
+                                    target: Box::new(expr),
+                                    field,
+                                    span,
+                                };
+                            }
+                        }
+                        "(" => {
+                            // Call: expr(args)
+                            let _args = Self::build_arg_list(op_inner)?;
+                            // TODO: Convert to FuncCall or MethodCall
+                            // For now, just return expr unchanged
+                        }
+                        "?" => {
+                            // Optional chain: expr?
+                            // TODO: Add OptionalChain expression type
+                        }
+                        "!" => {
+                            // Unwrap: expr!
+                            // TODO: Add Unwrap expression type
+                        }
+                        _ => {}
                     }
                 }
-                _ => {}
             }
         }
 
@@ -1724,13 +1717,13 @@ impl AstBuilder {
 
     fn build_lambda_expr(pair: Pair<Rule>) -> Result<Expression, BuildError> {
         let span = span_from_pair(&pair);
-        let mut inner = pair.into_inner();
+        let inner = pair.into_inner();
 
         // LambdaExpr = "|" ~ params? ~ "|" ~ (Block | Expression)
         let mut params = Vec::new();
 
         // Collect parameters (identifiers before the body)
-        while let Some(part) = inner.next() {
+        for part in inner {
             if part.as_rule() == Rule::Identifier {
                 params.push(part.as_str().to_string());
             } else if part.as_rule() == Rule::Expression {
@@ -1847,7 +1840,7 @@ impl AstBuilder {
             // Empty assignment (e.g., empty=)
             AssignmentValue::Word(Word {
                 parts: vec![],
-                span: span.clone(),
+                span,
             })
         };
 
@@ -1863,10 +1856,10 @@ impl AstBuilder {
     fn parse_assignment_lhs(
         lhs: &str,
     ) -> Result<(String, Option<ArraySubscript>, AssignOp), BuildError> {
-        let (rest, op) = if lhs.ends_with("+=") {
-            (&lhs[..lhs.len() - 2], AssignOp::Append)
-        } else if lhs.ends_with('=') {
-            (&lhs[..lhs.len() - 1], AssignOp::Assign)
+        let (rest, op) = if let Some(stripped) = lhs.strip_suffix("+=") {
+            (stripped, AssignOp::Append)
+        } else if let Some(stripped) = lhs.strip_suffix('=') {
+            (stripped, AssignOp::Assign)
         } else {
             return Err(BuildError::MissingAssignmentName);
         };
@@ -2115,7 +2108,7 @@ impl AstBuilder {
             Self::extract_variable_name(first)?
         };
 
-        while let Some(part) = inner.next() {
+        for part in inner {
             match part.as_rule() {
                 Rule::ArraySubscript => {
                     subscript = Some(Self::build_array_subscript(part)?);
@@ -2217,7 +2210,7 @@ impl AstBuilder {
         {
             let slice_text = &text[1..];
             let parts: Vec<&str> = slice_text.split(':').collect();
-            let offset_str = parts.get(0).copied().unwrap_or("0");
+            let offset_str = parts.first().copied().unwrap_or("0");
             let offset = Word {
                 parts: vec![WordPart::Literal(offset_str.to_string())],
                 span: Span::DUMMY,
@@ -2978,6 +2971,7 @@ pub enum BuildError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pest_parser::ColonyParser;
     use pest::Parser;
 
     #[test]

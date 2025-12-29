@@ -173,8 +173,8 @@ pub(crate) async fn execute_coproc(
             drop(stdin_pipe.0);
             drop(stdout_pipe.1);
 
-            let read_fd = stdout_pipe.0.as_raw_fd();
-            let write_fd = stdin_pipe.1.as_raw_fd();
+            let _read_fd = stdout_pipe.0.as_raw_fd();
+            let _write_fd = stdin_pipe.1.as_raw_fd();
 
             executor
                 .context_mut()
@@ -537,8 +537,8 @@ fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
         return 0;
     }
 
-    if expr.starts_with("++") {
-        let var = &expr[2..].trim();
+    if let Some(stripped) = expr.strip_prefix("++") {
+        let var = stripped.trim();
         let current = get_var_as_i64(var, executor);
         let new_val = current + 1;
         executor
@@ -546,8 +546,8 @@ fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
             .set_var(var.to_string(), new_val.to_string());
         return new_val;
     }
-    if expr.starts_with("--") {
-        let var = &expr[2..].trim();
+    if let Some(stripped) = expr.strip_prefix("--") {
+        let var = stripped.trim();
         let current = get_var_as_i64(var, executor);
         let new_val = current - 1;
         executor
@@ -556,16 +556,16 @@ fn evaluate_cstyle_arith_single(expr: &str, executor: &mut Executor) -> i64 {
         return new_val;
     }
 
-    if expr.ends_with("++") {
-        let var = expr[..expr.len() - 2].trim();
+    if let Some(stripped) = expr.strip_suffix("++") {
+        let var = stripped.trim();
         let current = get_var_as_i64(var, executor);
         executor
             .context_mut()
             .set_var(var.to_string(), (current + 1).to_string());
         return current;
     }
-    if expr.ends_with("--") {
-        let var = expr[..expr.len() - 2].trim();
+    if let Some(stripped) = expr.strip_suffix("--") {
+        let var = stripped.trim();
         let current = get_var_as_i64(var, executor);
         executor
             .context_mut()
@@ -741,12 +741,10 @@ fn expand_arithmetic_vars(expr: &str, executor: &Executor) -> String {
                 } else {
                     result.push('0');
                 }
+            } else if let Some(val) = executor.context().get_var_or_env(&var_name) {
+                result.push_str(&val);
             } else {
-                if let Some(val) = executor.context().get_var_or_env(&var_name) {
-                    result.push_str(&val);
-                } else {
-                    result.push_str(&var_name);
-                }
+                result.push_str(&var_name);
             }
         } else {
             result.push(c);

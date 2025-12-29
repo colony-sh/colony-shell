@@ -9,6 +9,7 @@ pub struct ColonyParser;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pest::Parser;
 
     #[test]
     fn test_parse_simple_command() {

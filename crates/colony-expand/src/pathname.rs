@@ -191,14 +191,14 @@ fn glob_to_regex_part(glob_part: &str) -> String {
                             if let Some(equivalent) = posix_class_to_regex(&class_name) {
                                 regex.push_str(equivalent);
                             } else {
-                                for j in start..=i + 1 {
-                                    regex.push(chars[j]);
+                                for c in chars.iter().take(i + 2).skip(start) {
+                                    regex.push(*c);
                                 }
                             }
                             i += 1;
                         } else {
-                            for j in start..=i {
-                                regex.push(chars[j]);
+                            for c in chars.iter().take(i + 1).skip(start) {
+                                regex.push(*c);
                             }
                         }
                     } else {
@@ -630,17 +630,18 @@ fn expand_extglob_dir(dir_pattern: &str) -> Result<Vec<String>> {
                     if let Ok(read_dir) = std::fs::read_dir(search_dir) {
                         for entry in read_dir.filter_map(|e| e.ok()) {
                             if let Some(name) = entry.file_name().to_str() {
-                                if !name.starts_with('.') || part.starts_with('.') {
-                                    if regex.is_match(name) && entry.path().is_dir() {
-                                        let new_path = if base.is_empty() {
-                                            name.to_string()
-                                        } else if base == "/" {
-                                            format!("/{}", name)
-                                        } else {
-                                            format!("{}/{}", base, name)
-                                        };
-                                        new_paths.push(new_path);
-                                    }
+                                if (!name.starts_with('.') || part.starts_with('.'))
+                                    && regex.is_match(name)
+                                    && entry.path().is_dir()
+                                {
+                                    let new_path = if base.is_empty() {
+                                        name.to_string()
+                                    } else if base == "/" {
+                                        format!("/{}", name)
+                                    } else {
+                                        format!("{}/{}", base, name)
+                                    };
+                                    new_paths.push(new_path);
                                 }
                             }
                         }

@@ -396,7 +396,7 @@ fn allocate_heredoc_fd(
         nix::unistd::pipe().map_err(|e| ExecutionError::RedirectError(format!("pipe: {}", e)))?;
 
     let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
-    nix::unistd::write(&write_borrowed, final_content.as_bytes())
+    nix::unistd::write(write_borrowed, final_content.as_bytes())
         .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
 
     drop(write_fd);
@@ -540,7 +540,7 @@ fn get_source_fd_with_context(redirect: &Redirect, context: &ExpansionContext) -
         });
     }
 
-    Ok(redirect.fd.unwrap_or_else(|| match redirect.kind {
+    Ok(redirect.fd.unwrap_or(match redirect.kind {
         RedirectKind::Input
         | RedirectKind::ReadWrite
         | RedirectKind::HereDoc(_)
@@ -555,7 +555,7 @@ fn get_source_fd_with_context(redirect: &Redirect, context: &ExpansionContext) -
 /// - Input redirects: fd 0 (stdin)
 /// - Output redirects: fd 1 (stdout)
 fn get_source_fd(redirect: &Redirect) -> RawFd {
-    redirect.fd.unwrap_or_else(|| match redirect.kind {
+    redirect.fd.unwrap_or(match redirect.kind {
         RedirectKind::Input
         | RedirectKind::ReadWrite
         | RedirectKind::HereDoc(_)
@@ -779,7 +779,7 @@ fn apply_heredoc(
     // Write content to pipe
     use nix::unistd::write;
     let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
-    write(&write_borrowed, final_content.as_bytes())
+    write(write_borrowed, final_content.as_bytes())
         .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
 
     // Don't need to close write_fd explicitly - dropped automatically
@@ -803,7 +803,7 @@ fn apply_here_string(source_fd: RawFd, content: &str) -> Result<()> {
     final_content.push('\n');
 
     let write_borrowed = unsafe { BorrowedFd::borrow_raw(write_fd.as_raw_fd()) };
-    nix::unistd::write(&write_borrowed, final_content.as_bytes())
+    nix::unistd::write(write_borrowed, final_content.as_bytes())
         .map_err(|e| ExecutionError::RedirectError(format!("write: {}", e)))?;
 
     drop(write_fd);

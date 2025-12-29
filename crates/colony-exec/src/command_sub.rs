@@ -279,8 +279,7 @@ fn execute_command_in_child_blocking(
     use std::os::unix::ffi::OsStrExt;
 
     // Create expander with command substitution (recursive!)
-    let mut expander =
-        Expander::with_executor(context.clone(), |stmt, ctx| execute_and_capture(stmt, ctx));
+    let mut expander = Expander::with_executor(context.clone(), execute_and_capture);
 
     // Expand command name
     let name_fields = expander.expand_word(&cmd.name)?;
@@ -335,9 +334,8 @@ fn execute_command_in_child_blocking(
         .collect();
 
     // Exec - this replaces the current process
-    execve(&c_program, &c_args, &c_env).map_err(|e| {
-        crate::ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-    })?;
+    execve(&c_program, &c_args, &c_env)
+        .map_err(|e| crate::ExecutionError::IoError(std::io::Error::other(e)))?;
 
     // Never reached
     unreachable!()
@@ -368,9 +366,8 @@ fn execute_pipeline_in_child_blocking(
         let is_last = i == num_cmds - 1;
 
         let (read_fd, write_fd) = if !is_last {
-            let (r, w) = pipe().map_err(|e| {
-                crate::ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
+            let (r, w) =
+                pipe().map_err(|e| crate::ExecutionError::IoError(std::io::Error::other(e)))?;
             (Some(r), Some(w))
         } else {
             (None, None)
@@ -401,10 +398,7 @@ fn execute_pipeline_in_child_blocking(
                 prev_read_fd = read_fd;
             }
             Err(e) => {
-                return Err(crate::ExecutionError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                )));
+                return Err(crate::ExecutionError::IoError(std::io::Error::other(e)));
             }
         }
     }
@@ -438,8 +432,7 @@ fn execute_single_element_blocking(
     use std::io::Write;
 
     if let colony_parser::Statement::SimpleCommand(cmd) = &*element.command {
-        let mut expander =
-            Expander::with_executor(context.clone(), |stmt, ctx| execute_and_capture(stmt, ctx));
+        let mut expander = Expander::with_executor(context.clone(), execute_and_capture);
 
         let name_fields = match expander.expand_word(&cmd.name) {
             Ok(fields) if !fields.is_empty() => fields,

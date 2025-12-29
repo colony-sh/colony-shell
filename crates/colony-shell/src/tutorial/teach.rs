@@ -7,6 +7,7 @@ use std::collections::HashSet;
 
 /// Shell concepts that can be taught
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum Concept {
     // Parameter expansion variants
     ParameterDefault,       // ${var:-default}
@@ -471,6 +472,7 @@ impl ConceptTracker {
     }
 
     /// Check if a concept has been explained
+    #[allow(dead_code)]
     pub fn has_seen(&self, concept: Concept) -> bool {
         self.seen.contains(&concept)
     }
@@ -481,11 +483,13 @@ impl ConceptTracker {
     }
 
     /// Reset all concept tracking
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.seen.clear();
     }
 
     /// Get all seen concepts
+    #[allow(dead_code)]
     pub fn seen_concepts(&self) -> impl Iterator<Item = &Concept> {
         self.seen.iter()
     }

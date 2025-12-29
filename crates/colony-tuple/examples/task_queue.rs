@@ -44,7 +44,7 @@ async fn run_producer(space: PersistentTupleSpace) -> Result<(), Box<dyn std::er
     println!("🏭 Task Producer");
     println!("Adding 5 tasks to the persistent queue...\n");
 
-    let tasks = vec![
+    let tasks = [
         ("build", "Build the project"),
         ("test", "Run test suite"),
         ("lint", "Check code style"),

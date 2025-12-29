@@ -157,26 +157,17 @@ pub fn init_job_control() -> Result<()> {
 
         // Ignore SIGINT (Ctrl-C) - let foreground job handle it
         sigaction(Signal::SIGINT, &ignore).map_err(|e| {
-            ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("sigaction SIGINT: {}", e),
-            ))
+            ExecutionError::IoError(std::io::Error::other(format!("sigaction SIGINT: {}", e)))
         })?;
 
         // Ignore SIGTSTP (Ctrl-Z) - let foreground job handle it
         sigaction(Signal::SIGTSTP, &ignore).map_err(|e| {
-            ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("sigaction SIGTSTP: {}", e),
-            ))
+            ExecutionError::IoError(std::io::Error::other(format!("sigaction SIGTSTP: {}", e)))
         })?;
 
         // Ignore SIGTTOU (background write to terminal)
         sigaction(Signal::SIGTTOU, &ignore).map_err(|e| {
-            ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("sigaction SIGTTOU: {}", e),
-            ))
+            ExecutionError::IoError(std::io::Error::other(format!("sigaction SIGTTOU: {}", e)))
         })?;
     }
 
@@ -189,12 +180,8 @@ pub fn init_job_control() -> Result<()> {
 /// Should be called in both parent and child to avoid race conditions.
 /// The first call (parent or child) will succeed, the second will be a no-op.
 pub fn create_process_group(pid: Pid, pgid: Pid) -> Result<()> {
-    setpgid(pid, pgid).map_err(|e| {
-        ExecutionError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("setpgid: {}", e),
-        ))
-    })?;
+    setpgid(pid, pgid)
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(format!("setpgid: {}", e))))?;
     Ok(())
 }
 
@@ -207,12 +194,8 @@ pub fn give_terminal_to(pgid: Pid) -> Result<()> {
     let stdin_fd = std::io::stdin().as_raw_fd();
     let stdin_borrowed = unsafe { BorrowedFd::borrow_raw(stdin_fd) };
 
-    tcsetpgrp(&stdin_borrowed, pgid).map_err(|e| {
-        ExecutionError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("tcsetpgrp: {}", e),
-        ))
-    })?;
+    tcsetpgrp(stdin_borrowed, pgid)
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(format!("tcsetpgrp: {}", e))))?;
     Ok(())
 }
 
@@ -228,12 +211,8 @@ pub fn take_terminal() -> Result<Pid> {
     // Get shell's own pgid
     let shell_pgid = nix::unistd::getpgrp();
 
-    tcsetpgrp(&stdin_borrowed, shell_pgid).map_err(|e| {
-        ExecutionError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("tcsetpgrp: {}", e),
-        ))
-    })?;
+    tcsetpgrp(stdin_borrowed, shell_pgid)
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(format!("tcsetpgrp: {}", e))))?;
 
     Ok(shell_pgid)
 }

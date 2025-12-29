@@ -69,7 +69,7 @@ fn pre_expand_variables(expr: &str, context: &ExpansionContext) -> String {
                     let param_str: String = chars[start..i].iter().collect();
                     if let Ok(param_num) = param_str.parse::<usize>() {
                         let value = context.get_positional_param(param_num).unwrap_or_default();
-                        result.push_str(&value);
+                        result.push_str(value);
                     }
                 } else if chars[i].is_ascii_alphabetic() || chars[i] == '_' {
                     let start = i;

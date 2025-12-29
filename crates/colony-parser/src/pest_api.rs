@@ -152,7 +152,7 @@ fn parse_direct(source: &str) -> Result<Program, ParseError> {
 
 fn parse_with_heredocs(source: &str) -> Result<Program, ParseError> {
     let (normalized, heredoc_contents) =
-        preprocess_heredocs(source).map_err(|e| ParseError::HeredocPreprocessing(e))?;
+        preprocess_heredocs(source).map_err(ParseError::HeredocPreprocessing)?;
 
     let pairs = ColonyParser::parse(Rule::Program, &normalized).map_err(|e| {
         let (line, column) = match e.line_col {
@@ -184,7 +184,7 @@ pub fn parse_statement(source: &str) -> Result<crate::ast::Statement, ParseError
     };
 
     let (normalized, heredoc_contents) = if normalized_arith.contains("<<") {
-        preprocess_heredocs(&normalized_arith).map_err(|e| ParseError::HeredocPreprocessing(e))?
+        preprocess_heredocs(&normalized_arith).map_err(ParseError::HeredocPreprocessing)?
     } else {
         (normalized_arith, std::collections::HashMap::new())
     };
@@ -237,7 +237,7 @@ pub fn parse_statement_with_aliases(
     };
 
     let (normalized, heredoc_contents) = if normalized_arith.contains("<<") {
-        preprocess_heredocs(&normalized_arith).map_err(|e| ParseError::HeredocPreprocessing(e))?
+        preprocess_heredocs(&normalized_arith).map_err(ParseError::HeredocPreprocessing)?
     } else {
         (normalized_arith, std::collections::HashMap::new())
     };
@@ -300,50 +300,53 @@ fn preprocess_line_continuations(source: &str) -> String {
 
     while i < bytes.len() {
         // Check for heredoc start
-        if in_heredoc.is_none() && !in_single_quote {
-            if i + 1 < bytes.len() && bytes[i] == b'<' && bytes[i + 1] == b'<' {
-                let start = i;
-                i += 2;
-                if i < bytes.len() && bytes[i] == b'-' {
-                    i += 1;
-                }
-                while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-                    i += 1;
-                }
-                let delim_start = i;
-                if i < bytes.len() && (bytes[i] == b'\'' || bytes[i] == b'"') {
-                    let quote = bytes[i];
-                    i += 1;
-                    while i < bytes.len() && bytes[i] != quote {
-                        i += 1;
-                    }
-                    let delim = String::from_utf8_lossy(&bytes[delim_start + 1..i]).to_string();
-                    if i < bytes.len() {
-                        i += 1;
-                    }
-                    in_heredoc = Some((delim, true));
-                } else {
-                    while i < bytes.len()
-                        && bytes[i] != b'\n'
-                        && bytes[i] != b' '
-                        && bytes[i] != b'\t'
-                        && bytes[i] != b';'
-                        && bytes[i] != b'&'
-                        && bytes[i] != b'|'
-                        && bytes[i] != b'>'
-                        && bytes[i] != b'<'
-                        && bytes[i] != b')'
-                    {
-                        i += 1;
-                    }
-                    let delim = String::from_utf8_lossy(&bytes[delim_start..i]).to_string();
-                    if !delim.is_empty() {
-                        in_heredoc = Some((delim, false));
-                    }
-                }
-                result.push_str(&String::from_utf8_lossy(&bytes[start..i]));
-                continue;
+        if in_heredoc.is_none()
+            && !in_single_quote
+            && i + 1 < bytes.len()
+            && bytes[i] == b'<'
+            && bytes[i + 1] == b'<'
+        {
+            let start = i;
+            i += 2;
+            if i < bytes.len() && bytes[i] == b'-' {
+                i += 1;
             }
+            while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+                i += 1;
+            }
+            let delim_start = i;
+            if i < bytes.len() && (bytes[i] == b'\'' || bytes[i] == b'"') {
+                let quote = bytes[i];
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    i += 1;
+                }
+                let delim = String::from_utf8_lossy(&bytes[delim_start + 1..i]).to_string();
+                if i < bytes.len() {
+                    i += 1;
+                }
+                in_heredoc = Some((delim, true));
+            } else {
+                while i < bytes.len()
+                    && bytes[i] != b'\n'
+                    && bytes[i] != b' '
+                    && bytes[i] != b'\t'
+                    && bytes[i] != b';'
+                    && bytes[i] != b'&'
+                    && bytes[i] != b'|'
+                    && bytes[i] != b'>'
+                    && bytes[i] != b'<'
+                    && bytes[i] != b')'
+                {
+                    i += 1;
+                }
+                let delim = String::from_utf8_lossy(&bytes[delim_start..i]).to_string();
+                if !delim.is_empty() {
+                    in_heredoc = Some((delim, false));
+                }
+            }
+            result.push_str(&String::from_utf8_lossy(&bytes[start..i]));
+            continue;
         }
 
         // Check for heredoc end

@@ -27,7 +27,7 @@ pub struct VariableConfig {
     pub secure: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuditConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -44,15 +44,6 @@ impl Default for PatternConfig {
                 "SSH_AUTH_SOCK".to_string(),
                 "GPG_AGENT_INFO".to_string(),
             ],
-        }
-    }
-}
-
-impl Default for AuditConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            file: None,
         }
     }
 }

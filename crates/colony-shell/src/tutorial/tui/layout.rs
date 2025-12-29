@@ -1,15 +1,13 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
-use std::collections::HashSet;
 use std::path::Path;
-use std::sync::mpsc::Receiver;
 
-use crate::tutorial::events::{ComplexityLevel, TraceEvent};
+use crate::tutorial::events::TraceEvent;
 use crate::tutorial::tracer::{TraceDepth, TracerConfig};
 
 use super::controls::{handle_event, TutorialAction};
@@ -352,10 +350,12 @@ impl TutorialTui {
         self.history_index.is_some()
     }
 
+    #[allow(dead_code)]
     pub fn add_output(&mut self, line: String) {
         self.output_lines.push(line);
     }
 
+    #[allow(dead_code)]
     pub fn clear_output(&mut self) {
         self.output_lines.clear();
     }

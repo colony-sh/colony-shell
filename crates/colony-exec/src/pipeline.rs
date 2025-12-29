@@ -31,7 +31,7 @@ pub async fn execute_pipeline(
             execute_pipeline_blocking(&pipeline_clone, &context_clone)
         })
         .await
-        .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(e)))?
     }
 }
 
@@ -40,7 +40,7 @@ async fn execute_pipeline_with_lastpipe(
     context: &mut ExpansionContext,
 ) -> Result<ExitStatus> {
     let num_commands = pipeline.elements.len();
-    let is_negated = pipeline.elements.first().map_or(false, |e| e.negated);
+    let is_negated = pipeline.elements.first().is_some_and(|e| e.negated);
     let pipefail = context.shell_options().pipefail;
 
     let pipeline_clone = pipeline.clone();
@@ -50,7 +50,7 @@ async fn execute_pipeline_with_lastpipe(
         execute_pipeline_head_blocking(&pipeline_clone, &context_clone)
     })
     .await
-    .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+    .map_err(|e| ExecutionError::IoError(std::io::Error::other(e)))??;
 
     let last_element = &pipeline.elements[num_commands - 1];
     let saved_stdin = nix::unistd::dup(0).ok();
@@ -60,10 +60,10 @@ async fn execute_pipeline_with_lastpipe(
             let _ = close(fd);
         }
         let _ = close(last_pipe_read_fd);
-        return Err(ExecutionError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("lastpipe: failed to redirect stdin: {}", e),
-        )));
+        return Err(ExecutionError::IoError(std::io::Error::other(format!(
+            "lastpipe: failed to redirect stdin: {}",
+            e
+        ))));
     }
 
     let _ = close(last_pipe_read_fd);
@@ -87,7 +87,7 @@ async fn execute_pipeline_with_lastpipe(
         statuses
     })
     .await
-    .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    .map_err(|e| ExecutionError::IoError(std::io::Error::other(e)))?;
 
     let status = last_status?;
     let last_code = status.code();
@@ -234,7 +234,7 @@ fn execute_pipeline_blocking(
         return Ok(ExitStatus::success());
     }
 
-    let is_negated = pipeline.elements.first().map_or(false, |e| e.negated);
+    let is_negated = pipeline.elements.first().is_some_and(|e| e.negated);
     let pipefail = context.shell_options().pipefail;
 
     if num_commands == 1 {
@@ -574,11 +574,11 @@ fn execute_simple_command_in_child_blocking(
             expand_next,
         } => {
             let mut new_cmd = cmd.clone();
-            new_cmd.name = colony_parser::Word::literal(&new_command, cmd.span.clone());
+            new_cmd.name = colony_parser::Word::literal(&new_command, cmd.span);
 
             let mut new_args = Vec::new();
             for alias_arg in &alias_args {
-                new_args.push(colony_parser::Word::literal(alias_arg, cmd.span.clone()));
+                new_args.push(colony_parser::Word::literal(alias_arg, cmd.span));
             }
 
             // Handle trailing space expansion
@@ -594,15 +594,9 @@ fn execute_simple_command_in_child_blocking(
                             ..
                         } = crate::alias::expand_alias(arg_name, context, &exp_set)
                         {
-                            new_args.push(colony_parser::Word::literal(
-                                &arg_cmd,
-                                first_arg.span.clone(),
-                            ));
+                            new_args.push(colony_parser::Word::literal(&arg_cmd, first_arg.span));
                             for arg in &arg_alias_args {
-                                new_args.push(colony_parser::Word::literal(
-                                    arg,
-                                    first_arg.span.clone(),
-                                ));
+                                new_args.push(colony_parser::Word::literal(arg, first_arg.span));
                             }
                             skip_first_arg = true;
                         }
@@ -662,15 +656,12 @@ fn execute_simple_command_in_child_blocking(
     crate::xtrace::trace_simple_command(context, command_name, &args[1..]);
 
     let path_env = context.get_env("PATH");
-    let program_path = match resolve_command(command_name, path_env) {
-        Ok(path) => path,
-        Err(e) => return Err(e),
-    };
+    let program_path = resolve_command(command_name, path_env)?;
 
     match unsafe { fork() }.map_err(crate::ExecutionError::ForkError)? {
         ForkResult::Child => {
             let _ = crate::apply_redirects(&cmd.redirects, &mut context.clone());
-            let mut env = crate::build_env(&context);
+            let mut env = crate::build_env(context);
 
             for assignment in &cmd.env_assignments {
                 if assignment.subscript.is_none() {
@@ -966,14 +957,11 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
             expand_next,
         } => {
             let mut new_cmd = simple_cmd.clone();
-            new_cmd.name = colony_parser::Word::literal(&new_command, simple_cmd.span.clone());
+            new_cmd.name = colony_parser::Word::literal(&new_command, simple_cmd.span);
 
             let mut new_args = Vec::new();
             for alias_arg in &alias_args {
-                new_args.push(colony_parser::Word::literal(
-                    alias_arg,
-                    simple_cmd.span.clone(),
-                ));
+                new_args.push(colony_parser::Word::literal(alias_arg, simple_cmd.span));
             }
 
             let mut skip_first_arg = false;
@@ -988,15 +976,9 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
                             ..
                         } = crate::alias::expand_alias(arg_name, &context, &exp_set)
                         {
-                            new_args.push(colony_parser::Word::literal(
-                                &arg_cmd,
-                                first_arg.span.clone(),
-                            ));
+                            new_args.push(colony_parser::Word::literal(&arg_cmd, first_arg.span));
                             for arg in &arg_alias_args {
-                                new_args.push(colony_parser::Word::literal(
-                                    arg,
-                                    first_arg.span.clone(),
-                                ));
+                                new_args.push(colony_parser::Word::literal(arg, first_arg.span));
                             }
                             skip_first_arg = true;
                         }

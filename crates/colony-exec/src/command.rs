@@ -30,7 +30,7 @@ pub async fn execute_command(
     // Use spawn_blocking for fork/exec (rule #10)
     tokio::task::spawn_blocking(move || execute_command_blocking(&cmd_clone, &mut context_clone))
         .await
-        .map_err(|e| ExecutionError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| ExecutionError::IoError(std::io::Error::other(e)))?
 }
 
 /// Execute a command synchronously (blocking)

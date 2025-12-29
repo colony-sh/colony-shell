@@ -179,11 +179,7 @@ impl TupleSpace {
         let hash = tuple.len() as u64;
 
         // Add to the appropriate bucket
-        self.tuples
-            .entry(hash)
-            .or_insert_with(Vec::new)
-            .get_mut()
-            .push(tuple);
+        self.tuples.entry(hash).or_default().get_mut().push(tuple);
 
         // Notify any waiting threads
         let (_lock, condvar) = &*self.notify;

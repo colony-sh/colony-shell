@@ -6,6 +6,7 @@ pub struct CommandExplainer {
     commands: HashMap<&'static str, CommandInfo>,
 }
 
+#[allow(dead_code)]
 pub struct CommandInfo {
     pub name: &'static str,
     pub brief: &'static str,

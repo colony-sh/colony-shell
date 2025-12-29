@@ -1300,19 +1300,13 @@ fn expand_process_sub_fallback(
                 }
             }
 
-            match colony_parser::pest_api::parse(trimmed_cmd) {
-                Ok(program) => {
-                    for stmt in &program.statements {
-                        match executor(stmt, context) {
-                            Ok(output) => {
-                                let _ = std::io::stdout().write_all(output.as_bytes());
-                                let _ = std::io::stdout().flush();
-                            }
-                            Err(_) => {}
-                        }
+            if let Ok(program) = colony_parser::pest_api::parse(trimmed_cmd) {
+                for stmt in &program.statements {
+                    if let Ok(output) = executor(stmt, context) {
+                        let _ = std::io::stdout().write_all(output.as_bytes());
+                        let _ = std::io::stdout().flush();
                     }
                 }
-                Err(_) => {}
             }
 
             std::process::exit(0);

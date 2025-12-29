@@ -1081,7 +1081,7 @@ impl ExpansionContext {
     }
 
     fn get_random(&self) -> u16 {
-        let mut rng = self.rng.take().unwrap_or_else(|| StdRng::from_entropy());
+        let mut rng = self.rng.take().unwrap_or_else(StdRng::from_entropy);
         let value: u16 = rng.gen_range(0..32768);
         self.rng.set(Some(rng));
         value
@@ -1090,7 +1090,7 @@ impl ExpansionContext {
     fn get_srandom(&self) -> u32 {
         let mut buf = [0u8; 4];
         getrandom::getrandom(&mut buf).unwrap_or_else(|_| {
-            let mut rng = self.rng.take().unwrap_or_else(|| StdRng::from_entropy());
+            let mut rng = self.rng.take().unwrap_or_else(StdRng::from_entropy);
             buf = rng.gen::<[u8; 4]>();
             self.rng.set(Some(rng));
         });
@@ -1135,12 +1135,10 @@ impl ExpansionContext {
 
     /// Set a shell variable
     pub fn set_variable(&mut self, name: String, value: Variable) {
-        if let Some(existing) = self.variables.get(&name) {
-            if let Variable::NameRef(_target) = existing {
-                if let Some(resolved) = self.resolve_nameref(&name) {
-                    self.variables.insert(resolved, value);
-                    return;
-                }
+        if let Some(Variable::NameRef(_target)) = self.variables.get(&name) {
+            if let Some(resolved) = self.resolve_nameref(&name) {
+                self.variables.insert(resolved, value);
+                return;
             }
         }
         self.variables.insert(name, value);
@@ -1173,22 +1171,20 @@ impl ExpansionContext {
 
         let transformed = self.apply_attribute_transforms(&name, value.clone());
 
-        if let Some(existing) = self.variables.get(&name) {
-            if let Variable::NameRef(_) = existing {
-                if let Some(resolved) = self.resolve_nameref(&name) {
-                    if self.is_readonly(&resolved) {
-                        return false;
-                    }
-                    match resolved.as_str() {
-                        "IFS" => self.ifs = transformed.clone(),
-                        "HOME" => self.home = Some(PathBuf::from(&transformed)),
-                        _ => {}
-                    }
-                    let final_value = self.apply_attribute_transforms(&resolved, transformed);
-                    self.variables
-                        .insert(resolved, Variable::String(final_value));
-                    return true;
+        if let Some(Variable::NameRef(_)) = self.variables.get(&name) {
+            if let Some(resolved) = self.resolve_nameref(&name) {
+                if self.is_readonly(&resolved) {
+                    return false;
                 }
+                match resolved.as_str() {
+                    "IFS" => self.ifs = transformed.clone(),
+                    "HOME" => self.home = Some(PathBuf::from(&transformed)),
+                    _ => {}
+                }
+                let final_value = self.apply_attribute_transforms(&resolved, transformed);
+                self.variables
+                    .insert(resolved, Variable::String(final_value));
+                return true;
             }
         }
 
@@ -1223,23 +1219,19 @@ impl ExpansionContext {
 
     /// Unset a nameref itself (not its target)
     pub fn unset_nameref(&mut self, name: &str) {
-        if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(_) = var {
-                self.variables.remove(name);
-            }
+        if let Some(Variable::NameRef(_)) = self.variables.get(name) {
+            self.variables.remove(name);
         }
     }
 
     /// Unset a variable (follows nameref to target)
     /// Also removes any attributes (integer, readonly, etc.) associated with the variable
     pub fn unset_variable(&mut self, name: &str) {
-        if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(_) = var {
-                if let Some(resolved) = self.resolve_nameref(name) {
-                    self.variables.remove(&resolved);
-                    self.var_attributes.remove(&resolved);
-                    return;
-                }
+        if let Some(Variable::NameRef(_)) = self.variables.get(name) {
+            if let Some(resolved) = self.resolve_nameref(name) {
+                self.variables.remove(&resolved);
+                self.var_attributes.remove(&resolved);
+                return;
             }
         }
         self.variables.remove(name);

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum Scope {
+    #[default]
     Global,
     Project(String),
     Session(String),
@@ -53,11 +54,5 @@ impl std::fmt::Display for Scope {
             Scope::Session(id) => write!(f, "session:{}", id),
             Scope::Task(id) => write!(f, "task:{}", id),
         }
-    }
-}
-
-impl Default for Scope {
-    fn default() -> Self {
-        Scope::Global
     }
 }

@@ -13,6 +13,7 @@ use std::sync::mpsc::Sender;
 use std::time::Instant;
 
 /// File descriptor for stdtrace (Colony's trace channel)
+#[allow(dead_code)]
 pub const STDTRACE_FD: RawFd = 6;
 
 /// Trace depth levels
@@ -49,6 +50,7 @@ impl Default for TracerConfig {
 }
 
 /// Output destination for trace events
+#[allow(dead_code)]
 pub enum TraceOutput {
     /// Write to fd 6 (stdtrace)
     Fd6,
@@ -61,6 +63,7 @@ pub enum TraceOutput {
 }
 
 /// Emits structured trace events during script execution
+#[allow(dead_code)]
 pub struct TraceEmitter {
     config: TracerConfig,
     output: TraceOutput,
@@ -74,6 +77,7 @@ pub struct TraceEmitter {
     script_start: Option<Instant>,
 }
 
+#[allow(dead_code)]
 impl TraceEmitter {
     /// Create a new tracer that writes to fd 6
     pub fn new_fd6(config: TracerConfig) -> Self {
@@ -443,8 +447,10 @@ mod tests {
 
     #[test]
     fn test_teach_mode() {
-        let mut config = TracerConfig::default();
-        config.teach_mode = true;
+        let config = TracerConfig {
+            teach_mode: true,
+            ..Default::default()
+        };
         let mut tracer = TraceEmitter::new_buffer(config);
 
         // First occurrence should emit

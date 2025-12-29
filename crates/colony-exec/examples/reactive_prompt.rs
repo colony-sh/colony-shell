@@ -17,10 +17,10 @@
 //! ```
 
 use colony_channels::ChannelManager;
-use colony_exec::{execute_builtin, is_builtin, Executor};
+use colony_exec::{execute_builtin, Executor};
 use colony_expand::ExpansionContext;
 use colony_parser::{SimpleCommand, Span, Word};
-use colony_tuple::{Tuple, TupleSpace, Value};
+use colony_tuple::{Tuple, Value};
 use std::thread;
 use std::time::Duration;
 
@@ -37,7 +37,7 @@ fn main() {
     let subscriber_handle = thread::spawn(move || {
         println!("📡 Subscriber: Listening for state changes...\n");
 
-        for i in 1..=5 {
+        for _i in 1..=5 {
             // Try to read any dir_change or env_change tuple (non-blocking)
             let dir_pattern = Tuple::pattern(&[
                 Value::Str("dir_change".to_string()),

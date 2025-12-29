@@ -209,12 +209,12 @@ pub fn build_expanded_command(
     expanding: &HashSet<String>,
 ) -> SimpleCommand {
     let mut new_cmd = original_cmd.clone();
-    new_cmd.name = Word::literal(new_command, original_cmd.span.clone());
+    new_cmd.name = Word::literal(new_command, original_cmd.span);
 
     // Build new args: alias_args first, then original args
     let mut new_args = Vec::new();
     for alias_arg in alias_args {
-        new_args.push(Word::literal(alias_arg, original_cmd.span.clone()));
+        new_args.push(Word::literal(alias_arg, original_cmd.span));
     }
 
     // Handle trailing space expansion for the first original argument
@@ -235,7 +235,7 @@ pub fn build_expanded_command(
                             .map(|s| s.to_string())
                             .collect();
                         for word in arg_words {
-                            new_args.push(Word::literal(&word, first_arg.span.clone()));
+                            new_args.push(Word::literal(&word, first_arg.span));
                         }
                         skip_first_arg = true;
                     }
@@ -293,7 +293,7 @@ mod tests {
         match result {
             AliasExpansionResult::SimpleExpansion {
                 new_command,
-                alias_args: _alias_args,
+                alias_args,
                 expand_next,
             } => {
                 assert_eq!(new_command, "ls");

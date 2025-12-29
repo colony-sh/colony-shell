@@ -156,7 +156,7 @@ pub fn execute_builtin(
         "export" | "declare" | "local" | "readonly" | "typeset"
     );
 
-    for (_i, arg_word) in cmd.args.iter().enumerate() {
+    for arg_word in cmd.args.iter() {
         // For assignment builtins, check if this arg looks like an assignment
         let use_assignment_expansion = is_assignment_builtin
             && arg_word.parts.iter().any(|p| {
@@ -405,12 +405,10 @@ fn builtin_export(
                 Value::Str(old_value),
                 Value::Str(value.to_string()),
             ]));
+        } else if let Some(value) = context.get_var_or_env(arg) {
+            env::set_var(arg, &value);
         } else {
-            if let Some(value) = context.get_var_or_env(arg) {
-                env::set_var(arg, &value);
-            } else {
-                env::set_var(arg, "");
-            }
+            env::set_var(arg, "");
         }
     }
 
@@ -578,9 +576,7 @@ fn builtin_echo(args: &[String]) -> Result<BuiltinResult> {
     // SAFETY: borrowing fd 1 to write, using forget() to avoid closing on drop
     let mut stdout = unsafe { std::fs::File::from_raw_fd(1) };
 
-    if output.1 {
-        let _ = stdout.write_all(output.0.as_bytes());
-    } else if no_newline {
+    if output.1 || no_newline {
         let _ = stdout.write_all(output.0.as_bytes());
     } else {
         let _ = writeln!(stdout, "{}", output.0);
@@ -615,7 +611,7 @@ fn expand_echo_escapes(s: &str) -> (String, bool) {
                     let mut octal = String::new();
                     for _ in 0..3 {
                         if let Some(&next) = chars.peek() {
-                            if next >= '0' && next <= '7' {
+                            if ('0'..='7').contains(&next) {
                                 octal.push(chars.next().unwrap());
                             } else {
                                 break;
@@ -909,27 +905,25 @@ fn builtin_type(args: &[String], context: &ExpansionContext) -> Result<BuiltinRe
             }
 
             // Check function (unless -f or -p)
-            if !suppress_functions && !path_only {
-                if context.get_function(name).is_some() {
-                    if type_only {
-                        println!("function");
+            if !suppress_functions && !path_only && context.get_function(name).is_some() {
+                if type_only {
+                    println!("function");
+                } else {
+                    // For -a we just say it's a function, for normal we show definition
+                    if show_all {
+                        println!("{} is a function", name);
                     } else {
-                        // For -a we just say it's a function, for normal we show definition
-                        if show_all {
-                            println!("{} is a function", name);
-                        } else {
-                            // Show function definition
-                            println!("{} is a function", name);
-                            println!("{} ()", name);
-                            println!("{{");
-                            println!("    ...");
-                            println!("}}");
-                        }
+                        // Show function definition
+                        println!("{} is a function", name);
+                        println!("{} ()", name);
+                        println!("{{");
+                        println!("    ...");
+                        println!("}}");
                     }
-                    found = true;
-                    if !show_all {
-                        continue;
-                    }
+                }
+                found = true;
+                if !show_all {
+                    continue;
                 }
             }
 
@@ -1013,13 +1007,11 @@ fn builtin_alias(args: &[String], context: &mut ExpansionContext) -> Result<Buil
             }
 
             context.set_alias(name.to_string(), value.to_string());
+        } else if let Some(value) = context.get_alias(arg) {
+            println!("alias {}='{}'", arg, value);
         } else {
-            if let Some(value) = context.get_alias(arg) {
-                println!("alias {}='{}'", arg, value);
-            } else {
-                eprintln!("alias: {}: not found", arg);
-                return Ok(BuiltinResult::Failure(1));
-            }
+            eprintln!("alias: {}: not found", arg);
+            return Ok(BuiltinResult::Failure(1));
         }
     }
 
@@ -1304,8 +1296,7 @@ fn builtin_disown(args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
 }
 
 fn parse_job_spec(spec: &str, jobs: &JobTable) -> Option<usize> {
-    if spec.starts_with('%') {
-        let rest = &spec[1..];
+    if let Some(rest) = spec.strip_prefix('%') {
         if rest == "%" || rest == "+" {
             jobs.list_jobs().last().map(|j| j.id)
         } else if rest == "-" {
@@ -1440,7 +1431,7 @@ fn evaluate_test_expr(args: &[String]) -> Result<bool> {
     }
 
     let mut idx = 0;
-    evaluate_test_or(&args, &mut idx)
+    evaluate_test_or(args, &mut idx)
 }
 
 fn evaluate_test_or(args: &[String], idx: &mut usize) -> Result<bool> {
@@ -2098,7 +2089,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
     let mut input_fd: Option<i32> = None;
     let mut nchars: Option<usize> = None;
     let mut delimiter: Option<char> = None;
-    let mut timeout_secs: Option<f64> = None;
+    let mut _timeout_secs: Option<f64> = None;
     let mut array_mode = false;
     let mut array_name: Option<&str> = None;
 
@@ -2130,7 +2121,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
         } else if arg == "-t" {
             i += 1;
             if i < args.len() {
-                timeout_secs = args[i].parse().ok();
+                _timeout_secs = args[i].parse().ok();
             }
         } else if arg == "-u" {
             i += 1;
@@ -2145,7 +2136,7 @@ fn builtin_read(args: &[String], context: &mut ExpansionContext) -> Result<Built
             } else if arg.starts_with("-d") && arg.len() > 2 {
                 delimiter = arg[2..].chars().next();
             } else if arg.starts_with("-t") && arg.len() > 2 {
-                timeout_secs = arg[2..].parse().ok();
+                _timeout_secs = arg[2..].parse().ok();
             } else if arg.starts_with("-u") && arg.len() > 2 {
                 if let Ok(fd) = arg[2..].parse::<i32>() {
                     input_fd = Some(fd);
@@ -3171,6 +3162,7 @@ fn format_printf(format: &str, args: &[String]) -> Result<String> {
     Ok(output)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn format_number(
     num: i64,
     _radix: u32,
@@ -3600,8 +3592,8 @@ fn builtin_getopts(args: &[String], context: &mut ExpansionContext) -> Result<Bu
     let (mut arg_index, mut char_pos) = parse_getopts_state(context, optind);
 
     // Determine if silent mode (optstring starts with :)
-    let (silent_mode, effective_optstring) = if optstring.starts_with(':') {
-        (true, &optstring[1..])
+    let (silent_mode, effective_optstring) = if let Some(stripped) = optstring.strip_prefix(':') {
+        (true, stripped)
     } else {
         (false, optstring.as_str())
     };
@@ -3788,7 +3780,7 @@ fn parse_getopts_state(context: &ExpansionContext, optind: usize) -> (usize, usi
             }
 
             // If OPTIND matches, use saved char position
-            if saved_optind == optind || (optind == saved_optind) {
+            if saved_optind == optind {
                 return (saved_optind, char_pos);
             }
         }
@@ -3838,13 +3830,16 @@ fn tilde_abbreviate(path: &std::path::Path, home: Option<&std::path::Path>) -> S
 }
 
 fn parse_stack_index(arg: &str, stack_len: usize) -> Option<usize> {
-    if arg.starts_with('+') {
-        arg[1..].parse::<usize>().ok().filter(|&n| n < stack_len)
-    } else if arg.starts_with('-') && arg.len() > 1 && arg.chars().nth(1).unwrap().is_ascii_digit()
-    {
-        let n = arg[1..].parse::<usize>().ok()?;
-        if n < stack_len {
-            Some(stack_len - 1 - n)
+    if let Some(stripped) = arg.strip_prefix('+') {
+        stripped.parse::<usize>().ok().filter(|&n| n < stack_len)
+    } else if let Some(stripped) = arg.strip_prefix('-') {
+        if !stripped.is_empty() && stripped.chars().next().unwrap().is_ascii_digit() {
+            let n = stripped.parse::<usize>().ok()?;
+            if n < stack_len {
+                Some(stack_len - 1 - n)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -4232,13 +4227,11 @@ fn builtin_shopt(args: &[String], context: &mut ExpansionContext) -> Result<Buil
             let all_options = ShoptOptions::all_options();
             for name in all_options {
                 if let Some(value) = shopt.get(name) {
-                    if (set_mode && value) || (unset_mode && !value) {
-                        if !quiet_mode {
-                            if print_mode {
-                                println!("shopt {} {}", if value { "-s" } else { "-u" }, name);
-                            } else {
-                                println!("{}\t{}", name, if value { "on" } else { "off" });
-                            }
+                    if ((set_mode && value) || (unset_mode && !value)) && !quiet_mode {
+                        if print_mode {
+                            println!("shopt {} {}", if value { "-s" } else { "-u" }, name);
+                        } else {
+                            println!("{}\t{}", name, if value { "on" } else { "off" });
                         }
                     }
                 }
@@ -4734,7 +4727,7 @@ fn generate_completions(
     for action in &spec.actions {
         match action {
             CompletionAction::Alias => {
-                for (name, _) in context.aliases() {
+                for name in context.aliases().keys() {
                     if name.starts_with(prefix) {
                         completions.push(name.clone());
                     }
@@ -4753,7 +4746,7 @@ fn generate_completions(
                         completions.push(name.to_string());
                     }
                 }
-                for (name, _) in context.functions() {
+                for name in context.functions().keys() {
                     if name.starts_with(prefix) {
                         completions.push(name.clone());
                     }
@@ -4806,7 +4799,7 @@ fn generate_completions(
                 }
             }
             CompletionAction::Function => {
-                for (name, _) in context.functions() {
+                for name in context.functions().keys() {
                     if name.starts_with(prefix) {
                         completions.push(name.clone());
                     }

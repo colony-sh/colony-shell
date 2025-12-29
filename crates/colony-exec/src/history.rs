@@ -253,12 +253,10 @@ impl History {
         };
 
         let reader = BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(cmd) = line {
-                let cmd = cmd.trim();
-                if !cmd.is_empty() {
-                    self.entries.push_back(cmd.to_string());
-                }
+        for cmd in reader.lines().map_while(Result::ok) {
+            let cmd = cmd.trim();
+            if !cmd.is_empty() {
+                self.entries.push_back(cmd.to_string());
             }
         }
 
@@ -345,6 +343,7 @@ impl History {
     }
 
     /// Move to next entry (newer)
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<&String> {
         if self.position < self.entries.len() {
             self.position += 1;

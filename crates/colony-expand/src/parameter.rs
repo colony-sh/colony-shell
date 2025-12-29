@@ -90,7 +90,7 @@ impl ExpandedValue {
     }
 }
 
-/// Expand a parameter, returning multiple values for ${arr[@]} expansion
+/// Expand a parameter, returning multiple values for `${arr[@]}` expansion
 pub fn expand_parameter_multi(
     var_ref: &VariableRef,
     context: &ExpansionContext,

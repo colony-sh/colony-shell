@@ -2,10 +2,12 @@
 
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 pub struct ConceptExplainer {
     concepts: HashMap<&'static str, Concept>,
 }
 
+#[allow(dead_code)]
 pub struct Concept {
     pub id: &'static str,
     pub name: &'static str,
@@ -19,6 +21,7 @@ impl Default for ConceptExplainer {
     }
 }
 
+#[allow(dead_code)]
 impl ConceptExplainer {
     pub fn new() -> Self {
         let mut concepts = HashMap::new();

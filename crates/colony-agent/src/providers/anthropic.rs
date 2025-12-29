@@ -125,7 +125,7 @@ impl ModelProvider for AnthropicProvider {
         let unified_stream = stream.map(|event_result| {
             event_result
                 .map_err(AgentError::from)
-                .and_then(|event| Self::convert_stream_event(event))
+                .and_then(Self::convert_stream_event)
         });
 
         Ok(Box::pin(unified_stream))
@@ -167,7 +167,7 @@ impl AnthropicProvider {
                 if let Some(text) = delta.text() {
                     Ok(ProviderStreamEvent::TextDelta {
                         text: text.to_string(),
-                        index: index as usize,
+                        index,
                     })
                 } else {
                     // Skip non-text deltas
@@ -190,7 +190,7 @@ impl AnthropicProvider {
                 } else {
                     Ok(ProviderStreamEvent::TextDelta {
                         text: String::new(),
-                        index: index as usize,
+                        index,
                     })
                 }
             }
@@ -199,7 +199,7 @@ impl AnthropicProvider {
                 // Block complete - no-op for now
                 Ok(ProviderStreamEvent::TextDelta {
                     text: String::new(),
-                    index: index as usize,
+                    index,
                 })
             }
 

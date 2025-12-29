@@ -62,6 +62,12 @@ pub struct ProtocolEmitter {
     // For now, just print to stdout
 }
 
+impl Default for ProtocolEmitter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProtocolEmitter {
     pub fn new() -> Self {
         Self {}

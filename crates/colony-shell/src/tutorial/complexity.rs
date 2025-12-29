@@ -166,7 +166,7 @@ impl ComplexityScorer {
 
             WordPart::DoubleQuoted(parts) => parts
                 .iter()
-                .map(|p| Self::score_word_part(p))
+                .map(Self::score_word_part)
                 .max()
                 .unwrap_or(ComplexityLevel::Low),
 
@@ -181,6 +181,7 @@ impl ComplexityScorer {
     }
 
     /// Get recommended pause duration in milliseconds based on complexity
+    #[allow(dead_code)]
     pub fn pause_duration_ms(level: ComplexityLevel) -> u64 {
         match level {
             ComplexityLevel::Low => 500,
