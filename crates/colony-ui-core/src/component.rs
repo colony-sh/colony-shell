@@ -158,8 +158,14 @@ impl ComponentOutput {
     }
 }
 
+use colony_tuple::Value;
+
+/// Tuple patterns a component subscribes to for cache invalidation
+pub type TuplePattern = Vec<Value>;
+
 pub trait PromptComponent: Send + Sync {
     fn id(&self) -> &str;
+    fn subscriptions(&self) -> Vec<TuplePattern>;
     fn render(&self, ctx: &crate::context::ComponentContext) -> ComponentOutput;
 }
 

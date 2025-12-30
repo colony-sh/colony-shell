@@ -6,5 +6,5 @@
 pub mod component;
 pub mod context;
 
-pub use component::{Color, ComponentOutput, PromptComponent, Style, StyledSpan};
+pub use component::{Color, ComponentOutput, PromptComponent, Style, StyledSpan, TuplePattern};
 pub use context::ComponentContext;
