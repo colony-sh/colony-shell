@@ -120,6 +120,7 @@ Each built-in component is a Rust struct implementing `PromptComponent`:
 | `jobs` | `job_change` | `⚙ 2` (yellow) | `{ "running": 2, "stopped": 0 }` |
 | `exit_status` | `cmd_complete` | `✘ 127` (red) | `{ "code": 127 }` |
 | `model` | `model_change` | `gpt-5` (blue) | `{ "model": "gpt-5", "provider": "openai" }` |
+| `path_status` | `env_change` (PATH) | `PATH: 12` (dim) | `{ "count": 12, "missing": ["/old/bin"] }` |
 
 **Implementation notes:**
 
@@ -132,6 +133,8 @@ Each built-in component is a Rust struct implementing `PromptComponent`:
 - **`exit_status`**: Only visible when non-zero. Red color signals failure.
 
 - **`model`**: Reads from agent state. Hidden when no agent is active.
+
+- **`path_status`**: Shows PATH entry count. Highlights missing directories in red. Useful for debugging PATH issues. Works with the `path` builtin (`path add`, `path prepend`, `path remove`, `path list`, `path has`).
 
 ## User-Defined Components
 

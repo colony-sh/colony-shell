@@ -1416,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "colony-agent"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-trait",
  "claude-sdk",
@@ -1436,7 +1436,7 @@ dependencies = [
 
 [[package]]
 name = "colony-channels"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "parking_lot",
@@ -1447,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "colony-config"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -1461,7 +1461,7 @@ dependencies = [
 
 [[package]]
 name = "colony-exec"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "colony-channels",
@@ -1473,6 +1473,7 @@ dependencies = [
  "nix",
  "parking_lot",
  "regex",
+ "serial_test",
  "signal-hook",
  "thiserror 1.0.69",
  "tokio",
@@ -1481,7 +1482,7 @@ dependencies = [
 
 [[package]]
 name = "colony-expand"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "colony-parser",
  "colony-protocol",
@@ -1500,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "colony-focus"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "colony-memory",
  "serde",
@@ -1508,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "colony-mcp"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "colony-tuple",
  "serde",
@@ -1517,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "colony-memory"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -1537,7 +1538,7 @@ dependencies = [
 
 [[package]]
 name = "colony-parser"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "miette",
  "pest",
@@ -1549,7 +1550,7 @@ dependencies = [
 
 [[package]]
 name = "colony-protocol"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1557,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "colony-secure"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -1581,7 +1582,7 @@ dependencies = [
 
 [[package]]
 name = "colony-shell"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "clap",
  "colony-agent",
@@ -1612,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "colony-tree-sitter"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "cc",
  "tree-sitter",
@@ -1620,7 +1621,7 @@ dependencies = [
 
 [[package]]
 name = "colony-tuple"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "ipc-channel",
  "parking_lot",
@@ -2798,7 +2799,7 @@ checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
 dependencies = [
  "cfg-if",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5390,7 +5391,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -5410,7 +5411,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.111",
@@ -6005,7 +6006,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6368,6 +6369,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "serial_test"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b258109f244e1d6891bf1053a55d63a5cd4f8f4c30cf9a1280989f80e7a1fa9"
+dependencies = [
+ "futures",
+ "log",
+ "once_cell",
+ "parking_lot",
+ "scc",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d69265a08751de7844521fd15003ae0a888e035773ba05695c5c759a6f89eef"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6393,7 +6419,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b1fdf65dd6331831494dd616b30351c38e96e45921a27745cf98490458b90bb"
 dependencies = [
- "dirs 5.0.1",
+ "dirs 6.0.0",
 ]
 
 [[package]]

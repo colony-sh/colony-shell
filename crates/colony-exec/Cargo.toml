@@ -22,3 +22,6 @@ chrono = "0.4"
 glob = "0.3"
 libc = "0.2"
 regex = "1"
+
+[dev-dependencies]
+serial_test = "3.1"

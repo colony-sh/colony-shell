@@ -110,6 +110,7 @@ pub fn is_builtin(name: &str) -> bool {
             | "readarray"
             | "eval"
             | "hash"
+            | "path"
     )
 }
 
@@ -230,6 +231,7 @@ pub fn execute_builtin(
         "disown" => builtin_disown(&args, jobs),
         "hash" => builtin_hash(&args, context),
         "history" => builtin_history(&args, history),
+        "path" => builtin_path(&args, context, tuple_space),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -4935,6 +4937,210 @@ fn builtin_history(
     }
 }
 
+/// path - Manage PATH environment variable
+///
+/// Usage: path <subcommand> [args...]
+///
+/// Subcommands:
+///   add <dir>      Add directory to end of PATH
+///   prepend <dir>  Add directory to front of PATH
+///   remove <dir>   Remove directory from PATH
+///   list           Show all PATH entries (numbered)
+///   has <dir>      Check if directory is in PATH (exit 0 if yes, 1 if no)
+///
+/// **Reactive:** Emits ("env_change", "PATH", old, new) tuple on modification
+///
+/// # Examples
+///
+/// ```bash
+/// path add ~/.local/bin
+/// path prepend /opt/homebrew/bin
+/// path remove /usr/local/games
+/// path list
+/// path has ~/.cargo/bin && echo "cargo in PATH"
+/// ```
+fn builtin_path(
+    args: &[String],
+    context: &mut ExpansionContext,
+    tuple_space: &TupleSpace,
+) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("path: missing subcommand");
+        eprintln!("Usage: path <add|prepend|remove|list|has> [dir]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let subcommand = &args[0];
+    let path_arg = args.get(1);
+
+    match subcommand.as_str() {
+        "add" | "append" => {
+            let Some(dir) = path_arg else {
+                eprintln!("path add: missing directory argument");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            let dir = expand_tilde(dir);
+            let old_path = env::var("PATH").unwrap_or_default();
+            let entries: Vec<&str> = old_path.split(':').filter(|s| !s.is_empty()).collect();
+
+            if entries.iter().any(|e| *e == dir) {
+                return Ok(BuiltinResult::Success(0));
+            }
+
+            let new_path = if old_path.is_empty() {
+                dir.clone()
+            } else {
+                format!("{}:{}", old_path, dir)
+            };
+
+            env::set_var("PATH", &new_path);
+            context.set_env("PATH", &new_path);
+
+            tuple_space.out(Tuple::from(vec![
+                Value::Str("env_change".to_string()),
+                Value::Str("PATH".to_string()),
+                Value::Str(old_path),
+                Value::Str(new_path),
+            ]));
+
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "prepend" => {
+            let Some(dir) = path_arg else {
+                eprintln!("path prepend: missing directory argument");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            let dir = expand_tilde(dir);
+
+            let old_path = env::var("PATH").unwrap_or_default();
+            let entries: Vec<&str> = old_path.split(':').filter(|s| !s.is_empty()).collect();
+
+            if entries.iter().any(|e| *e == dir) {
+                let filtered: Vec<&str> = entries.into_iter().filter(|e| *e != dir).collect();
+                let new_path = format!("{}:{}", dir, filtered.join(":"));
+
+                env::set_var("PATH", &new_path);
+                context.set_env("PATH", &new_path);
+
+                tuple_space.out(Tuple::from(vec![
+                    Value::Str("env_change".to_string()),
+                    Value::Str("PATH".to_string()),
+                    Value::Str(old_path),
+                    Value::Str(new_path),
+                ]));
+
+                return Ok(BuiltinResult::Success(0));
+            }
+
+            let new_path = if old_path.is_empty() {
+                dir.clone()
+            } else {
+                format!("{}:{}", dir, old_path)
+            };
+
+            env::set_var("PATH", &new_path);
+            context.set_env("PATH", &new_path);
+
+            tuple_space.out(Tuple::from(vec![
+                Value::Str("env_change".to_string()),
+                Value::Str("PATH".to_string()),
+                Value::Str(old_path),
+                Value::Str(new_path),
+            ]));
+
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "remove" | "rm" => {
+            let Some(dir) = path_arg else {
+                eprintln!("path remove: missing directory argument");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            let dir = expand_tilde(dir);
+
+            let old_path = env::var("PATH").unwrap_or_default();
+            let entries: Vec<&str> = old_path.split(':').filter(|s| !s.is_empty()).collect();
+            let new_entries: Vec<&str> = entries.into_iter().filter(|e| *e != dir).collect();
+            let new_path = new_entries.join(":");
+
+            if old_path == new_path {
+                eprintln!("path remove: {} not in PATH", dir);
+                return Ok(BuiltinResult::Failure(1));
+            }
+
+            env::set_var("PATH", &new_path);
+            context.set_env("PATH", &new_path);
+
+            tuple_space.out(Tuple::from(vec![
+                Value::Str("env_change".to_string()),
+                Value::Str("PATH".to_string()),
+                Value::Str(old_path),
+                Value::Str(new_path),
+            ]));
+
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "list" | "ls" => {
+            let path = env::var("PATH").unwrap_or_default();
+            let entries: Vec<&str> = path.split(':').filter(|s| !s.is_empty()).collect();
+
+            if entries.is_empty() {
+                println!("PATH is empty");
+            } else {
+                for (i, entry) in entries.iter().enumerate() {
+                    let exists = std::path::Path::new(entry).is_dir();
+                    let marker = if exists { "" } else { " (not found)" };
+                    println!("{:3}  {}{}", i + 1, entry, marker);
+                }
+            }
+
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "has" | "contains" => {
+            let Some(dir) = path_arg else {
+                eprintln!("path has: missing directory argument");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            let dir = expand_tilde(dir);
+
+            let path = env::var("PATH").unwrap_or_default();
+            let entries: Vec<&str> = path.split(':').filter(|s| !s.is_empty()).collect();
+
+            if entries.iter().any(|e| *e == dir) {
+                Ok(BuiltinResult::Success(0))
+            } else {
+                Ok(BuiltinResult::Failure(1))
+            }
+        }
+
+        _ => {
+            eprintln!("path: unknown subcommand '{}'", subcommand);
+            eprintln!("Usage: path <add|prepend|remove|list|has> [dir]");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") {
+        if let Some(home) = env::var("HOME").ok() {
+            return format!("{}{}", home, &path[1..]);
+        }
+    } else if path == "~" {
+        if let Some(home) = env::var("HOME").ok() {
+            return home;
+        }
+    }
+    path.to_string()
+}
+
 fn get_builtin_names() -> Vec<&'static str> {
     vec![
         ".",
@@ -5036,7 +5242,7 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("pwd", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5051,7 +5257,7 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("echo", vec!["hello", "world"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5066,7 +5272,7 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("exit", vec!["42"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5082,7 +5288,7 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("export", vec!["TEST_VAR=hello"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5102,7 +5308,7 @@ mod tests {
 
         let cmd = make_simple_command("unset", vec!["TEST_VAR"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5124,7 +5330,7 @@ mod tests {
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5147,7 +5353,7 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("type", vec!["cd", "echo"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5162,7 +5368,7 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("ls", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_none()); // ls is not a builtin
     }
 
@@ -5174,7 +5380,7 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("jobs", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5198,7 +5404,7 @@ mod tests {
         );
 
         let cmd = make_simple_command("jobs", vec![]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -5214,7 +5420,7 @@ mod tests {
 
         // Export a variable
         let cmd = make_simple_command("export", vec!["REACTIVE_TEST=initial"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         // Check tuple was emitted
@@ -5247,7 +5453,7 @@ mod tests {
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         // Check tuple was emitted
@@ -5280,7 +5486,7 @@ mod tests {
         context.set_env("TO_DELETE", "old_value");
 
         let cmd = make_simple_command("unset", vec!["TO_DELETE"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels);
+        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());
 
         let pattern = Tuple::pattern(&[
@@ -5511,5 +5717,59 @@ mod tests {
         let opts = value.unwrap();
         assert!(opts.contains('e'));
         assert!(opts.contains('x'));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_builtin_path_add() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+
+        let original_path = env::var("PATH").unwrap_or_default();
+        let test_dir = format!("/tmp/colony_test_path_add_{}", std::process::id());
+
+        let result = builtin_path(&["add".to_string(), test_dir.clone()], &mut context, &tuple_space);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+
+        let new_path = env::var("PATH").unwrap();
+        let last_entry = new_path.split(':').last().unwrap();
+        assert_eq!(last_entry, test_dir);
+
+        env::set_var("PATH", original_path);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_builtin_path_prepend() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+
+        let original_path = env::var("PATH").unwrap_or_default();
+        let test_dir = format!("/tmp/colony_test_path_prepend_{}", std::process::id());
+
+        let result = builtin_path(&["prepend".to_string(), test_dir.clone()], &mut context, &tuple_space);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+
+        let new_path = env::var("PATH").unwrap();
+        let first_entry = new_path.split(':').next().unwrap();
+        assert_eq!(first_entry, test_dir);
+
+        env::set_var("PATH", original_path);
+    }
+
+    #[test]
+    fn test_builtin_path_has() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+
+        let result = builtin_path(&["has".to_string(), "/usr/bin".to_string()], &mut context, &tuple_space);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+
+        let result = builtin_path(&["has".to_string(), "/nonexistent/path".to_string()], &mut context, &tuple_space);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
     }
 }

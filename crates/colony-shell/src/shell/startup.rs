@@ -1,5 +1,5 @@
 use colony_exec::Executor;
-use colony_expand::{expand_tilde, ExpansionContext, ExpansionError};
+use colony_expand::{expand_tilde, CompletionAction, CompletionSpec, ExpansionContext, ExpansionError};
 use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
 use std::path::PathBuf;
@@ -110,4 +110,13 @@ pub(crate) async fn run_startup_files(opts: &crate::cli::ShellOptions, executor:
     executor
         .context_mut()
         .set_var("COLONY_STARTUP_SOURCED".to_string(), "1".to_string());
+
+    register_builtin_completions(executor.context_mut());
+}
+
+fn register_builtin_completions(context: &mut ExpansionContext) {
+    let mut path_spec = CompletionSpec::new();
+    path_spec.wordlist = Some("add prepend remove list has".to_string());
+    path_spec.actions.push(CompletionAction::Directory);
+    context.set_completion("path".to_string(), path_spec);
 }

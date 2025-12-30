@@ -110,6 +110,7 @@ fn main() {
         &jobs,
         executor.tuple_space(),
         &mut channels,
+        None,
     ) {
         result.ok();
     }
@@ -132,6 +133,7 @@ fn main() {
         &jobs,
         executor.tuple_space(),
         &mut channels,
+        None,
     ) {
         result.ok();
     }
@@ -154,6 +156,7 @@ fn main() {
         &jobs,
         executor.tuple_space(),
         &mut channels,
+        None,
     ) {
         result.ok();
     }
@@ -176,6 +179,7 @@ fn main() {
         &jobs,
         executor.tuple_space(),
         &mut channels,
+        None,
     ) {
         result.ok();
     }
