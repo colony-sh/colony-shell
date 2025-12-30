@@ -12,6 +12,7 @@ Colony Cloud is a managed LLM service that provides:
 - Curated models from AWS Bedrock (Claude, Llama, Mistral)
 - Tiered subscriptions with included token allocations
 - Privacy-first conversation memory (local default, opt-in sync)
+- Recipe Registry for sharing recipes, plugins, skills, and bundles
 
 Bedrock is the invisible backend - users interact with "Colony's models" via subscription. Users see real model names (claude-3.5-sonnet, llama-3.1-70b) but only models vetted and priced by Colony.
 
@@ -177,6 +178,7 @@ colony-cloud/
 | Repo structure | Monorepo, SDK published | Coordination + independent consumption |
 | Dashboard | HTMX + templates | All Rust, fast iteration |
 | Infrastructure | AWS (ECS, RDS, Bedrock) | Native Bedrock integration |
+| Recipe Registry | Hosted on Colony Cloud | Drives subscription value, ecosystem growth |
 
 ## API Design
 
@@ -364,6 +366,166 @@ impl Conversation {
     pub async fn load(client: &ColonyClient, id: ConversationId) -> Result<Self>;
 }
 ```
+
+## Recipe Registry
+
+Colony Cloud hosts a registry for sharing and distributing recipes, plugins, skills, and bundles. See [Recipe System Design](./2025-12-29-recipe-system-design.md) for the full recipe specification.
+
+### Registry Overview
+
+The registry provides three namespaces:
+
+| Namespace | Description | Access |
+|-----------|-------------|--------|
+| `official/` | Colony-curated recipes | Public read, Colony write |
+| `community/` | User-published recipes | Public read/write |
+| `private/` | Team/org recipes | Pro/Enterprise only |
+
+### Registry API Endpoints
+
+```
+# Public (no auth required)
+GET  /v1/registry/search?q=rust+coding&tags=rust
+GET  /v1/registry/recipes
+GET  /v1/registry/recipes/:namespace/:name
+GET  /v1/registry/recipes/:namespace/:name/versions
+GET  /v1/registry/recipes/:namespace/:name/:version/download
+
+# Same pattern for plugins, skills, bundles
+GET  /v1/registry/plugins
+GET  /v1/registry/skills
+GET  /v1/registry/bundles
+
+# Authenticated (COLONY_API_KEY required)
+POST   /v1/registry/recipes              # Publish
+PUT    /v1/registry/recipes/:ns/:name    # Update
+DELETE /v1/registry/recipes/:ns/:name    # Unpublish
+
+# Private namespace (Pro/Enterprise only)
+GET  /v1/registry/private/:org/recipes
+POST /v1/registry/private/:org/recipes
+```
+
+### Registry Metadata
+
+```json
+{
+  "name": "coding-agent",
+  "namespace": "official",
+  "type": "recipe",
+  "version": "1.2.0",
+  "description": "Claude Code-style coding assistant",
+  "author": {
+    "name": "Colony Team",
+    "url": "https://colony.sh"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/colony-sh/recipes",
+  "tags": ["coding", "development", "claude-code"],
+  "dependencies": [
+    "official/bundles/file-ops@^1.0.0",
+    "official/bundles/git-ops@^1.0.0"
+  ],
+  "colony_version": ">=0.5.0",
+  "downloads": 15420,
+  "rating": 4.8,
+  "created_at": "2025-01-15T10:00:00Z",
+  "updated_at": "2025-03-20T14:30:00Z"
+}
+```
+
+### Registry Database Tables
+
+```sql
+-- Registry packages (recipes, plugins, skills, bundles)
+CREATE TABLE registry_packages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    namespace TEXT NOT NULL,           -- 'official', 'community', 'private'
+    org_id UUID REFERENCES orgs(id),   -- For private namespace
+    name TEXT NOT NULL,
+    package_type TEXT NOT NULL,        -- 'recipe', 'plugin', 'skill', 'bundle'
+    description TEXT,
+    repository_url TEXT,
+    license TEXT,
+    downloads BIGINT DEFAULT 0,
+    rating_sum INT DEFAULT 0,
+    rating_count INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(namespace, name, package_type)
+);
+
+-- Package versions
+CREATE TABLE registry_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    package_id UUID REFERENCES registry_packages(id) ON DELETE CASCADE,
+    version TEXT NOT NULL,
+    content_hash TEXT NOT NULL,        -- SHA256 of content
+    content JSONB NOT NULL,            -- The actual recipe/plugin/etc TOML as JSON
+    colony_version_min TEXT,           -- Minimum Colony Shell version
+    published_by UUID REFERENCES users(id),
+    published_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(package_id, version)
+);
+
+-- Package tags
+CREATE TABLE registry_tags (
+    package_id UUID REFERENCES registry_packages(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    PRIMARY KEY(package_id, tag)
+);
+
+-- Package dependencies
+CREATE TABLE registry_dependencies (
+    package_id UUID REFERENCES registry_packages(id) ON DELETE CASCADE,
+    depends_on_namespace TEXT NOT NULL,
+    depends_on_name TEXT NOT NULL,
+    version_constraint TEXT NOT NULL,  -- "^1.0.0", "~1.2.0", "1.2.3"
+    PRIMARY KEY(package_id, depends_on_namespace, depends_on_name)
+);
+
+-- Organizations (for private namespace)
+CREATE TABLE orgs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT UNIQUE NOT NULL,
+    display_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Org membership
+CREATE TABLE org_members (
+    org_id UUID REFERENCES orgs(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,                -- 'owner', 'admin', 'member'
+    PRIMARY KEY(org_id, user_id)
+);
+
+-- Indexes
+CREATE INDEX idx_registry_packages_namespace ON registry_packages(namespace);
+CREATE INDEX idx_registry_packages_type ON registry_packages(package_type);
+CREATE INDEX idx_registry_tags_tag ON registry_tags(tag);
+CREATE INDEX idx_registry_versions_package ON registry_versions(package_id);
+```
+
+### Registry Pricing Tiers
+
+| Feature | Free | Pro | Enterprise |
+|---------|------|-----|------------|
+| Install official packages | ✅ | ✅ | ✅ |
+| Install community packages | ✅ | ✅ | ✅ |
+| Publish public packages | ✅ | ✅ | ✅ |
+| Private packages | ❌ | 10 | Unlimited |
+| Org/team namespaces | ❌ | ❌ | ✅ |
+| Download analytics | Basic | Detailed | Full + API |
+
+### Web Dashboard Integration
+
+The dashboard includes registry management:
+
+- **Browse** - Search and explore recipes, plugins, skills
+- **My Packages** - Manage your published packages
+- **Org Packages** - Manage team packages (Enterprise)
+- **Analytics** - View download stats and ratings
 
 ## Database Schema
 
