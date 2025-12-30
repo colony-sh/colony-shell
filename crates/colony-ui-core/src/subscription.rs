@@ -81,6 +81,8 @@ mod tests {
             running_jobs: 0,
             stopped_jobs: 0,
             model: None,
+            last_command_duration: None,
+            hostname: None,
         }
     }
 

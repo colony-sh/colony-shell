@@ -1,6 +1,8 @@
 use crate::builtins::{
-    ExitStatusComponent, GitBranchComponent, GitStatusComponent, JobsComponent, ModelComponent,
-    PwdComponent,
+    AwsProfileComponent, DockerStatusComponent, DurationComponent, ExitStatusComponent,
+    GitBranchComponent, GitStatusComponent, HostnameComponent, JobsComponent, KubeContextComponent,
+    ModelComponent, NodeVersionComponent, PwdComponent, PythonVersionComponent,
+    RustVersionComponent,
 };
 use crate::component::PromptComponent;
 use std::collections::HashMap;
@@ -23,6 +25,14 @@ impl ComponentRegistry {
         self.register(Box::new(JobsComponent::new()));
         self.register(Box::new(ExitStatusComponent::new()));
         self.register(Box::new(ModelComponent::new()));
+        self.register(Box::new(DurationComponent::new()));
+        self.register(Box::new(KubeContextComponent::new()));
+        self.register(Box::new(AwsProfileComponent::new()));
+        self.register(Box::new(PythonVersionComponent::new()));
+        self.register(Box::new(NodeVersionComponent::new()));
+        self.register(Box::new(RustVersionComponent::new()));
+        self.register(Box::new(DockerStatusComponent::new()));
+        self.register(Box::new(HostnameComponent::new()));
     }
 
     pub fn register(&mut self, component: Box<dyn PromptComponent>) {
@@ -65,6 +75,14 @@ mod tests {
         assert!(registry.get("jobs").is_some());
         assert!(registry.get("model").is_some());
         assert!(registry.get("git_status").is_some());
+        assert!(registry.get("duration").is_some());
+        assert!(registry.get("kube_context").is_some());
+        assert!(registry.get("aws_profile").is_some());
+        assert!(registry.get("python_version").is_some());
+        assert!(registry.get("node_version").is_some());
+        assert!(registry.get("rust_version").is_some());
+        assert!(registry.get("docker_status").is_some());
+        assert!(registry.get("hostname").is_some());
     }
 
     #[test]
@@ -79,6 +97,6 @@ mod tests {
         registry.register_builtins();
 
         let all = registry.all();
-        assert!(all.len() >= 6);
+        assert!(all.len() >= 14);
     }
 }

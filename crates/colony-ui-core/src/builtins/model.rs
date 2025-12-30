@@ -57,6 +57,8 @@ mod tests {
             running_jobs: 0,
             stopped_jobs: 0,
             model: model.map(|s| s.to_string()),
+            last_command_duration: None,
+            hostname: None,
         }
     }
 

@@ -65,6 +65,8 @@ mod tests {
             running_jobs: running,
             stopped_jobs: stopped,
             model: None,
+            last_command_duration: None,
+            hostname: None,
         }
     }
 

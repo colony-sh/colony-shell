@@ -14,5 +14,6 @@ serde_json = { workspace = true }
 colony-tuple = { workspace = true }
 colony-exec = { workspace = true }
 thiserror = { workspace = true }
+hostname = "0.4"
 
 [dev-dependencies]
