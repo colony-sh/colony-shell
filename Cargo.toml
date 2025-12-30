@@ -15,6 +15,7 @@ members = [
     "crates/colony-secure",
     "crates/colony-shell",
     "crates/colony-tree-sitter",
+    "crates/colony-ui-core",
 ]
 
 [workspace.package]
@@ -91,6 +92,7 @@ colony-mcp = { path = "crates/colony-mcp" }
 colony-focus = { path = "crates/colony-focus" }
 colony-secure = { path = "crates/colony-secure" }
 colony-tree-sitter = { path = "crates/colony-tree-sitter" }
+colony-ui-core = { path = "crates/colony-ui-core" }
 
 [profile.dev]
 opt-level = 0
