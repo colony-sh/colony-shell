@@ -5,9 +5,10 @@ use std::sync::Arc;
 use crate::shell::execution::handle_llm_command;
 use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
+use colony_protocol::{emit_prompt, InteractiveConfig, PromptComponentData, PromptSpan};
 use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
-use colony_ui_core::{ComponentContext, PromptManager};
+use colony_ui_core::{color_to_string, ComponentContext, PromptData, PromptManager};
 use miette::Result;
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
@@ -254,6 +255,10 @@ pub(crate) async fn run_repl(
         let terminal_width = terminal_size::terminal_size()
             .map(|(w, _)| w.0 as usize)
             .unwrap_or(80);
+        
+        let prompt_data = prompt_manager.render_data(&ctx);
+        emit_prompt_osc(&prompt_data);
+        
         let prompt = prompt_manager.render(&ctx, terminal_width);
 
         let readline = rl.readline(&prompt);
@@ -421,4 +426,43 @@ fn save_history(executor: &Executor) {
     if let Err(e) = executor.history().save_to_file() {
         eprintln!("Warning: failed to save history: {}", e);
     }
+}
+
+fn emit_prompt_osc(data: &PromptData) {
+    let convert_components = |components: &[colony_ui_core::ComponentData]| -> Vec<PromptComponentData> {
+        components
+            .iter()
+            .map(|cd| {
+                let spans = cd
+                    .output
+                    .spans
+                    .iter()
+                    .map(|s| PromptSpan {
+                        text: s.text.clone(),
+                        fg: s.style.fg.as_ref().map(color_to_string),
+                        bg: s.style.bg.as_ref().map(color_to_string),
+                        bold: s.style.bold,
+                        dim: s.style.dim,
+                        italic: s.style.italic,
+                    })
+                    .collect();
+
+                let interactive = cd.output.interactive.as_ref().map(|i| InteractiveConfig {
+                    click: i.click.clone(),
+                    hover: i.hover.clone(),
+                });
+
+                PromptComponentData {
+                    id: cd.id.clone(),
+                    spans,
+                    data: cd.output.data.clone(),
+                    interactive,
+                }
+            })
+            .collect()
+    };
+
+    let left = convert_components(&data.left);
+    let right = convert_components(&data.right);
+    emit_prompt(left, right);
 }

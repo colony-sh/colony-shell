@@ -18,7 +18,7 @@ pub use builtins::{
 };
 pub use component::{Color, ComponentOutput, InteractiveConfig, PromptComponent, Style, StyledSpan, TuplePattern};
 pub use context::ComponentContext;
-pub use manager::PromptManager;
+pub use manager::{color_to_string, ComponentData, PromptData, PromptManager};
 pub use registry::ComponentRegistry;
 pub use render::ansi::{render_outputs, render_prompt, strip_ansi};
 pub use subscription::SubscriptionManager;

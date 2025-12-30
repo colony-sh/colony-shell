@@ -1,3 +1,4 @@
+use crate::component::{Color, ComponentOutput};
 use crate::context::ComponentContext;
 use crate::registry::ComponentRegistry;
 use crate::render::ansi::render_prompt;
@@ -8,6 +9,18 @@ pub struct PromptManager {
     subscription_manager: SubscriptionManager,
     left_components: Vec<String>,
     right_components: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PromptData {
+    pub left: Vec<ComponentData>,
+    pub right: Vec<ComponentData>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentData {
+    pub id: String,
+    pub output: ComponentOutput,
 }
 
 impl PromptManager {
@@ -49,8 +62,68 @@ impl PromptManager {
         render_prompt(&left_outputs, &right_outputs, width)
     }
 
+    pub fn render_data(&self, ctx: &ComponentContext) -> PromptData {
+        let left: Vec<_> = self
+            .left_components
+            .iter()
+            .filter_map(|id| {
+                let component = self.registry.get(id)?;
+                let output = component.render(ctx);
+                if output.visible {
+                    Some(ComponentData {
+                        id: id.clone(),
+                        output,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let right: Vec<_> = self
+            .right_components
+            .iter()
+            .filter_map(|id| {
+                let component = self.registry.get(id)?;
+                let output = component.render(ctx);
+                if output.visible {
+                    Some(ComponentData {
+                        id: id.clone(),
+                        output,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        PromptData { left, right }
+    }
+
     pub fn registry_mut(&mut self) -> &mut ComponentRegistry {
         &mut self.registry
+    }
+}
+
+pub fn color_to_string(c: &Color) -> String {
+    match c {
+        Color::Black => "black".to_string(),
+        Color::Red => "red".to_string(),
+        Color::Green => "green".to_string(),
+        Color::Yellow => "yellow".to_string(),
+        Color::Blue => "blue".to_string(),
+        Color::Magenta => "magenta".to_string(),
+        Color::Cyan => "cyan".to_string(),
+        Color::White => "white".to_string(),
+        Color::BrightBlack => "bright-black".to_string(),
+        Color::BrightRed => "bright-red".to_string(),
+        Color::BrightGreen => "bright-green".to_string(),
+        Color::BrightYellow => "bright-yellow".to_string(),
+        Color::BrightBlue => "bright-blue".to_string(),
+        Color::BrightMagenta => "bright-magenta".to_string(),
+        Color::BrightCyan => "bright-cyan".to_string(),
+        Color::BrightWhite => "bright-white".to_string(),
+        Color::Rgb(r, g, b) => format!("#{:02x}{:02x}{:02x}", r, g, b),
     }
 }
 
