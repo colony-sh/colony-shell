@@ -393,7 +393,58 @@ The same pattern can be used for other interactive prompt components:
 - Parse and render interactive prompt components
 - Implement `BranchPicker` widget component
 - Handle keyboard navigation
-- Send/receive OSC 2337 messages
+- Connect to shell via Unix socket (see Transport section below)
+
+---
+
+## Transport: Unix Domain Socket
+
+Widget messages use a **Unix domain socket** for bidirectional communication instead of OSC 2337 stdin.
+
+### Socket Discovery
+
+The shell exports `COLONY_WIDGET_SOCKET` with the socket path:
+- `$XDG_RUNTIME_DIR/colony-$PID.sock` (preferred)
+- `/tmp/colony-$PID.sock` (fallback)
+
+### Wire Protocol
+
+Messages are **length-prefixed JSON**:
+
+```
+┌──────────────────┬─────────────────────────────┐
+│  4 bytes (BE)    │  N bytes (JSON payload)     │
+│  message length  │  ProtocolMessage            │
+└──────────────────┴─────────────────────────────┘
+```
+
+### Terminal Connection
+
+```rust
+use tokio::net::UnixStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+async fn connect_to_shell() -> std::io::Result<UnixStream> {
+    let socket_path = std::env::var("COLONY_WIDGET_SOCKET")
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::NotFound, "COLONY_WIDGET_SOCKET not set"))?;
+    UnixStream::connect(socket_path).await
+}
+
+async fn send_message(stream: &mut UnixStream, msg: &ProtocolMessage) -> std::io::Result<()> {
+    let json = serde_json::to_string(msg)?;
+    let len_bytes = (json.len() as u32).to_be_bytes();
+    stream.write_all(&len_bytes).await?;
+    stream.write_all(json.as_bytes()).await?;
+    stream.flush().await
+}
+```
+
+### Why Unix Socket over OSC 2337 stdin?
+
+1. **Clean separation** - Protocol messages don't mix with user input
+2. **Bidirectional** - Terminal can send messages anytime, not just in response
+3. **Concurrent** - Multiple widgets can communicate simultaneously
+4. **Testable** - Easy to mock with `socat` or `nc`
 
 ---
 

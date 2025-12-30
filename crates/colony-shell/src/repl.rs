@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::shell::execution::handle_llm_command;
 use colony_agent::{Agent, NaturalLanguageDetector};
@@ -15,6 +16,7 @@ use rustyline::hint::Hinter;
 use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::history::DefaultHistory;
 use rustyline::{Editor, Helper};
+use tokio::sync::RwLock;
 
 use crate::shell::execute_shell_command;
 
@@ -94,7 +96,11 @@ impl Validator for ColonyHelper {
 
 impl Helper for ColonyHelper {}
 
-pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -> Result<()> {
+pub(crate) async fn run_repl(
+    mut agent: Option<Agent>,
+    mut executor: Executor,
+    cwd_handle: Option<Arc<RwLock<PathBuf>>>,
+) -> Result<()> {
     let helper = ColonyHelper::new();
     let mut rl = Editor::new().map_err(|e| miette::miette!("failed to create readline: {}", e))?;
     rl.set_helper(Some(helper));
@@ -174,7 +180,7 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
                 match execute_shell_command(line, &mut executor).await {
                     Ok(()) => {
                         prompt_manager.on_event("cmd_complete");
-                        display_tuple_activity(&executor, &mut prompt_manager);
+                        display_tuple_activity(&executor, &mut prompt_manager, &cwd_handle).await;
                     }
                     Err(e) => {
                         eprintln!("Error: {}", e);
@@ -204,14 +210,13 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
     Ok(())
 }
 
-/// Display reactive tuple activity from the tuple space
-///
-/// Reads and displays env_change and dir_change tuples to show
-/// the reactive environment in action (Rules 42-47)
-fn display_tuple_activity(executor: &Executor, prompt_manager: &mut PromptManager) {
+async fn display_tuple_activity(
+    executor: &Executor,
+    prompt_manager: &mut PromptManager,
+    cwd_handle: &Option<Arc<RwLock<PathBuf>>>,
+) {
     let tuple_space = executor.tuple_space();
 
-    // Check for env_change tuples: ("env_change", var_name, old_value, new_value)
     let env_pattern = Tuple::pattern(&[
         Value::Str("env_change".to_string()),
         Value::Wildcard,
@@ -242,7 +247,6 @@ fn display_tuple_activity(executor: &Executor, prompt_manager: &mut PromptManage
         }
     }
 
-    // Check for dir_change tuples: ("dir_change", old_dir, new_dir)
     let dir_pattern = Tuple::pattern(&[
         Value::Str("dir_change".to_string()),
         Value::Wildcard,
@@ -255,6 +259,9 @@ fn display_tuple_activity(executor: &Executor, prompt_manager: &mut PromptManage
             (tuple.fields.get(1), tuple.fields.get(2))
         {
             println!("🔄 Directory: {}", new);
+            if let Some(handle) = cwd_handle {
+                handle.write().await.clone_from(&PathBuf::from(new));
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::config::{build_agent_config, load_colonyrc_with_trust};
 use crate::repl::run_repl;
 use crate::shell::engine::execute_command_with_status;
 use crate::shell::startup::{load_exported_functions, run_startup_files};
+use crate::widget_server::WidgetServer;
 use colony_agent::Agent;
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
@@ -151,5 +152,36 @@ async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
     println!("🔄 Reactive environment enabled");
     println!("   State changes emit tuples to tuple space\n");
 
-    run_repl(agent, executor).await
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let widget_server = match WidgetServer::new(cwd) {
+        Ok(server) => {
+            let socket_path = server.socket_path().to_string_lossy().to_string();
+            std::env::set_var("COLONY_WIDGET_SOCKET", &socket_path);
+            println!("🔌 Widget server: {}", socket_path);
+            Some(server)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to start widget server: {}", e);
+            None
+        }
+    };
+
+    let shutdown_handle = widget_server.as_ref().map(|s| s.shutdown_handle());
+    let cwd_handle = widget_server.as_ref().map(|s| s.cwd_handle());
+
+    if let Some(server) = widget_server {
+        tokio::spawn(async move {
+            if let Err(e) = server.run().await {
+                tracing::error!("Widget server error: {}", e);
+            }
+        });
+    }
+
+    let result = run_repl(agent, executor, cwd_handle).await;
+
+    if let Some(shutdown) = shutdown_handle {
+        let _ = shutdown.send(());
+    }
+
+    result
 }
