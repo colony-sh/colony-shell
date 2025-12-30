@@ -9,7 +9,7 @@ use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
 use colony_ui_core::{ComponentContext, PromptManager};
 use miette::Result;
-use rustyline::completion::Completer;
+use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
@@ -20,25 +20,169 @@ use tokio::sync::RwLock;
 
 use crate::shell::execute_shell_command;
 
-/// Rustyline helper with tree-sitter validator
-struct ColonyHelper;
+struct ColonyHelper {
+    commands: Vec<String>,
+}
 
 impl ColonyHelper {
     fn new() -> Self {
-        Self
+        Self {
+            commands: Self::collect_commands(),
+        }
+    }
+
+    fn collect_commands() -> Vec<String> {
+        let mut commands = vec![
+            "cd", "pwd", "echo", "export", "unset", "source", "exit", "history",
+            "jobs", "fg", "bg", "alias", "unalias", "set", "shift", "test",
+            "true", "false", "read", "printf", "type", "hash", "ulimit",
+            "umask", "wait", "trap", "return", "break", "continue", "eval",
+            "exec", "command", "builtin", "local", "declare", "readonly",
+            "getopts", "times", "llm", "path",
+        ].into_iter().map(String::from).collect::<Vec<_>>();
+
+        if let Ok(path) = std::env::var("PATH") {
+            for dir in path.split(':') {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(metadata) = entry.metadata() {
+                            if metadata.is_file() && is_executable(&metadata) {
+                                if let Some(name) = entry.file_name().to_str() {
+                                    if !commands.contains(&name.to_string()) {
+                                        commands.push(name.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        commands.sort();
+        commands.dedup();
+        commands
+    }
+
+    fn complete_path(&self, partial: &str, dirs_only: bool) -> Vec<Pair> {
+        let mut results = Vec::new();
+
+        let (dir, prefix) = if partial.contains('/') {
+            let path = PathBuf::from(partial);
+            if partial.ends_with('/') {
+                (partial.to_string(), String::new())
+            } else {
+                let parent = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                let file = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+                (if parent.is_empty() { ".".to_string() } else { parent }, file)
+            }
+        } else {
+            (".".to_string(), partial.to_string())
+        };
+
+        let expanded_dir = if dir.starts_with('~') {
+            if let Ok(home) = std::env::var("HOME") {
+                dir.replacen('~', &home, 1)
+            } else {
+                dir.clone()
+            }
+        } else {
+            dir.clone()
+        };
+
+        if let Ok(entries) = std::fs::read_dir(&expanded_dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(&prefix) {
+                        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+
+                        if dirs_only && !is_dir {
+                            continue;
+                        }
+
+                        let display = if dir == "." {
+                            name.to_string()
+                        } else if dir.ends_with('/') {
+                            format!("{}{}", dir, name)
+                        } else {
+                            format!("{}/{}", dir, name)
+                        };
+
+                        let replacement = if is_dir {
+                            format!("{}/", display)
+                        } else {
+                            display.clone()
+                        };
+
+                        results.push(Pair {
+                            display,
+                            replacement,
+                        });
+                    }
+                }
+            }
+        }
+
+        results.sort_by(|a, b| a.display.cmp(&b.display));
+        results
+    }
+
+    fn complete_command(&self, partial: &str) -> Vec<Pair> {
+        self.commands
+            .iter()
+            .filter(|cmd| cmd.starts_with(partial))
+            .map(|cmd| Pair {
+                display: cmd.clone(),
+                replacement: cmd.clone(),
+            })
+            .collect()
     }
 }
 
+#[cfg(unix)]
+fn is_executable(metadata: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_metadata: &std::fs::Metadata) -> bool {
+    true
+}
+
 impl Completer for ColonyHelper {
-    type Candidate = String;
+    type Candidate = Pair;
 
     fn complete(
         &self,
-        _line: &str,
-        _pos: usize,
+        line: &str,
+        pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        Ok((0, vec![])) // No completion for now
+        let line_to_cursor = &line[..pos];
+
+        let words: Vec<&str> = line_to_cursor.split_whitespace().collect();
+        let trailing_space = line_to_cursor.ends_with(' ') || line_to_cursor.ends_with('\t');
+
+        if words.is_empty() || (words.len() == 1 && !trailing_space) {
+            let partial = words.first().copied().unwrap_or("");
+            let start = line_to_cursor.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0);
+            let completions = self.complete_command(partial);
+            return Ok((start, completions));
+        }
+
+        let cmd = words[0];
+        let partial = if trailing_space { "" } else { words.last().copied().unwrap_or("") };
+        let start = if trailing_space {
+            pos
+        } else {
+            line_to_cursor.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0)
+        };
+
+        let dirs_only = cmd == "cd" || cmd == "pushd" || cmd == "popd";
+        let completions = self.complete_path(partial, dirs_only);
+
+        Ok((start, completions))
     }
 }
 
@@ -46,27 +190,23 @@ impl Hinter for ColonyHelper {
     type Hint = String;
 
     fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
-        None // No hints for now
+        None
     }
 }
 
 impl Highlighter for ColonyHelper {
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
-        // TODO: Emit OSC 2337 for syntax highlighting
-        // For now, just return the line as-is
         Cow::Borrowed(line)
     }
 
     fn highlight_char(&self, _line: &str, _pos: usize, _forced: bool) -> bool {
-        false // Don't force character-level highlighting
+        false
     }
 }
 
 impl Validator for ColonyHelper {
     fn validate(&self, ctx: &mut ValidationContext) -> rustyline::Result<ValidationResult> {
         let input = ctx.input();
-
-        // Parse with tree-sitter for syntax validation
         let tree = parse(input);
 
         match tree {
@@ -83,7 +223,6 @@ impl Validator for ColonyHelper {
                 );
 
                 if has_error {
-                    // Incomplete input - allow user to continue
                     Ok(ValidationResult::Incomplete)
                 } else {
                     Ok(ValidationResult::Valid(None))
@@ -127,7 +266,6 @@ pub(crate) async fn run_repl(
                     continue;
                 }
 
-                // History expansion (!! , !N, !-N, !string)
                 let line = match executor.history().expand(line) {
                     Ok((expanded, was_expanded)) => {
                         if was_expanded {
@@ -142,11 +280,9 @@ pub(crate) async fn run_repl(
                 };
                 let line = line.as_str();
 
-                // Add to rustyline history
                 rl.add_history_entry(line)
                     .map_err(|e| miette::miette!("history error: {}", e))?;
 
-                // Add to executor history (for the history builtin)
                 executor.history_mut().add(line);
 
                 if line == "exit" || line == "quit" {
@@ -155,19 +291,16 @@ pub(crate) async fn run_repl(
                     break;
                 }
 
-                // Handle llm command (model management)
                 if line.starts_with("llm ") {
                     handle_llm_command(line, &mut agent).await;
                     continue;
                 }
 
-                // Route to agent or shell
                 if let Some(ref mut agent) = agent {
                     if NaturalLanguageDetector::is_natural_language(line) {
-                        // Route to agent
                         match agent.process(line).await {
                             Ok(_response) => {
-                                println!(); // Newline after streaming
+                                println!();
                             }
                             Err(e) => {
                                 eprintln!("Agent error: {}", e);
@@ -279,7 +412,6 @@ fn configure_history(executor: &mut Executor, rl: &mut Editor<ColonyHelper, Defa
         executor.history_mut().load_from_file();
     }
 
-    // Sync executor history to rustyline for up/down arrow navigation
     for entry in executor.history().entries() {
         let _ = rl.add_history_entry(entry);
     }
