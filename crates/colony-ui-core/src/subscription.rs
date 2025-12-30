@@ -15,7 +15,7 @@ impl SubscriptionManager {
         }
     }
 
-    pub fn register<C: PromptComponent>(&mut self, component: &C) {
+    pub fn register<C: PromptComponent + ?Sized>(&mut self, component: &C) {
         let component_id = component.id().to_string();
 
         for pattern in component.subscriptions() {
