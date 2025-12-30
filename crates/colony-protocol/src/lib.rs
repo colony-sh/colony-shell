@@ -73,6 +73,28 @@ pub enum ProtocolMessage {
         left: Vec<PromptComponentData>,
         right: Vec<PromptComponentData>,
     },
+    WidgetRequest {
+        widget: String,
+        component_id: String,
+        context: serde_json::Value,
+    },
+    WidgetData {
+        widget: String,
+        data: serde_json::Value,
+    },
+    WidgetAction {
+        widget: String,
+        action: String,
+        payload: serde_json::Value,
+    },
+    WidgetResult {
+        widget: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +103,15 @@ pub struct PromptComponentData {
     pub spans: Vec<PromptSpan>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interactive: Option<InteractiveConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InteractiveConfig {
+    pub click: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hover: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -250,6 +281,48 @@ pub fn emit_prompt(left: Vec<PromptComponentData>, right: Vec<PromptComponentDat
     emit_message(&msg);
 }
 
+pub fn emit_widget_data(widget: &str, data: serde_json::Value) {
+    let msg = ProtocolMessage::WidgetData {
+        widget: widget.to_string(),
+        data,
+    };
+    emit_message(&msg);
+}
+
+pub fn emit_widget_result(widget: &str, success: bool, message: Option<&str>, error: Option<&str>) {
+    let msg = ProtocolMessage::WidgetResult {
+        widget: widget.to_string(),
+        success,
+        message: message.map(|s| s.to_string()),
+        error: error.map(|s| s.to_string()),
+    };
+    emit_message(&msg);
+}
+
+pub fn parse_widget_request(json: &str) -> Option<(String, String, serde_json::Value)> {
+    if let Ok(ProtocolMessage::WidgetRequest {
+        widget,
+        component_id,
+        context,
+    }) = serde_json::from_str::<ProtocolMessage>(json)
+    {
+        return Some((widget, component_id, context));
+    }
+    None
+}
+
+pub fn parse_widget_action(json: &str) -> Option<(String, String, serde_json::Value)> {
+    if let Ok(ProtocolMessage::WidgetAction {
+        widget,
+        action,
+        payload,
+    }) = serde_json::from_str::<ProtocolMessage>(json)
+    {
+        return Some((widget, action, payload));
+    }
+    None
+}
+
 pub fn parse_secure_access_response(json: &str) -> Option<(u64, SecureAccessDecision)> {
     if let Ok(ProtocolMessage::SecureAccessResponse {
         request_id,
@@ -383,6 +456,7 @@ mod tests {
                     italic: false,
                 }],
                 data: None,
+                interactive: None,
             }],
             right: vec![],
         };
@@ -391,6 +465,103 @@ mod tests {
         assert!(json.contains("\"type\":\"Prompt\""));
         assert!(json.contains("pwd"));
         assert!(json.contains("~/project"));
+    }
+
+    #[test]
+    fn test_prompt_with_interactive() {
+        let msg = ProtocolMessage::Prompt {
+            left: vec![PromptComponentData {
+                id: "git_branch".to_string(),
+                spans: vec![PromptSpan {
+                    text: " main".to_string(),
+                    fg: Some("green".to_string()),
+                    bg: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                }],
+                data: Some(serde_json::json!({"branch": "main"})),
+                interactive: Some(InteractiveConfig {
+                    click: "branch_picker".to_string(),
+                    hover: Some("Click to switch branches".to_string()),
+                }),
+            }],
+            right: vec![],
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"interactive\""));
+        assert!(json.contains("\"click\":\"branch_picker\""));
+        assert!(json.contains("\"hover\":\"Click to switch branches\""));
+    }
+
+    #[test]
+    fn test_widget_request_parsing() {
+        let json = r#"{"type":"WidgetRequest","widget":"branch_picker","component_id":"git_branch","context":{"current_branch":"main"}}"#;
+        let result = parse_widget_request(json);
+        assert!(result.is_some());
+        let (widget, component_id, context) = result.unwrap();
+        assert_eq!(widget, "branch_picker");
+        assert_eq!(component_id, "git_branch");
+        assert_eq!(context["current_branch"], "main");
+    }
+
+    #[test]
+    fn test_widget_action_parsing() {
+        let json = r#"{"type":"WidgetAction","widget":"branch_picker","action":"switch","payload":{"branch":"feature-x"}}"#;
+        let result = parse_widget_action(json);
+        assert!(result.is_some());
+        let (widget, action, payload) = result.unwrap();
+        assert_eq!(widget, "branch_picker");
+        assert_eq!(action, "switch");
+        assert_eq!(payload["branch"], "feature-x");
+    }
+
+    #[test]
+    fn test_widget_data_serialization() {
+        let msg = ProtocolMessage::WidgetData {
+            widget: "branch_picker".to_string(),
+            data: serde_json::json!({
+                "current": "main",
+                "local": [{"name": "main", "current": true}]
+            }),
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"WidgetData\""));
+        assert!(json.contains("\"widget\":\"branch_picker\""));
+        assert!(json.contains("\"current\":\"main\""));
+    }
+
+    #[test]
+    fn test_widget_result_success() {
+        let msg = ProtocolMessage::WidgetResult {
+            widget: "branch_picker".to_string(),
+            success: true,
+            message: Some("Switched to branch 'feature-x'".to_string()),
+            error: None,
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"WidgetResult\""));
+        assert!(json.contains("\"success\":true"));
+        assert!(json.contains("Switched to branch"));
+        assert!(!json.contains("\"error\""));
+    }
+
+    #[test]
+    fn test_widget_result_error() {
+        let msg = ProtocolMessage::WidgetResult {
+            widget: "branch_picker".to_string(),
+            success: false,
+            message: None,
+            error: Some("Cannot switch with uncommitted changes".to_string()),
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"success\":false"));
+        assert!(json.contains("\"error\""));
+        assert!(!json.contains("\"message\""));
     }
 
     // Note: Testing actual escape sequence emission would require

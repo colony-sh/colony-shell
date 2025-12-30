@@ -126,10 +126,17 @@ impl StyledSpan {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InteractiveConfig {
+    pub click: String,
+    pub hover: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ComponentOutput {
     pub spans: Vec<StyledSpan>,
     pub data: Option<serde_json::Value>,
     pub visible: bool,
+    pub interactive: Option<InteractiveConfig>,
 }
 
 impl ComponentOutput {
@@ -138,6 +145,7 @@ impl ComponentOutput {
             spans,
             data: None,
             visible: true,
+            interactive: None,
         }
     }
 
@@ -146,6 +154,7 @@ impl ComponentOutput {
             spans,
             data: Some(data),
             visible: true,
+            interactive: None,
         }
     }
 
@@ -154,7 +163,16 @@ impl ComponentOutput {
             spans: vec![],
             data: None,
             visible: false,
+            interactive: None,
         }
+    }
+
+    pub fn with_interactive(mut self, click: impl Into<String>, hover: Option<String>) -> Self {
+        self.interactive = Some(InteractiveConfig {
+            click: click.into(),
+            hover,
+        });
+        self
     }
 }
 
