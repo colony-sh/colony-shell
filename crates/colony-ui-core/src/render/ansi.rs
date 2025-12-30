@@ -88,7 +88,7 @@ pub fn strip_ansi(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Color;
+    use crate::{Color, Style};
 
     #[test]
     fn test_render_plain_span() {
