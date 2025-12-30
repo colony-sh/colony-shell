@@ -1026,6 +1026,39 @@
         "2025-12-24: Command hints for common external commands",
         "2025-12-24: COMPLETE: Full Script X-Ray feature operational"
       ]
+    },
+    {
+      "id": "F054",
+      "name": "Colony Cloud (Managed LLM Service)",
+      "description": "Managed LLM service wrapping AWS Bedrock. REST API (OpenAI-compatible) + native Rust SDK. Tiered subscriptions (Free/Pro/Enterprise), usage tracking, rate limiting, prompt caching. Includes Recipe Registry for sharing recipes/plugins/skills/bundles.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F014"],
+      "notes": [
+        "2025-12-29: Design completed - docs/plans/2025-12-29-colony-cloud-design.md",
+        "2025-12-29: Implementation plan completed - docs/plans/2025-12-29-colony-cloud-impl-plan.md",
+        "2025-12-29: Init prompt created - docs/plans/2025-12-29-colony-cloud-init-prompt.md",
+        "2025-12-29: Separate repository (colony-cloud) - not part of this workspace",
+        "2025-12-29: 32 features planned across 4 phases (8 weeks)",
+        "2025-12-29: SDK crate (colony-cloud-sdk) will integrate with colony-agent ModelRouter"
+      ]
+    },
+    {
+      "id": "F055",
+      "name": "Recipe System (LLM Modes)",
+      "description": "Declarative TOML configuration for LLM modes. Recipes combine system prompts, tools, skills, UI layout, and behaviors. Plugins provide prompts, commands, hooks, and subagents. Optional Lua scripting for dynamic behavior. Registry integration with Colony Cloud.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F014", "F020"],
+      "notes": [
+        "2025-12-29: Design completed - docs/plans/2025-12-29-recipe-system-design.md",
+        "2025-12-29: Implementation plan completed - docs/plans/2025-12-29-recipe-system-impl-plan.md",
+        "2025-12-29: New crate: colony-recipe",
+        "2025-12-29: 31 features planned across 5 phases (8 weeks)",
+        "2025-12-29: Core concepts: Recipe, Plugin, Skill, Bundle",
+        "2025-12-29: Lua scripting via mlua (optional, sandboxed)",
+        "2025-12-29: Registry integration with F054 (Colony Cloud)"
+      ]
     }
   ]
 }
