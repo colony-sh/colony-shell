@@ -130,6 +130,7 @@ pub fn execute_builtin(
     jobs: &JobTable,
     tuple_space: &TupleSpace,
     channels: &mut ChannelManager,
+    history: Option<&mut crate::history::History>,
 ) -> Option<Result<BuiltinResult>> {
     let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
         crate::execute_and_capture(stmt, ctx)
@@ -228,6 +229,7 @@ pub fn execute_builtin(
         "typeset" => builtin_declare(&args, context), // typeset is alias for declare
         "disown" => builtin_disown(&args, jobs),
         "hash" => builtin_hash(&args, context),
+        "history" => builtin_history(&args, history),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -4911,6 +4913,26 @@ fn generate_completions(
     completions.dedup();
 
     completions
+}
+
+fn builtin_history(
+    args: &[String],
+    history: Option<&mut crate::history::History>,
+) -> Result<BuiltinResult> {
+    match history {
+        Some(h) => {
+            let exit_code = crate::history::execute_history_builtin(args, h);
+            if exit_code == 0 {
+                Ok(BuiltinResult::Success(0))
+            } else {
+                Ok(BuiltinResult::Failure(exit_code))
+            }
+        }
+        None => {
+            eprintln!("history: not available in subshell");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
 }
 
 fn get_builtin_names() -> Vec<&'static str> {

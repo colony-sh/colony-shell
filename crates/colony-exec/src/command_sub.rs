@@ -188,7 +188,8 @@ fn execute_statement_in_child_with_return(
                 return ChildExitResult::Exit(1);
             }
 
-            if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels)
+            if let Some(result) =
+                execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels, None)
             {
                 let _ = std::io::stdout().flush();
 
@@ -475,7 +476,9 @@ fn execute_single_element_blocking(
             return Ok(crate::ExitStatus::new(1));
         }
 
-        if let Some(result) = execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels) {
+        if let Some(result) =
+            execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels, None)
+        {
             let _ = std::io::stdout().flush();
             match result {
                 Ok(builtin_result) => Ok(crate::ExitStatus::new(builtin_result.exit_code())),

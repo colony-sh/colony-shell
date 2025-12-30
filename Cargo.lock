@@ -1416,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "colony-agent"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "claude-sdk",
@@ -1436,7 +1436,7 @@ dependencies = [
 
 [[package]]
 name = "colony-channels"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "parking_lot",
@@ -1447,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "colony-config"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -1461,7 +1461,7 @@ dependencies = [
 
 [[package]]
 name = "colony-exec"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "colony-channels",
@@ -1481,7 +1481,7 @@ dependencies = [
 
 [[package]]
 name = "colony-expand"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "colony-parser",
  "colony-protocol",
@@ -1500,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "colony-focus"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "colony-memory",
  "serde",
@@ -1508,7 +1508,7 @@ dependencies = [
 
 [[package]]
 name = "colony-mcp"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "colony-tuple",
  "serde",
@@ -1517,7 +1517,7 @@ dependencies = [
 
 [[package]]
 name = "colony-memory"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "colony-parser"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "miette",
  "pest",
@@ -1549,7 +1549,7 @@ dependencies = [
 
 [[package]]
 name = "colony-protocol"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1557,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "colony-secure"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -1581,7 +1581,7 @@ dependencies = [
 
 [[package]]
 name = "colony-shell"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "colony-agent",
@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "colony-tree-sitter"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "cc",
  "tree-sitter",
@@ -1620,7 +1620,7 @@ dependencies = [
 
 [[package]]
 name = "colony-tuple"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "ipc-channel",
  "parking_lot",

@@ -41,6 +41,8 @@ use colony_expand::ExpansionContext;
 use colony_parser::{Pipeline, SimpleCommand};
 use colony_tuple::TupleSpace;
 
+pub use history::History;
+
 pub fn build_env(context: &ExpansionContext) -> Vec<(String, String)> {
     let mut env: Vec<(String, String)> = std::env::vars().collect();
 
@@ -69,6 +71,8 @@ pub struct Executor {
     tuple_space: TupleSpace,
     /// Extended channels (stdcontext, stdllm, stdtool, stdtrace)
     channels: ChannelManager,
+    /// Command history
+    history: History,
 }
 
 impl Executor {
@@ -78,7 +82,26 @@ impl Executor {
             jobs: JobTable::new(),
             tuple_space: TupleSpace::new(),
             channels: ChannelManager::new(),
+            history: History::new(),
         }
+    }
+
+    pub fn with_history(context: ExpansionContext, history: History) -> Self {
+        Self {
+            context,
+            jobs: JobTable::new(),
+            tuple_space: TupleSpace::new(),
+            channels: ChannelManager::new(),
+            history,
+        }
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn history_mut(&mut self) -> &mut History {
+        &mut self.history
     }
 
     /// Get reference to channel manager
@@ -681,6 +704,7 @@ impl Executor {
                 &self.jobs,
                 &self.tuple_space,
                 &mut self.channels,
+                Some(&mut self.history),
             ) {
                 let result = builtin_result?;
 

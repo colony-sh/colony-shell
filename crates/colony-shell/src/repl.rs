@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use crate::shell::execution::handle_llm_command;
 use colony_agent::{Agent, NaturalLanguageDetector};
@@ -11,6 +12,7 @@ use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::{ValidationContext, ValidationResult, Validator};
+use rustyline::history::DefaultHistory;
 use rustyline::{Editor, Helper};
 
 use crate::shell::execute_shell_command;
@@ -96,6 +98,8 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
     let mut rl = Editor::new().map_err(|e| miette::miette!("failed to create readline: {}", e))?;
     rl.set_helper(Some(helper));
 
+    configure_history(&mut executor, &mut rl);
+
     loop {
         let prompt = if agent.is_some() {
             "colony> "
@@ -113,13 +117,31 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
                     continue;
                 }
 
-                // Add to history
+                // History expansion (!! , !N, !-N, !string)
+                let line = match executor.history().expand(line) {
+                    Ok((expanded, was_expanded)) => {
+                        if was_expanded {
+                            println!("{}", expanded);
+                        }
+                        expanded
+                    }
+                    Err(e) => {
+                        eprintln!("colony: {}", e);
+                        continue;
+                    }
+                };
+                let line = line.as_str();
+
+                // Add to rustyline history
                 rl.add_history_entry(line)
                     .map_err(|e| miette::miette!("history error: {}", e))?;
 
-                // Handle exit
+                // Add to executor history (for the history builtin)
+                executor.history_mut().add(line);
+
                 if line == "exit" || line == "quit" {
                     println!("Goodbye!");
+                    save_history(&executor);
                     break;
                 }
 
@@ -164,6 +186,7 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
 
             Err(ReadlineError::Eof) => {
                 println!("exit");
+                save_history(&executor);
                 break;
             }
 
@@ -227,5 +250,30 @@ fn display_tuple_activity(executor: &Executor) {
         {
             println!("🔄 Directory: {}", new);
         }
+    }
+}
+
+fn configure_history(executor: &mut Executor, rl: &mut Editor<ColonyHelper, DefaultHistory>) {
+    let get_env = |name: &str| std::env::var(name).ok();
+    executor.history_mut().configure_from_env(get_env);
+
+    let history_file = get_env("HISTFILE")
+        .map(PathBuf::from)
+        .or_else(|| get_env("HOME").map(|h| PathBuf::from(h).join(".colony_history")));
+
+    if let Some(path) = history_file {
+        executor.history_mut().set_file_path(path);
+        executor.history_mut().load_from_file();
+    }
+
+    // Sync executor history to rustyline for up/down arrow navigation
+    for entry in executor.history().entries() {
+        let _ = rl.add_history_entry(entry);
+    }
+}
+
+fn save_history(executor: &Executor) {
+    if let Err(e) = executor.history().save_to_file() {
+        eprintln!("Warning: failed to save history: {}", e);
     }
 }
