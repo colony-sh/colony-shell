@@ -4,5 +4,7 @@
 //! built-in and custom components that react to tuple space events.
 
 pub mod component;
+pub mod context;
 
-pub use component::{ComponentOutput, PromptComponent, Style, StyledSpan};
+pub use component::{Color, ComponentOutput, PromptComponent, Style, StyledSpan};
+pub use context::ComponentContext;
