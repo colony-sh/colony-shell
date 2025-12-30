@@ -69,6 +69,33 @@ pub enum ProtocolMessage {
         request_id: u64,
         decision: SecureAccessDecision,
     },
+    Prompt {
+        left: Vec<PromptComponentData>,
+        right: Vec<PromptComponentData>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptComponentData {
+    pub id: String,
+    pub spans: Vec<PromptSpan>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptSpan {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bold: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dim: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub italic: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,6 +245,11 @@ pub fn emit_secure_access_request(
     emit_message(&msg);
 }
 
+pub fn emit_prompt(left: Vec<PromptComponentData>, right: Vec<PromptComponentData>) {
+    let msg = ProtocolMessage::Prompt { left, right };
+    emit_message(&msg);
+}
+
 pub fn parse_secure_access_response(json: &str) -> Option<(u64, SecureAccessDecision)> {
     if let Ok(ProtocolMessage::SecureAccessResponse {
         request_id,
@@ -335,6 +367,30 @@ mod tests {
         let (id, decision) = result.unwrap();
         assert_eq!(id, 456);
         assert_eq!(decision, SecureAccessDecision::Deny);
+    }
+
+    #[test]
+    fn test_prompt_message() {
+        let msg = ProtocolMessage::Prompt {
+            left: vec![PromptComponentData {
+                id: "pwd".to_string(),
+                spans: vec![PromptSpan {
+                    text: "~/project".to_string(),
+                    fg: Some("cyan".to_string()),
+                    bg: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                }],
+                data: None,
+            }],
+            right: vec![],
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"Prompt\""));
+        assert!(json.contains("pwd"));
+        assert!(json.contains("~/project"));
     }
 
     // Note: Testing actual escape sequence emission would require
