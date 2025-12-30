@@ -6,6 +6,7 @@ use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
 use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
+use colony_ui_core::{ComponentContext, PromptManager};
 use miette::Result;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
@@ -100,14 +101,17 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
 
     configure_history(&mut executor, &mut rl);
 
-    loop {
-        let prompt = if agent.is_some() {
-            "colony> "
-        } else {
-            "shell> "
-        };
+    let mut prompt_manager = PromptManager::default();
 
-        let readline = rl.readline(prompt);
+    loop {
+        let model_name = agent.as_ref().map(|a| a.current_provider().1.to_string());
+        let ctx = ComponentContext::from_executor(&executor, model_name);
+        let terminal_width = terminal_size::terminal_size()
+            .map(|(w, _)| w.0 as usize)
+            .unwrap_or(80);
+        let prompt = prompt_manager.render(&ctx, terminal_width);
+
+        let readline = rl.readline(&prompt);
 
         match readline {
             Ok(line) => {
@@ -167,14 +171,14 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
                     }
                 }
 
-                // Try parsing and executing shell command
                 match execute_shell_command(line, &mut executor).await {
                     Ok(()) => {
-                        // Display any reactive tuples that were emitted
-                        display_tuple_activity(&executor);
+                        prompt_manager.on_event("cmd_complete");
+                        display_tuple_activity(&executor, &mut prompt_manager);
                     }
                     Err(e) => {
                         eprintln!("Error: {}", e);
+                        prompt_manager.on_event("cmd_complete");
                     }
                 }
             }
@@ -204,7 +208,7 @@ pub(crate) async fn run_repl(mut agent: Option<Agent>, mut executor: Executor) -
 ///
 /// Reads and displays env_change and dir_change tuples to show
 /// the reactive environment in action (Rules 42-47)
-fn display_tuple_activity(executor: &Executor) {
+fn display_tuple_activity(executor: &Executor, prompt_manager: &mut PromptManager) {
     let tuple_space = executor.tuple_space();
 
     // Check for env_change tuples: ("env_change", var_name, old_value, new_value)
@@ -216,6 +220,7 @@ fn display_tuple_activity(executor: &Executor) {
     ]);
 
     while let Some(tuple) = tuple_space.inp(env_pattern.clone()) {
+        prompt_manager.on_event("env_change");
         if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) = (
             tuple.fields.get(1),
             tuple.fields.get(2),
@@ -245,6 +250,7 @@ fn display_tuple_activity(executor: &Executor) {
     ]);
 
     while let Some(tuple) = tuple_space.inp(dir_pattern.clone()) {
+        prompt_manager.on_event("dir_change");
         if let (Some(Value::Str(_old)), Some(Value::Str(new))) =
             (tuple.fields.get(1), tuple.fields.get(2))
         {
