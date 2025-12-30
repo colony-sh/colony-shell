@@ -64,11 +64,11 @@ impl PromptComponent for PwdComponent {
         let cwd = ctx.cwd.to_string_lossy();
 
         let display_path = if let Some(home) = ctx.home_dir() {
-            if cwd.starts_with(home) {
-                if cwd.len() == home.len() {
+            if let Some(suffix) = cwd.strip_prefix(home) {
+                if suffix.is_empty() {
                     "~".to_string()
                 } else {
-                    format!("~{}", &cwd[home.len()..])
+                    format!("~{}", suffix)
                 }
             } else {
                 cwd.to_string()

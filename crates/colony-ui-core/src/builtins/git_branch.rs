@@ -20,8 +20,8 @@ impl Default for GitBranchComponent {
 
 pub fn parse_git_branch(output: &str) -> Option<(String, bool)> {
     for line in output.lines() {
-        if line.starts_with('*') {
-            let branch_part = line[1..].trim();
+        if let Some(rest) = line.strip_prefix('*') {
+            let branch_part = rest.trim();
 
             if branch_part.starts_with("(HEAD detached at ") {
                 let hash = branch_part

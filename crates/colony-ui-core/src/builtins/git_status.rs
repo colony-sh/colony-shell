@@ -45,7 +45,7 @@ pub fn parse_diff_stat(output: &str) -> DiffStat {
             if let Some(del_part) = line.split("deletion").next() {
                 if let Some(num) = del_part
                     .split(',')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.split_whitespace().last())
                 {
                     stat.deletions = num.parse().unwrap_or(0);

@@ -19,13 +19,11 @@ impl SubscriptionManager {
         let component_id = component.id().to_string();
 
         for pattern in component.subscriptions() {
-            if let Some(first) = pattern.first() {
-                if let colony_tuple::Value::Str(event_type) = first {
-                    self.subscriptions
-                        .entry(event_type.clone())
-                        .or_default()
-                        .insert(component_id.clone());
-                }
+            if let Some(colony_tuple::Value::Str(event_type)) = pattern.first() {
+                self.subscriptions
+                    .entry(event_type.clone())
+                    .or_default()
+                    .insert(component_id.clone());
             }
         }
     }
