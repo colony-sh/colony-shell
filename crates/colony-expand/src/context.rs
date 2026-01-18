@@ -976,6 +976,12 @@ impl ExpansionContext {
         ctx.variables
             .insert("OPTIND".to_string(), Variable::String("1".to_string()));
 
+        // Set SHELL to our own path, overriding inherited value from parent shell
+        let shell_path = ctx.system_vars.shell_path.clone();
+        ctx.environment
+            .insert("SHELL".to_string(), shell_path.clone());
+        std::env::set_var("SHELL", &shell_path);
+
         ctx
     }
 
