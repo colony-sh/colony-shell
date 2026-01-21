@@ -91,6 +91,10 @@ impl PromptComponent for PwdComponent {
                 "display": display_path,
             }),
         )
+        .with_interactive(
+            "directory_picker",
+            Some("Click to open file navigator".to_string()),
+        )
     }
 }
 

@@ -44,6 +44,7 @@ impl PromptComponent for ModelComponent {
                 "model": model,
             }),
         )
+        .with_interactive("model_picker", Some("Click to switch AI model".to_string()))
     }
 }
 
