@@ -58,11 +58,11 @@ impl PromptComponent for RustVersionComponent {
         match Self::detect_version(&ctx.cwd) {
             Some(version) => {
                 let text = format!("🦀 {}", version);
-                let spans = vec![StyledSpan::new(text, Style::default().fg(Color::Rgb(222, 165, 132)))];
-                ComponentOutput::with_data(
-                    spans,
-                    serde_json::json!({ "version": version }),
-                )
+                let spans = vec![StyledSpan::new(
+                    text,
+                    Style::default().fg(Color::Rgb(222, 165, 132)),
+                )];
+                ComponentOutput::with_data(spans, serde_json::json!({ "version": version }))
             }
             None => ComponentOutput::hidden(),
         }

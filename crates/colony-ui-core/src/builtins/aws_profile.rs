@@ -29,11 +29,11 @@ impl PromptComponent for AwsProfileComponent {
         match ctx.get_env("AWS_PROFILE") {
             Some(profile) if profile != "default" => {
                 let text = format!("☁ {}", profile);
-                let spans = vec![StyledSpan::new(text, Style::default().fg(Color::Rgb(255, 153, 0)))];
-                ComponentOutput::with_data(
-                    spans,
-                    serde_json::json!({ "profile": profile }),
-                )
+                let spans = vec![StyledSpan::new(
+                    text,
+                    Style::default().fg(Color::Rgb(255, 153, 0)),
+                )];
+                ComponentOutput::with_data(spans, serde_json::json!({ "profile": profile }))
             }
             _ => ComponentOutput::hidden(),
         }

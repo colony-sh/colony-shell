@@ -36,7 +36,8 @@ impl ComponentRegistry {
     }
 
     pub fn register(&mut self, component: Box<dyn PromptComponent>) {
-        self.components.insert(component.id().to_string(), component);
+        self.components
+            .insert(component.id().to_string(), component);
     }
 
     pub fn get(&self, id: &str) -> Option<&dyn PromptComponent> {

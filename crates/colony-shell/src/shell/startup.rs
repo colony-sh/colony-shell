@@ -1,5 +1,7 @@
 use colony_exec::Executor;
-use colony_expand::{expand_tilde, CompletionAction, CompletionSpec, ExpansionContext, ExpansionError};
+use colony_expand::{
+    expand_tilde, CompletionAction, CompletionSpec, ExpansionContext, ExpansionError,
+};
 use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
 use std::path::PathBuf;

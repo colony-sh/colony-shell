@@ -11,10 +11,10 @@
 //! - Colony-terminal using a Unix socket for widget IPC
 //! - PTY proxying in colony-terminal that intercepts OSC responses
 
-use colony_protocol::{emit_widget_data, emit_widget_result, parse_widget_action, parse_widget_request};
-use colony_ui_core::{
-    checkout_remote, create_branch, gather_branch_data, switch_branch,
+use colony_protocol::{
+    emit_widget_data, emit_widget_result, parse_widget_action, parse_widget_request,
 };
+use colony_ui_core::{checkout_remote, create_branch, gather_branch_data, switch_branch};
 use std::path::Path;
 
 pub fn handle_widget_request(json: &str, cwd: &Path) -> bool {

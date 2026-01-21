@@ -14,8 +14,8 @@ use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::history::DefaultHistory;
+use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{Editor, Helper};
 use tokio::sync::RwLock;
 
@@ -34,13 +34,15 @@ impl ColonyHelper {
 
     fn collect_commands() -> Vec<String> {
         let mut commands = vec![
-            "cd", "pwd", "echo", "export", "unset", "source", "exit", "history",
-            "jobs", "fg", "bg", "alias", "unalias", "set", "shift", "test",
-            "true", "false", "read", "printf", "type", "hash", "ulimit",
-            "umask", "wait", "trap", "return", "break", "continue", "eval",
-            "exec", "command", "builtin", "local", "declare", "readonly",
-            "getopts", "times", "llm", "path",
-        ].into_iter().map(String::from).collect::<Vec<_>>();
+            "cd", "pwd", "echo", "export", "unset", "source", "exit", "history", "jobs", "fg",
+            "bg", "alias", "unalias", "set", "shift", "test", "true", "false", "read", "printf",
+            "type", "hash", "ulimit", "umask", "wait", "trap", "return", "break", "continue",
+            "eval", "exec", "command", "builtin", "local", "declare", "readonly", "getopts",
+            "times", "llm", "path",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
 
         if let Ok(path) = std::env::var("PATH") {
             for dir in path.split(':') {
@@ -73,9 +75,22 @@ impl ColonyHelper {
             if partial.ends_with('/') {
                 (partial.to_string(), String::new())
             } else {
-                let parent = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-                let file = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
-                (if parent.is_empty() { ".".to_string() } else { parent }, file)
+                let parent = path
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let file = path
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                (
+                    if parent.is_empty() {
+                        ".".to_string()
+                    } else {
+                        parent
+                    },
+                    file,
+                )
             }
         } else {
             (".".to_string(), partial.to_string())
@@ -167,17 +182,27 @@ impl Completer for ColonyHelper {
 
         if words.is_empty() || (words.len() == 1 && !trailing_space) {
             let partial = words.first().copied().unwrap_or("");
-            let start = line_to_cursor.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0);
+            let start = line_to_cursor
+                .rfind(char::is_whitespace)
+                .map(|i| i + 1)
+                .unwrap_or(0);
             let completions = self.complete_command(partial);
             return Ok((start, completions));
         }
 
         let cmd = words[0];
-        let partial = if trailing_space { "" } else { words.last().copied().unwrap_or("") };
+        let partial = if trailing_space {
+            ""
+        } else {
+            words.last().copied().unwrap_or("")
+        };
         let start = if trailing_space {
             pos
         } else {
-            line_to_cursor.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0)
+            line_to_cursor
+                .rfind(char::is_whitespace)
+                .map(|i| i + 1)
+                .unwrap_or(0)
         };
 
         let dirs_only = cmd == "cd" || cmd == "pushd" || cmd == "popd";
@@ -255,10 +280,10 @@ pub(crate) async fn run_repl(
         let terminal_width = terminal_size::terminal_size()
             .map(|(w, _)| w.0 as usize)
             .unwrap_or(80);
-        
+
         let prompt_data = prompt_manager.render_data(&ctx);
         emit_prompt_osc(&prompt_data);
-        
+
         let prompt = prompt_manager.render(&ctx, terminal_width);
 
         let readline = rl.readline(&prompt);
@@ -429,38 +454,39 @@ fn save_history(executor: &Executor) {
 }
 
 fn emit_prompt_osc(data: &PromptData) {
-    let convert_components = |components: &[colony_ui_core::ComponentData]| -> Vec<PromptComponentData> {
-        components
-            .iter()
-            .map(|cd| {
-                let spans = cd
-                    .output
-                    .spans
-                    .iter()
-                    .map(|s| PromptSpan {
-                        text: s.text.clone(),
-                        fg: s.style.fg.as_ref().map(color_to_string),
-                        bg: s.style.bg.as_ref().map(color_to_string),
-                        bold: s.style.bold,
-                        dim: s.style.dim,
-                        italic: s.style.italic,
-                    })
-                    .collect();
+    let convert_components =
+        |components: &[colony_ui_core::ComponentData]| -> Vec<PromptComponentData> {
+            components
+                .iter()
+                .map(|cd| {
+                    let spans = cd
+                        .output
+                        .spans
+                        .iter()
+                        .map(|s| PromptSpan {
+                            text: s.text.clone(),
+                            fg: s.style.fg.as_ref().map(color_to_string),
+                            bg: s.style.bg.as_ref().map(color_to_string),
+                            bold: s.style.bold,
+                            dim: s.style.dim,
+                            italic: s.style.italic,
+                        })
+                        .collect();
 
-                let interactive = cd.output.interactive.as_ref().map(|i| InteractiveConfig {
-                    click: i.click.clone(),
-                    hover: i.hover.clone(),
-                });
+                    let interactive = cd.output.interactive.as_ref().map(|i| InteractiveConfig {
+                        click: i.click.clone(),
+                        hover: i.hover.clone(),
+                    });
 
-                PromptComponentData {
-                    id: cd.id.clone(),
-                    spans,
-                    data: cd.output.data.clone(),
-                    interactive,
-                }
-            })
-            .collect()
-    };
+                    PromptComponentData {
+                        id: cd.id.clone(),
+                        spans,
+                        data: cd.output.data.clone(),
+                        interactive,
+                    }
+                })
+                .collect()
+        };
 
     let left = convert_components(&data.left);
     let right = convert_components(&data.right);

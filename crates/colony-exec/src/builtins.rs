@@ -5728,7 +5728,11 @@ mod tests {
         let original_path = env::var("PATH").unwrap_or_default();
         let test_dir = format!("/tmp/colony_test_path_add_{}", std::process::id());
 
-        let result = builtin_path(&["add".to_string(), test_dir.clone()], &mut context, &tuple_space);
+        let result = builtin_path(
+            &["add".to_string(), test_dir.clone()],
+            &mut context,
+            &tuple_space,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
 
@@ -5748,7 +5752,11 @@ mod tests {
         let original_path = env::var("PATH").unwrap_or_default();
         let test_dir = format!("/tmp/colony_test_path_prepend_{}", std::process::id());
 
-        let result = builtin_path(&["prepend".to_string(), test_dir.clone()], &mut context, &tuple_space);
+        let result = builtin_path(
+            &["prepend".to_string(), test_dir.clone()],
+            &mut context,
+            &tuple_space,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
 
@@ -5764,11 +5772,19 @@ mod tests {
         let mut context = ExpansionContext::new();
         let tuple_space = TupleSpace::new();
 
-        let result = builtin_path(&["has".to_string(), "/usr/bin".to_string()], &mut context, &tuple_space);
+        let result = builtin_path(
+            &["has".to_string(), "/usr/bin".to_string()],
+            &mut context,
+            &tuple_space,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
 
-        let result = builtin_path(&["has".to_string(), "/nonexistent/path".to_string()], &mut context, &tuple_space);
+        let result = builtin_path(
+            &["has".to_string(), "/nonexistent/path".to_string()],
+            &mut context,
+            &tuple_space,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 1);
     }

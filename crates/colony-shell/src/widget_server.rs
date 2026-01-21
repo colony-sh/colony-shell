@@ -172,7 +172,11 @@ fn process_widget_message(json: &str, cwd: &Path) -> Option<String> {
     };
 
     match msg {
-        ProtocolMessage::WidgetRequest { widget, component_id, context } => {
+        ProtocolMessage::WidgetRequest {
+            widget,
+            component_id,
+            context,
+        } => {
             let req_json = serde_json::json!({
                 "type": "WidgetRequest",
                 "widget": widget,
@@ -182,7 +186,11 @@ fn process_widget_message(json: &str, cwd: &Path) -> Option<String> {
             handle_widget_request(&req_json.to_string(), cwd);
             None
         }
-        ProtocolMessage::WidgetAction { widget, action, payload } => {
+        ProtocolMessage::WidgetAction {
+            widget,
+            action,
+            payload,
+        } => {
             let action_json = serde_json::json!({
                 "type": "WidgetAction",
                 "widget": widget,
@@ -220,9 +228,7 @@ mod tests {
         let socket_path = server.socket_path().to_path_buf();
         let shutdown = server.shutdown_handle();
 
-        let handle = tokio::spawn(async move {
-            server.run().await
-        });
+        let handle = tokio::spawn(async move { server.run().await });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(socket_path.exists());
@@ -242,9 +248,7 @@ mod tests {
         let socket_path = server.socket_path().to_path_buf();
         let shutdown = server.shutdown_handle();
 
-        let handle = tokio::spawn(async move {
-            server.run().await
-        });
+        let handle = tokio::spawn(async move { server.run().await });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 

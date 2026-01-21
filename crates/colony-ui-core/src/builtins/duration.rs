@@ -113,11 +113,17 @@ mod tests {
 
     #[test]
     fn test_format_minutes() {
-        assert_eq!(DurationComponent::format_duration(Duration::from_secs(125)), "2m5s");
+        assert_eq!(
+            DurationComponent::format_duration(Duration::from_secs(125)),
+            "2m5s"
+        );
     }
 
     #[test]
     fn test_format_hours() {
-        assert_eq!(DurationComponent::format_duration(Duration::from_secs(3725)), "1h2m");
+        assert_eq!(
+            DurationComponent::format_duration(Duration::from_secs(3725)),
+            "1h2m"
+        );
     }
 }

@@ -23,7 +23,10 @@ impl PromptComponent for ModelComponent {
     }
 
     fn subscriptions(&self) -> Vec<TuplePattern> {
-        vec![vec![Value::Str("model_change".to_string()), Value::Wildcard]]
+        vec![vec![
+            Value::Str("model_change".to_string()),
+            Value::Wildcard,
+        ]]
     }
 
     fn render(&self, ctx: &ComponentContext) -> ComponentOutput {

@@ -59,10 +59,7 @@ impl PromptComponent for PythonVersionComponent {
             Some(version) => {
                 let text = format!("🐍 {}", version);
                 let spans = vec![StyledSpan::new(text, Style::default().fg(Color::Yellow))];
-                ComponentOutput::with_data(
-                    spans,
-                    serde_json::json!({ "version": version }),
-                )
+                ComponentOutput::with_data(spans, serde_json::json!({ "version": version }))
             }
             None => ComponentOutput::hidden(),
         }

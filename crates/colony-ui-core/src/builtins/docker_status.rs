@@ -11,10 +11,7 @@ impl DockerStatusComponent {
     }
 
     fn get_running_count() -> Option<usize> {
-        let output = Command::new("docker")
-            .args(["ps", "-q"])
-            .output()
-            .ok()?;
+        let output = Command::new("docker").args(["ps", "-q"]).output().ok()?;
 
         if output.status.success() {
             let count = String::from_utf8_lossy(&output.stdout)
@@ -48,10 +45,7 @@ impl PromptComponent for DockerStatusComponent {
             Some(count) if count > 0 => {
                 let text = format!("🐳 {}", count);
                 let spans = vec![StyledSpan::new(text, Style::default().fg(Color::Cyan))];
-                ComponentOutput::with_data(
-                    spans,
-                    serde_json::json!({ "running": count }),
-                )
+                ComponentOutput::with_data(spans, serde_json::json!({ "running": count }))
             }
             _ => ComponentOutput::hidden(),
         }

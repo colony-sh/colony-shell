@@ -87,7 +87,8 @@ mod tests {
     #[test]
     fn test_home_dir() {
         let mut ctx = test_ctx();
-        ctx.env.insert("HOME".to_string(), "/Users/testuser".to_string());
+        ctx.env
+            .insert("HOME".to_string(), "/Users/testuser".to_string());
         assert_eq!(ctx.home_dir(), Some("/Users/testuser"));
     }
 }

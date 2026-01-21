@@ -211,14 +211,8 @@ mod tests {
     #[test]
     fn test_parse_ahead_behind() {
         assert_eq!(parse_ahead_behind("main abc123 [origin/main]"), (0, 0));
-        assert_eq!(
-            parse_ahead_behind("main abc123 [ahead 2]"),
-            (2, 0)
-        );
-        assert_eq!(
-            parse_ahead_behind("main abc123 [behind 3]"),
-            (0, 3)
-        );
+        assert_eq!(parse_ahead_behind("main abc123 [ahead 2]"), (2, 0));
+        assert_eq!(parse_ahead_behind("main abc123 [behind 3]"), (0, 3));
         assert_eq!(
             parse_ahead_behind("main abc123 [ahead 2, behind 3]"),
             (2, 3)

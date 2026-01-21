@@ -178,10 +178,7 @@ mod tests {
 
     #[test]
     fn test_prompt_manager_custom_layout() {
-        let manager = PromptManager::new(
-            vec!["pwd".to_string()],
-            vec!["exit_status".to_string()],
-        );
+        let manager = PromptManager::new(vec!["pwd".to_string()], vec!["exit_status".to_string()]);
         let ctx = test_context();
         let prompt = manager.render(&ctx, 80);
 

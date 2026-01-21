@@ -89,7 +89,10 @@ impl PromptComponent for GitBranchComponent {
                 "detached": detached,
             }),
         )
-        .with_interactive("branch_picker", Some("Click to switch branches".to_string()))
+        .with_interactive(
+            "branch_picker",
+            Some("Click to switch branches".to_string()),
+        )
     }
 }
 

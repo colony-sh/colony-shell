@@ -16,7 +16,9 @@ pub use builtins::{
     ExitStatusComponent, GitBranchComponent, GitStatusComponent, JobsComponent, ModelComponent,
     PwdComponent,
 };
-pub use component::{Color, ComponentOutput, InteractiveConfig, PromptComponent, Style, StyledSpan, TuplePattern};
+pub use component::{
+    Color, ComponentOutput, InteractiveConfig, PromptComponent, Style, StyledSpan, TuplePattern,
+};
 pub use context::ComponentContext;
 pub use manager::{color_to_string, ComponentData, PromptData, PromptManager};
 pub use registry::ComponentRegistry;

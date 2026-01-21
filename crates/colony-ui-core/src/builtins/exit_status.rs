@@ -23,7 +23,10 @@ impl PromptComponent for ExitStatusComponent {
     }
 
     fn subscriptions(&self) -> Vec<TuplePattern> {
-        vec![vec![Value::Str("cmd_complete".to_string()), Value::Wildcard]]
+        vec![vec![
+            Value::Str("cmd_complete".to_string()),
+            Value::Wildcard,
+        ]]
     }
 
     fn render(&self, ctx: &ComponentContext) -> ComponentOutput {

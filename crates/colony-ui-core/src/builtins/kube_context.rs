@@ -44,10 +44,7 @@ impl PromptComponent for KubeContextComponent {
             Some(context) => {
                 let text = format!("⎈ {}", context);
                 let spans = vec![StyledSpan::new(text, Style::default().fg(Color::Blue))];
-                ComponentOutput::with_data(
-                    spans,
-                    serde_json::json!({ "context": context }),
-                )
+                ComponentOutput::with_data(spans, serde_json::json!({ "context": context }))
             }
             None => ComponentOutput::hidden(),
         }

@@ -47,7 +47,10 @@ impl PromptComponent for HostnameComponent {
             hostname.to_string()
         };
 
-        let spans = vec![StyledSpan::new(text.clone(), Style::default().fg(Color::Magenta))];
+        let spans = vec![StyledSpan::new(
+            text.clone(),
+            Style::default().fg(Color::Magenta),
+        )];
         ComponentOutput::with_data(
             spans,
             serde_json::json!({
