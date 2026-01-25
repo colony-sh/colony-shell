@@ -2200,6 +2200,8 @@ pub struct Executor {
     jobs: JobTable,
     /// Tuple space for reactive environment (Rules 42-47)
     tuple_space: TupleSpace,
+    /// Session ID for scoping tuples (shell PID)
+    session_id: String,
     /// Extended channels (stdcontext, stdllm, stdtool, stddiag)
     channels: ChannelManager,
     /// Command history
@@ -2212,10 +2214,12 @@ pub struct Executor {
 
 impl Executor {
     pub fn new(context: ExpansionContext) -> Self {
+        let session_id = std::process::id().to_string();
         Self {
             context,
             jobs: JobTable::new(),
             tuple_space: TupleSpace::new(),
+            session_id,
             channels: ChannelManager::new(),
             history: History::new(),
             special_files: None,
@@ -2224,10 +2228,12 @@ impl Executor {
     }
 
     pub fn with_history(context: ExpansionContext, history: History) -> Self {
+        let session_id = std::process::id().to_string();
         Self {
             context,
             jobs: JobTable::new(),
             tuple_space: TupleSpace::new(),
+            session_id,
             channels: ChannelManager::new(),
             history,
             special_files: None,
@@ -2261,6 +2267,11 @@ impl Executor {
     /// Get reference to tuple space
     pub fn tuple_space(&self) -> &TupleSpace {
         &self.tuple_space
+    }
+
+    /// Get session ID (shell PID) for scoping tuples
+    pub fn session_id(&self) -> &str {
+        &self.session_id
     }
 
     /// Get reference to loaded special files state
@@ -2986,6 +2997,7 @@ impl Executor {
                 &mut self.context,
                 &self.jobs,
                 &self.tuple_space,
+                &self.session_id,
                 &mut self.channels,
                 Some(&mut self.history),
             ) {

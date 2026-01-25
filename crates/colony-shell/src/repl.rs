@@ -520,8 +520,11 @@ pub(crate) async fn display_tuple_activity(
     // Collect tuples first, then process (avoids holding immutable borrow across mutable calls)
     let env_tuples: Vec<Tuple> = {
         let tuple_space = executor.tuple_space();
+        let session_id = executor.session_id();
+        // Pattern: ("env_change", session_id, var, old, new)
         let env_pattern = Tuple::pattern(&[
             Value::Str("env_change".to_string()),
+            Value::Str(session_id.to_string()),
             Value::Wildcard,
             Value::Wildcard,
             Value::Wildcard,
@@ -536,9 +539,9 @@ pub(crate) async fn display_tuple_activity(
     for tuple in &env_tuples {
         prompt_manager.on_event("env_change");
         if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) = (
-            tuple.fields.get(1),
             tuple.fields.get(2),
             tuple.fields.get(3),
+            tuple.fields.get(4),
         ) {
             match new {
                 Value::Null => {
@@ -558,8 +561,11 @@ pub(crate) async fn display_tuple_activity(
 
     let dir_tuples: Vec<Tuple> = {
         let tuple_space = executor.tuple_space();
+        let session_id = executor.session_id();
+        // Pattern: ("dir_change", session_id, old, new)
         let dir_pattern = Tuple::pattern(&[
             Value::Str("dir_change".to_string()),
+            Value::Str(session_id.to_string()),
             Value::Wildcard,
             Value::Wildcard,
         ]);
@@ -573,7 +579,7 @@ pub(crate) async fn display_tuple_activity(
     for tuple in &dir_tuples {
         prompt_manager.on_event("dir_change");
         if let (Some(Value::Str(_old)), Some(Value::Str(new))) =
-            (tuple.fields.get(1), tuple.fields.get(2))
+            (tuple.fields.get(2), tuple.fields.get(3))
         {
             println!("  Directory: {}", new);
             if let Some(handle) = cwd_handle {

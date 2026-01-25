@@ -145,11 +145,13 @@ pub fn serialize_function_for_export(func: &colony_parser::FunctionDef) -> Strin
 /// Returns Some(BuiltinResult) if it is a builtin.
 ///
 /// Builtins with state changes emit tuples to the tuple space for reactive updates.
+/// Tuples are scoped by session_id to enable multi-tab/window isolation.
 pub fn execute_builtin(
     cmd: &SimpleCommand,
     context: &mut ExpansionContext,
     jobs: &JobTable,
     tuple_space: &TupleSpace,
+    session_id: &str,
     channels: &mut ChannelManager,
     history: Option<&mut crate::history::History>,
 ) -> Option<Result<BuiltinResult>> {
@@ -220,9 +222,9 @@ pub fn execute_builtin(
     context.sync_variables_from(expander.context());
 
     let result = match name {
-        "cd" => builtin_cd(&args, context, tuple_space),
-        "export" => builtin_export(&args, context, tuple_space),
-        "unset" => builtin_unset(&args, context, tuple_space),
+        "cd" => builtin_cd(&args, context, tuple_space, session_id),
+        "export" => builtin_export(&args, context, tuple_space, session_id),
+        "unset" => builtin_unset(&args, context, tuple_space, session_id),
         "exit" => builtin_exit(&args),
         "pwd" => builtin_pwd(&args),
         "echo" => builtin_echo(&args),
@@ -252,8 +254,8 @@ pub fn execute_builtin(
         "getopts" => builtin_getopts(&args, context),
         "shift" => builtin_shift(&args, context),
         "dirs" => builtin_dirs(&args, context),
-        "pushd" => builtin_pushd(&args, context, tuple_space),
-        "popd" => builtin_popd(&args, context, tuple_space),
+        "pushd" => builtin_pushd(&args, context, tuple_space, session_id),
+        "popd" => builtin_popd(&args, context, tuple_space, session_id),
         "complete" => builtin_complete(&args, context),
         "compgen" => builtin_compgen(&args, context),
         "mapfile" | "readarray" => builtin_mapfile(&args, context),
@@ -263,7 +265,7 @@ pub fn execute_builtin(
         "disown" => builtin_disown(&args, jobs),
         "hash" => builtin_hash(&args, context),
         "history" => builtin_history(&args, history),
-        "path" => builtin_path(&args, context, tuple_space),
+        "path" => builtin_path(&args, context, tuple_space, session_id),
         "flux" => crate::flux::builtin_flux(&args, tuple_space),
         "colony" => builtin_colony(&args),
         "goal" => builtin_goal(&args),
@@ -285,11 +287,13 @@ pub fn execute_builtin(
 /// - No args: cd to HOME
 /// - One arg: cd to specified directory
 ///
-/// **Reactive:** Emits ("dir_change", old_dir, new_dir) tuple (Rule 46)
+/// **Reactive:** Emits ("dir_change", session_id, old_dir, new_dir) tuple (Rule 46)
+/// Tuples are scoped by session_id to enable multi-tab/window isolation.
 fn builtin_cd(
     args: &[String],
     context: &mut ExpansionContext,
     tuple_space: &TupleSpace,
+    session_id: &str,
 ) -> Result<BuiltinResult> {
     let old_dir = env::current_dir()
         .ok()
@@ -341,8 +345,10 @@ fn builtin_cd(
     context.set_env("OLDPWD", &old_dir);
     context.set_env("PWD", &new_dir);
 
+    // Emit session-scoped tuple for reactive updates
     tuple_space.out(Tuple::from(vec![
         Value::Str("dir_change".to_string()),
+        Value::Str(session_id.to_string()),
         Value::Str(old_dir),
         Value::Str(new_dir.clone()),
     ]));
@@ -360,6 +366,7 @@ fn builtin_export(
     args: &[String],
     context: &mut ExpansionContext,
     tuple_space: &TupleSpace,
+    session_id: &str,
 ) -> Result<BuiltinResult> {
     let mut export_functions = false;
     let mut unexport = false;
@@ -446,6 +453,7 @@ fn builtin_export(
 
             tuple_space.out(Tuple::from(vec![
                 Value::Str("env_change".to_string()),
+                Value::Str(session_id.to_string()),
                 Value::Str(name.to_string()),
                 Value::Str(old_value),
                 Value::Str(value.to_string()),
@@ -464,11 +472,12 @@ fn builtin_export(
 ///
 /// Usage: unset VAR [VAR2 ...]
 ///
-/// **Reactive:** Emits ("env_change", var, old, null) tuple (Rule 43)
+/// **Reactive:** Emits ("env_change", session_id, var, old, null) tuple (Rule 43)
 fn builtin_unset(
     args: &[String],
     context: &mut ExpansionContext,
     tuple_space: &TupleSpace,
+    session_id: &str,
 ) -> Result<BuiltinResult> {
     let mut unset_nameref_only = false;
     let mut unset_function = false;
@@ -511,6 +520,7 @@ fn builtin_unset(
 
         tuple_space.out(Tuple::from(vec![
             Value::Str("env_change".to_string()),
+            Value::Str(session_id.to_string()),
             Value::Str(var_name.to_string()),
             Value::Str(old_value),
             Value::Null,
@@ -4154,6 +4164,7 @@ fn builtin_pushd(
     args: &[String],
     context: &mut ExpansionContext,
     tuple_space: &TupleSpace,
+    session_id: &str,
 ) -> Result<BuiltinResult> {
     let mut no_cd = false;
     let mut target: Option<&str> = None;
@@ -4207,6 +4218,7 @@ fn builtin_pushd(
 
                     tuple_space.out(Tuple::from(vec![
                         Value::Str("dir_change".to_string()),
+                        Value::Str(session_id.to_string()),
                         Value::Str(old_dir.display().to_string()),
                         Value::Str(new_dir.display().to_string()),
                     ]));
@@ -4247,6 +4259,7 @@ fn builtin_pushd(
 
             tuple_space.out(Tuple::from(vec![
                 Value::Str("dir_change".to_string()),
+                Value::Str(session_id.to_string()),
                 Value::Str(old_dir.display().to_string()),
                 Value::Str(new_dir.display().to_string()),
             ]));
@@ -4283,6 +4296,7 @@ fn builtin_pushd(
 
         tuple_space.out(Tuple::from(vec![
             Value::Str("dir_change".to_string()),
+            Value::Str(session_id.to_string()),
             Value::Str(old_dir.display().to_string()),
             Value::Str(target_canonical.display().to_string()),
         ]));
@@ -4296,6 +4310,7 @@ fn builtin_popd(
     args: &[String],
     context: &mut ExpansionContext,
     tuple_space: &TupleSpace,
+    session_id: &str,
 ) -> Result<BuiltinResult> {
     let mut no_cd = false;
     let mut index_arg: Option<&str> = None;
@@ -4359,6 +4374,7 @@ fn builtin_popd(
 
         tuple_space.out(Tuple::from(vec![
             Value::Str("dir_change".to_string()),
+            Value::Str(session_id.to_string()),
             Value::Str(old_dir.display().to_string()),
             Value::Str(new_dir.display().to_string()),
         ]));
@@ -5156,6 +5172,7 @@ fn builtin_path(
     args: &[String],
     context: &mut ExpansionContext,
     tuple_space: &TupleSpace,
+    session_id: &str,
 ) -> Result<BuiltinResult> {
     if args.is_empty() {
         eprintln!("path: missing subcommand");
@@ -5192,6 +5209,7 @@ fn builtin_path(
 
             tuple_space.out(Tuple::from(vec![
                 Value::Str("env_change".to_string()),
+                Value::Str(session_id.to_string()),
                 Value::Str("PATH".to_string()),
                 Value::Str(old_path),
                 Value::Str(new_path),
@@ -5220,6 +5238,7 @@ fn builtin_path(
 
                 tuple_space.out(Tuple::from(vec![
                     Value::Str("env_change".to_string()),
+                    Value::Str(session_id.to_string()),
                     Value::Str("PATH".to_string()),
                     Value::Str(old_path),
                     Value::Str(new_path),
@@ -5239,6 +5258,7 @@ fn builtin_path(
 
             tuple_space.out(Tuple::from(vec![
                 Value::Str("env_change".to_string()),
+                Value::Str(session_id.to_string()),
                 Value::Str("PATH".to_string()),
                 Value::Str(old_path),
                 Value::Str(new_path),
@@ -5270,6 +5290,7 @@ fn builtin_path(
 
             tuple_space.out(Tuple::from(vec![
                 Value::Str("env_change".to_string()),
+                Value::Str(session_id.to_string()),
                 Value::Str("PATH".to_string()),
                 Value::Str(old_path),
                 Value::Str(new_path),
@@ -6378,7 +6399,15 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("pwd:noop", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6393,7 +6422,15 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("echo", vec!["hello", "world"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6408,7 +6445,15 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("exit", vec!["42"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6424,7 +6469,15 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("export", vec!["TEST_VAR=hello"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6444,7 +6497,15 @@ mod tests {
 
         let cmd = make_simple_command("unset", vec!["TEST_VAR"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6466,7 +6527,15 @@ mod tests {
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6489,7 +6558,15 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("type", vec!["cd", "echo"]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6504,7 +6581,15 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("ls", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_none()); // ls is not a builtin
     }
 
@@ -6516,7 +6601,15 @@ mod tests {
         let mut channels = ChannelManager::new();
         let cmd = make_simple_command("jobs", vec![]);
 
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6540,7 +6633,15 @@ mod tests {
         );
 
         let cmd = make_simple_command("jobs", vec![]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let builtin_result = result.unwrap().unwrap();
@@ -6556,12 +6657,21 @@ mod tests {
 
         // Export a variable
         let cmd = make_simple_command("export", vec!["REACTIVE_TEST=initial"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
-        // Check tuple was emitted
+        // Check tuple was emitted (with session_id)
         let pattern = Tuple::pattern(&[
             Value::Str("env_change".to_string()),
+            Value::Str("test".to_string()), // session_id
             Value::Str("REACTIVE_TEST".to_string()),
             Value::Wildcard,
             Value::Wildcard,
@@ -6572,9 +6682,10 @@ mod tests {
 
         let t = tuple.unwrap();
         assert_eq!(t.fields[0], Value::Str("env_change".to_string()));
-        assert_eq!(t.fields[1], Value::Str("REACTIVE_TEST".to_string()));
-        assert_eq!(t.fields[2], Value::Str("".to_string())); // old value (was empty)
-        assert_eq!(t.fields[3], Value::Str("initial".to_string())); // new value
+        assert_eq!(t.fields[1], Value::Str("test".to_string())); // session_id
+        assert_eq!(t.fields[2], Value::Str("REACTIVE_TEST".to_string()));
+        assert_eq!(t.fields[3], Value::Str("".to_string())); // old value (was empty)
+        assert_eq!(t.fields[4], Value::Str("initial".to_string())); // new value
     }
 
     #[test]
@@ -6589,12 +6700,21 @@ mod tests {
 
         // cd to /tmp
         let cmd = make_simple_command("cd", vec!["/tmp"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
-        // Check tuple was emitted
+        // Check tuple was emitted (with session_id)
         let pattern = Tuple::pattern(&[
             Value::Str("dir_change".to_string()),
+            Value::Str("test".to_string()), // session_id
             Value::Wildcard,
             Value::Wildcard,
         ]);
@@ -6604,9 +6724,10 @@ mod tests {
 
         let t = tuple.unwrap();
         assert_eq!(t.fields[0], Value::Str("dir_change".to_string()));
-        // fields[1] is old dir, fields[2] is new dir (should be /tmp or /private/tmp)
-        // Just verify it's a string value
-        assert!(matches!(t.fields[2], Value::Str(_)));
+        assert_eq!(t.fields[1], Value::Str("test".to_string())); // session_id
+                                                                 // fields[2] is old dir, fields[3] is new dir (should be /tmp or /private/tmp)
+                                                                 // Just verify it's a string value
+        assert!(matches!(t.fields[3], Value::Str(_)));
 
         // Restore
         env::set_current_dir(original_dir).ok();
@@ -6622,11 +6743,20 @@ mod tests {
         context.set_env("TO_DELETE", "old_value");
 
         let cmd = make_simple_command("unset", vec!["TO_DELETE"]);
-        let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
+        let result = execute_builtin(
+            &cmd,
+            &mut context,
+            &jobs,
+            &tuple_space,
+            "test",
+            &mut channels,
+            None,
+        );
         assert!(result.is_some());
 
         let pattern = Tuple::pattern(&[
             Value::Str("env_change".to_string()),
+            Value::Str("test".to_string()), // session_id
             Value::Str("TO_DELETE".to_string()),
             Value::Wildcard,
             Value::Null,

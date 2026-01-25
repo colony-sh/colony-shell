@@ -1015,6 +1015,7 @@ fn execute_simple_command_in_child_blocking(
     if crate::builtins::is_builtin(command_name) {
         let jobs = crate::JobTable::new();
         let tuple_space = colony_tuple::TupleSpace::new();
+        let session_id = std::process::id().to_string();
         let mut channels = colony_channels::ChannelManager::new();
 
         let mut builtin_args = extra_args_from_name.clone();
@@ -1027,9 +1028,15 @@ fn execute_simple_command_in_child_blocking(
         }
         crate::xtrace::trace_simple_command(context, command_name, &builtin_args);
 
-        if let Some(result) =
-            crate::builtins::execute_builtin(cmd, context, &jobs, &tuple_space, &mut channels, None)
-        {
+        if let Some(result) = crate::builtins::execute_builtin(
+            cmd,
+            context,
+            &jobs,
+            &tuple_space,
+            &session_id,
+            &mut channels,
+            None,
+        ) {
             match result {
                 Ok(builtin_result) => return Ok(builtin_result.exit_code()),
                 Err(e) => return Err(e),
@@ -1768,6 +1775,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         let mut context = context.clone();
         let jobs = crate::JobTable::new();
         let tuple_space = colony_tuple::TupleSpace::new();
+        let session_id = std::process::id().to_string();
         let mut channels = colony_channels::ChannelManager::new();
 
         let mut builtin_args = extra_args_from_name.clone();
@@ -1785,6 +1793,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
             &mut context,
             &jobs,
             &tuple_space,
+            &session_id,
             &mut channels,
             None,
         ) {
