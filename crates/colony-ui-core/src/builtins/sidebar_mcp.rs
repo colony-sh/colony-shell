@@ -1,5 +1,5 @@
 use crate::component::{
-    SidebarComponent, SidebarLine, SidebarOutput, SidebarPosition, TuplePattern,
+    SidebarComponent, SidebarLine, SidebarOutput, TuplePattern,
 };
 use crate::context::ComponentContext;
 use crate::{Color, Style, StyledSpan};
@@ -72,10 +72,6 @@ impl SidebarComponent for McpSidebarComponent {
         "MCP Servers"
     }
 
-    fn position(&self) -> SidebarPosition {
-        SidebarPosition::Right
-    }
-
     fn subscriptions(&self) -> Vec<TuplePattern> {
         vec![vec![
             Value::Str("mcp_status".to_string()),
@@ -84,11 +80,11 @@ impl SidebarComponent for McpSidebarComponent {
         ]]
     }
 
-    fn render(&self, _ctx: &ComponentContext) -> SidebarOutput {
+    fn render_block(&self, _ctx: &ComponentContext) -> SidebarOutput {
         let servers = self.servers.lock();
 
         if servers.is_empty() {
-            return SidebarOutput::visible(vec![SidebarLine::new(StyledSpan::new(
+            return SidebarOutput::from_sidebar_lines(vec![SidebarLine::new(StyledSpan::new(
                 "No servers connected",
                 Style::default().fg(Color::BrightBlack).italic(),
             ))]);
@@ -139,7 +135,7 @@ impl SidebarComponent for McpSidebarComponent {
             })
             .collect();
 
-        SidebarOutput::with_data(lines, serde_json::json!({ "servers": server_data }))
+        SidebarOutput::from_sidebar_lines_with_data(lines, serde_json::json!({ "servers": server_data }))
     }
 }
 

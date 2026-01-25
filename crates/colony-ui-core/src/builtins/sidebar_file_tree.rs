@@ -1,5 +1,5 @@
 use crate::component::{
-    SidebarComponent, SidebarLine, SidebarOutput, SidebarPosition, TuplePattern,
+    SidebarComponent, SidebarLine, SidebarOutput, TuplePattern,
 };
 use crate::context::ComponentContext;
 use crate::{Color, Style, StyledSpan};
@@ -132,10 +132,6 @@ impl SidebarComponent for FileTreeSidebarComponent {
         "Files"
     }
 
-    fn position(&self) -> SidebarPosition {
-        SidebarPosition::Left
-    }
-
     fn subscriptions(&self) -> Vec<TuplePattern> {
         vec![
             vec![
@@ -147,7 +143,7 @@ impl SidebarComponent for FileTreeSidebarComponent {
         ]
     }
 
-    fn render(&self, ctx: &ComponentContext) -> SidebarOutput {
+    fn render_block(&self, ctx: &ComponentContext) -> SidebarOutput {
         let mut lines = Vec::with_capacity(self.max_entries);
         self.walk_directory(&ctx.cwd, 0, &mut lines);
 
@@ -155,7 +151,7 @@ impl SidebarComponent for FileTreeSidebarComponent {
             return SidebarOutput::hidden();
         }
 
-        SidebarOutput::with_data(
+        SidebarOutput::from_sidebar_lines_with_data(
             lines,
             serde_json::json!({
                 "cwd": ctx.cwd.to_string_lossy(),

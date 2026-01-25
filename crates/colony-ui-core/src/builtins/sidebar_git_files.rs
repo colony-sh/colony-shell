@@ -1,5 +1,5 @@
 use crate::component::{
-    SidebarComponent, SidebarLine, SidebarOutput, SidebarPosition, TuplePattern,
+    SidebarComponent, SidebarLine, SidebarOutput, TuplePattern,
 };
 use crate::context::ComponentContext;
 use crate::{Color, Style, StyledSpan};
@@ -174,10 +174,6 @@ impl SidebarComponent for GitFilesSidebarComponent {
         "Git Files"
     }
 
-    fn position(&self) -> SidebarPosition {
-        SidebarPosition::Right
-    }
-
     fn subscriptions(&self) -> Vec<TuplePattern> {
         vec![
             vec![Value::Str("file_change".to_string()), Value::Wildcard],
@@ -190,7 +186,7 @@ impl SidebarComponent for GitFilesSidebarComponent {
         ]
     }
 
-    fn render(&self, ctx: &ComponentContext) -> SidebarOutput {
+    fn render_block(&self, ctx: &ComponentContext) -> SidebarOutput {
         // Check cache
         {
             let cache = self.cache.lock();
@@ -220,7 +216,7 @@ impl SidebarComponent for GitFilesSidebarComponent {
 
 fn render_file_list(entries: &[GitFileEntry]) -> SidebarOutput {
     if entries.is_empty() {
-        return SidebarOutput::visible(vec![SidebarLine::new(StyledSpan::new(
+        return SidebarOutput::from_sidebar_lines(vec![SidebarLine::new(StyledSpan::new(
             "Working tree clean",
             Style::default().fg(Color::Green).italic(),
         ))]);
@@ -282,7 +278,7 @@ fn render_file_list(entries: &[GitFileEntry]) -> SidebarOutput {
     let staged_count = staged.len();
     let unstaged_count = unstaged.len();
 
-    SidebarOutput::with_data(
+    SidebarOutput::from_sidebar_lines_with_data(
         lines,
         serde_json::json!({
             "staged": staged_count,

@@ -4,7 +4,7 @@
 //! with scrolling support and title bar.
 
 use crate::prompt_renderer::map_style;
-use colony_ui_core::component::{SidebarLine, SidebarOutput};
+use colony_ui_core::component::{ComponentLine, SidebarOutput};
 use ratatui::layout::Rect;
 use ratatui::style::{Color as RatColor, Modifier, Style as RatStyle};
 use ratatui::text::{Line, Span};
@@ -90,38 +90,31 @@ impl SidebarRenderer {
     }
 }
 
-/// Convert a SidebarLine to a ratatui ListItem
-fn sidebar_line_to_list_item(line: &SidebarLine) -> ListItem<'static> {
+/// Convert a ComponentLine to a ratatui ListItem
+fn sidebar_line_to_list_item(line: &ComponentLine) -> ListItem<'static> {
     let ratatui_line = sidebar_line_to_ratatui_line(line);
     ListItem::new(ratatui_line)
 }
 
-/// Convert a SidebarLine to a ratatui Line
-fn sidebar_line_to_ratatui_line(line: &SidebarLine) -> Line<'static> {
+/// Convert a ComponentLine to a ratatui Line
+fn sidebar_line_to_ratatui_line(line: &ComponentLine) -> Line<'static> {
     let mut spans = Vec::new();
 
     // Add indentation
     if line.indent > 0 {
-        let indent_str = "  ".repeat(line.indent as usize);
+        let indent_str = "  ".repeat(line.indent);
         spans.push(Span::raw(indent_str));
     }
 
     // Add icon if present
     if let Some(ref icon) = line.icon {
-        spans.push(Span::styled(icon.text.clone(), map_style(&icon.style)));
+        spans.push(Span::raw(icon.clone()));
         spans.push(Span::raw(" "));
     }
 
-    // Add main text
-    spans.push(Span::styled(line.text.text.clone(), map_style(&line.text.style)));
-
-    // Add metadata if present
-    if let Some(ref metadata) = line.metadata {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            metadata.text.clone(),
-            map_style(&metadata.style),
-        ));
+    // Add styled spans
+    for span in &line.spans {
+        spans.push(Span::styled(span.text.clone(), map_style(&span.style)));
     }
 
     Line::from(spans)
@@ -130,10 +123,10 @@ fn sidebar_line_to_ratatui_line(line: &SidebarLine) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use colony_ui_core::component::{Color as UiColor, Style as UiStyle, StyledSpan};
+    use colony_ui_core::component::StyledSpan;
 
-    fn make_line(text: &str) -> SidebarLine {
-        SidebarLine::new(StyledSpan::plain(text.to_string()))
+    fn make_line(text: &str) -> ComponentLine {
+        ComponentLine::new(vec![StyledSpan::plain(text.to_string())])
     }
 
     #[test]

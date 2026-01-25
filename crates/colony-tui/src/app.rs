@@ -25,14 +25,28 @@ use crate::event::{Event, EventHandler};
 use crate::input::{Editor, Highlighter};
 use crate::keybindings::{Action, KeyMapper, Mode};
 use crate::prompt::PromptRenderer;
+use crate::sidebar::SidebarRenderer;
 use crate::theme::Theme;
-use colony_ui_core::ComponentContext;
+use colony_ui_core::{
+    ComponentContext, SidebarManager, SidebarPosition,
+    FileTreePanel, GitFilesPanel, McpPanel, SessionPanel,
+};
+use std::sync::Arc;
 
 /// Application state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppState {
     Running,
     Quitting,
+}
+
+/// Focus area in the TUI
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Focus {
+    #[default]
+    Content,
+    LeftSidebar,
+    RightSidebar,
 }
 
 /// Main TUI application
@@ -53,6 +67,10 @@ pub struct App {
     content: RawContent,
     /// Prompt renderer
     prompt: PromptRenderer,
+    /// Sidebar manager
+    sidebars: SidebarManager,
+    /// Current focus area
+    focus: Focus,
     /// Command buffer (for : commands)
     command_buffer: String,
     /// Search buffer
@@ -77,6 +95,13 @@ impl App {
         let terminal = Terminal::new(backend)
             .map_err(|e| miette::miette!("Failed to create terminal: {}", e))?;
 
+        // Initialize sidebar manager with default panels
+        let mut sidebars = SidebarManager::new();
+        sidebars.register(Arc::new(FileTreePanel::new()));
+        sidebars.register(Arc::new(SessionPanel::new()));
+        sidebars.register(Arc::new(McpPanel::new()));
+        sidebars.register(Arc::new(GitFilesPanel::new()));
+
         Ok(Self {
             terminal,
             events: EventHandler::new(Duration::from_millis(100)),
@@ -86,6 +111,8 @@ impl App {
             highlighter: Highlighter::new(),
             content: RawContent::new(),
             prompt: PromptRenderer::new(),
+            sidebars,
+            focus: Focus::Content,
             command_buffer: String::new(),
             search_buffer: String::new(),
             state: AppState::Running,
@@ -122,6 +149,11 @@ impl App {
         let command_buffer = self.command_buffer.clone();
         let search_buffer = self.search_buffer.clone();
         let visible_lines = self.content.visible_lines();
+        let focus = self.focus;
+
+        // Render sidebars
+        let left_sidebar = self.sidebars.render(SidebarPosition::Left, &ctx);
+        let right_sidebar = self.sidebars.render(SidebarPosition::Right, &ctx);
 
         // Render prompt line
         let prompt_line = self.prompt.render(&ctx, 80); // Will be re-rendered with actual width
@@ -136,24 +168,61 @@ impl App {
             .draw(|frame| {
                 let size = frame.area();
 
+                // Calculate sidebar widths
+                let left_width = if left_sidebar.visible { left_sidebar.width } else { 0 };
+                let right_width = if right_sidebar.visible { right_sidebar.width } else { 0 };
+
+                // Horizontal layout: [left sidebar] [main] [right sidebar]
+                let mut h_constraints = Vec::new();
+                if left_width > 0 {
+                    h_constraints.push(Constraint::Length(left_width));
+                }
+                h_constraints.push(Constraint::Min(20)); // Main content
+                if right_width > 0 {
+                    h_constraints.push(Constraint::Length(right_width));
+                }
+
+                let h_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints(h_constraints)
+                    .split(size);
+
+                // Determine which chunk is which
+                let (left_area, main_area, right_area) = match (left_width > 0, right_width > 0) {
+                    (true, true) => (Some(h_chunks[0]), h_chunks[1], Some(h_chunks[2])),
+                    (true, false) => (Some(h_chunks[0]), h_chunks[1], None),
+                    (false, true) => (None, h_chunks[0], Some(h_chunks[1])),
+                    (false, false) => (None, h_chunks[0], None),
+                };
+
+                // Render left sidebar
+                if let Some(area) = left_area {
+                    SidebarRenderer::render(frame, area, &left_sidebar, focus == Focus::LeftSidebar);
+                }
+
+                // Render right sidebar
+                if let Some(area) = right_area {
+                    SidebarRenderer::render(frame, area, &right_sidebar, focus == Focus::RightSidebar);
+                }
+
                 // Main layout: content area + input area
-                let chunks = Layout::default()
+                let main_chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
                         Constraint::Min(3),    // Content area
                         Constraint::Length(3), // Input area (prompt + input)
                         Constraint::Length(1), // Status bar
                     ])
-                    .split(size);
+                    .split(main_area);
 
                 // Render content
-                render_content(frame, chunks[0], &visible_lines);
+                render_content(frame, main_chunks[0], &visible_lines);
 
                 // Render input
-                render_input(frame, chunks[1], &prompt_line, &highlighted, cursor, prompt_width, mode);
+                render_input(frame, main_chunks[1], &prompt_line, &highlighted, cursor, prompt_width, mode);
 
                 // Render status
-                render_status(frame, chunks[2], mode, &command_buffer, &search_buffer, cursor_pos, &theme);
+                render_status(frame, main_chunks[2], mode, &command_buffer, &search_buffer, cursor_pos, &theme);
             })
             .map_err(|e| miette::miette!("Failed to draw: {}", e))?;
 
@@ -315,8 +384,20 @@ impl App {
                 self.state = AppState::Quitting;
             }
             Action::CommandPalette => {} // TODO
-            Action::ToggleLeftSidebar => {}  // TODO
-            Action::ToggleRightSidebar => {} // TODO
+            Action::ToggleLeftSidebar => {
+                self.sidebars.toggle(SidebarPosition::Left);
+                // Update focus if sidebar was closed while focused
+                if !self.sidebars.is_visible(SidebarPosition::Left) && self.focus == Focus::LeftSidebar {
+                    self.focus = Focus::Content;
+                }
+            }
+            Action::ToggleRightSidebar => {
+                self.sidebars.toggle(SidebarPosition::Right);
+                // Update focus if sidebar was closed while focused
+                if !self.sidebars.is_visible(SidebarPosition::Right) && self.focus == Focus::RightSidebar {
+                    self.focus = Focus::Content;
+                }
+            }
         }
         Ok(())
     }
@@ -500,7 +581,7 @@ use crossterm::ExecutableCommand;
 use crate::content_area::ContentArea;
 use crate::layout::{LayoutState, TuiLayout};
 use crate::prompt_renderer::PromptRenderer as LegacyPromptRenderer;
-use crate::sidebar_renderer::SidebarRenderer;
+use crate::sidebar_renderer::SidebarRenderer as LegacySidebarRenderer;
 
 /// The legacy TUI application (simpler, uses colony-ui-core PromptManager directly)
 pub struct TuiApp {
@@ -666,7 +747,7 @@ impl TuiApp {
 
             // Render left sidebar
             if let Some(sidebar_area) = layout.left_sidebar {
-                let sidebar = SidebarRenderer::new("Explorer");
+                let sidebar = LegacySidebarRenderer::new("Explorer");
                 let output = left_outputs
                     .first()
                     .map(|(_, o)| o.clone())
@@ -680,7 +761,7 @@ impl TuiApp {
 
             // Render right sidebar
             if let Some(sidebar_area) = layout.right_sidebar {
-                let sidebar = SidebarRenderer::new("Info");
+                let sidebar = LegacySidebarRenderer::new("Info");
                 let output = right_outputs
                     .first()
                     .map(|(_, o)| o.clone())

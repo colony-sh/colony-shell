@@ -177,14 +177,177 @@ impl ComponentOutput {
 }
 
 use colony_tuple::Value;
+use std::time::Duration;
 
 /// Tuple patterns a component subscribes to for cache invalidation
 pub type TuplePattern = Vec<Value>;
 
+/// A single line of content in a sidebar panel
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ComponentLine {
+    pub spans: Vec<StyledSpan>,
+    /// Indentation level (for tree views)
+    pub indent: usize,
+    /// Optional icon prefix
+    pub icon: Option<String>,
+    /// Is this line selectable/interactive?
+    pub interactive: Option<InteractiveConfig>,
+    /// Is this a tree node that can expand/collapse?
+    pub expandable: bool,
+    /// Is this node currently expanded?
+    pub expanded: bool,
+}
+
+impl ComponentLine {
+    pub fn new(spans: Vec<StyledSpan>) -> Self {
+        Self {
+            spans,
+            indent: 0,
+            icon: None,
+            interactive: None,
+            expandable: false,
+            expanded: false,
+        }
+    }
+
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self::new(vec![StyledSpan::plain(text)])
+    }
+
+    pub fn styled(text: impl Into<String>, style: Style) -> Self {
+        Self::new(vec![StyledSpan::new(text, style)])
+    }
+
+    pub fn with_indent(mut self, level: usize) -> Self {
+        self.indent = level;
+        self
+    }
+
+    pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    pub fn with_interactive(mut self, click: impl Into<String>, hover: Option<String>) -> Self {
+        self.interactive = Some(InteractiveConfig {
+            click: click.into(),
+            hover,
+        });
+        self
+    }
+
+    pub fn expandable(mut self, expanded: bool) -> Self {
+        self.expandable = true;
+        self.expanded = expanded;
+        self
+    }
+}
+
+/// Output from a sidebar component's render_block method
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SidebarOutput {
+    pub lines: Vec<ComponentLine>,
+    pub data: Option<serde_json::Value>,
+    pub visible: bool,
+}
+
+impl SidebarOutput {
+    pub fn visible(lines: Vec<ComponentLine>) -> Self {
+        Self {
+            lines,
+            data: None,
+            visible: true,
+        }
+    }
+
+    pub fn with_data(lines: Vec<ComponentLine>, data: serde_json::Value) -> Self {
+        Self {
+            lines,
+            data: Some(data),
+            visible: true,
+        }
+    }
+
+    pub fn hidden() -> Self {
+        Self {
+            lines: vec![],
+            data: None,
+            visible: false,
+        }
+    }
+
+    /// Create visible output from SidebarLine items (converts to ComponentLine)
+    pub fn from_sidebar_lines(lines: Vec<SidebarLine>) -> Self {
+        Self {
+            lines: lines.into_iter().map(ComponentLine::from).collect(),
+            data: None,
+            visible: true,
+        }
+    }
+
+    /// Create visible output from SidebarLine items with data
+    pub fn from_sidebar_lines_with_data(lines: Vec<SidebarLine>, data: serde_json::Value) -> Self {
+        Self {
+            lines: lines.into_iter().map(ComponentLine::from).collect(),
+            data: Some(data),
+            visible: true,
+        }
+    }
+}
+
+/// Trait for prompt components (single-line, inline with prompt)
 pub trait PromptComponent: Send + Sync {
+    /// Unique identifier for this component
     fn id(&self) -> &str;
+
+    /// Tuple patterns this component subscribes to for cache invalidation
     fn subscriptions(&self) -> Vec<TuplePattern>;
+
+    /// Render current state (renderer-agnostic)
     fn render(&self, ctx: &crate::context::ComponentContext) -> ComponentOutput;
+
+    /// Optional: poll interval (Duration::ZERO = event-only)
+    fn poll_interval(&self) -> Duration {
+        Duration::ZERO
+    }
+}
+
+/// Trait for sidebar components (multi-line panels)
+///
+/// Sidebar components render as collapsible panels in the left or right sidebar.
+/// They can display tree views, lists, status information, etc.
+pub trait SidebarComponent: Send + Sync {
+    /// Unique identifier for this component
+    fn id(&self) -> &str;
+
+    /// Display title for the panel header
+    fn title(&self) -> &str;
+
+    /// Can this panel be collapsed?
+    fn collapsible(&self) -> bool {
+        true
+    }
+
+    /// Default width in characters (can be overridden by user config)
+    fn default_width(&self) -> u16 {
+        30
+    }
+
+    /// Tuple patterns this component subscribes to for cache invalidation
+    fn subscriptions(&self) -> Vec<TuplePattern>;
+
+    /// Render the panel content as multiple lines
+    fn render_block(&self, ctx: &crate::context::ComponentContext) -> SidebarOutput;
+
+    /// Optional: poll interval (Duration::ZERO = event-only)
+    fn poll_interval(&self) -> Duration {
+        Duration::ZERO
+    }
+
+    /// Handle an action triggered by user interaction
+    fn handle_action(&self, _action: &str, _ctx: &crate::context::ComponentContext) {
+        // Default: no-op
+    }
 }
 
 /// Position of a sidebar panel
@@ -229,63 +392,27 @@ impl SidebarLine {
     }
 }
 
-/// Output from a sidebar component: structured lines
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SidebarOutput {
-    pub lines: Vec<SidebarLine>,
-    pub visible: bool,
-    pub data: Option<serde_json::Value>,
-}
-
-impl SidebarOutput {
-    pub fn visible(lines: Vec<SidebarLine>) -> Self {
+impl From<SidebarLine> for ComponentLine {
+    fn from(line: SidebarLine) -> Self {
+        let mut spans = Vec::new();
+        if let Some(icon) = line.icon {
+            spans.push(icon);
+            spans.push(StyledSpan::plain(" "));
+        }
+        spans.push(line.text);
+        if let Some(meta) = line.metadata {
+            spans.push(StyledSpan::plain(" "));
+            spans.push(meta);
+        }
         Self {
-            lines,
-            visible: true,
-            data: None,
+            spans,
+            indent: line.indent as usize,
+            icon: None,
+            interactive: None,
+            expandable: false,
+            expanded: false,
         }
     }
-
-    pub fn with_data(lines: Vec<SidebarLine>, data: serde_json::Value) -> Self {
-        Self {
-            lines,
-            visible: true,
-            data: Some(data),
-        }
-    }
-
-    pub fn hidden() -> Self {
-        Self {
-            lines: vec![],
-            visible: false,
-            data: None,
-        }
-    }
-}
-
-/// Trait for sidebar panel components
-pub trait SidebarComponent: Send + Sync {
-    /// Unique identifier for this sidebar panel
-    fn id(&self) -> &str;
-
-    /// Display title for the panel header
-    fn title(&self) -> &str;
-
-    /// Preferred sidebar position
-    fn position(&self) -> SidebarPosition {
-        SidebarPosition::Right
-    }
-
-    /// Whether this panel can be collapsed
-    fn collapsible(&self) -> bool {
-        true
-    }
-
-    /// Tuple patterns this component subscribes to for cache invalidation
-    fn subscriptions(&self) -> Vec<TuplePattern>;
-
-    /// Render the sidebar panel content
-    fn render(&self, ctx: &crate::context::ComponentContext) -> SidebarOutput;
 }
 
 #[cfg(test)]

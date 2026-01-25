@@ -1,5 +1,5 @@
 use crate::component::{
-    SidebarComponent, SidebarLine, SidebarOutput, SidebarPosition, TuplePattern,
+    SidebarComponent, SidebarLine, SidebarOutput, TuplePattern,
 };
 use crate::context::ComponentContext;
 use crate::{Color, Style, StyledSpan};
@@ -48,15 +48,11 @@ impl SidebarComponent for SessionSidebarComponent {
         "Session"
     }
 
-    fn position(&self) -> SidebarPosition {
-        SidebarPosition::Right
-    }
-
     fn subscriptions(&self) -> Vec<TuplePattern> {
         vec![vec![Value::Str("cmd_complete".to_string())]]
     }
 
-    fn render(&self, ctx: &ComponentContext) -> SidebarOutput {
+    fn render_block(&self, ctx: &ComponentContext) -> SidebarOutput {
         let mut lines = Vec::new();
 
         // Shell name
@@ -139,7 +135,7 @@ impl SidebarComponent for SessionSidebarComponent {
             )),
         );
 
-        SidebarOutput::with_data(
+        SidebarOutput::from_sidebar_lines_with_data(
             lines,
             serde_json::json!({
                 "pid": std::process::id(),

@@ -5,9 +5,16 @@
 //! - Tree-sitter syntax highlighting
 //! - Reactive prompt components via tuple space
 //! - Scrollable shell output
+//! - Collapsible sidebars with file tree, session info, MCP status
 //!
 //! This crate provides a portable TUI that works in any terminal,
 //! complementing colony-terminal's GPU-rendered experience.
+//!
+//! ## Architecture
+//!
+//! colony-tui consumes components from colony-ui-core and renders them with ratatui.
+//! The same component definitions are used by colony-terminal for GPU rendering,
+//! ensuring consistent behavior across both rendering backends.
 
 pub mod app;
 pub mod content;
@@ -19,6 +26,7 @@ pub mod keybindings;
 pub mod layout;
 pub mod prompt;
 pub mod prompt_renderer;
+pub mod sidebar;
 pub mod sidebar_renderer;
 pub mod theme;
 
@@ -29,7 +37,8 @@ pub use event::Event;
 pub use keybindings::{Action, Mode};
 pub use layout::{LayoutState, TuiLayout};
 pub use prompt_renderer::{map_color, PromptRenderer as LegacyPromptRenderer};
-pub use sidebar_renderer::SidebarRenderer;
+pub use sidebar::SidebarRenderer;
+pub use sidebar_renderer::SidebarRenderer as LegacySidebarRenderer;
 pub use theme::Theme;
 
 /// Run the TUI application
