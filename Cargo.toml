@@ -16,6 +16,7 @@ members = [
     "crates/colony-secure",
     "crates/colony-shell",
     "crates/colony-tree-sitter",
+    "crates/colony-tui",
     "crates/colony-ui-core",
     "crates/colony-tui",
     "crates/colony-recipe",

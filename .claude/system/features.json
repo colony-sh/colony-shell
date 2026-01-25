@@ -806,27 +806,38 @@
       "id": "F052",
       "name": "Reactive TUI Core (colony-ui-core)",
       "description": "Shared component system for prompt and sidebar widgets. PromptComponent and SidebarComponent traits. TOML+shell user components. Tuple space subscriptions. Used by both colony-tui and colony-terminal.",
-      "status": "new",
+      "status": "complete",
       "priority": 3,
       "dependencies": [
         "F010"
       ],
       "notes": [
-        "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md"
+        "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md",
+        "2025-01-25: Already implemented with 14 builtin components, PromptManager, SubscriptionManager",
+        "2025-01-25: 53 tests passing, integrated into colony-shell REPL"
       ]
     },
     {
       "id": "F053",
       "name": "Reactive TUI Renderer (colony-tui)",
       "description": "Full ratatui-based TUI replacing rustyline. Modal vim keybindings. Mini-editor with tree-sitter highlighting, ghost completions, fzf history. Left/right sidebars. Structured agent task view. Command palette.",
-      "status": "new",
+      "status": "in_progress",
       "priority": 3,
       "dependencies": [
         "F052",
         "F022"
       ],
       "notes": [
-        "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md"
+        "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md",
+        "2025-01-25: Created colony-tui crate with ratatui framework",
+        "2025-01-25: Implemented App with event loop, KeyMapper, Theme",
+        "2025-01-25: Input editor with vim motions, history, word operations",
+        "2025-01-25: Tree-sitter syntax highlighting for shell input",
+        "2025-01-25: RawContent scrollback with ContentBlock types",
+        "2025-01-25: PromptRenderer wiring colony-ui-core components",
+        "2025-01-25: Vim keybindings (normal/insert/command/search modes)",
+        "2025-01-25: 12 tests passing",
+        "2025-01-25: TODO: Sidebars, ghost completions, fzf history, command palette"
       ]
     },
     {

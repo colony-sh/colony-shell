@@ -1,0 +1,37 @@
+//! Editor modes (vim-style)
+
+/// Editor mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    /// Normal mode - navigation and commands
+    #[default]
+    Normal,
+    /// Insert mode - text input
+    Insert,
+    /// Command mode - ex commands (:)
+    Command,
+    /// Search mode - incremental search (/)
+    Search,
+}
+
+impl Mode {
+    /// Get the display name for the mode
+    pub fn name(&self) -> &'static str {
+        match self {
+            Mode::Normal => "NORMAL",
+            Mode::Insert => "INSERT",
+            Mode::Command => "COMMAND",
+            Mode::Search => "SEARCH",
+        }
+    }
+
+    /// Get a short indicator for the mode
+    pub fn indicator(&self) -> &'static str {
+        match self {
+            Mode::Normal => "N",
+            Mode::Insert => "I",
+            Mode::Command => ":",
+            Mode::Search => "/",
+        }
+    }
+}

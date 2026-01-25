@@ -6,15 +6,43 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Ratatui-based TUI renderer for Colony Shell"
+description = "Reactive TUI for Colony Shell using ratatui"
 
 [dependencies]
-colony-ui-core = { path = "../colony-ui-core" }
-colony-protocol = { path = "../colony-protocol" }
-colony-tree-sitter = { path = "../colony-tree-sitter" }
+# TUI framework
 ratatui = "0.29"
 crossterm = "0.28"
+
+# Internal crates
+colony-ui-core = { workspace = true }
+colony-exec = { workspace = true }
+colony-tuple = { workspace = true }
+colony-parser = { workspace = true }
+colony-protocol = { path = "../colony-protocol" }
+colony-tree-sitter = { workspace = true }
+
+# Parser
+tree-sitter = { workspace = true }
+
+# System info
+hostname = "0.4"
+
+# Async
 tokio = { workspace = true }
+
+# Errors
+thiserror = { workspace = true }
+miette = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Text
 unicode-width = "0.2"
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

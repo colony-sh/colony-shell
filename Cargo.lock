@@ -1725,12 +1725,22 @@ dependencies = [
 name = "colony-tui"
 version = "0.4.1"
 dependencies = [
+ "colony-exec",
+ "colony-parser",
  "colony-protocol",
  "colony-tree-sitter",
+ "colony-tuple",
  "colony-ui-core",
  "crossterm",
+ "hostname",
+ "miette",
  "ratatui",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
  "tokio",
+ "tracing",
+ "tree-sitter",
  "unicode-width 0.2.0",
 ]
 
