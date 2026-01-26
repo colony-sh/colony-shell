@@ -135,18 +135,61 @@ impl RawContent {
                     steps,
                     status,
                     collapsed,
+                    duration_ms,
                 } => {
+                    // Task header with duration if available
+                    let duration_str = duration_ms
+                        .map(|ms| format!(" ({}ms)", ms))
+                        .unwrap_or_default();
                     lines.push(ContentLine::Task {
-                        text: format!("{} {}", status.icon(), task),
+                        text: format!("{} {}{}", status.icon(), task, duration_str),
                         status: *status,
                     });
 
                     if !collapsed {
                         for step in steps {
+                            // Main step line
+                            let step_icon = step.kind.icon();
+                            let step_label = step.kind.label();
                             lines.push(ContentLine::Step {
-                                text: format!("  {} {}", step.status.icon(), step.description),
+                                text: format!(
+                                    "  {} {} {} {}",
+                                    step.status.icon(),
+                                    step_icon,
+                                    step_label,
+                                    step.description
+                                ),
                                 status: step.status,
                             });
+
+                            // Output (if present and step not collapsed)
+                            if !step.collapsed {
+                                if let Some(ref output) = step.output {
+                                    for line in output.lines().take(5) {
+                                        lines.push(ContentLine::Output(format!("     {}", line)));
+                                    }
+                                    // Indicate if truncated
+                                    if output.lines().count() > 5 {
+                                        lines.push(ContentLine::Output(
+                                            "     ... (output truncated)".to_string(),
+                                        ));
+                                    }
+                                }
+
+                                // Sub-steps
+                                for sub_step in &step.sub_steps {
+                                    let sub_icon = sub_step.kind.icon();
+                                    lines.push(ContentLine::Step {
+                                        text: format!(
+                                            "    {} {} {}",
+                                            sub_step.status.icon(),
+                                            sub_icon,
+                                            sub_step.description
+                                        ),
+                                        status: sub_step.status,
+                                    });
+                                }
+                            }
                         }
                     }
                 }

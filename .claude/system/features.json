@@ -821,7 +821,7 @@
       "id": "F053",
       "name": "Reactive TUI Renderer (colony-tui)",
       "description": "Full ratatui-based TUI replacing rustyline. Modal vim keybindings. Mini-editor with tree-sitter highlighting, ghost completions, fzf history. Left/right sidebars. Structured agent task view. Command palette.",
-      "status": "in_progress",
+      "status": "complete",
       "priority": 3,
       "dependencies": [
         "F052",
@@ -836,8 +836,24 @@
         "2025-01-25: RawContent scrollback with ContentBlock types",
         "2025-01-25: PromptRenderer wiring colony-ui-core components",
         "2025-01-25: Vim keybindings (normal/insert/command/search modes)",
-        "2025-01-25: 12 tests passing",
-        "2025-01-25: TODO: Sidebars, ghost completions, fzf history, command palette"
+        "2025-01-25: SidebarComponent trait and SidebarManager in colony-ui-core",
+        "2025-01-25: 4 sidebar panels: FileTree, Session, MCP, GitFiles",
+        "2025-01-25: SidebarRenderer in colony-tui with Ctrl+b/n toggle",
+        "2025-01-25: 14 tests passing, 61 in colony-ui-core",
+        "2025-01-25: IMPLEMENTED: Ghost completions (history + path-based)",
+        "2025-01-25: Ghost completion accepts with Tab, cycles with Ctrl+n/p",
+        "2025-01-25: IMPLEMENTED: fzf-style history search (Ctrl+r)",
+        "2025-01-25: HistorySearch with fuzzy matching, match highlighting",
+        "2025-01-25: IMPLEMENTED: Executor integration (commands run)",
+        "2025-01-25: Temporarily leaves alternate screen to run commands",
+        "2025-01-26: IMPLEMENTED: Command palette (Shift+Cmd+P / Ctrl+Shift+P)",
+        "2025-01-26: Fuzzy searchable list of actions with shortcuts",
+        "2025-01-26: Built-in commands: sidebars, modes, git operations, etc.",
+        "2025-01-26: IMPLEMENTED: Structured agent task view",
+        "2025-01-26: AgentStep with StepKind (Read/Edit/Write/Bash/Search/Think/Tool)",
+        "2025-01-26: Nested sub-steps, collapsible output, status icons",
+        "2025-01-26: 36 tests passing",
+        "2025-01-26: F053 COMPLETE - All major features implemented"
       ]
     },
     {

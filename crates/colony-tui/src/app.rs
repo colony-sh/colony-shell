@@ -22,14 +22,18 @@ use ratatui::{
 
 use crate::content::{ContentBlock, ContentLine, RawContent};
 use crate::event::{Event, EventHandler};
-use crate::input::{Editor, Highlighter};
+use crate::input::{
+    CommandPalette, Editor, GhostCompletion, Highlighter, HistorySearch, PaletteAction,
+};
 use crate::keybindings::{Action, KeyMapper, Mode};
 use crate::prompt::PromptRenderer;
 use crate::sidebar::SidebarRenderer;
 use crate::theme::Theme;
+use colony_exec::Executor;
+use colony_expand::ExpansionContext;
 use colony_ui_core::{
-    ComponentContext, SidebarManager, SidebarPosition,
-    FileTreePanel, GitFilesPanel, McpPanel, SessionPanel,
+    ComponentContext, FileTreePanel, GitFilesPanel, McpPanel, SessionPanel, SidebarManager,
+    SidebarPosition,
 };
 use std::sync::Arc;
 
@@ -63,6 +67,12 @@ pub struct App {
     editor: Editor,
     /// Syntax highlighter
     highlighter: Highlighter,
+    /// Ghost completions
+    ghost: GhostCompletion,
+    /// History search
+    history_search: HistorySearch,
+    /// Command palette
+    command_palette: CommandPalette,
     /// Content area
     content: RawContent,
     /// Prompt renderer
@@ -81,6 +91,8 @@ pub struct App {
     last_exit_code: i32,
     /// Current model name
     model: Option<String>,
+    /// Shell executor
+    executor: Executor,
 }
 
 impl App {
@@ -102,6 +114,10 @@ impl App {
         sidebars.register(Arc::new(McpPanel::new()));
         sidebars.register(Arc::new(GitFilesPanel::new()));
 
+        // Initialize shell executor
+        let context = ExpansionContext::new();
+        let executor = Executor::new(context);
+
         Ok(Self {
             terminal,
             events: EventHandler::new(Duration::from_millis(100)),
@@ -109,6 +125,9 @@ impl App {
             theme: Theme::default(),
             editor: Editor::new(),
             highlighter: Highlighter::new(),
+            ghost: GhostCompletion::new(),
+            history_search: HistorySearch::new(),
+            command_palette: CommandPalette::new(),
             content: RawContent::new(),
             prompt: PromptRenderer::new(),
             sidebars,
@@ -118,6 +137,7 @@ impl App {
             state: AppState::Running,
             last_exit_code: 0,
             model: None,
+            executor,
         })
     }
 
@@ -129,7 +149,7 @@ impl App {
 
             // Handle events
             if let Some(event) = self.events.next().await {
-                self.handle_event(event)?;
+                self.handle_event(event).await?;
             }
         }
 
@@ -151,6 +171,10 @@ impl App {
         let visible_lines = self.content.visible_lines();
         let focus = self.focus;
 
+        // Update ghost completions based on current input
+        self.ghost.update(&buffer);
+        let ghost_text = self.ghost.ghost_text().map(|s| s.to_string());
+
         // Render sidebars
         let left_sidebar = self.sidebars.render(SidebarPosition::Left, &ctx);
         let right_sidebar = self.sidebars.render(SidebarPosition::Right, &ctx);
@@ -164,13 +188,52 @@ impl App {
 
         let theme = self.theme.clone();
 
+        // History search state
+        let history_active = self.history_search.is_active();
+        let history_query = self.history_search.query().to_string();
+        let history_results: Vec<_> = self
+            .history_search
+            .results()
+            .iter()
+            .take(10)
+            .map(|m| (m.command.clone(), m.match_positions.clone()))
+            .collect();
+        let history_selected = self.history_search.selected();
+
+        // Command palette state
+        let palette_active = self.command_palette.is_active();
+        let palette_query = self.command_palette.query().to_string();
+        let palette_results: Vec<_> = self
+            .command_palette
+            .results()
+            .iter()
+            .take(15)
+            .map(|e| {
+                (
+                    e.label.clone(),
+                    e.description.clone(),
+                    e.shortcut.clone(),
+                    e.category.label().to_string(),
+                )
+            })
+            .collect();
+        let palette_selected = self.command_palette.selected();
+
         self.terminal
             .draw(|frame| {
                 let size = frame.area();
 
                 // Calculate sidebar widths
-                let left_width = if left_sidebar.visible { left_sidebar.width } else { 0 };
-                let right_width = if right_sidebar.visible { right_sidebar.width } else { 0 };
+                let left_width = if left_sidebar.visible {
+                    left_sidebar.width
+                } else {
+                    0
+                };
+                let right_width = if right_sidebar.visible {
+                    right_sidebar.width
+                } else {
+                    0
+                };
 
                 // Horizontal layout: [left sidebar] [main] [right sidebar]
                 let mut h_constraints = Vec::new();
@@ -197,12 +260,22 @@ impl App {
 
                 // Render left sidebar
                 if let Some(area) = left_area {
-                    SidebarRenderer::render(frame, area, &left_sidebar, focus == Focus::LeftSidebar);
+                    SidebarRenderer::render(
+                        frame,
+                        area,
+                        &left_sidebar,
+                        focus == Focus::LeftSidebar,
+                    );
                 }
 
                 // Render right sidebar
                 if let Some(area) = right_area {
-                    SidebarRenderer::render(frame, area, &right_sidebar, focus == Focus::RightSidebar);
+                    SidebarRenderer::render(
+                        frame,
+                        area,
+                        &right_sidebar,
+                        focus == Focus::RightSidebar,
+                    );
                 }
 
                 // Main layout: content area + input area
@@ -218,11 +291,50 @@ impl App {
                 // Render content
                 render_content(frame, main_chunks[0], &visible_lines);
 
-                // Render input
-                render_input(frame, main_chunks[1], &prompt_line, &highlighted, cursor, prompt_width, mode);
+                // Render input with ghost text
+                render_input(
+                    frame,
+                    main_chunks[1],
+                    &prompt_line,
+                    &highlighted,
+                    cursor,
+                    prompt_width,
+                    mode,
+                    ghost_text.as_deref(),
+                );
 
                 // Render status
-                render_status(frame, main_chunks[2], mode, &command_buffer, &search_buffer, cursor_pos, &theme);
+                render_status(
+                    frame,
+                    main_chunks[2],
+                    mode,
+                    &command_buffer,
+                    &search_buffer,
+                    cursor_pos,
+                    &theme,
+                );
+
+                // Render history search popup (overlay)
+                if history_active {
+                    render_history_search(
+                        frame,
+                        main_area,
+                        &history_query,
+                        &history_results,
+                        history_selected,
+                    );
+                }
+
+                // Render command palette popup (overlay)
+                if palette_active {
+                    render_command_palette(
+                        frame,
+                        main_area,
+                        &palette_query,
+                        &palette_results,
+                        palette_selected,
+                    );
+                }
             })
             .map_err(|e| miette::miette!("Failed to draw: {}", e))?;
 
@@ -230,11 +342,11 @@ impl App {
     }
 
     /// Handle an event
-    fn handle_event(&mut self, event: Event) -> miette::Result<()> {
+    async fn handle_event(&mut self, event: Event) -> miette::Result<()> {
         match event {
             Event::Key(key) => {
                 if let Some(action) = self.keys.map(key) {
-                    self.handle_action(action)?;
+                    self.handle_action(action).await?;
                 }
             }
             Event::Resize(_, _) => {
@@ -258,7 +370,7 @@ impl App {
     }
 
     /// Handle an action
-    fn handle_action(&mut self, action: Action) -> miette::Result<()> {
+    async fn handle_action(&mut self, action: Action) -> miette::Result<()> {
         match action {
             // Mode changes
             Action::EnterNormal => {
@@ -296,13 +408,25 @@ impl App {
                 Mode::Insert => self.editor.insert_char(c),
                 Mode::Command => self.command_buffer.push(c),
                 Mode::Search => self.search_buffer.push(c),
+                Mode::HistorySearch => self.history_search.insert_char(c),
+                Mode::CommandPalette => self.command_palette.insert_char(c),
                 _ => {}
             },
             Action::DeleteChar => self.editor.delete_char(),
             Action::DeleteCharBackward => match self.keys.mode() {
                 Mode::Insert => self.editor.delete_char_backward(),
-                Mode::Command => { self.command_buffer.pop(); }
-                Mode::Search => { self.search_buffer.pop(); }
+                Mode::Command => {
+                    self.command_buffer.pop();
+                }
+                Mode::Search => {
+                    self.search_buffer.pop();
+                }
+                Mode::HistorySearch => {
+                    self.history_search.delete_char();
+                }
+                Mode::CommandPalette => {
+                    self.command_palette.delete_char();
+                }
                 _ => {}
             },
             Action::DeleteWordBackward => self.editor.delete_word_backward(),
@@ -331,17 +455,36 @@ impl App {
             // History
             Action::HistoryPrev => self.editor.history_prev(),
             Action::HistoryNext => self.editor.history_next(),
-            Action::HistorySearch => {} // TODO: fzf-style search
+            Action::HistorySearchActivate => {
+                self.history_search.activate();
+                self.keys.set_mode(Mode::HistorySearch);
+            }
+            Action::HistorySearchAccept => {
+                if let Some(cmd) = self.history_search.accept() {
+                    self.editor.set_buffer(&cmd);
+                }
+                self.keys.set_mode(Mode::Insert);
+            }
+            Action::HistorySearchCancel => {
+                self.history_search.deactivate();
+                self.keys.set_mode(Mode::Insert);
+            }
+            Action::HistorySearchNext => self.history_search.select_next(),
+            Action::HistorySearchPrev => self.history_search.select_prev(),
 
             // Completion
-            Action::AcceptCompletion => {} // TODO
-            Action::NextCompletion => {}   // TODO
-            Action::PrevCompletion => {}   // TODO
+            Action::AcceptCompletion => {
+                if let Some(completed) = self.ghost.accept() {
+                    self.editor.set_buffer(&completed);
+                }
+            }
+            Action::NextCompletion => self.ghost.next(),
+            Action::PrevCompletion => self.ghost.prev(),
 
             // Clipboard (vim-style)
-            Action::YankPending => {}  // TODO
-            Action::PasteAfter => {}   // TODO
-            Action::PasteBefore => {}  // TODO
+            Action::YankPending => {} // TODO
+            Action::PasteAfter => {}  // TODO
+            Action::PasteBefore => {} // TODO
 
             // Undo/Redo
             Action::Undo => {} // TODO
@@ -360,7 +503,10 @@ impl App {
                 let cmd = self.editor.take();
                 if !cmd.trim().is_empty() {
                     self.editor.add_to_history(&cmd);
-                    self.execute_command(&cmd)?;
+                    self.ghost.add_to_history(&cmd);
+                    self.history_search.add_to_history(&cmd);
+                    self.ghost.clear();
+                    self.execute_command(&cmd).await?;
                 }
             }
             Action::ExecuteCommand => {
@@ -383,18 +529,42 @@ impl App {
             Action::Quit => {
                 self.state = AppState::Quitting;
             }
-            Action::CommandPalette => {} // TODO
+
+            // Command palette
+            Action::CommandPaletteActivate => {
+                self.command_palette.activate();
+                self.keys.set_mode(Mode::CommandPalette);
+            }
+            Action::CommandPaletteAccept => {
+                if let Some(action) = self.command_palette.accept() {
+                    self.keys.set_mode(Mode::Normal);
+                    self.execute_palette_action(action).await?;
+                } else {
+                    self.keys.set_mode(Mode::Normal);
+                }
+            }
+            Action::CommandPaletteCancel => {
+                self.command_palette.deactivate();
+                self.keys.set_mode(Mode::Normal);
+            }
+            Action::CommandPaletteNext => self.command_palette.select_next(),
+            Action::CommandPalettePrev => self.command_palette.select_prev(),
+
             Action::ToggleLeftSidebar => {
                 self.sidebars.toggle(SidebarPosition::Left);
                 // Update focus if sidebar was closed while focused
-                if !self.sidebars.is_visible(SidebarPosition::Left) && self.focus == Focus::LeftSidebar {
+                if !self.sidebars.is_visible(SidebarPosition::Left)
+                    && self.focus == Focus::LeftSidebar
+                {
                     self.focus = Focus::Content;
                 }
             }
             Action::ToggleRightSidebar => {
                 self.sidebars.toggle(SidebarPosition::Right);
                 // Update focus if sidebar was closed while focused
-                if !self.sidebars.is_visible(SidebarPosition::Right) && self.focus == Focus::RightSidebar {
+                if !self.sidebars.is_visible(SidebarPosition::Right)
+                    && self.focus == Focus::RightSidebar
+                {
                     self.focus = Focus::Content;
                 }
             }
@@ -403,21 +573,128 @@ impl App {
     }
 
     /// Execute a shell command
-    fn execute_command(&mut self, cmd: &str) -> miette::Result<()> {
-        // Add command to content area
-        self.content.push(ContentBlock::shell(
-            cmd.to_string(),
-            Vec::new(),
-            0,
-        ));
+    async fn execute_command(&mut self, cmd: &str) -> miette::Result<()> {
+        use colony_parser::pest_api::parse;
 
-        // TODO: Actually execute the command via colony-exec
-        // For now, just show a placeholder
-        if let Some(ContentBlock::Shell { output, exit_code, .. }) = self.content.last_mut() {
-            *output = format!("TODO: Execute '{}'\n", cmd).into_bytes();
-            *exit_code = 0;
+        // Add command to content area (with placeholder output)
+        self.content
+            .push(ContentBlock::shell(cmd.to_string(), Vec::new(), 0));
+
+        // Parse the command
+        let program = match parse(cmd) {
+            Ok(prog) => prog,
+            Err(e) => {
+                // Show parse error
+                if let Some(ContentBlock::Shell {
+                    output, exit_code, ..
+                }) = self.content.last_mut()
+                {
+                    *output = format!("Parse error: {}\n", e).into_bytes();
+                    *exit_code = 1;
+                }
+                self.last_exit_code = 1;
+                return Ok(());
+            }
+        };
+
+        // Execute each statement and collect output
+        // Note: We temporarily leave alternate screen to run commands properly
+        // This is necessary because commands write to stdout/stderr directly
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen,);
+        let _ = disable_raw_mode();
+
+        let mut collected_output = Vec::new();
+        let mut final_exit_code = 0;
+
+        for stmt in &program.statements {
+            // Capture output using execute_and_capture for simple commands
+            // For complex commands, we execute normally
+            match self.executor.execute_statement_recursive(stmt).await {
+                Ok(exit_code) => {
+                    final_exit_code = exit_code;
+                }
+                Err(e) => {
+                    collected_output.extend_from_slice(format!("Error: {}\n", e).as_bytes());
+                    final_exit_code = 1;
+                    break;
+                }
+            }
         }
 
+        // Return to alternate screen
+        let _ = enable_raw_mode();
+        let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen,);
+
+        // Clear screen after returning (prevents artifacts)
+        let _ = self.terminal.clear();
+
+        // Update the content block with results
+        if let Some(ContentBlock::Shell {
+            output, exit_code, ..
+        }) = self.content.last_mut()
+        {
+            if collected_output.is_empty() {
+                // No captured output - command ran successfully but output went to terminal
+                *output = Vec::new();
+            } else {
+                *output = collected_output;
+            }
+            *exit_code = final_exit_code;
+        }
+
+        self.last_exit_code = final_exit_code;
+        Ok(())
+    }
+
+    /// Execute an action from the command palette
+    async fn execute_palette_action(&mut self, action: PaletteAction) -> miette::Result<()> {
+        match action {
+            PaletteAction::ToggleLeftSidebar => {
+                self.sidebars.toggle(SidebarPosition::Left);
+            }
+            PaletteAction::ToggleRightSidebar => {
+                self.sidebars.toggle(SidebarPosition::Right);
+            }
+            PaletteAction::ClearScreen => {
+                self.content.clear();
+            }
+            PaletteAction::ScrollToTop => {
+                self.content.scroll_to_top();
+            }
+            PaletteAction::ScrollToBottom => {
+                self.content.scroll_to_bottom();
+            }
+            PaletteAction::EnterNormalMode => {
+                self.keys.set_mode(Mode::Normal);
+            }
+            PaletteAction::EnterInsertMode => {
+                self.keys.set_mode(Mode::Insert);
+            }
+            PaletteAction::ShowHistory => {
+                self.history_search.activate();
+                self.keys.set_mode(Mode::HistorySearch);
+            }
+            PaletteAction::ClearHistory => {
+                // Clear all history sources
+                self.editor = Editor::new();
+                self.ghost = GhostCompletion::new();
+                self.history_search = HistorySearch::new();
+            }
+            PaletteAction::Quit => {
+                self.state = AppState::Quitting;
+            }
+            PaletteAction::FocusInput => {
+                self.focus = Focus::Content;
+                self.keys.set_mode(Mode::Insert);
+            }
+            PaletteAction::FocusContent => {
+                self.focus = Focus::Content;
+                self.keys.set_mode(Mode::Normal);
+            }
+            PaletteAction::RunCommand(cmd) => {
+                self.execute_command(&cmd).await?;
+            }
+        }
         Ok(())
     }
 
@@ -485,9 +762,10 @@ fn render_content(frame: &mut Frame, area: Rect, visible_lines: &[ContentLine]) 
             ContentLine::Task { text, status: _ } => {
                 Line::from(Span::styled(text.clone(), Style::default().fg(Color::Blue)))
             }
-            ContentLine::Step { text, status: _ } => {
-                Line::from(Span::styled(text.clone(), Style::default().fg(Color::DarkGray)))
-            }
+            ContentLine::Step { text, status: _ } => Line::from(Span::styled(
+                text.clone(),
+                Style::default().fg(Color::DarkGray),
+            )),
         })
         .collect();
 
@@ -506,15 +784,26 @@ fn render_input(
     cursor: usize,
     prompt_width: usize,
     mode: Mode,
+    ghost_text: Option<&str>,
 ) {
     // Combine prompt with input
     let mut spans = prompt_line.spans.clone();
     spans.extend(highlighted.spans.clone());
 
+    // Add ghost text after input (dimmed)
+    if let Some(ghost) = ghost_text {
+        spans.push(Span::styled(
+            ghost,
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ));
+    }
+
     let input_line = Line::from(spans);
 
-    let input_widget = Paragraph::new(vec![input_line])
-        .block(Block::default().borders(Borders::TOP));
+    let input_widget =
+        Paragraph::new(vec![input_line]).block(Block::default().borders(Borders::TOP));
 
     frame.render_widget(input_widget, area);
 
@@ -546,11 +835,7 @@ fn render_status(
         _ => String::new(),
     };
 
-    let right_text = format!(
-        " {}:{} ",
-        cursor_pos.0 + 1,
-        cursor_pos.1 + 1
-    );
+    let right_text = format!(" {}:{} ", cursor_pos.0 + 1, cursor_pos.1 + 1);
 
     let padding = (area.width as usize)
         .saturating_sub(mode.name().len() + 2)
@@ -564,18 +849,267 @@ fn render_status(
         Span::styled(right_text, Style::default().add_modifier(Modifier::DIM)),
     ]);
 
-    let status = Paragraph::new(vec![line])
-        .style(Style::default().bg(Color::DarkGray));
+    let status = Paragraph::new(vec![line]).style(Style::default().bg(Color::DarkGray));
 
     frame.render_widget(status, area);
 }
 
+fn render_history_search(
+    frame: &mut Frame,
+    area: Rect,
+    query: &str,
+    results: &[(String, Vec<usize>)],
+    selected: usize,
+) {
+    use ratatui::widgets::Clear;
+
+    // Calculate popup dimensions
+    let popup_height = (results.len() + 3).min(15) as u16; // +3 for border and input
+    let popup_width = area.width.saturating_sub(4).min(80);
+
+    // Center the popup
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + area.height.saturating_sub(popup_height).saturating_sub(4);
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the area under the popup
+    frame.render_widget(Clear, popup_area);
+
+    // Build lines
+    let mut lines = Vec::new();
+
+    // Search input line
+    lines.push(Line::from(vec![
+        Span::styled("bck-i-search: ", Style::default().fg(Color::Yellow)),
+        Span::raw(query),
+        Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
+    ]));
+
+    // Separator
+    lines.push(Line::from(
+        "─".repeat(popup_width.saturating_sub(2) as usize),
+    ));
+
+    // Results
+    for (idx, (cmd, match_positions)) in results.iter().enumerate() {
+        let is_selected = idx == selected;
+
+        // Build command with highlighted match positions
+        let mut spans = Vec::new();
+
+        // Selection indicator
+        if is_selected {
+            spans.push(Span::styled("> ", Style::default().fg(Color::Cyan)));
+        } else {
+            spans.push(Span::raw("  "));
+        }
+
+        // Command text with match highlighting
+        let mut last_pos = 0;
+        for &pos in match_positions {
+            if pos >= cmd.len() {
+                continue;
+            }
+            // Text before match
+            if pos > last_pos {
+                let style = if is_selected {
+                    Style::default().fg(Color::White)
+                } else {
+                    Style::default()
+                };
+                spans.push(Span::styled(&cmd[last_pos..pos], style));
+            }
+            // Matched character
+            let match_end = (pos + 1).min(cmd.len());
+            spans.push(Span::styled(
+                &cmd[pos..match_end],
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            last_pos = match_end;
+        }
+        // Remaining text
+        if last_pos < cmd.len() {
+            let style = if is_selected {
+                Style::default().fg(Color::White)
+            } else {
+                Style::default()
+            };
+            spans.push(Span::styled(&cmd[last_pos..], style));
+        }
+
+        let line = Line::from(spans);
+        lines.push(line);
+    }
+
+    // Empty state
+    if results.is_empty() && !query.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No matches",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
+
+    let popup = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" History Search (Ctrl+r) ")
+                .title_style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        )
+        .style(Style::default().bg(Color::Black));
+
+    frame.render_widget(popup, popup_area);
+}
+
+fn render_command_palette(
+    frame: &mut Frame,
+    area: Rect,
+    query: &str,
+    results: &[(String, Option<String>, Option<String>, String)], // (label, desc, shortcut, category)
+    selected: usize,
+) {
+    use ratatui::widgets::Clear;
+
+    // Calculate popup dimensions - larger than history search
+    let popup_height = (results.len() + 4).min(20) as u16; // +4 for border, title, input
+    let popup_width = area.width.saturating_sub(8).min(70);
+
+    // Center the popup
+    let popup_x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = area.y + 2; // Near top
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the area under the popup
+    frame.render_widget(Clear, popup_area);
+
+    // Build lines
+    let mut lines = Vec::new();
+
+    // Search input line
+    lines.push(Line::from(vec![
+        Span::styled("> ", Style::default().fg(Color::Magenta)),
+        Span::raw(query),
+        Span::styled("_", Style::default().add_modifier(Modifier::SLOW_BLINK)),
+    ]));
+
+    // Separator
+    lines.push(Line::from(
+        "─".repeat(popup_width.saturating_sub(2) as usize),
+    ));
+
+    // Results
+    for (idx, (label, desc, shortcut, category)) in results.iter().enumerate() {
+        let is_selected = idx == selected;
+
+        let mut spans = Vec::new();
+
+        // Selection indicator
+        if is_selected {
+            spans.push(Span::styled(
+                " > ",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::raw("   "));
+        }
+
+        // Label
+        let label_style = if is_selected {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        spans.push(Span::styled(label.clone(), label_style));
+
+        // Category tag
+        spans.push(Span::styled(
+            format!(" [{}]", category),
+            Style::default().fg(Color::DarkGray),
+        ));
+
+        // Shortcut (right-aligned)
+        if let Some(shortcut) = shortcut {
+            // Calculate padding
+            let used_width = 3 + label.len() + 3 + category.len() + shortcut.len() + 2;
+            let padding = (popup_width as usize).saturating_sub(used_width + 4);
+            if padding > 0 {
+                spans.push(Span::raw(" ".repeat(padding)));
+            }
+            spans.push(Span::styled(
+                shortcut.clone(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::DIM),
+            ));
+        }
+
+        lines.push(Line::from(spans));
+
+        // Description on next line (if present and selected)
+        if is_selected {
+            if let Some(desc) = desc {
+                lines.push(Line::from(vec![
+                    Span::raw("     "),
+                    Span::styled(
+                        desc.clone(),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ]));
+            }
+        }
+    }
+
+    // Empty state
+    if results.is_empty() && !query.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "   No matching commands",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
+
+    let popup = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Magenta))
+                .title(" Command Palette ")
+                .title_style(
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        )
+        .style(Style::default().bg(Color::Black));
+
+    frame.render_widget(popup, popup_area);
+}
 // === Legacy TuiApp (simpler renderer using colony-ui-core directly) ===
 
 use colony_ui_core::component::SidebarOutput;
 use colony_ui_core::context::ComponentContext as LegacyComponentContext;
 use colony_ui_core::manager::PromptManager;
-use crossterm::event::{self as crossterm_event, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    self as crossterm_event, Event as CrosstermEvent, KeyCode, KeyEvent, KeyModifiers,
+};
 use crossterm::ExecutableCommand;
 
 use crate::content_area::ContentArea;
@@ -792,10 +1326,7 @@ impl TuiApp {
             let status_line = Line::from(vec![
                 Span::styled(" ", Style::default().bg(Color::DarkGray)),
                 left_line.spans.into_iter().next().unwrap_or(Span::raw("")),
-                Span::styled(
-                    "  ",
-                    Style::default().bg(Color::DarkGray),
-                ),
+                Span::styled("  ", Style::default().bg(Color::DarkGray)),
             ]);
 
             let status_bar = Paragraph::new(vec![status_line])

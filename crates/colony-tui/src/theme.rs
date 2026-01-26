@@ -68,6 +68,8 @@ impl Theme {
             crate::keybindings::Mode::Insert => self.mode_insert,
             crate::keybindings::Mode::Command => self.mode_command,
             crate::keybindings::Mode::Search => self.info,
+            crate::keybindings::Mode::HistorySearch => Color::Cyan,
+            crate::keybindings::Mode::CommandPalette => Color::Magenta,
         };
         Style::default()
             .fg(Color::Black)

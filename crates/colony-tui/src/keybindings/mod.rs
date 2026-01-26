@@ -15,9 +15,7 @@ pub struct KeyMapper {
 
 impl KeyMapper {
     pub fn new() -> Self {
-        Self {
-            mode: Mode::Normal,
-        }
+        Self { mode: Mode::Normal }
     }
 
     pub fn mode(&self) -> Mode {
@@ -30,14 +28,39 @@ impl KeyMapper {
 
     /// Map a key event to an action
     pub fn map(&self, key: KeyEvent) -> Option<Action> {
-        // Global keybindings (work in all modes)
+        // Global keybindings that work in ALL modes
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c')) => return Some(Action::Interrupt),
             (KeyModifiers::CONTROL, KeyCode::Char('d')) => return Some(Action::Eof),
-            (KeyModifiers::CONTROL, KeyCode::Char('p')) => return Some(Action::CommandPalette),
-            (KeyModifiers::CONTROL, KeyCode::Char('b')) => return Some(Action::ToggleLeftSidebar),
-            (KeyModifiers::CONTROL, KeyCode::Char('n')) => return Some(Action::ToggleRightSidebar),
             _ => {}
+        }
+
+        // Command palette: Shift+Cmd+P (SUPER+SHIFT) or Ctrl+Shift+P
+        // Works in all modes except when palette is already active
+        if self.mode != Mode::CommandPalette {
+            let is_cmd_shift_p = key.modifiers.contains(KeyModifiers::SUPER)
+                && key.modifiers.contains(KeyModifiers::SHIFT)
+                && matches!(key.code, KeyCode::Char('p') | KeyCode::Char('P'));
+            let is_ctrl_shift_p = key.modifiers.contains(KeyModifiers::CONTROL)
+                && key.modifiers.contains(KeyModifiers::SHIFT)
+                && matches!(key.code, KeyCode::Char('p') | KeyCode::Char('P'));
+
+            if is_cmd_shift_p || is_ctrl_shift_p {
+                return Some(Action::CommandPaletteActivate);
+            }
+        }
+
+        // Global keybindings that only work in normal mode (avoid conflicts with insert mode)
+        if self.mode == Mode::Normal {
+            match (key.modifiers, key.code) {
+                (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
+                    return Some(Action::ToggleLeftSidebar)
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('n')) => {
+                    return Some(Action::ToggleRightSidebar)
+                }
+                _ => {}
+            }
         }
 
         match self.mode {
@@ -45,6 +68,8 @@ impl KeyMapper {
             Mode::Insert => self.map_insert(key),
             Mode::Command => self.map_command(key),
             Mode::Search => self.map_search(key),
+            Mode::HistorySearch => self.map_history_search(key),
+            Mode::CommandPalette => self.map_command_palette(key),
         }
     }
 
@@ -112,8 +137,9 @@ impl KeyMapper {
             (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::EnterNormal),
 
             // Text input
-            (KeyModifiers::NONE, KeyCode::Char(c))
-            | (KeyModifiers::SHIFT, KeyCode::Char(c)) => Some(Action::InsertChar(c)),
+            (KeyModifiers::NONE, KeyCode::Char(c)) | (KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                Some(Action::InsertChar(c))
+            }
             (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::DeleteCharBackward),
             (KeyModifiers::NONE, KeyCode::Delete) => Some(Action::DeleteChar),
             (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::Execute),
@@ -127,7 +153,7 @@ impl KeyMapper {
             // History
             (KeyModifiers::NONE, KeyCode::Up) => Some(Action::HistoryPrev),
             (KeyModifiers::NONE, KeyCode::Down) => Some(Action::HistoryNext),
-            (KeyModifiers::CONTROL, KeyCode::Char('r')) => Some(Action::HistorySearch),
+            (KeyModifiers::CONTROL, KeyCode::Char('r')) => Some(Action::HistorySearchActivate),
 
             // Completion
             (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::AcceptCompletion),
@@ -147,8 +173,9 @@ impl KeyMapper {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::EnterNormal),
             (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::ExecuteCommand),
-            (KeyModifiers::NONE, KeyCode::Char(c))
-            | (KeyModifiers::SHIFT, KeyCode::Char(c)) => Some(Action::InsertChar(c)),
+            (KeyModifiers::NONE, KeyCode::Char(c)) | (KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                Some(Action::InsertChar(c))
+            }
             (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::DeleteCharBackward),
             (KeyModifiers::NONE, KeyCode::Left) => Some(Action::CursorLeft),
             (KeyModifiers::NONE, KeyCode::Right) => Some(Action::CursorRight),
@@ -160,11 +187,69 @@ impl KeyMapper {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::EnterNormal),
             (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::ExecuteSearch),
-            (KeyModifiers::NONE, KeyCode::Char(c))
-            | (KeyModifiers::SHIFT, KeyCode::Char(c)) => Some(Action::InsertChar(c)),
+            (KeyModifiers::NONE, KeyCode::Char(c)) | (KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                Some(Action::InsertChar(c))
+            }
             (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::DeleteCharBackward),
             (KeyModifiers::CONTROL, KeyCode::Char('n')) => Some(Action::SearchNext),
             (KeyModifiers::CONTROL, KeyCode::Char('p')) => Some(Action::SearchPrev),
+            _ => None,
+        }
+    }
+
+    fn map_history_search(&self, key: KeyEvent) -> Option<Action> {
+        match (key.modifiers, key.code) {
+            // Cancel
+            (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::HistorySearchCancel),
+            (KeyModifiers::CONTROL, KeyCode::Char('g')) => Some(Action::HistorySearchCancel),
+
+            // Accept
+            (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::HistorySearchAccept),
+
+            // Navigation
+            (KeyModifiers::NONE, KeyCode::Up) | (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
+                Some(Action::HistorySearchPrev)
+            }
+            (KeyModifiers::NONE, KeyCode::Down) | (KeyModifiers::CONTROL, KeyCode::Char('n')) => {
+                Some(Action::HistorySearchNext)
+            }
+
+            // Continue search with Ctrl+r
+            (KeyModifiers::CONTROL, KeyCode::Char('r')) => Some(Action::HistorySearchNext),
+
+            // Text input
+            (KeyModifiers::NONE, KeyCode::Char(c)) | (KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                Some(Action::InsertChar(c))
+            }
+            (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::DeleteCharBackward),
+
+            _ => None,
+        }
+    }
+
+    fn map_command_palette(&self, key: KeyEvent) -> Option<Action> {
+        match (key.modifiers, key.code) {
+            // Cancel
+            (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::CommandPaletteCancel),
+            (KeyModifiers::CONTROL, KeyCode::Char('g')) => Some(Action::CommandPaletteCancel),
+
+            // Accept
+            (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::CommandPaletteAccept),
+
+            // Navigation
+            (KeyModifiers::NONE, KeyCode::Up) | (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
+                Some(Action::CommandPalettePrev)
+            }
+            (KeyModifiers::NONE, KeyCode::Down)
+            | (KeyModifiers::CONTROL, KeyCode::Char('n'))
+            | (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::CommandPaletteNext),
+
+            // Text input
+            (KeyModifiers::NONE, KeyCode::Char(c)) | (KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                Some(Action::InsertChar(c))
+            }
+            (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::DeleteCharBackward),
+
             _ => None,
         }
     }

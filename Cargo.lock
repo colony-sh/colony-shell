@@ -1726,12 +1726,14 @@ name = "colony-tui"
 version = "0.4.1"
 dependencies = [
  "colony-exec",
+ "colony-expand",
  "colony-parser",
  "colony-protocol",
  "colony-tree-sitter",
  "colony-tuple",
  "colony-ui-core",
  "crossterm",
+ "dirs 5.0.1",
  "hostname",
  "miette",
  "ratatui",

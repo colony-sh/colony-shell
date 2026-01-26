@@ -45,7 +45,11 @@ pub enum Action {
     // History
     HistoryPrev,
     HistoryNext,
-    HistorySearch,
+    HistorySearchActivate,
+    HistorySearchAccept,
+    HistorySearchCancel,
+    HistorySearchNext,
+    HistorySearchPrev,
 
     // Completion
     AcceptCompletion,
@@ -73,8 +77,14 @@ pub enum Action {
     // Global
     Interrupt,
     Eof,
-    CommandPalette,
     ToggleLeftSidebar,
     ToggleRightSidebar,
     Quit,
+
+    // Command palette
+    CommandPaletteActivate,
+    CommandPaletteAccept,
+    CommandPaletteCancel,
+    CommandPaletteNext,
+    CommandPalettePrev,
 }

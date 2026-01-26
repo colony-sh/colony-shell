@@ -12,6 +12,10 @@ pub enum Mode {
     Command,
     /// Search mode - incremental search (/)
     Search,
+    /// History search mode - fzf-style fuzzy search (Ctrl+r)
+    HistorySearch,
+    /// Command palette mode - quick action search (Shift+Cmd+P)
+    CommandPalette,
 }
 
 impl Mode {
@@ -22,6 +26,8 @@ impl Mode {
             Mode::Insert => "INSERT",
             Mode::Command => "COMMAND",
             Mode::Search => "SEARCH",
+            Mode::HistorySearch => "HISTORY",
+            Mode::CommandPalette => "PALETTE",
         }
     }
 
@@ -32,6 +38,8 @@ impl Mode {
             Mode::Insert => "I",
             Mode::Command => ":",
             Mode::Search => "/",
+            Mode::HistorySearch => "?",
+            Mode::CommandPalette => ">",
         }
     }
 }
