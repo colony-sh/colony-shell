@@ -874,6 +874,14 @@
         "2026-02-10: IMPLEMENTED: Smart file filtering (hidden files, node_modules, target, etc.)",
         "2026-02-10: TESTED: 11 unit tests passing for file_tree module",
         "2026-02-10: COMPLETE: Full file tree state management and watching"
+        "2025-01-26: Created colony-filetree crate (4 modules, ~1100 lines)",
+        "2025-01-26: FileNode with id, name, path, file_type, expanded, children, depth, extension",
+        "2025-01-26: TreeState with scc::HashMap for concurrent access, load/refresh operations",
+        "2025-01-26: GitStatusCache using git2 crate - branch info, ahead/behind, file statuses",
+        "2025-01-26: FileSystemWatcher using notify crate with FSEvent backend (macOS)",
+        "2025-01-26: Integrated into FileTreePanel in colony-ui-core",
+        "2025-01-26: Git status indicators in file tree (M, S, ?, +, D, !)",
+        "2025-01-26: 16 tests passing (15 unit + 1 doc)"
       ]
     },
     {
