@@ -26,10 +26,12 @@
 
 mod git;
 mod node;
+mod protocol;
 mod state;
 mod watcher;
 
 pub use git::{GitFileStatus, GitStatusCache};
 pub use node::{FileNode, FileType, NodeId};
-pub use state::{TreeState, TreeEvent};
+pub use protocol::TreeProtocol;
+pub use state::{TreeEvent, TreeState};
 pub use watcher::{FileSystemWatcher, WatchEvent};

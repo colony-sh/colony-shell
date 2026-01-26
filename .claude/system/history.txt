@@ -2136,3 +2136,20 @@
 [2025-01-26 01:35] FEATURES: TreeState-based rendering, git status indicators
 [2025-01-26 01:40] VALIDATED: 63 tests passing in colony-ui-core
 [2025-01-26 01:45] MILESTONE: F028 (File Tree State & Watching) COMPLETE!
+
+[2025-01-26 02:00] START: Beginning F029 (File Tree Protocol)
+[2025-01-26 02:05] DESIGN: TreeNode, TreeSnapshot, TreeUpdate, TreeAction message types
+[2025-01-26 02:10] CREATED: crates/colony-protocol/src/tree.rs (~350 lines)
+[2025-01-26 02:15] IMPLEMENTED: TreeNode with id, name, path, node_type, expanded, children
+[2025-01-26 02:20] IMPLEMENTED: TreeSnapshot for full tree state + git info
+[2025-01-26 02:25] IMPLEMENTED: TreeUpdate variants: NodeAdded, NodeRemoved, NodeModified, NodeToggled
+[2025-01-26 02:30] IMPLEMENTED: TreeAction variants: Toggle, Expand, Open, Create, Delete, Rename, etc.
+[2025-01-26 02:35] ADDED: ProtocolMessage variants for Tree messages
+[2025-01-26 02:40] ADDED: emit_tree_* and parse_tree_* helper functions
+[2025-01-26 02:45] VALIDATED: 41 tests passing in colony-protocol
+[2025-01-26 02:50] CREATED: crates/colony-filetree/src/protocol.rs (~400 lines)
+[2025-01-26 02:55] IMPLEMENTED: TreeProtocol bridge with FileNode↔TreeNode conversion
+[2025-01-26 03:00] IMPLEMENTED: handle_action for all TreeAction operations
+[2025-01-26 03:05] IMPLEMENTED: File operations (create, delete, rename, copy, move)
+[2025-01-26 03:10] VALIDATED: 24 tests passing in colony-filetree
+[2025-01-26 03:15] MILESTONE: F029 (File Tree Protocol) COMPLETE!

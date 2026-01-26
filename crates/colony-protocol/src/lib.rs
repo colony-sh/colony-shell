@@ -21,6 +21,7 @@
 //! - **Hello**: Protocol version negotiation (shell/terminal handshake)
 //! - **SecureAccess**: Secure environment variable access request
 //! - **SecureAccessResponse**: User response to secure access request
+//! - **Tree**: File tree state sync (snapshot, updates, actions)
 //!
 //! ## Example
 //!
@@ -37,6 +38,8 @@
 //! }));
 //! ```
 
+pub mod tree;
+
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
@@ -46,6 +49,11 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub const PROTOCOL_MIN_VERSION: u32 = 1;
 /// Maximum protocol version supported by this crate.
 pub const PROTOCOL_MAX_VERSION: u32 = 1;
+
+pub use tree::{
+    GitStatus, NodeId, TreeAction, TreeActionResult, TreeNode, TreeNodeType, TreeSnapshot,
+    TreeUpdate,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -190,6 +198,14 @@ pub enum ProtocolMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         panes: Option<serde_json::Value>,
     },
+    /// Full tree snapshot (shell → terminal)
+    TreeSnapshot(TreeSnapshot),
+    /// Incremental tree update (shell → terminal)
+    TreeUpdate(TreeUpdate),
+    /// Tree action result (shell → terminal)
+    TreeActionResult(TreeActionResult),
+    /// User tree action (terminal → shell)
+    TreeAction(TreeAction),
 }
 
 /// Full prompt state data sent via OSC 2337 (Prompt=state per spec B.3.11)
@@ -647,6 +663,54 @@ pub fn parse_hello_ack(json: &str) -> Option<u32> {
     }) = serde_json::from_str::<ProtocolMessage>(json)
     {
         return Some(negotiated_version);
+    }
+    None
+}
+
+// ============================================================================
+// Tree Protocol Functions
+// ============================================================================
+
+/// Emit a tree snapshot to the terminal
+pub fn emit_tree_snapshot(snapshot: &TreeSnapshot) {
+    let msg = ProtocolMessage::TreeSnapshot(snapshot.clone());
+    emit_message(&msg);
+}
+
+/// Emit a tree update to the terminal
+pub fn emit_tree_update(update: &TreeUpdate) {
+    let msg = ProtocolMessage::TreeUpdate(update.clone());
+    emit_message(&msg);
+}
+
+/// Emit a tree action result to the terminal
+pub fn emit_tree_action_result(result: &TreeActionResult) {
+    let msg = ProtocolMessage::TreeActionResult(result.clone());
+    emit_message(&msg);
+}
+
+/// Parse a tree action from JSON
+pub fn parse_tree_action(json: &str) -> Option<TreeAction> {
+    if let Ok(ProtocolMessage::TreeAction(action)) = serde_json::from_str::<ProtocolMessage>(json) {
+        return Some(action);
+    }
+    None
+}
+
+/// Parse a tree snapshot from JSON
+pub fn parse_tree_snapshot(json: &str) -> Option<TreeSnapshot> {
+    if let Ok(ProtocolMessage::TreeSnapshot(snapshot)) =
+        serde_json::from_str::<ProtocolMessage>(json)
+    {
+        return Some(snapshot);
+    }
+    None
+}
+
+/// Parse a tree update from JSON
+pub fn parse_tree_update(json: &str) -> Option<TreeUpdate> {
+    if let Ok(ProtocolMessage::TreeUpdate(update)) = serde_json::from_str::<ProtocolMessage>(json) {
+        return Some(update);
     }
     None
 }
@@ -1217,4 +1281,89 @@ mod tests {
     // Note: Testing actual escape sequence emission would require
     // capturing stdout, which is complex. These tests verify the
     // JSON serialization is correct, which is the core logic.
+
+    // ========================================================================
+    // Tree Protocol Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tree_snapshot_message() {
+        let snapshot = TreeSnapshot {
+            root: "/project".to_string(),
+            nodes: vec![
+                TreeNode::directory(1, "project".to_string(), "".to_string(), 0)
+                    .with_expanded(true),
+                TreeNode::file(2, "main.rs".to_string(), "main.rs".to_string(), 1)
+                    .with_git_status(GitStatus::Modified),
+            ],
+            git_branch: Some("main".to_string()),
+            git_dirty: true,
+            git_ahead: 2,
+            git_behind: 0,
+        };
+
+        let msg = ProtocolMessage::TreeSnapshot(snapshot);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"TreeSnapshot\""));
+        assert!(json.contains("\"root\":\"/project\""));
+        assert!(json.contains("\"git_branch\":\"main\""));
+    }
+
+    #[test]
+    fn test_tree_update_message() {
+        let update = TreeUpdate::NodeAdded {
+            node: TreeNode::file(42, "new.rs".to_string(), "src/new.rs".to_string(), 2),
+            parent_id: Some(10),
+            index: 0,
+        };
+
+        let msg = ProtocolMessage::TreeUpdate(update);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"TreeUpdate\""));
+        assert!(json.contains("\"kind\":\"node_added\""));
+    }
+
+    #[test]
+    fn test_tree_action_message() {
+        let action = TreeAction::Toggle { id: 42 };
+        let msg = ProtocolMessage::TreeAction(action);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"TreeAction\""));
+        assert!(json.contains("\"action\":\"toggle\""));
+    }
+
+    #[test]
+    fn test_parse_tree_action() {
+        let json = r#"{"type":"TreeAction","action":"toggle","id":42}"#;
+        let result = parse_tree_action(json);
+        assert!(result.is_some());
+        match result.unwrap() {
+            TreeAction::Toggle { id } => assert_eq!(id, 42),
+            _ => panic!("Expected Toggle action"),
+        }
+    }
+
+    #[test]
+    fn test_parse_tree_action_create_file() {
+        let json = r#"{"type":"TreeAction","action":"create_file","parent_id":10,"name":"new.rs"}"#;
+        let result = parse_tree_action(json);
+        assert!(result.is_some());
+        match result.unwrap() {
+            TreeAction::CreateFile { parent_id, name } => {
+                assert_eq!(parent_id, 10);
+                assert_eq!(name, "new.rs");
+            }
+            _ => panic!("Expected CreateFile action"),
+        }
+    }
+
+    #[test]
+    fn test_tree_action_result_message() {
+        let result = TreeActionResult::error("Permission denied");
+        let msg = ProtocolMessage::TreeActionResult(result);
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"TreeActionResult\""));
+        assert!(json.contains("\"success\":false"));
+        assert!(json.contains("\"error\":\"Permission denied\""));
+    }
 }
