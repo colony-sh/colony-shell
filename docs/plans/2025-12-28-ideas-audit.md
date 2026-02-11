@@ -14,7 +14,7 @@
 
 ## Differentiators & Moats
 - Tuple space as first-class coordination substrate (with IPC and durability tiers) is rare in shells; enables multi-agent and human/agent workflows.
-- Extended channels (stdctx/stdllm/stdtool/stdtrace on fds 3-6) provide structured I/O paths that existing shells lack; bridges external commands and builtins via tuple space.
+- Extended channels (stdctx/stdllm/stdtool/stddiag on fds 3-6) provide structured I/O paths that existing shells lack; bridges external commands and builtins via tuple space.
 - Dual-parser hybrid: tree-sitter (fast, incremental, error-tolerant) + Pest PEG (strict, execution-grade) is a defensible technical choice for both UX and correctness.
 - POSIX parity: 97.8% compliance with extensive BATS coverage gives trust to adopt.
 - Agent routing and multi-provider LLM support (Anthropic/OpenAI/Ollama) exist, but require memory/focus to fully differentiate vs. “just another LLM REPL”.

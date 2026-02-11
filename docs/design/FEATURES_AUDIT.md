@@ -15,6 +15,17 @@ Audited `features.json` against design documents and codebase.
 
 ---
 
+## Roadmap Ownership
+
+This document is the **canonical roadmap** for colony-shell feature delivery.
+
+- If other docs conflict, **this file wins**.
+- README should link here for roadmap guidance.
+- `docs/IMPLEMENTATION_ARCHITECTURE.md` tracks **current implementation status** and should reference this roadmap.
+- Re-run and refresh this audit **quarterly** or after major refactors.
+
+---
+
 ## Current Feature Status by Category
 
 ### Core Infrastructure (COMPLETE)
@@ -162,6 +173,12 @@ These features are working but should be tracked:
 2. F043: Structured Data (`{}`, `[]`)
 3. F044: Expression Syntax (`$[expr]`)
 4. F049: Namespaced Builtins
+
+**Scope notes (implementation-level):**
+- **F042 Typed Variables**: tuple destructuring targets (e.g., `var (a, b) = ...`) — **Status:** implemented
+- **F043 Structured Data**: list/dict/tuple literals, indexing, field access, optional chaining — **Status:** implemented
+- **F044 Expression Syntax**: function + method calls; helper set includes `len`, `join`, `split`, `keys`, `values`, `get`, `has`, `trim`, `replace`, `contains`, `first`, `last`, `push`, `pop`, `insert`, `remove`, `slice`; numeric string coercions in binary ops — **Status:** implemented
+- **F049 Namespaced Builtins**: `cmd:sub` aliases `cmd sub` (e.g., `context:show`) — **Status:** implemented
 
 ### Phase 3: Error Handling & Control Flow
 1. F046: Error Handling (`try/catch`)

@@ -126,43 +126,29 @@ Prevent agent context drift:
 | CLI | `clap` |
 | Errors | `miette`, `thiserror` |
 
-## Development Phases
+## Current Status and Roadmap
 
-### Phase 1: POSIX Core
-- [ ] Lexer with mode stack
-- [ ] Parser producing AST
-- [ ] Basic expansion (tilde, parameter, simple command sub)
-- [ ] Execution of simple commands and pipelines
-- [ ] Essential builtins (cd, export, exit, source, echo)
+### Implemented in the codebase
+- Dual-parser stack (tree-sitter for UX + PEG for execution)
+- POSIX execution pipeline (expansion → resolution → exec)
+- Job control primitives and core builtins
+- Tuple space (in-process, IPC, persistence tiers)
+- Extended channels (fd 3-6) for structured streams
+- OSC 2337 protocol emission for terminal integration
+- Agent routing and multi-provider LLM integration
+- Core language extensions: typed variables, structured data literals, and expression helpers (see `docs/design/FEATURES_AUDIT.md`)
+- Namespaced builtins (`cmd:sub`) for builtin subcommands
 
-### Phase 2: Job Control
-- [ ] Process groups
-- [ ] Signal handling (SIGCHLD, SIGINT, SIGTSTP)
-- [ ] Job table management
-- [ ] fg, bg, jobs, wait builtins
+### Planned (next major milestones)
+- Memory substrate (LanceDB + SQLite) and focus/continuity
+- MCP executor (schema introspection → TS codegen → sandboxed exec)
+- Reactive prompt and widget workflows via colony-terminal
+- Protocol stability guarantees and conformance tests
 
-### Phase 3: Protocol & IPC
-- [ ] OSC 2337 emission
-- [ ] Tuple space (in-process first)
-- [ ] Cross-process tuple space via ipc-channel
-
-### Phase 4: Memory
-- [ ] SQLite schema and operations
-- [ ] LanceDB integration
-- [ ] Memory injection into prompts
-- [ ] Consolidation pipeline
-
-### Phase 5: Agent Integration
-- [ ] NL detection (# or ? prefix triggers)
-- [ ] Claude ADK client
-- [ ] Streaming response handling
-- [ ] Tool registration from MCP
-
-### Phase 6: MCP Executor
-- [ ] Server introspection
-- [ ] TypeScript codegen
-- [ ] Sandboxed execution
-- [ ] Institutional memory indexing
+**Canonical roadmap**: `docs/design/FEATURES_AUDIT.md`  
+**Implementation status**: `docs/IMPLEMENTATION_ARCHITECTURE.md`  
+**Shell/terminal boundary**: `docs/design/RESPONSIBILITY_BOUNDARY.md`  
+**Integration test plan**: `docs/design/INTEGRATION_TEST_PLAN.md`
 
 ## Code Style
 
@@ -174,19 +160,9 @@ Prevent agent context drift:
 
 ## Getting Started
 
-Start with the parser — it's the foundation everything builds on. Begin with a minimal lexer that handles:
-1. Unquoted words
-2. Single-quoted strings
-3. Double-quoted strings with $ expansion markers
-4. Operators: | ; & && || > >> < << ( ) { }
-5. Newlines and comments
-
-Then build a parser that produces an AST for:
-```bash
-echo hello | grep h > output.txt && echo done
-```
-
-Once parsing works, implement execution for simple pipelines before adding complexity.
+If you're contributing, start with `docs/IMPLEMENTATION_ARCHITECTURE.md` to see
+the current state, then align work with the canonical roadmap in
+`docs/design/FEATURES_AUDIT.md`.
 
 ## Non-Goals (for colony-shell)
 
@@ -194,6 +170,29 @@ Once parsing works, implement execution for simple pipelines before adding compl
 - GPU/graphics (that's colony-terminal)
 - TUI widgets (communicate via protocol, terminal renders)
 - Full readline (we'll use reedline, but terminal handles display)
+
+## Emitting Markdown Output (Protocol)
+
+Colony Shell should emit structured output payloads and let colony-terminal render them.
+In non-Colony terminals, fall back to plain text.
+
+```rust
+use colony_protocol::emit_output_payload;
+use serde_json::json;
+
+emit_output_payload("markdown", json!({
+    "markdown": "# Title\\n\\nBody"
+}));
+```
+
+## Namespaced Builtins
+
+Builtins that take subcommands can be invoked as `cmd:sub`:
+
+```bash
+context:show --last 5
+context:add "remember this"
+```
 
 ## License
 

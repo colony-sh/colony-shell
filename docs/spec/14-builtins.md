@@ -437,13 +437,13 @@ tool:stats
 
 ---
 
-### trace - Trace Channel
+### diagnostic - Diagnostic Channel
 
 ```colony
-trace:enable
-trace:disable
-trace:show [--level LEVEL] [--category CAT]
-trace:clear
+diagnostic:enable
+diagnostic:disable
+diagnostic:show [--level LEVEL] [--category CAT]
+diagnostic:clear
 ```
 
 Levels: `debug`, `info`, `warn`, `error`

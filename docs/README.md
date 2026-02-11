@@ -19,7 +19,7 @@ The formal specification lives in `spec/`. This is the authoritative source for 
 | 4 | [ast-definitions](spec/4-ast-definitions.md) | AST node definitions |
 | 5 | [execution](spec/5-execution.md) | Evaluator, scoping |
 | 6 | [pipelines](spec/6-pipelines.md) | `|`, `->`, `=>`, `~>` operators |
-| 7 | [channels](spec/7-channels.md) | fd 3-6 (stdcontext, stdllm, stdtool, stdtrace) |
+| 7 | [channels](spec/7-channels.md) | fd 3-6 (stdcontext, stdllm, stdtool, stddiag) |
 | 8 | [buffers](spec/8-buffers.md) | Buffer storage, panes |
 | 9 | [agents](spec/9-agents.md) | Agent definition, orchestration |
 | 10 | [coordination](spec/10-coordination.md) | Tuple space, sessions |
@@ -54,6 +54,14 @@ Design rationale, research, and feature concepts in `design/`.
 ### Business
 - **[MONETIZATION.md](design/MONETIZATION.md)** - Tier structure (Free/Pro/Team/Enterprise)
 - **[RESEARCH.md](design/RESEARCH.md)** - Survey of modern shell innovations
+
+---
+
+## Roadmap
+
+- **Canonical roadmap:** `design/FEATURES_AUDIT.md`
+- **Interactive roadmap:** `roadmap.html` (generated from `.claude/system/features.json`)
+- **Generate/update:** run `scripts/roadmap.sh`
 
 ---
 

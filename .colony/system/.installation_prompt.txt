@@ -1088,7 +1088,7 @@ The formal specification lives in `spec/`. This is the authoritative source for 
 | 4 | [ast-definitions](spec/4-ast-definitions.md) | AST node definitions |
 | 5 | [execution](spec/5-execution.md) | Evaluator, scoping |
 | 6 | [pipelines](spec/6-pipelines.md) | `|`, `->`, `=>`, `~>` operators |
-| 7 | [channels](spec/7-channels.md) | fd 3-6 (stdcontext, stdllm, stdtool, stdtrace) |
+| 7 | [channels](spec/7-channels.md) | fd 3-6 (stdcontext, stdllm, stdtool, stddiag) |
 | 8 | [buffers](spec/8-buffers.md) | Buffer storage, panes |
 | 9 | [agents](spec/9-agents.md) | Agent definition, orchestration |
 | 10 | [coordination](spec/10-coordination.md) | Tuple space, sessions |
@@ -2130,7 +2130,7 @@ Colony Shell's **unique feature**: structured coordination primitives
 ┌───────────────────────────────────────────────────────────┐
 │           Extended Channels (fd 3-6) (F024)               │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │
-│  │ stdctx   │ │  stdllm  │ │ stdtool  │ │stdtrace  │    │
+│  │ stdctx   │ │  stdllm  │ │ stdtool  │ │stddiag  │    │
 │  │  (fd 3)  │ │  (fd 4)  │ │  (fd 5)  │ │  (fd 6)  │    │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │
 │                                                            │
@@ -3034,7 +3034,7 @@ impl IpcTupleSpace {
 ┌─────────────────────────────────────────────────────┐
 │              Extended Channels (fd 3-6)              │
 ├─────────────────────────────────────────────────────┤
-│  stdcontext (3)  stdllm (4)  stdtool (5)  stdtrace (6) │
+│  stdcontext (3)  stdllm (4)  stdtool (5)  stddiag (6) │
 └─────────────────────────────────────────────────────┘
          ↓                    ↓
 ┌──────────────────┐  ┌──────────────────┐

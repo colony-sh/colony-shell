@@ -112,3 +112,9 @@
 71. Don't apply prefix assignments to shell context before argument expansion
 72. Assignment-only commands (VAR=val without cmd) DO modify shell context
 73. sync_variables_from should skip IFS to avoid overwriting intentional changes
+
+## Git Component Caching
+
+74. Git shell-outs (git branch, git status) are cached with 500ms TTL via parking_lot::Mutex
+75. Cache key is (cwd, timestamp) - invalidated on directory change or TTL expiry
+76. PromptComponent trait takes &self, so interior mutability required for caching

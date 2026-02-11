@@ -1193,7 +1193,7 @@ pub enum ContextKind {
     Environment,
     /// Project context loaded
     Project,
-    /// Special mode (debug, trace)
+    /// Special mode (debug, diagnostic)
     Mode,
     /// Virtual environment (python, nix)
     VirtualEnv,

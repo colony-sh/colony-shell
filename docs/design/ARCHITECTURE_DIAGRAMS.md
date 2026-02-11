@@ -446,7 +446,7 @@ This document provides visual diagrams showing how the different pieces of colon
 │                                    decisions, actions)                      │
 │   fd 4: stdllm       ──────────▶  LLM conversation stream                  │
 │   fd 5: stdtool      ──────────▶  Tool invocations & results               │
-│   fd 6: stdtrace     ──────────▶  Execution trace (debug)                  │
+│   fd 6: stddiag     ──────────▶  Diagnostics (debug)                      │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```

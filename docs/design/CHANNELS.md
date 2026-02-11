@@ -54,7 +54,7 @@ Additionally, Colony recognizes special files in the filesystem that configure a
 | stdcontext | 3 | `&ctx` | Session context accumulation |
 | stdllm | 4 | `&llm` | LLM conversation stream |
 | stdtool | 5 | `&tool` | Tool call/response logging |
-| stdtrace | 6 | `&trace` | Execution tracing |
+| stddiag | 6 | `&diag` | Diagnostics |
 
 ### 1.3 Channel Redirection Syntax
 
@@ -228,7 +228,7 @@ buffer:list
 # -> context   stdcontext      hidden    47 entries  
 # -> llm       stdllm          hidden    12 messages
 # -> tool      stdtool         hidden    8 calls
-# -> trace     stdtrace        hidden    disabled
+# -> diagnostic stddiag        hidden    disabled
 ```
 
 ### 3.2 Pane Layouts
@@ -256,7 +256,7 @@ bind Ctrl+Shift+T pane:toggle tool
 # Preset layouts
 pane:layout default            # Just main buffer
 pane:layout dev                # main + context + llm
-pane:layout debug              # main + context + tool + trace
+pane:layout debug              # main + context + tool + diagnostic
 pane:layout focus              # main maximized, others in tabs
 ```
 
@@ -296,7 +296,7 @@ pane:layout focus              # main maximized, others in tabs
 └───────────────────────────────────────────┴─────────────────────────────┘
 ```
 
-#### Debug Layout (main + context + tool + trace)
+#### Debug Layout (main + context + tool + diagnostic)
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ $ invoke debugger(error=$error_log)                                     │
@@ -1059,7 +1059,7 @@ config set buffer.main.scrollback 10000
 config set buffer.context.max-entries 1000
 config set buffer.llm.max-messages 500
 config set buffer.tool.max-calls 200
-config set buffer.trace.enabled false
+config set buffer.diagnostic.enabled false
 
 config set buffer.auto-save true
 config set buffer.save-interval 60s

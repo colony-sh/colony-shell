@@ -29,7 +29,7 @@ colony --tutorial script.sh --teach  # First-occurrence teaching mode
 - Works on **any** shell script, not just Colony-specific features
 - Flows naturally with smart auto-detection of interesting moments
 - Depth on demand — shell mechanics by default, deep internals when you want them
-- Showcases Colony's channel architecture (fd 6 stdtrace)
+- Showcases Colony's channel architecture (fd 6 stddiag)
 
 ---
 
@@ -342,12 +342,12 @@ Tutorial mode showcases Colony's extended channel system.
 │  │  Parser  │───▶│ Executor │───▶│ TraceEmitter             │  │
 │  └──────────┘    └──────────┘    │                          │  │
 │                                   │ Emits structured events  │  │
-│                                   │ to fd 6 (stdtrace)       │  │
+│                                   │ to fd 6 (stddiag)       │  │
 │                                   └────────────┬─────────────┘  │
 │                                                │                 │
 │                                                ▼                 │
 │                                   ┌──────────────────────────┐  │
-│                                   │ fd 6: stdtrace           │  │
+│                                   │ fd 6: stddiag           │  │
 │                                   │ (structured JSON stream) │  │
 │                                   └────────────┬─────────────┘  │
 │                                                │                 │
@@ -380,13 +380,13 @@ Structured JSON events emitted during execution:
 {"type": "line_exit", "line": 3, "duration_us": 142}
 ```
 
-### Why fd 6 (stdtrace)?
+### Why fd 6 (stddiag)?
 
 Colony's channel system:
 - fd 3: stdcontext (context accumulation)
 - fd 4: stdllm (LLM communication)
 - fd 5: stdtool (tool calls)
-- fd 6: stdtrace (execution tracing) ← **Tutorial mode lives here**
+- fd 6: stddiag (execution tracing) ← **Tutorial mode lives here**
 
 This means:
 - Script's stdout/stderr flow normally

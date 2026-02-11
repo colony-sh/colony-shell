@@ -94,7 +94,7 @@ Beyond stdin/stdout/stderr, Colony provides semantic channels:
 | stdcontext | 3 | Session context accumulation |
 | stdllm | 4 | LLM conversation stream |
 | stdtool | 5 | Tool call/response logging |
-| stdtrace | 6 | Execution tracing |
+| stddiag | 6 | Diagnostics |
 
 ### 0.5.3 Pipeline Operators
 

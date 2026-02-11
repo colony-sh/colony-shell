@@ -69,7 +69,7 @@ Semantic Named Channels:
   @system    System prompt modifications
   @tools     Tool/function definitions for agents
   @memory    Persistent memory operations
-  @trace     Execution trace/debugging
+  @diag      Diagnostics/debugging
   @audit     Security audit log
   @reflect   Reflection observations
   @patterns  Detected behavioral patterns

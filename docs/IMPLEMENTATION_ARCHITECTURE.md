@@ -19,6 +19,8 @@ Colony Shell is a **POSIX-compliant shell with AI-native features** implemented 
 
 **Key Differentiator**: Colony is not just another shell OR just an AI tool—it's a synthesis where POSIX reliability meets AI assistance through structured coordination primitives.
 
+**Roadmap source of truth**: `docs/design/FEATURES_AUDIT.md` (this document tracks actual implementation status).
+
 ---
 
 ## Table of Contents
@@ -191,7 +193,7 @@ Colony Shell's **unique feature**: structured coordination primitives
 ┌───────────────────────────────────────────────────────────┐
 │           Extended Channels (fd 3-6) (F024)               │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │
-│  │ stdctx   │ │  stdllm  │ │ stdtool  │ │stdtrace  │    │
+│  │ stdctx   │ │  stdllm  │ │ stdtool  │ │stddiag  │    │
 │  │  (fd 3)  │ │  (fd 4)  │ │  (fd 5)  │ │  (fd 6)  │    │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │
 │                                                            │
@@ -1095,7 +1097,7 @@ impl IpcTupleSpace {
 ┌─────────────────────────────────────────────────────┐
 │              Extended Channels (fd 3-6)              │
 ├─────────────────────────────────────────────────────┤
-│  stdcontext (3)  stdllm (4)  stdtool (5)  stdtrace (6) │
+│  stdcontext (3)  stdllm (4)  stdtool (5)  stddiag (6) │
 └─────────────────────────────────────────────────────┘
          ↓                    ↓
 ┌──────────────────┐  ┌──────────────────┐

@@ -280,7 +280,7 @@ pub mod channel;    // Channel trait and registry
 pub mod context;    // stdcontext (fd 3)
 pub mod llm;        // stdllm (fd 4)
 pub mod tool;       // stdtool (fd 5)
-pub mod trace;      // stdtrace (fd 6)
+pub mod diagnostic; // stddiag (fd 6)
 pub mod buffer;     // Buffer storage
 ```
 

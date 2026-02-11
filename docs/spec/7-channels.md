@@ -37,7 +37,7 @@ pub const STDERR: ChannelId = 2;
 pub const STDCONTEXT: ChannelId = 3;
 pub const STDLLM: ChannelId = 4;
 pub const STDTOOL: ChannelId = 5;
-pub const STDTRACE: ChannelId = 6;
+pub const STDDIAG: ChannelId = 6;
 
 /// Channel trait - all channels implement this
 pub trait Channel: Send + Sync {
@@ -92,14 +92,15 @@ impl ChannelManager {
         mgr.register(Box::new(ContextChannel::new()));
         mgr.register(Box::new(LlmChannel::new()));
         mgr.register(Box::new(ToolChannel::new()));
-        mgr.register(Box::new(TraceChannel::new()));
+        mgr.register(Box::new(DiagnosticChannel::new()));
         
         // Register aliases
         mgr.alias("ctx", STDCONTEXT);
         mgr.alias("context", STDCONTEXT);
         mgr.alias("llm", STDLLM);
         mgr.alias("tool", STDTOOL);
-        mgr.alias("trace", STDTRACE);
+        mgr.alias("diag", STDDIAG);
+        mgr.alias("diagnostic", STDDIAG);
         
         mgr
     }
@@ -1238,11 +1239,11 @@ impl Channel for ToolChannel {
 }
 ```
 
-## 7.7 Trace Channel (stdtrace - fd 6)
+## 7.7 Diagnostic Channel (stddiag - fd 6)
 
 ### 7.7.1 Purpose
 
-The trace channel captures execution trace information:
+The diagnostic channel captures execution diagnostic information:
 - Command execution
 - Function/proc calls
 - Variable assignments
@@ -1254,9 +1255,9 @@ This is disabled by default for performance.
 ### 7.7.2 Implementation
 
 ```rust
-// crates/colony-channels/src/trace.rs
+// crates/colony-channels/src/diagnostic.rs
 
-pub struct TraceChannel {
+pub struct DiagnosticChannel {
     entries: Vec<TraceEntry>,
     enabled: bool,
     max_entries: usize,
@@ -1301,13 +1302,13 @@ pub struct SourceLocation {
     pub column: u32,
 }
 
-impl TraceChannel {
+impl DiagnosticChannel {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
             enabled: false,
             max_entries: 5000,
-            buffer: Buffer::new(STDTRACE, "trace"),
+            buffer: Buffer::new(STDDIAG, "diagnostic"),
         }
     }
     
@@ -1376,9 +1377,9 @@ impl TraceChannel {
     }
 }
 
-impl Channel for TraceChannel {
-    fn id(&self) -> ChannelId { STDTRACE }
-    fn name(&self) -> &str { "trace" }
+impl Channel for DiagnosticChannel {
+    fn id(&self) -> ChannelId { STDDIAG }
+    fn name(&self) -> &str { "diagnostic" }
     
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         let text = String::from_utf8_lossy(data);

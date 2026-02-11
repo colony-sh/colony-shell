@@ -1909,3 +1909,172 @@
 [2025-12-29 16:00] CONTEXT: Design doc created in previous session at docs/plans/2025-12-29-reactive-tui-design.md
 [2025-12-29 16:00] STATUS: F013 Memory Substrate verified complete (6 tests passing)
 [2025-12-29 16:00] STATUS: BATS test suite at 99.5% (2336/2348 tests passing)
+
+[2026-02-09 10:00] START: Beginning work on F027 (Reactive Prompt Architecture)
+[2026-02-09 10:05] ANALYSIS: Dependencies F010 (tuple space) and F009 (OSC 2337) both complete
+[2026-02-09 10:10] ANALYSIS: Existing PromptManager, SubscriptionManager, and 14 builtin components in colony-ui-core
+[2026-02-09 10:15] ANALYSIS: REPL already emits Prompt OSC and polls tuple space, but no PromptState/Ready/Busy
+[2026-02-09 10:20] PROGRESS: Added PromptStateData, GitStateData, AgentStateData structs to colony-protocol
+[2026-02-09 10:25] PROGRESS: Added PromptState, PromptReady, PromptBusy variants to ProtocolMessage enum
+[2026-02-09 10:30] PROGRESS: Added emit_prompt_state(), emit_prompt_ready(), emit_prompt_busy() functions
+[2026-02-09 10:35] PROGRESS: Added 6 new protocol tests (all passing)
+[2026-02-09 10:40] PROGRESS: Added 500ms TTL git caching to GitBranchComponent via parking_lot::Mutex
+[2026-02-09 10:45] PROGRESS: Added 500ms TTL git caching to GitStatusComponent via parking_lot::Mutex
+[2026-02-09 10:50] DECISION: Used parking_lot::Mutex for interior mutability (render takes &self per trait)
+[2026-02-09 10:55] PROGRESS: REPL now checks COLONY_TERMINAL env var to gate OSC emission
+[2026-02-09 11:00] PROGRESS: REPL emits Prompt=busy before command execution with command name
+[2026-02-09 11:05] PROGRESS: REPL emits Prompt=ready after command with duration_ms
+[2026-02-09 11:10] PROGRESS: REPL builds PromptStateData from ComponentContext + rendered component data
+[2026-02-09 11:15] PROGRESS: build_prompt_state() extracts git/pwd data from rendered components
+[2026-02-09 11:20] VALIDATED: All 63 tests passing across colony-protocol and colony-ui-core
+[2026-02-09 11:25] COMPLETE: F027 Reactive Prompt Architecture - all deliverables implemented
+
+[2026-02-09 11:30] START: P1-06 Basic agent loop: AGENT.md -> LLM via cloud SDK
+[2026-02-09 11:35] ANALYSIS: Agent exists but not connected to AGENT.md definitions from F030
+[2026-02-09 11:40] PROGRESS: Added Agent::from_definition() - creates Agent from AgentDefinition
+[2026-02-09 11:45] PROGRESS: Added Agent::configure_from_definition() - reconfigures existing Agent
+[2026-02-09 11:50] PROGRESS: Added infer_provider_from_model() for model name -> provider mapping
+[2026-02-09 11:55] PROGRESS: Added Agent::system_prompt() and Agent::config() accessors
+[2026-02-09 12:00] PROGRESS: Wired AGENT.md -> Agent in REPL: cd to dir with AGENT.md auto-configures agent
+[2026-02-09 12:05] DECISION: First agent definition in AGENT.md configures the primary agent
+[2026-02-09 12:10] VALIDATED: 13 colony-agent tests passing (4 new)
+[2026-02-09 12:15] COMPLETE: P1-06 - AGENT.md definitions now drive LLM configuration
+
+[2026-02-09 12:20] START: P1-09 llm builtin command for direct LLM calls
+[2026-02-09 12:25] ANALYSIS: llm builtin exists with status/list/use but no direct prompt capability
+[2026-02-09 12:30] PROGRESS: Added `llm ask <prompt>` subcommand for direct LLM calls
+[2026-02-09 12:35] PROGRESS: Added default behavior: `llm <text>` -> direct prompt (shorthand)
+[2026-02-09 12:40] PROGRESS: Added `llm help` subcommand with full usage documentation
+[2026-02-09 12:45] PROGRESS: handle_ask() creates agent on-the-fly if none exists
+[2026-02-09 12:50] PROGRESS: handle_status() now shows system prompt, max_tokens, temperature
+[2026-02-09 12:55] VALIDATED: 3 llm tests passing, full build clean
+[2026-02-09 13:00] COMPLETE: P1-09 - llm builtin now supports direct LLM prompts
+[2026-02-10 10:00] START: F056 Match Statement - or-patterns, grammar fixes, BATS tests
+[2026-02-10 10:15] PROGRESS: Added MatchPattern::Or variant to AST for multiple patterns per arm
+[2026-02-10 10:30] PROGRESS: Updated MatchArm grammar to support pattern1 | pattern2 | ... syntax
+[2026-02-10 10:35] DECISION: Restricted LiteralPattern to UnaryExpr to avoid | ambiguity with BitwiseOrExpr
+[2026-02-10 10:40] PROGRESS: Fixed MatchPattern grammar ordering - WildcardPattern before BindingPattern
+[2026-02-10 10:45] PROGRESS: Updated builder to collect or-patterns and use build_expression_recursive for LiteralPattern
+[2026-02-10 10:50] PROGRESS: Added Or pattern handling to executor (lib.rs and pipeline.rs)
+[2026-02-10 10:55] PROGRESS: Added Or pattern to serialization (serialization.rs, builtins.rs)
+[2026-02-10 11:00] PROGRESS: Created 51_match.bats with 24 comprehensive BATS tests
+[2026-02-10 11:05] VALIDATED: All 24 BATS tests passing, 183 executor tests passing, 86 parser tests passing
+[2026-02-10 11:10] COMPLETE: F056 Match Statement - full implementation with or-patterns and BATS tests
+[2026-02-10 12:00] START: Beginning F057 (Proc Definitions) - proc name(...) {} with typed params and defaults
+[2026-02-10 12:05] PROGRESS: Added 'proc', 'func', 'agent' to ReservedKeyword grammar rule
+[2026-02-10 12:10] PROGRESS: Added build_proc_def and build_proc_param to builder.rs
+[2026-02-10 12:15] PROGRESS: Added procs HashMap to ExpansionContext with define_proc, get_proc, is_proc methods
+[2026-02-10 12:20] PROGRESS: Added Statement::ProcDef handling in execute_statement_recursive and control_flow.rs
+[2026-02-10 12:25] PROGRESS: Added execute_proc method with declare_local for scoped params and default evaluation
+[2026-02-10 12:30] PROGRESS: Added proc lookup in execute_simple_command (after function check, before alias)
+[2026-02-10 12:35] PROGRESS: Added proc execution in pipeline.rs (both blocking child and current shell paths)
+[2026-02-10 12:40] PROGRESS: Added ProcDef formatting in builtins.rs statement_to_string
+[2026-02-10 12:45] PROGRESS: Created 52_proc.bats with 22 BATS tests
+[2026-02-10 12:50] FIX: Fixed scoping - changed set_var to declare_local for proc params
+[2026-02-10 12:55] FIX: Added proc lookup to both pipeline child paths (blocking + fork)
+[2026-02-10 13:00] VALIDATED: 22/22 BATS tests passing, 183 executor tests passing, 89 parser tests passing (3 new)
+[2026-02-10 13:05] COMPLETE: F057 Proc Definitions - named params, defaults, local scoping, return, pipeline support
+[2026-02-10 14:00] START: F055 Recipe System - Phase 1 core infrastructure
+[2026-02-10 14:05] PROGRESS: Created colony-recipe crate with Cargo.toml, added to workspace
+[2026-02-10 14:10] PROGRESS: Implemented Recipe struct with TOML parsing (meta, prompt, tools, skills, commands, model, behavior)
+[2026-02-10 14:15] PROGRESS: Implemented RecipeLoader with multi-path discovery and priority ordering
+[2026-02-10 14:20] PROGRESS: Implemented RecipeRegistry with TOML manifest persistence
+[2026-02-10 14:25] PROGRESS: Added validate_recipe_dir() and recipe_package_files() utilities
+[2026-02-10 14:30] VALIDATED: 17 colony-recipe unit tests passing
+[2026-02-10 14:35] PROGRESS: Added colony-recipe dependency to colony-exec
+[2026-02-10 14:40] PROGRESS: Added colony builtin with install/publish/recipe subcommands
+[2026-02-10 14:45] PROGRESS: colony install: local recipe search, copy to ~/.colony/recipes/, registry registration
+[2026-02-10 14:50] PROGRESS: colony publish: recipe validation, API key check, file listing (upload pending cloud)
+[2026-02-10 14:55] PROGRESS: colony recipe list: shows installed + available recipes
+[2026-02-10 15:00] PROGRESS: colony recipe show: displays recipe details, imports, skills, commands
+[2026-02-10 15:05] VALIDATED: 183 colony-exec tests passing (no regressions), 17 colony-recipe tests passing
+[2026-02-10 15:10] COMPLETE: F055 Phase 1 - colony-recipe crate + colony install/publish/recipe builtins
+
+[2026-02-10 16:00] START: F016/F017/F018 - MCP Connection Pool, TypeScript Codegen, Executor Session
+[2026-02-10 16:05] PROGRESS: Added rmcp 0.15 + tera + sha2 + hex dependencies to colony-mcp crate
+[2026-02-10 16:10] PROGRESS: F016: McpConnection with stdio transport via TokioChildProcess
+[2026-02-10 16:15] PROGRESS: F016: ColonyClientHandler implements ClientHandler with colony-shell identity
+[2026-02-10 16:20] PROGRESS: F016: McpConnectionPool with multi-server management and auto-routing
+[2026-02-10 16:25] PROGRESS: F016: ConnectionState tracking, reconnection with 3 max attempts
+[2026-02-10 16:30] PROGRESS: F017: McpCodegen with Tera templates for TypeScript client generation
+[2026-02-10 16:35] PROGRESS: F017: JSON Schema -> TypeScript type mapping (string, number, boolean, array, object, enum, anyOf)
+[2026-02-10 16:40] PROGRESS: F017: SHA-256 schema content hashing for cache invalidation
+[2026-02-10 16:45] PROGRESS: F018: McpSession orchestrates pool, codegen, and tuple space
+[2026-02-10 16:50] PROGRESS: F018: ToolClassification (Programmatic/UserFacing) with approval workflow
+[2026-02-10 16:55] PROGRESS: F018: ToolCallRequest/ToolCallResponse for tuple space messaging
+[2026-02-10 17:00] FIX: Corrected rmcp API usage - ClientInfo/InitializeRequestParams fields, Command by value
+[2026-02-10 17:05] VALIDATED: 11 unit tests + 2 doc tests passing, workspace builds clean
+[2026-02-10 17:10] COMPLETE: F016/F017/F018 - Full MCP integration crate with pool, codegen, session
+[2026-02-10 17:15] START: P1-08 colony-cloud-sdk crate creation (shell-infra agent)
+[2026-02-10 17:20] PROGRESS: P1-08: Created colony-cloud-sdk crate with ColonyClient, error types, model types
+[2026-02-10 17:25] PROGRESS: P1-08: Config module - COLONY_API_KEY env var + ~/.colony/config.toml auth
+[2026-02-10 17:30] PROGRESS: P1-08: Client module - models(), chat(), chat_stream(), submit_recipe(), health()
+[2026-02-10 17:35] PROGRESS: P1-08: SSE stream parsing with unfold pattern for streaming chat completions
+[2026-02-10 17:40] PROGRESS: P1-08: CloudProvider implements ModelProvider trait (feature-gated 'cloud')
+[2026-02-10 17:45] PROGRESS: P1-08: Added Cloud variant to ProviderType, auto-detect priority above Anthropic
+[2026-02-10 17:50] VALIDATED: P1-08: 5 colony-cloud-sdk tests + 13 colony-agent tests passing
+[2026-02-10 17:55] COMPLETE: P1-08 colony-cloud-sdk - typed API client with streaming, integrated into ModelRouter
+[2026-02-10 18:00] START: F028 File Tree State & Watching (shell-infra agent)
+[2026-02-10 18:05] PROGRESS: F028: TreeState with FileNode tree, scan() with depth limit
+[2026-02-10 18:10] PROGRESS: F028: GitStatusCache with 500ms TTL, git status --porcelain parsing
+[2026-02-10 18:15] PROGRESS: F028: FileSystemWatcher using notify v6, emits tree_change tuples
+[2026-02-10 18:20] VALIDATED: F028: 11 unit tests passing
+[2026-02-10 18:25] COMPLETE: F028 File Tree State & Watching - tree state, watcher, git cache
+[2026-02-10 18:30] START: F019 Goal and Task Tracking (shell-infra agent)
+[2026-02-10 18:35] PROGRESS: F019: Goal struct with id, title, status, children, progress, blockers
+[2026-02-10 18:40] PROGRESS: F019: GoalTree with persistence at ~/.colony/goals/<project-hash>.json
+[2026-02-10 18:45] PROGRESS: F019: Checkpoint creation, session recording, tree formatting
+[2026-02-10 18:50] PROGRESS: F019: goal builtin command (add, list, update, complete, block, checkpoint, tree)
+[2026-02-10 18:55] VALIDATED: F019: 16 unit tests passing
+[2026-02-10 19:00] COMPLETE: F019 Goal and Task Tracking - persistent goals with shell builtin
+[2026-02-10 20:00] START: F058 Pipeline Extensions - verifying existing |>, ?>, !> infrastructure
+[2026-02-10 20:10] PROGRESS: F058: Grammar, AST, builder, and executor already implement all three operators
+[2026-02-10 20:15] PROGRESS: F058: |> (tap) creates pipe with diagnostic copy, ?> (guard) splits pipeline at boundaries, !> (catch) routes to error handler
+[2026-02-10 20:20] PROGRESS: F058: Created 53_pipeline_ext.bats with 24 tests covering tap, guard, catch, combined ops, edge cases
+[2026-02-10 20:25] VALIDATED: F058: All 24 BATS tests passing
+[2026-02-10 20:30] COMPLETE: F058 Pipeline Extensions - full test coverage for |>, ?>, !> operators
+[2026-02-10 20:35] START: F059 Agent Syntax - @agent_name "prompt" invocation
+[2026-02-10 20:40] PROGRESS: F059: Added AgentInvocation, AgentTarget, AgentPromptArg grammar rules
+[2026-02-10 20:45] PROGRESS: F059: Added AgentInvocation AST struct with agent_name, tool, prompt fields
+[2026-02-10 20:50] PROGRESS: F059: Builder parses @agent_name:tool into name/tool split with prompt word expansion
+[2026-02-10 20:55] PROGRESS: F059: Executor sets AGENT_NAME, AGENT_PROMPT, AGENT_TOOL variables
+[2026-02-10 21:00] PROGRESS: F059: Pipeline integration - AgentInvocation handled in child process, current shell, and lastpipe paths
+[2026-02-10 21:05] PROGRESS: F059: Control flow integration in execute_statement_with_errexit_control
+[2026-02-10 21:10] PROGRESS: F059: Created 54_agent_syntax.bats with 20 tests covering invocation, tools, pipelines, variables, names
+[2026-02-10 21:15] VALIDATED: F059: All 20 BATS tests passing, 3 parser unit tests passing
+[2026-02-10 21:20] COMPLETE: F059 Agent Syntax - @agent_name "prompt" with pipeline integration
+[2026-02-10 22:00] START: F029 File Tree Protocol + F026 Pane Management + F025 Buffer Management
+[2026-02-10 22:05] PROGRESS: F029: Added FileTreeSnapshot, FileTreeDelta, FileTreeGit to colony-protocol ProtocolMessage
+[2026-02-10 22:05] PROGRESS: F029: Added FileTreeChangeKind enum and emit helpers to colony-protocol
+[2026-02-10 22:10] PROGRESS: F029: Created file_tree/protocol.rs with TreeProtocol struct
+[2026-02-10 22:10] PROGRESS: F029: TreeProtocol observes tree_change tuples, emits OSC 2337 messages
+[2026-02-10 22:15] PROGRESS: F029: Implemented initial_sync, change_root, force_sync, process_tree_change
+[2026-02-10 22:15] PROGRESS: F029: Git status overlay emits relative paths with status strings
+[2026-02-10 22:20] PROGRESS: F029: Added tree builtin (tree, tree --json, tree --sync)
+[2026-02-10 22:20] PROGRESS: F029: Pretty-printed tree output with git status indicators [M] [A] [?]
+[2026-02-10 22:25] COMPLETE: F029 File Tree Protocol - 7 protocol tests + 14 colony-protocol tests passing
+[2026-02-10 22:30] PROGRESS: F026: Added PaneSplit, PaneClose, PaneFocus, PaneLayout to ProtocolMessage
+[2026-02-10 22:30] PROGRESS: F026: Added PaneSplitDirection, PaneFocusDirection enums
+[2026-02-10 22:35] PROGRESS: F026: Created panes module with layout.rs (PaneLayout, LayoutPreset, PaneDefinition)
+[2026-02-10 22:35] PROGRESS: F026: Built-in presets: default, dev, debug; TOML loading from ~/.colony/layouts.toml
+[2026-02-10 22:40] PROGRESS: F026: Created panes/builtins.rs with split, vsplit, layout, pane commands
+[2026-02-10 22:40] PROGRESS: F026: split supports --horizontal/--vertical/--ratio; vsplit is vertical shorthand
+[2026-02-10 22:45] PROGRESS: F026: pane focus (left/right/up/down with shortcuts); pane close (optional id)
+[2026-02-10 22:45] COMPLETE: F026 Pane Management - 26 tests passing (20 builtin + 6 layout)
+[2026-02-10 22:50] PROGRESS: F025: Created buffers module with span.rs (StyledSpan, Color, StyleFlags)
+[2026-02-10 22:50] PROGRESS: F025: Color enum (16 named + 256 indexed + RGB), StyleFlags (7 attributes)
+[2026-02-10 22:55] PROGRESS: F025: Created buffer.rs (BufferLine, StyledBuffer with capacity limit)
+[2026-02-10 22:55] PROGRESS: F025: Created view.rs (BufferView scrollable window with page/line scroll)
+[2026-02-10 23:00] PROGRESS: F025: Created ansi.rs ANSI escape parser (CSI SGR, 256-color, RGB)
+[2026-02-10 23:00] PROGRESS: F025: Created search.rs (search_buffer, search_buffer_case_insensitive)
+[2026-02-10 23:05] COMPLETE: F025 Buffer Management - 53 tests passing (14 ansi + 10 buffer + 9 search + 8 span + 12 view)
+[2026-02-10 23:10] MILESTONE: All three features complete - 296 total colony-exec tests passing, 34 colony-protocol tests passing
+[2026-02-10 23:15] START: F029 enhancement - add shell_id and cwd to FileTree protocol messages
+[2026-02-10 23:15] ENHANCED: Added shell_id (Option<String>) to FileTreeSnapshot, FileTreeDelta, FileTreeGit in colony-protocol
+[2026-02-10 23:15] ENHANCED: Added cwd (String) to FileTreeSnapshot for directory tracking
+[2026-02-10 23:20] ENHANCED: Updated emit_file_tree_snapshot/delta/git to accept shell_id and cwd parameters
+[2026-02-10 23:20] ENHANCED: TreeProtocol now generates shell_instance_id from std::process::id() at creation
+[2026-02-10 23:20] ENHANCED: All OSC 2337 FileTree emissions include shell_instance_id
+[2026-02-10 23:25] TESTED: 37 colony-protocol tests passing (4 new: snapshot/delta/git with/without shell_id)
+[2026-02-10 23:25] TESTED: 18 colony-exec file_tree tests passing
+[2026-02-10 23:25] COMPLETE: F029 enhancement - pane association via shell_id in FileTree messages
