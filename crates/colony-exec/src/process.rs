@@ -58,6 +58,11 @@ impl ProcessHandle {
         Self { pid, channel_pipes }
     }
 
+    /// Get the child process PID
+    pub fn pid(&self) -> u32 {
+        self.pid.as_raw() as u32
+    }
+
     /// Take channel pipes (F024 Phase 2)
     ///
     /// Removes and returns channel pipes, leaving an empty vector.

@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 colony-parser.workspace = true
 colony-protocol.workspace = true
+colony-exec.workspace = true
+colony-cloud-sdk = { workspace = true, optional = true }
 colony-memory = { workspace = true, optional = true }
 colony-tuple = { workspace = true, optional = true }
 tokio.workspace = true
@@ -34,7 +36,8 @@ tracing-subscriber.workspace = true
 
 [features]
 default = []
+cloud = ["colony-cloud-sdk"]
 memory = ["colony-memory"]
 tuple = ["colony-tuple"]
 bedrock = ["claude-sdk/bedrock"]
-full = ["memory", "tuple", "bedrock"]
+full = ["cloud", "memory", "tuple", "bedrock"]

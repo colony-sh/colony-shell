@@ -21,6 +21,8 @@ pub mod tool;
 pub use agent::{Agent, AgentConfig};
 pub use detector::NaturalLanguageDetector;
 pub use provider::{CompletionRequest, ModelProvider, StreamEvent};
+#[cfg(feature = "cloud")]
+pub use providers::CloudProvider;
 pub use providers::{AnthropicProvider, OllamaProvider, OpenAIProvider};
 pub use router::{ModelRouter, ProviderType, RouterConfig};
 pub use tool::{RegisteredTool, ToolClassification, ToolRegistry};

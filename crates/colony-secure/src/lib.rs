@@ -10,7 +10,7 @@ pub use config::SecureConfig;
 pub use encrypt::{decrypt, encrypt, generate_key, is_encrypted};
 pub use keychain::Keychain;
 pub use lineage::ProcessLineage;
-pub use registry::{AccessResult, SecureRegistry, SecureVarSource, SecureVariable};
+pub use registry::{AccessResult, ApprovalDecision, SecureRegistry, SecureVarSource, SecureVariable};
 
 use std::path::PathBuf;
 use thiserror::Error;

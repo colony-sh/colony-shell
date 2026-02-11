@@ -5,6 +5,8 @@ use colony_expand::{
 use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
 use std::path::PathBuf;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 #[allow(dead_code)]
 type Result<T> = std::result::Result<T, ExpansionError>;
@@ -114,6 +116,25 @@ pub(crate) async fn run_startup_files(opts: &crate::cli::ShellOptions, executor:
         .set_var("COLONY_STARTUP_SOURCED".to_string(), "1".to_string());
 
     register_builtin_completions(executor.context_mut());
+}
+
+/// Initialize the SecureRegistry and attach it to the ExpansionContext.
+///
+/// Creates a `SecureRegistry::with_defaults()` which loads config from
+/// `~/.config/colony/secure-vars.toml` and opens the approvals database.
+/// The registry is wrapped in `Arc` so it can be shared across contexts.
+pub(crate) fn init_secure_registry(context: &mut ExpansionContext) {
+    match colony_secure::SecureRegistry::with_defaults() {
+        Ok(registry) => {
+            let registry = Arc::new(Mutex::new(registry));
+            context.set_secure_registry(registry);
+            tracing::debug!("Secure registry initialized");
+        }
+        Err(e) => {
+            tracing::warn!("Failed to initialize secure registry: {}", e);
+            eprintln!("colony: warning: secure variables unavailable: {}", e);
+        }
+    }
 }
 
 fn register_builtin_completions(context: &mut ExpansionContext) {

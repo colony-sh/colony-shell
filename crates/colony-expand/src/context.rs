@@ -7,6 +7,10 @@ use std::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 #[cfg(feature = "secure")]
+use std::sync::Arc;
+#[cfg(feature = "secure")]
+use parking_lot::Mutex;
+#[cfg(feature = "secure")]
 use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -850,6 +854,8 @@ pub struct ExpansionContext {
     in_trap_execution: Cell<bool>,
     #[cfg(feature = "secure")]
     current_script_path: Option<PathBuf>,
+    #[cfg(feature = "secure")]
+    secure_registry: Option<Arc<Mutex<colony_secure::SecureRegistry>>>,
 }
 
 impl fmt::Debug for ExpansionContext {
@@ -872,6 +878,8 @@ impl fmt::Debug for ExpansionContext {
             .field("system_vars", &self.system_vars);
         #[cfg(feature = "secure")]
         s.field("current_script_path", &self.current_script_path);
+        #[cfg(feature = "secure")]
+        s.field("secure_registry", &self.secure_registry.is_some());
         s.finish()
     }
 }
@@ -919,6 +927,8 @@ impl Clone for ExpansionContext {
             in_trap_execution: Cell::new(self.in_trap_execution.get()),
             #[cfg(feature = "secure")]
             current_script_path: self.current_script_path.clone(),
+            #[cfg(feature = "secure")]
+            secure_registry: self.secure_registry.clone(),
         }
     }
 }
@@ -963,6 +973,8 @@ impl ExpansionContext {
             in_trap_execution: Cell::new(false),
             #[cfg(feature = "secure")]
             current_script_path: None,
+            #[cfg(feature = "secure")]
+            secure_registry: None,
         };
 
         ctx.variables.insert(
@@ -1005,17 +1017,115 @@ impl ExpansionContext {
     }
 
     /// Get variable or environment variable as string
+    ///
+    /// When the `secure` feature is enabled and a `SecureRegistry` is configured,
+    /// this checks access permissions for secure variables. If access is pending,
+    /// it prompts for approval via OSC 2337 (in colony-terminal) or stderr (fallback).
     pub fn get_var_or_env(&self, name: &str) -> Option<String> {
-        let value = self.get_var_or_env_raw(name);
-
         #[cfg(feature = "secure")]
         {
-            value.map(maybe_decrypt_value)
+            // If we have a secure registry, check access for this variable
+            if let Some(ref registry_arc) = self.secure_registry {
+                let registry = registry_arc.lock();
+                if registry.is_secure(name) {
+                    let script_path = self.current_script_path.as_deref();
+                    let process_id = std::process::id();
+                    let result = registry.check_access(name, script_path, process_id);
+                    drop(registry); // Release lock before potentially blocking on approval
+
+                    return match result {
+                        colony_secure::AccessResult::Allowed(value) => {
+                            Some(maybe_decrypt_value(value))
+                        }
+                        colony_secure::AccessResult::NotSecure(value) => {
+                            if value.is_empty() {
+                                // Not in registry, fall through to raw lookup
+                                self.get_var_or_env_raw(name).map(maybe_decrypt_value)
+                            } else {
+                                Some(maybe_decrypt_value(value))
+                            }
+                        }
+                        colony_secure::AccessResult::Pending(request_id) => {
+                            self.handle_secure_approval(name, request_id, registry_arc)
+                                .map(maybe_decrypt_value)
+                        }
+                        colony_secure::AccessResult::Denied => None,
+                    };
+                }
+            }
+            // Not a secure variable or no registry -- fall through with decryption
+            self.get_var_or_env_raw(name).map(maybe_decrypt_value)
         }
 
         #[cfg(not(feature = "secure"))]
         {
-            value
+            self.get_var_or_env_raw(name)
+        }
+    }
+
+    /// Handle the interactive approval flow for a pending secure variable access
+    #[cfg(feature = "secure")]
+    fn handle_secure_approval(
+        &self,
+        name: &str,
+        request_id: u64,
+        registry_arc: &Arc<Mutex<colony_secure::SecureRegistry>>,
+    ) -> Option<String> {
+        use colony_secure::ApprovalDecision;
+
+        let is_terminal = std::env::var("COLONY_TERMINAL").is_ok();
+
+        let decision = if is_terminal {
+            // Emit OSC 2337 SecureAccess widget and read response from stdin
+            let script_path = self.current_script_path.as_ref().map(|p| p.to_string_lossy().to_string());
+            colony_protocol::emit_secure_access_request(
+                request_id,
+                name,
+                script_path.as_deref(),
+                None,
+            );
+
+            // Read response line from stdin
+            let mut response = String::new();
+            let Ok(_) = std::io::stdin().read_line(&mut response) else {
+                return None;
+            };
+            let response = response.trim();
+
+            // Try to parse as JSON SecureAccessResponse
+            match colony_protocol::parse_secure_access_response(response) {
+                Some((_id, colony_protocol::SecureAccessDecision::AllowOnce)) => {
+                    ApprovalDecision::AllowOnce
+                }
+                Some((_id, colony_protocol::SecureAccessDecision::Remember)) => {
+                    ApprovalDecision::Remember
+                }
+                Some((_id, colony_protocol::SecureAccessDecision::Deny)) => {
+                    ApprovalDecision::Deny
+                }
+                None => ApprovalDecision::Deny,
+            }
+        } else {
+            // Fallback: prompt on stderr, read from stdin
+            eprint!(
+                "Variable ${} requires approval. Allow? [y/N/r(emember)]: ",
+                name
+            );
+            let mut response = String::new();
+            let Ok(_) = std::io::stdin().read_line(&mut response) else {
+                return None;
+            };
+            match response.trim().to_lowercase().as_str() {
+                "y" | "yes" => ApprovalDecision::AllowOnce,
+                "r" | "remember" => ApprovalDecision::Remember,
+                _ => ApprovalDecision::Deny,
+            }
+        };
+
+        let registry = registry_arc.lock();
+        match registry.handle_approval_response(request_id, decision) {
+            Ok(value) => value,
+            Err(_) => None,
         }
     }
 
@@ -1586,6 +1696,18 @@ impl ExpansionContext {
     #[cfg(feature = "secure")]
     pub fn current_script_path(&self) -> Option<&Path> {
         self.current_script_path.as_deref()
+    }
+
+    /// Set the secure registry for variable access control
+    #[cfg(feature = "secure")]
+    pub fn set_secure_registry(&mut self, registry: Arc<Mutex<colony_secure::SecureRegistry>>) {
+        self.secure_registry = Some(registry);
+    }
+
+    /// Get a reference to the secure registry (behind a Mutex for thread safety)
+    #[cfg(feature = "secure")]
+    pub fn secure_registry(&self) -> Option<&Arc<Mutex<colony_secure::SecureRegistry>>> {
+        self.secure_registry.as_ref()
     }
 
     pub fn set_completion(&mut self, command: String, spec: CompletionSpec) {

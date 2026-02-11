@@ -119,6 +119,7 @@ fn is_builtin_base(name: &str) -> bool {
             | "vsplit"
             | "layout"
             | "pane"
+            | "secure"
     )
 }
 
@@ -271,6 +272,7 @@ pub fn execute_builtin(
         "vsplit" => crate::panes::builtin_vsplit(&args),
         "layout" => crate::panes::builtin_layout(&args),
         "pane" => crate::panes::builtin_pane(&args),
+        "secure" => builtin_secure(&args, context),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -6086,6 +6088,257 @@ fn goal_tree(tree: &crate::goals::GoalTree) -> Result<BuiltinResult> {
     Ok(BuiltinResult::Success(0))
 }
 
+/// secure - Manage secure environment variables
+///
+/// Usage:
+///   secure export NAME=VALUE   — encrypt and store a secure variable
+///   secure list                — list all registered secure variables
+///   secure approvals           — list saved approvals from database
+///   secure revoke NAME         — revoke approval for a variable
+///   secure patterns            — show configured auto-detection patterns
+fn builtin_secure(args: &[String], context: &mut ExpansionContext) -> Result<BuiltinResult> {
+    let Some(subcommand) = args.first() else {
+        eprintln!("secure: missing subcommand");
+        eprintln!("Usage: secure <export|list|approvals|revoke|patterns>");
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    let Some(registry_arc) = context.secure_registry().cloned() else {
+        eprintln!("secure: secure registry not initialized");
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    match subcommand.as_str() {
+        "export" => {
+            let registry = registry_arc.lock();
+            builtin_secure_export(&args[1..], context, &registry)
+        }
+        "list" => {
+            let registry = registry_arc.lock();
+            builtin_secure_list(&registry)
+        }
+        "approvals" => {
+            let registry = registry_arc.lock();
+            builtin_secure_approvals(&args[1..], &registry)
+        }
+        "revoke" => {
+            let registry = registry_arc.lock();
+            builtin_secure_revoke(&args[1..], &registry)
+        }
+        "patterns" => {
+            let registry = registry_arc.lock();
+            builtin_secure_patterns(&registry)
+        }
+        _ => {
+            eprintln!("secure: unknown subcommand '{}'", subcommand);
+            eprintln!("Usage: secure <export|list|approvals|revoke|patterns>");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+/// secure export NAME=VALUE — encrypt value, store in registry, set encrypted env var
+fn builtin_secure_export(
+    args: &[String],
+    context: &mut ExpansionContext,
+    registry: &colony_secure::SecureRegistry,
+) -> Result<BuiltinResult> {
+    let Some(assignment) = args.first() else {
+        eprintln!("secure export: missing NAME=VALUE");
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    let Some(eq_pos) = assignment.find('=') else {
+        eprintln!("secure export: expected NAME=VALUE, got '{}'", assignment);
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    let name = &assignment[..eq_pos];
+    let value = &assignment[eq_pos + 1..];
+
+    if name.is_empty() {
+        eprintln!("secure export: variable name cannot be empty");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    // Encrypt the value using the keychain key
+    let encrypted = match colony_secure::Keychain::new() {
+        Ok(keychain) => match keychain.get_or_create_key() {
+            Ok(key) => match colony_secure::encrypt(value, &key) {
+                Ok(enc) => enc,
+                Err(e) => {
+                    eprintln!("secure export: encryption failed: {}", e);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+            },
+            Err(e) => {
+                eprintln!("secure export: keychain error: {}", e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        },
+        Err(e) => {
+            eprintln!("secure export: keychain error: {}", e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    // Register the variable as secure with the plaintext value (stored in memory only)
+    registry.mark_secure(name, value, colony_secure::SecureVarSource::Explicit);
+
+    // Set the encrypted value in the environment so child processes get it encrypted
+    context.set_env(name, &encrypted);
+    context.set_var(name.to_string(), encrypted);
+
+    println!("Secure variable ${} exported", name);
+    Ok(BuiltinResult::Success(0))
+}
+
+/// secure list — list all registered secure variables
+fn builtin_secure_list(
+    registry: &colony_secure::SecureRegistry,
+) -> Result<BuiltinResult> {
+    let vars = registry.list_secure_vars();
+
+    if vars.is_empty() {
+        println!("No secure variables registered.");
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    println!("{:<30} {:<15} {}", "VARIABLE", "SOURCE", "HAS VALUE");
+    println!("{}", "-".repeat(55));
+
+    for (name, source, has_value) in &vars {
+        let source_str = match source {
+            colony_secure::SecureVarSource::Explicit => "explicit".to_string(),
+            colony_secure::SecureVarSource::AutoDetected { pattern } => {
+                format!("pattern:{}", pattern)
+            }
+            colony_secure::SecureVarSource::Config { file } => {
+                format!("config:{}", file.display())
+            }
+        };
+        let value_str = if *has_value { "yes" } else { "no" };
+        println!("{:<30} {:<15} {}", name, source_str, value_str);
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+/// secure approvals [NAME] — list saved approvals from database
+fn builtin_secure_approvals(
+    args: &[String],
+    registry: &colony_secure::SecureRegistry,
+) -> Result<BuiltinResult> {
+    // If a variable name is provided, filter by it; otherwise list all
+    let approvals = if let Some(name) = args.first() {
+        match registry.list_approvals(name) {
+            Ok(approvals) => approvals,
+            Err(e) => {
+                eprintln!("secure approvals: {}", e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+    } else {
+        // No specific variable -- we need to list all approvals
+        // The registry only has list_approvals(variable), so we iterate over known vars
+        let vars = registry.list_secure_vars();
+        let mut all = Vec::new();
+        for (name, _, _) in &vars {
+            match registry.list_approvals(name) {
+                Ok(mut approvals) => all.append(&mut approvals),
+                Err(e) => {
+                    eprintln!("secure approvals: error listing {}: {}", name, e);
+                }
+            }
+        }
+        all
+    };
+
+    if approvals.is_empty() {
+        println!("No saved approvals.");
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    println!(
+        "{:<25} {:<30} {:<12} {}",
+        "VARIABLE", "SCRIPT", "SCOPE", "GRANTED"
+    );
+    println!("{}", "-".repeat(80));
+
+    for approval in &approvals {
+        let scope = match approval.scope {
+            colony_secure::ApprovalScope::Global => "global",
+            colony_secure::ApprovalScope::Project => "project",
+        };
+        println!(
+            "{:<25} {:<30} {:<12} {}",
+            approval.variable_name,
+            approval.script_path.display(),
+            scope,
+            approval.granted_at.format("%Y-%m-%d %H:%M"),
+        );
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+/// secure revoke NAME — revoke approval for a variable
+fn builtin_secure_revoke(
+    args: &[String],
+    registry: &colony_secure::SecureRegistry,
+) -> Result<BuiltinResult> {
+    let Some(name) = args.first() else {
+        eprintln!("secure revoke: missing variable name");
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    match registry.revoke_approval(name, None) {
+        Ok(()) => {
+            println!("Revoked all approvals for ${}", name);
+            Ok(BuiltinResult::Success(0))
+        }
+        Err(e) => {
+            eprintln!("secure revoke: {}", e);
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+/// secure patterns — show configured auto-detection patterns
+fn builtin_secure_patterns(
+    _registry: &colony_secure::SecureRegistry,
+) -> Result<BuiltinResult> {
+    // Load config to display patterns
+    let config = match colony_secure::SecureConfig::load_or_default() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("secure patterns: failed to load config: {}", e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    println!("Secure patterns (variables matching these are protected):");
+    for pattern in &config.patterns.secure {
+        println!("  {}", pattern);
+    }
+
+    if !config.patterns.not_secure.is_empty() {
+        println!("\nExcluded patterns (always allowed):");
+        for pattern in &config.patterns.not_secure {
+            println!("  {}", pattern);
+        }
+    }
+
+    if !config.variables.secure.is_empty() {
+        println!("\nExplicitly secured variables:");
+        for var in &config.variables.secure {
+            println!("  {}", var);
+        }
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6667,6 +6920,135 @@ mod tests {
             &["has".to_string(), "/nonexistent/path".to_string()],
             &mut context,
             &tuple_space,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_is_builtin_secure() {
+        assert!(is_builtin("secure"));
+    }
+
+    #[test]
+    fn test_secure_no_subcommand() {
+        let mut context = ExpansionContext::new();
+        // Initialize a secure registry so we can test the builtin
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(&[], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_secure_unknown_subcommand() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(&["unknown".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_secure_no_registry() {
+        let mut context = ExpansionContext::new();
+        // No registry set -- should fail
+        let result = builtin_secure(&["list".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_secure_list_empty() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(&["list".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+    }
+
+    #[test]
+    fn test_secure_patterns() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(&["patterns".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+    }
+
+    #[test]
+    fn test_secure_approvals_empty() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(&["approvals".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+    }
+
+    #[test]
+    fn test_secure_revoke_missing_name() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(&["revoke".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_secure_export_missing_assignment() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(&["export".to_string()], &mut context);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_secure_export_no_equals() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(
+            &["export".to_string(), "NOEQUALS".to_string()],
+            &mut context,
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_secure_export_empty_name() {
+        let mut context = ExpansionContext::new();
+        let registry = colony_secure::SecureRegistry::with_defaults().unwrap();
+        let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
+        context.set_secure_registry(registry);
+
+        let result = builtin_secure(
+            &["export".to_string(), "=value".to_string()],
+            &mut context,
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 1);

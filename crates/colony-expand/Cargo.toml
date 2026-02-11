@@ -21,7 +21,8 @@ libc = "0.2"
 rand = "0.8"
 getrandom = "0.2"
 tracing = "0.1"
+parking_lot = { workspace = true, optional = true }
 
 [features]
-default = []
-secure = ["colony-secure", "colony-protocol"]
+default = ["secure"]
+secure = ["colony-secure", "colony-protocol", "parking_lot"]

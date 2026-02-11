@@ -2,7 +2,7 @@ use crate::cli::ShellOptions;
 use crate::config::{build_agent_config, load_colonyrc_with_trust};
 use crate::repl::run_repl;
 use crate::shell::engine::execute_command_with_status;
-use crate::shell::startup::{load_exported_functions, run_startup_files};
+use crate::shell::startup::{init_secure_registry, load_exported_functions, run_startup_files};
 use crate::widget_server::WidgetServer;
 use colony_agent::Agent;
 use colony_exec::Executor;
@@ -36,6 +36,7 @@ pub(crate) async fn run() -> Result<()> {
 async fn run_command_mode(command: &str, opts: &ShellOptions) -> ! {
     let mut context = ExpansionContext::new();
     load_exported_functions(&mut context);
+    init_secure_registry(&mut context);
     if !opts.positional_args.is_empty() {
         context.set_positional_params(opts.positional_args.clone());
     }
@@ -92,7 +93,9 @@ async fn run_script_mode(script: &std::path::Path, opts: &ShellOptions) -> ! {
 
     let mut context = ExpansionContext::new();
     load_exported_functions(&mut context);
+    init_secure_registry(&mut context);
     context.set_shell_name(script.display().to_string());
+    context.set_current_script_path(Some(script.to_path_buf()));
     context.set_positional_params(opts.positional_args.clone());
 
     let mut executor = Executor::new(context);
@@ -147,6 +150,7 @@ async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
     let mut context = ExpansionContext::new();
     context.set_interactive(true);
     load_exported_functions(&mut context);
+    init_secure_registry(&mut context);
     let executor = Executor::new(context);
 
     println!("🔄 Reactive environment enabled");

@@ -99,6 +99,12 @@ fn execute_command_blocking(
                 }
             }
             let handle = spawn_process(&program_path, &args, &env, &cmd.redirects, context)?;
+
+            // Register child process in secure lineage tracking
+            if let Some(registry_arc) = context.secure_registry() {
+                registry_arc.lock().register_child(std::process::id(), handle.pid());
+            }
+
             return handle.wait();
         }
     }
@@ -132,6 +138,11 @@ fn execute_command_blocking(
 
     // 5. Spawn process with redirects
     let handle = spawn_process(&program_path, &args, &env, &cmd.redirects, context)?;
+
+    // Register child process in secure lineage tracking
+    if let Some(registry_arc) = context.secure_registry() {
+        registry_arc.lock().register_child(std::process::id(), handle.pid());
+    }
 
     // 6. Wait for completion
     handle.wait()
