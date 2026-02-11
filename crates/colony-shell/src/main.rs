@@ -1,6 +1,9 @@
 mod cli;
 mod config;
+#[cfg_attr(feature = "tui", allow(dead_code, unused_imports))]
 mod repl;
+#[cfg(feature = "tui")]
+mod repl_tui;
 mod shell;
 mod tutorial;
 mod widget_handler;

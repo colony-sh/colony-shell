@@ -1,0 +1,20 @@
+[package]
+name = "colony-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ratatui-based TUI renderer for Colony Shell"
+
+[dependencies]
+colony-ui-core = { path = "../colony-ui-core" }
+colony-protocol = { path = "../colony-protocol" }
+colony-tree-sitter = { path = "../colony-tree-sitter" }
+ratatui = "0.29"
+crossterm = "0.28"
+tokio = { workspace = true }
+unicode-width = "0.2"
+
+[dev-dependencies]

@@ -17,6 +17,7 @@ members = [
     "crates/colony-shell",
     "crates/colony-tree-sitter",
     "crates/colony-ui-core",
+    "crates/colony-tui",
     "crates/colony-recipe",
 ]
 
@@ -96,6 +97,7 @@ colony-secure = { path = "crates/colony-secure" }
 colony-tree-sitter = { path = "crates/colony-tree-sitter" }
 colony-cloud-sdk = { path = "crates/colony-cloud-sdk" }
 colony-ui-core = { path = "crates/colony-ui-core" }
+colony-tui = { path = "crates/colony-tui" }
 colony-recipe = { path = "crates/colony-recipe" }
 
 [profile.dev]

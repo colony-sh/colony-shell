@@ -48,10 +48,24 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod models;
+pub mod rate_limit;
+pub mod retry;
+pub mod streaming;
+pub mod timeout;
 
 pub use client::ColonyClient;
 pub use error::{CloudError, Result};
 pub use models::{
     ChatChoice, ChatFunction, ChatMessage, ChatRequest, ChatResponse, ChatStreamChunk, ChatTool,
     Model, ModelsResponse, RecipeResponse, RecipeSubmission, UsageInfo,
+};
+pub use rate_limit::{RateLimitConfig, RateLimitInfo, RateLimiter};
+pub use retry::{with_retry, RetryConfig};
+pub use streaming::{
+    ExtendedStreamChunk, ExtendedStreamChoice, ExtendedStreamDelta, StreamAssembler,
+    StreamContent, StreamToolCall, StreamToolFunction, ToolCallDelta, ToolFunctionDelta,
+};
+pub use timeout::{
+    with_timeout, OperationLog, OperationTracker, OperationType, OperationStatus, RequestId,
+    TimeoutConfig,
 };

@@ -1,18 +1,21 @@
-//! Goal trees and session continuity
+//! Goal trees, status tracking, and session continuity
+//!
+//! The focus system maintains a tree of goals with enforced state transitions,
+//! SQLite persistence, and session restoration.
+//!
+//! ## Architecture
+//!
+//! - [`Goal`] — Individual goal with status, parent/child references
+//! - [`GoalStatus`] — State machine: Active, Completed, Blocked, Cancelled
+//! - [`GoalTree`] — In-memory tree with CRUD operations and traversals
+//! - [`GoalStore`] — SQLite persistence with session support
 
-use serde::{Deserialize, Serialize};
+pub mod error;
+pub mod goal;
+pub mod persistence;
+pub mod tree;
 
-/// Goal with status tracking
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Goal {
-    pub id: String,
-    pub description: String,
-    pub status: GoalStatus,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GoalStatus {
-    Active,
-    Completed,
-    Blocked,
-}
+pub use error::{FocusError, Result};
+pub use goal::{Goal, GoalStatus};
+pub use persistence::GoalStore;
+pub use tree::GoalTree;

@@ -66,6 +66,7 @@ pub(crate) fn build_agent_config(colony_config: &Option<ColonyConfig>) -> AgentC
         use_caching,
         max_tokens,
         temperature,
+        ..Default::default()
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::builtins::{
     AwsProfileComponent, DockerStatusComponent, DurationComponent, ExitStatusComponent,
     GitBranchComponent, GitStatusComponent, HostnameComponent, JobsComponent, KubeContextComponent,
-    ModelComponent, NodeVersionComponent, PwdComponent, PythonVersionComponent,
+    LspComponent, ModelComponent, NodeVersionComponent, PwdComponent, PythonVersionComponent,
     RustVersionComponent,
 };
 use crate::component::PromptComponent;
@@ -33,6 +33,7 @@ impl ComponentRegistry {
         self.register(Box::new(RustVersionComponent::new()));
         self.register(Box::new(DockerStatusComponent::new()));
         self.register(Box::new(HostnameComponent::new()));
+        self.register(Box::new(LspComponent::new()));
     }
 
     pub fn register(&mut self, component: Box<dyn PromptComponent>) {
@@ -84,6 +85,7 @@ mod tests {
         assert!(registry.get("rust_version").is_some());
         assert!(registry.get("docker_status").is_some());
         assert!(registry.get("hostname").is_some());
+        assert!(registry.get("lsp").is_some());
     }
 
     #[test]
@@ -98,6 +100,6 @@ mod tests {
         registry.register_builtins();
 
         let all = registry.all();
-        assert!(all.len() >= 14);
+        assert!(all.len() >= 15);
     }
 }

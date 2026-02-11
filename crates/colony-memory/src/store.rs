@@ -1,6 +1,9 @@
 use crate::embedding::{EmbeddingProvider, FastEmbedProvider, EMBEDDING_DIM};
 use crate::error::{MemoryError, Result};
+use crate::eviction::EvictionPolicy;
+use crate::query::MetadataQuery;
 use crate::scope::Scope;
+use crate::temperature::{MemoryTemperature, TemperatureConfig};
 
 use arrow_array::types::Float32Type;
 use arrow_array::Array;
@@ -282,6 +285,59 @@ impl MemoryStore {
     pub async fn count(&self) -> Result<usize> {
         let table = self.get_table().await?;
         Ok(table.count_rows(None).await?)
+    }
+
+    pub async fn list_all(&self) -> Result<Vec<MemoryEntry>> {
+        let table = self.get_table().await?;
+        let results = table
+            .query()
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+        parse_record_batches(results)
+    }
+
+    pub fn temperature(
+        &self,
+        entry: &MemoryEntry,
+        config: &TemperatureConfig,
+    ) -> MemoryTemperature {
+        MemoryTemperature::classify(entry.access_count, entry.accessed_at, config)
+    }
+
+    pub async fn search_with_metadata_filter(
+        &self,
+        query_text: &str,
+        limit: usize,
+        scope: Option<&Scope>,
+        metadata_query: &MetadataQuery,
+    ) -> Result<Vec<SearchResult>> {
+        let over_fetch = limit * 3;
+        let results = self.search_in_scope(query_text, over_fetch, scope).await?;
+
+        let mut filtered = Vec::with_capacity(limit);
+        for result in results {
+            if metadata_query.matches(&result.entry)? {
+                filtered.push(result);
+                if filtered.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(filtered)
+    }
+
+    pub async fn evict(&self, policy: &dyn EvictionPolicy) -> Result<usize> {
+        let entries = self.list_all().await?;
+        let ids_to_evict = policy.select_for_eviction(&entries);
+        let count = ids_to_evict.len();
+
+        for id in ids_to_evict {
+            self.delete(id).await?;
+        }
+
+        Ok(count)
     }
 }
 

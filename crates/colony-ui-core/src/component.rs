@@ -187,6 +187,107 @@ pub trait PromptComponent: Send + Sync {
     fn render(&self, ctx: &crate::context::ComponentContext) -> ComponentOutput;
 }
 
+/// Position of a sidebar panel
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SidebarPosition {
+    Left,
+    Right,
+}
+
+/// A single line in sidebar output with optional icon, styled text, and metadata
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SidebarLine {
+    pub icon: Option<StyledSpan>,
+    pub text: StyledSpan,
+    pub metadata: Option<StyledSpan>,
+    pub indent: u16,
+}
+
+impl SidebarLine {
+    pub fn new(text: StyledSpan) -> Self {
+        Self {
+            icon: None,
+            text,
+            metadata: None,
+            indent: 0,
+        }
+    }
+
+    pub fn with_icon(mut self, icon: StyledSpan) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn with_metadata(mut self, metadata: StyledSpan) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+
+    pub fn with_indent(mut self, indent: u16) -> Self {
+        self.indent = indent;
+        self
+    }
+}
+
+/// Output from a sidebar component: structured lines
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SidebarOutput {
+    pub lines: Vec<SidebarLine>,
+    pub visible: bool,
+    pub data: Option<serde_json::Value>,
+}
+
+impl SidebarOutput {
+    pub fn visible(lines: Vec<SidebarLine>) -> Self {
+        Self {
+            lines,
+            visible: true,
+            data: None,
+        }
+    }
+
+    pub fn with_data(lines: Vec<SidebarLine>, data: serde_json::Value) -> Self {
+        Self {
+            lines,
+            visible: true,
+            data: Some(data),
+        }
+    }
+
+    pub fn hidden() -> Self {
+        Self {
+            lines: vec![],
+            visible: false,
+            data: None,
+        }
+    }
+}
+
+/// Trait for sidebar panel components
+pub trait SidebarComponent: Send + Sync {
+    /// Unique identifier for this sidebar panel
+    fn id(&self) -> &str;
+
+    /// Display title for the panel header
+    fn title(&self) -> &str;
+
+    /// Preferred sidebar position
+    fn position(&self) -> SidebarPosition {
+        SidebarPosition::Right
+    }
+
+    /// Whether this panel can be collapsed
+    fn collapsible(&self) -> bool {
+        true
+    }
+
+    /// Tuple patterns this component subscribes to for cache invalidation
+    fn subscriptions(&self) -> Vec<TuplePattern>;
+
+    /// Render the sidebar panel content
+    fn render(&self, ctx: &crate::context::ComponentContext) -> SidebarOutput;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +327,50 @@ mod tests {
         let output = ComponentOutput::hidden();
         assert!(!output.visible);
         assert!(output.spans.is_empty());
+    }
+
+    #[test]
+    fn test_sidebar_line_construction() {
+        let line = SidebarLine::new(StyledSpan::plain("file.rs"))
+            .with_icon(StyledSpan::new("M", Style::default().fg(Color::Yellow)))
+            .with_metadata(StyledSpan::new("+3 -1", Style::default().dim()))
+            .with_indent(2);
+
+        assert_eq!(line.text.text, "file.rs");
+        assert!(line.icon.is_some());
+        assert!(line.metadata.is_some());
+        assert_eq!(line.indent, 2);
+    }
+
+    #[test]
+    fn test_sidebar_output_visible() {
+        let lines = vec![
+            SidebarLine::new(StyledSpan::plain("line 1")),
+            SidebarLine::new(StyledSpan::plain("line 2")),
+        ];
+        let output = SidebarOutput::visible(lines);
+        assert!(output.visible);
+        assert_eq!(output.lines.len(), 2);
+    }
+
+    #[test]
+    fn test_sidebar_output_hidden() {
+        let output = SidebarOutput::hidden();
+        assert!(!output.visible);
+        assert!(output.lines.is_empty());
+    }
+
+    #[test]
+    fn test_sidebar_output_with_data() {
+        let lines = vec![SidebarLine::new(StyledSpan::plain("test"))];
+        let output = SidebarOutput::with_data(lines, serde_json::json!({"key": "value"}));
+        assert!(output.visible);
+        assert!(output.data.is_some());
+    }
+
+    #[test]
+    fn test_sidebar_position_variants() {
+        assert_eq!(SidebarPosition::Left, SidebarPosition::Left);
+        assert_ne!(SidebarPosition::Left, SidebarPosition::Right);
     }
 }

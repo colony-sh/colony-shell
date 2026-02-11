@@ -417,7 +417,7 @@ pub(crate) async fn run_repl(
 }
 
 /// Build a PromptStateData from the current context and rendered prompt data
-fn build_prompt_state(
+pub(crate) fn build_prompt_state(
     ctx: &ComponentContext,
     prompt_data: &PromptData,
     model: Option<&str>,
@@ -511,7 +511,7 @@ fn build_prompt_state(
     }
 }
 
-async fn display_tuple_activity(
+pub(crate) async fn display_tuple_activity(
     executor: &mut Executor,
     prompt_manager: &mut PromptManager,
     cwd_handle: &Option<Arc<RwLock<PathBuf>>>,

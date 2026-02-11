@@ -13,11 +13,13 @@ pub mod subscription;
 pub mod widgets;
 
 pub use builtins::{
-    ExitStatusComponent, GitBranchComponent, GitStatusComponent, JobsComponent, ModelComponent,
-    PwdComponent,
+    ExitStatusComponent, FileTreeSidebarComponent, GitBranchComponent, GitFilesSidebarComponent,
+    GitStatusComponent, JobsComponent, LspComponent, McpSidebarComponent, ModelComponent,
+    PwdComponent, SessionSidebarComponent,
 };
 pub use component::{
-    Color, ComponentOutput, InteractiveConfig, PromptComponent, Style, StyledSpan, TuplePattern,
+    Color, ComponentOutput, InteractiveConfig, PromptComponent, SidebarComponent, SidebarLine,
+    SidebarOutput, SidebarPosition, Style, StyledSpan, TuplePattern,
 };
 pub use context::ComponentContext;
 pub use manager::{color_to_string, ComponentData, PromptData, PromptManager};

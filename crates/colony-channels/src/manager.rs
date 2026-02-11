@@ -1,7 +1,8 @@
 //! Channel manager with registry and alias resolution
 
 use crate::{
-    Channel, ChannelError, ChannelId, ContextChannel, Result, STDCONTEXT, STDDIAG, STDLLM, STDTOOL,
+    diag::DiagChannel, llm::LlmChannel, tool::ToolChannel, Channel, ChannelError, ChannelId,
+    ContextChannel, Result, STDCONTEXT, STDDIAG, STDLLM, STDTOOL,
 };
 use std::collections::HashMap;
 
@@ -24,11 +25,9 @@ impl ChannelManager {
 
         // Register standard channels
         manager.register(Box::new(ContextChannel::new()));
-
-        // TODO: Register other channels (Phase 2)
-        // manager.register(Box::new(LlmChannel::new()));
-        // manager.register(Box::new(ToolChannel::new()));
-        // manager.register(Box::new(TraceChannel::new()));
+        manager.register(Box::new(LlmChannel::new()));
+        manager.register(Box::new(ToolChannel::new()));
+        manager.register(Box::new(DiagChannel::new()));
 
         // Register aliases
         manager.register_alias("ctx", STDCONTEXT);
@@ -155,13 +154,10 @@ mod tests {
     fn test_fd_resolution() {
         let manager = ChannelManager::new();
 
-        // Only STDCONTEXT (3) is registered as an actual channel
-        // Others are aliased but not yet implemented (Phase 2)
         assert_eq!(manager.resolve("3"), Some(STDCONTEXT));
-        // Fd resolution for unregistered channels returns None
-        assert_eq!(manager.resolve("4"), None);
-        assert_eq!(manager.resolve("5"), None);
-        assert_eq!(manager.resolve("6"), None);
+        assert_eq!(manager.resolve("4"), Some(STDLLM));
+        assert_eq!(manager.resolve("5"), Some(STDTOOL));
+        assert_eq!(manager.resolve("6"), Some(STDDIAG));
     }
 
     #[test]

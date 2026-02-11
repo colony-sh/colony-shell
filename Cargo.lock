@@ -1441,6 +1441,7 @@ name = "colony-agent"
 version = "0.4.1"
 dependencies = [
  "async-trait",
+ "chrono",
  "claude-sdk",
  "colony-cloud-sdk",
  "colony-exec",
@@ -1448,14 +1449,19 @@ dependencies = [
  "colony-parser",
  "colony-protocol",
  "colony-tuple",
+ "dirs 5.0.1",
  "futures",
  "reqwest 0.12.26",
+ "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -1463,10 +1469,13 @@ name = "colony-channels"
 version = "0.4.1"
 dependencies = [
  "chrono",
+ "nix 0.28.0",
  "parking_lot",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -1483,6 +1492,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1560,8 +1570,13 @@ dependencies = [
 name = "colony-focus"
 version = "0.4.1"
 dependencies = [
- "colony-memory",
+ "dirs 5.0.1",
+ "rusqlite",
  "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "uuid",
 ]
 
 [[package]]
@@ -1673,6 +1688,7 @@ dependencies = [
  "colony-protocol",
  "colony-secure",
  "colony-tree-sitter",
+ "colony-tui",
  "colony-tuple",
  "colony-ui-core",
  "crossterm",
@@ -1704,9 +1720,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-tui"
+version = "0.4.1"
+dependencies = [
+ "colony-protocol",
+ "colony-tree-sitter",
+ "colony-ui-core",
+ "crossterm",
+ "ratatui",
+ "tokio",
+ "unicode-width 0.2.0",
+]
+
+[[package]]
 name = "colony-tuple"
 version = "0.4.1"
 dependencies = [
+ "chrono",
  "ipc-channel",
  "parking_lot",
  "rusqlite",

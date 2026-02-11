@@ -1,11 +1,16 @@
 //! Agent orchestration with multi-provider LLM support
 
 use crate::{
+    approval::{ApprovalConfig, ApprovalManager, ApprovalResponse},
+    cancellation::{cancellable_stream, CancellationToken},
+    context::{ContextConfig, ContextManager},
+    persistence::ConversationStore,
     provider::{
         CompletionRequest, Message, MessageContent, MessageRole, ModelProvider, ToolDefinition,
     },
     router::ModelRouter,
-    tool::{ToolClassification, ToolRegistry},
+    token_accounting::{BudgetWarning, RequestUsage, TokenBudget, TokenTracker},
+    tool::{ToolOutput, ToolRegistry},
     AgentError, ProviderType, Result, StreamEvent,
 };
 use futures::StreamExt;
@@ -13,36 +18,31 @@ use tracing::{debug, info, warn};
 
 /// Colony Shell agent with multi-provider support
 pub struct Agent {
-    /// Model router (handles provider selection)
     router: ModelRouter,
-
-    /// Conversation history (provider-agnostic)
     messages: Vec<Message>,
-
-    /// Tool registry with execution handlers
     tools: ToolRegistry,
-
-    /// Protocol emitter for terminal communication
     protocol: ProtocolEmitter,
-
-    /// Agent configuration
     config: AgentConfig,
+    approval: ApprovalManager,
+    token_tracker: TokenTracker,
+    context_manager: ContextManager,
+    conversation_store: Option<ConversationStore>,
+    conversation_id: Option<String>,
 }
 
 /// Agent configuration
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
-    /// Max tokens per response
     pub max_tokens: u32,
-
-    /// System prompt
     pub system_prompt: String,
-
-    /// Enable prompt caching (if provider supports it)
     pub use_caching: bool,
-
-    /// Temperature (0.0-1.0)
     pub temperature: Option<f32>,
+    pub approval_config: ApprovalConfig,
+    pub token_budget: Option<TokenBudget>,
+    pub context_config: ContextConfig,
+    pub persistence_enabled: bool,
+    pub memory_enabled: bool,
+    pub auto_approve_patterns: Vec<String>,
 }
 
 impl Default for AgentConfig {
@@ -52,14 +52,19 @@ impl Default for AgentConfig {
             system_prompt: "You are Colony Shell's agent assistant.".to_string(),
             use_caching: true,
             temperature: None,
+            approval_config: ApprovalConfig::default(),
+            token_budget: None,
+            context_config: ContextConfig::default(),
+            persistence_enabled: false,
+            memory_enabled: false,
+            auto_approve_patterns: Vec::new(),
         }
     }
 }
 
 /// Protocol message emitter
 pub struct ProtocolEmitter {
-    // TODO: This will emit OSC 2337 sequences
-    // For now, just print to stdout
+    // Emits OSC 2337 sequences for colony-terminal
 }
 
 impl Default for ProtocolEmitter {
@@ -73,9 +78,7 @@ impl ProtocolEmitter {
         Self {}
     }
 
-    /// Emit agent thought (streaming text)
     pub fn emit_thought(&self, text: &str) -> Result<()> {
-        // TODO: Emit via OSC 2337
         print!("{}", text);
         use std::io::Write;
         std::io::stdout()
@@ -84,103 +87,60 @@ impl ProtocolEmitter {
         Ok(())
     }
 
-    /// Emit tool call notification
     pub fn emit_tool_call(&self, tool_name: &str, input: &serde_json::Value) -> Result<()> {
         debug!("Tool call: {} with input: {:?}", tool_name, input);
-        // TODO: Emit structured message via OSC 2337
         Ok(())
     }
-
-    /// Request tool approval from user
-    pub async fn request_approval(
-        &self,
-        tool_name: &str,
-        _input: &serde_json::Value,
-    ) -> Result<ApprovalResponse> {
-        // TODO: Emit approval request widget via OSC 2337
-        // TODO: Wait for response from terminal via tuple space or IPC
-
-        // For now, auto-approve (placeholder)
-        warn!(
-            "Tool approval not yet implemented, auto-approving: {}",
-            tool_name
-        );
-        Ok(ApprovalResponse::Approved)
-    }
-}
-
-/// Tool approval response from terminal
-#[derive(Debug, Clone)]
-pub enum ApprovalResponse {
-    Approved,
-    Modified(serde_json::Value),
-    Denied(String),
 }
 
 impl Agent {
     /// Create new agent with auto-detected provider
-    ///
-    /// Detection order: Anthropic (if ANTHROPIC_API_KEY) → OpenAI (if OPENAI_API_KEY) → Ollama (local, free)
     pub async fn new() -> Result<Self> {
         Self::with_config(AgentConfig::default()).await
     }
 
     /// Create an agent from an AGENT.md definition.
-    ///
-    /// Uses the definition's capabilities to select model/provider,
-    /// and its prompt_template as the system prompt.
     pub async fn from_definition(
         definition: &colony_exec::special_files::AgentDefinition,
     ) -> Result<Self> {
         let mut config = AgentConfig::default();
 
-        // Use the prompt template as system prompt
         if !definition.prompt_template.is_empty() {
             config.system_prompt = definition.prompt_template.clone();
         } else if !definition.description.is_empty() {
             config.system_prompt = definition.description.clone();
         }
 
-        // Apply capabilities
         if let Some(max_tokens) = definition.capabilities.max_tokens {
             config.max_tokens = max_tokens;
         }
         config.temperature = definition.capabilities.temperature;
 
-        // If model is specified in AGENT.md, try to use it
         if let Some(ref model_spec) = definition.capabilities.model {
-            // Try to parse "provider:model" format or just "model"
             if let Some((provider_str, model_name)) = model_spec.split_once(':') {
                 if let Some(provider_type) = ProviderType::parse(provider_str) {
                     return Self::with_provider(provider_type, model_name, config).await;
                 }
             }
 
-            // Bare model name -- infer provider from model name
             let provider_type = infer_provider_from_model(model_spec);
             return Self::with_provider(provider_type, model_spec.as_str(), config).await;
         }
 
-        // No model specified, use auto-detect
         Self::with_config(config).await
     }
 
     /// Reconfigure this agent from an AGENT.md definition.
-    ///
-    /// Updates the system prompt and capabilities. Optionally switches
-    /// the model if the definition specifies one different from current.
     pub async fn configure_from_definition(
         &mut self,
         definition: &colony_exec::special_files::AgentDefinition,
     ) -> Result<()> {
-        // Update system prompt
         if !definition.prompt_template.is_empty() {
             self.config.system_prompt = definition.prompt_template.clone();
         } else if !definition.description.is_empty() {
             self.config.system_prompt = definition.description.clone();
         }
 
-        // Update capabilities
         if let Some(max_tokens) = definition.capabilities.max_tokens {
             self.config.max_tokens = max_tokens;
         }
@@ -188,7 +148,6 @@ impl Agent {
             self.config.temperature = definition.capabilities.temperature;
         }
 
-        // Switch model if specified and different from current
         if let Some(ref model_spec) = definition.capabilities.model {
             let (provider_type, model_name) =
                 if let Some((provider_str, model_name)) = model_spec.split_once(':') {
@@ -205,7 +164,6 @@ impl Agent {
             }
         }
 
-        // Clear conversation history for fresh start with new agent config
         self.messages.clear();
 
         info!(
@@ -228,12 +186,31 @@ impl Agent {
             router.model_name()
         );
 
+        let mut tools = ToolRegistry::with_builtins();
+        if !config.auto_approve_patterns.is_empty() {
+            tools.set_auto_approve(config.auto_approve_patterns.clone());
+        }
+
+        let approval = ApprovalManager::new(config.approval_config.clone());
+
+        let token_tracker = match &config.token_budget {
+            Some(budget) => TokenTracker::new().with_budget(budget.clone()),
+            None => TokenTracker::new(),
+        };
+
+        let context_manager = ContextManager::new(config.context_config.clone());
+
         Ok(Self {
             router,
             messages: Vec::new(),
-            tools: ToolRegistry::new(),
+            tools,
             protocol: ProtocolEmitter::new(),
             config,
+            approval,
+            token_tracker,
+            context_manager,
+            conversation_store: None,
+            conversation_id: None,
         })
     }
 
@@ -255,13 +232,66 @@ impl Agent {
             router.model_name()
         );
 
+        let mut tools = ToolRegistry::with_builtins();
+        if !config.auto_approve_patterns.is_empty() {
+            tools.set_auto_approve(config.auto_approve_patterns.clone());
+        }
+
+        let approval = ApprovalManager::new(config.approval_config.clone());
+
+        let token_tracker = match &config.token_budget {
+            Some(budget) => TokenTracker::new().with_budget(budget.clone()),
+            None => TokenTracker::new(),
+        };
+
+        let context_manager = ContextManager::new(config.context_config.clone());
+
         Ok(Self {
             router,
             messages: Vec::new(),
-            tools: ToolRegistry::new(),
+            tools,
             protocol: ProtocolEmitter::new(),
             config,
+            approval,
+            token_tracker,
+            context_manager,
+            conversation_store: None,
+            conversation_id: None,
         })
+    }
+
+    /// Enable conversation persistence with a SQLite store
+    pub fn enable_persistence(
+        &mut self,
+        store: ConversationStore,
+        conversation_id: impl Into<String>,
+    ) {
+        let id = conversation_id.into();
+        self.token_tracker.set_conversation(id.clone());
+        self.conversation_id = Some(id);
+        self.conversation_store = Some(store);
+    }
+
+    /// Resume an existing conversation from persistence
+    pub fn resume_conversation(&mut self, conversation_id: &str) -> Result<()> {
+        let Some(ref store) = self.conversation_store else {
+            return Err(AgentError::Conversation(
+                "persistence not enabled".to_string(),
+            ));
+        };
+
+        let messages = store.resume_conversation(conversation_id)?;
+        self.messages = messages;
+        self.conversation_id = Some(conversation_id.to_string());
+        self.token_tracker.set_conversation(conversation_id);
+
+        info!(
+            "Resumed conversation {} with {} messages",
+            conversation_id,
+            self.messages.len()
+        );
+
+        Ok(())
     }
 
     /// Switch to a different model provider at runtime
@@ -291,16 +321,59 @@ impl Agent {
         &mut self.tools
     }
 
+    /// Get token usage stats
+    pub fn usage_stats(&self) -> &crate::token_accounting::UsageStats {
+        self.token_tracker.stats()
+    }
+
+    /// Get budget warning level
+    pub fn budget_warning(&self) -> BudgetWarning {
+        self.token_tracker.budget_warning()
+    }
+
+    /// Get context utilization
+    pub fn context_utilization(&self) -> f64 {
+        self.context_manager.utilization()
+    }
+
     /// Process user input and return agent response
     pub async fn process(&mut self, user_input: impl Into<String>) -> Result<String> {
+        let cancel = CancellationToken::new();
+        self.process_with_cancellation(user_input, &cancel).await
+    }
+
+    /// Process user input with cancellation support
+    pub async fn process_with_cancellation(
+        &mut self,
+        user_input: impl Into<String>,
+        cancel: &CancellationToken,
+    ) -> Result<String> {
         let input = user_input.into();
         info!("Processing user input: {}", input);
 
-        // Add user message to conversation history
-        self.messages.push(Message {
+        let user_msg = Message {
             role: MessageRole::User,
             content: MessageContent::Text(input),
-        });
+        };
+
+        // Persist user message
+        if let (Some(store), Some(conv_id)) =
+            (&self.conversation_store, &self.conversation_id)
+        {
+            store.save_message(conv_id, &user_msg, None)?;
+        }
+
+        self.messages.push(user_msg);
+
+        // Apply context window management (prune if needed)
+        if self.context_manager.should_prune(&self.messages) {
+            self.messages = self.context_manager.prune(&self.messages);
+            info!(
+                "Context pruned to {} messages ({} estimated tokens)",
+                self.messages.len(),
+                self.context_manager.estimated_tokens()
+            );
+        }
 
         // Build completion request
         let tool_defs = self.convert_tool_definitions();
@@ -314,15 +387,109 @@ impl Agent {
             request = request.enable_caching();
         }
 
-        // Add all messages to request
         request.messages = self.messages.clone();
 
         // Send streaming request via router
+        let stream = self.router.complete(request).await?;
+
+        // Apply cancellation wrapper
+        let result = cancellable_stream(stream, cancel).await?;
+
+        if result.was_cancelled {
+            warn!(
+                "Stream cancelled by user after {} events",
+                result.events_received
+            );
+        }
+
+        let response_text = result.text;
+
+        // Record token usage (estimate based on character count)
+        let input_tokens_est = self
+            .messages
+            .iter()
+            .map(|m| match &m.content {
+                MessageContent::Text(t) => t.len() as u64 / 4,
+                MessageContent::Blocks(_) => 50,
+            })
+            .sum::<u64>();
+
+        let output_tokens_est = response_text.len() as u64 / 4;
+
+        let budget_warning = self.token_tracker.record(RequestUsage {
+            input_tokens: input_tokens_est,
+            output_tokens: output_tokens_est,
+        });
+
+        match budget_warning {
+            BudgetWarning::Warning => {
+                warn!(
+                    "Token budget warning: {} remaining",
+                    self.token_tracker.budget_remaining().unwrap_or(0)
+                );
+            }
+            BudgetWarning::Critical => {
+                warn!("Token budget CRITICAL - nearing limit");
+            }
+            BudgetWarning::Exceeded => {
+                warn!("Token budget EXCEEDED");
+            }
+            BudgetWarning::None => {}
+        }
+
+        // Add assistant response to conversation history
+        if !response_text.is_empty() {
+            let assistant_msg = Message {
+                role: MessageRole::Assistant,
+                content: MessageContent::Text(response_text.clone()),
+            };
+
+            if let (Some(store), Some(conv_id)) =
+                (&self.conversation_store, &self.conversation_id)
+            {
+                store.save_message(conv_id, &assistant_msg, Some(output_tokens_est as i64))?;
+            }
+
+            self.messages.push(assistant_msg);
+        }
+
+        // Update context estimate
+        self.context_manager.update_estimate(&self.messages);
+
+        Ok(response_text)
+    }
+
+    /// Process with full streaming event handling (tool calls, etc.)
+    pub async fn process_full(&mut self, user_input: impl Into<String>) -> Result<String> {
+        let input = user_input.into();
+        info!("Processing user input (full): {}", input);
+
+        self.messages.push(Message {
+            role: MessageRole::User,
+            content: MessageContent::Text(input),
+        });
+
+        // Context pruning
+        if self.context_manager.should_prune(&self.messages) {
+            self.messages = self.context_manager.prune(&self.messages);
+        }
+
+        let tool_defs = self.convert_tool_definitions();
+
+        let mut request = CompletionRequest::new()
+            .with_system(&self.config.system_prompt)
+            .with_max_tokens(self.config.max_tokens)
+            .with_tools(tool_defs);
+
+        if self.config.use_caching {
+            request = request.enable_caching();
+        }
+
+        request.messages = self.messages.clone();
+
         let mut stream = self.router.complete(request).await?;
         let mut response_text = String::new();
-        let mut pending_tool_calls: Vec<(String, String, serde_json::Value)> = Vec::new();
 
-        // Process stream events
         while let Some(event) = stream.next().await {
             match event? {
                 StreamEvent::TextDelta { text, .. } => {
@@ -332,15 +499,11 @@ impl Agent {
 
                 StreamEvent::ToolCallStart { id, name } => {
                     debug!("Tool call started: {} (id: {})", name, id);
-                    // Store for later completion
-                    pending_tool_calls.push((id, name, serde_json::Value::Null));
                 }
 
                 StreamEvent::ToolCallComplete { id, name, input } => {
                     info!("Tool call complete: {} (id: {})", name, id);
-                    // Handle tool execution
-                    self.handle_tool_use(id.clone(), name.clone(), input.clone())
-                        .await?;
+                    self.handle_tool_use(id, name, input).await?;
                 }
 
                 StreamEvent::Done => {
@@ -354,7 +517,6 @@ impl Agent {
             }
         }
 
-        // Add assistant response to conversation history
         if !response_text.is_empty() {
             self.messages.push(Message {
                 role: MessageRole::Assistant,
@@ -362,10 +524,11 @@ impl Agent {
             });
         }
 
+        self.context_manager.update_estimate(&self.messages);
+
         Ok(response_text)
     }
 
-    /// Convert tool registry to provider-agnostic definitions
     fn convert_tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tools
             .definitions()
@@ -378,7 +541,6 @@ impl Agent {
             .collect()
     }
 
-    /// Handle tool use from LLM
     async fn handle_tool_use(
         &mut self,
         tool_use_id: String,
@@ -387,44 +549,39 @@ impl Agent {
     ) -> Result<()> {
         info!("Tool use: {} (id: {})", tool_name, tool_use_id);
 
-        // Check classification
         let classification = self
             .tools
             .classification(&tool_name)
             .ok_or_else(|| AgentError::ToolExecution(format!("unknown tool: {}", tool_name)))?;
 
-        // Execute based on classification
-        let result = match classification {
-            ToolClassification::Programmatic => {
-                // Auto-execute
-                self.protocol.emit_tool_call(&tool_name, &input)?;
-                self.execute_tool(&tool_name, input).await?
-            }
+        // Check if approval is needed
+        let result = if self.approval.needs_approval(&tool_name, classification)
+            && !self.tools.is_auto_approved(&tool_name)
+        {
+            let approval = self
+                .approval
+                .request_approval(&tool_name, &input)
+                .await?;
 
-            ToolClassification::UserFacing => {
-                // Request approval
-                let approval = self.protocol.request_approval(&tool_name, &input).await?;
-
-                match approval {
-                    ApprovalResponse::Approved => self.execute_tool(&tool_name, input).await?,
-                    ApprovalResponse::Modified(modified_input) => {
-                        self.execute_tool(&tool_name, modified_input).await?
-                    }
-                    ApprovalResponse::Denied(reason) => {
-                        return Err(AgentError::ToolExecution(format!(
-                            "user denied: {}",
-                            reason
-                        )));
-                    }
+            match approval {
+                ApprovalResponse::Approved => self.execute_tool(&tool_name, input).await?,
+                ApprovalResponse::Modified(modified_input) => {
+                    self.execute_tool(&tool_name, modified_input).await?
+                }
+                ApprovalResponse::Denied(reason) => {
+                    return Err(AgentError::ToolExecution(format!(
+                        "user denied: {}",
+                        reason
+                    )));
                 }
             }
+        } else {
+            self.protocol.emit_tool_call(&tool_name, &input)?;
+            self.execute_tool(&tool_name, input).await?
         };
 
-        // Add tool result to message history
         let result_str = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
 
-        // Tool results go as user messages in next turn
-        // (Provider-specific handling varies, keeping it simple)
         self.messages.push(Message {
             role: MessageRole::User,
             content: MessageContent::Text(format!("Tool result: {}", result_str)),
@@ -433,34 +590,37 @@ impl Agent {
         Ok(())
     }
 
-    /// Execute tool and return result
     async fn execute_tool(
         &self,
         tool_name: &str,
         input: serde_json::Value,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<ToolOutput> {
         self.tools
             .execute(tool_name, input)
+            .await
             .map_err(|e| AgentError::ToolExecution(e.to_string()))
     }
 
-    /// Get the current system prompt
     pub fn system_prompt(&self) -> &str {
         &self.config.system_prompt
     }
 
-    /// Get the agent configuration
     pub fn config(&self) -> &AgentConfig {
         &self.config
+    }
+
+    /// Get the conversation ID if persistence is active
+    pub fn conversation_id(&self) -> Option<&str> {
+        self.conversation_id.as_deref()
+    }
+
+    /// Get message count in current conversation
+    pub fn message_count(&self) -> usize {
+        self.messages.len()
     }
 }
 
 /// Infer provider type from model name string.
-///
-/// Uses common model name patterns:
-/// - "claude-*" / "sonnet-*" / "opus-*" / "haiku-*" -> Anthropic
-/// - "gpt-*" / "o1-*" / "o3-*" -> OpenAI
-/// - anything else -> Ollama (local fallback)
 fn infer_provider_from_model(model_name: &str) -> ProviderType {
     let lower = model_name.to_lowercase();
     if lower.starts_with("claude")
@@ -535,5 +695,26 @@ mod tests {
             config.system_prompt,
             "You are Colony Shell's agent assistant."
         );
+        assert!(!config.persistence_enabled);
+        assert!(!config.memory_enabled);
+        assert!(config.auto_approve_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_agent_config_with_budget() {
+        let config = AgentConfig {
+            token_budget: Some(TokenBudget::new(500_000)),
+            ..Default::default()
+        };
+        assert!(config.token_budget.is_some());
+    }
+
+    #[test]
+    fn test_agent_config_with_auto_approve() {
+        let config = AgentConfig {
+            auto_approve_patterns: vec!["file_read".to_string(), "search".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(config.auto_approve_patterns.len(), 2);
     }
 }

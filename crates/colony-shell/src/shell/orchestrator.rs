@@ -1,5 +1,6 @@
 use crate::cli::ShellOptions;
 use crate::config::{build_agent_config, load_colonyrc_with_trust};
+#[cfg(not(feature = "tui"))]
 use crate::repl::run_repl;
 use crate::shell::engine::execute_command_with_status;
 use crate::shell::startup::{init_secure_registry, load_exported_functions, run_startup_files};
@@ -181,6 +182,10 @@ async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
         });
     }
 
+    #[cfg(feature = "tui")]
+    let result = crate::repl_tui::run_repl_tui(agent, executor, cwd_handle).await;
+
+    #[cfg(not(feature = "tui"))]
     let result = run_repl(agent, executor, cwd_handle).await;
 
     if let Some(shutdown) = shutdown_handle {

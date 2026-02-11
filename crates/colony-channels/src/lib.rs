@@ -12,14 +12,24 @@
 mod buffer;
 mod channel;
 mod context;
+mod diag;
+mod llm;
 mod manager;
+pub mod pipe;
+pub mod protocol;
+mod tool;
 
 pub use buffer::InternalBuffer;
 pub use channel::{
     Channel, ChannelId, STDCONTEXT, STDDIAG, STDERR, STDIN, STDLLM, STDOUT, STDTOOL,
 };
 pub use context::ContextChannel;
+pub use diag::{DiagChannel, DiagEntry, Severity};
+pub use llm::{LlmChannel, LlmMessage, LlmRole};
 pub use manager::ChannelManager;
+pub use pipe::{ChannelPipes, PipePair};
+pub use protocol::{ChannelCodec, Frame, FrameFlags, ProtocolError, StreamAssembler, TypeTag};
+pub use tool::{ToolChannel, ToolEntry, ToolMessage, ToolRequest, ToolResult};
 
 /// Channel error types
 #[derive(Debug, thiserror::Error)]
@@ -32,6 +42,9 @@ pub enum ChannelError {
 
     #[error("Invalid channel operation: {0}")]
     InvalidOperation(String),
+
+    #[error("Protocol error: {0}")]
+    Protocol(#[from] ProtocolError),
 }
 
 pub type Result<T> = std::result::Result<T, ChannelError>;
