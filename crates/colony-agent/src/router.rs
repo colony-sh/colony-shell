@@ -29,6 +29,8 @@ pub struct RouterConfig {
 /// Supported provider types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderType {
+    /// Colony Cloud managed LLM service (highest priority)
+    Cloud,
     Anthropic,
     OpenAI,
     Ollama,
@@ -38,6 +40,7 @@ impl ProviderType {
     /// Parse from string (case-insensitive)
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
+            "colony" | "cloud" => Some(Self::Cloud),
             "anthropic" | "claude" => Some(Self::Anthropic),
             "openai" | "gpt" => Some(Self::OpenAI),
             "ollama" | "local" => Some(Self::Ollama),
@@ -48,6 +51,7 @@ impl ProviderType {
     /// Get default model for this provider
     pub fn default_model(&self) -> &'static str {
         match self {
+            Self::Cloud => "claude-3.5-sonnet",
             Self::Anthropic => "claude-3-5-sonnet-20241022",
             Self::OpenAI => "gpt-4-turbo",
             Self::Ollama => "llama3",
@@ -57,9 +61,10 @@ impl ProviderType {
     /// Get environment variable name for API key
     pub fn api_key_env_var(&self) -> Option<&'static str> {
         match self {
+            Self::Cloud => Some("COLONY_API_KEY"),
             Self::Anthropic => Some("ANTHROPIC_API_KEY"),
             Self::OpenAI => Some("OPENAI_API_KEY"),
-            Self::Ollama => None, // Local, no API key needed
+            Self::Ollama => None,
         }
     }
 }
@@ -69,9 +74,10 @@ impl ModelRouter {
     ///
     /// Detection order:
     /// 1. Check COLONY_MODEL_PROVIDER env var
-    /// 2. Try Anthropic (if ANTHROPIC_API_KEY set)
-    /// 3. Try OpenAI (if OPENAI_API_KEY set)
-    /// 4. Fall back to Ollama (free local)
+    /// 2. Try Colony Cloud (if COLONY_API_KEY set)
+    /// 3. Try Anthropic (if ANTHROPIC_API_KEY set)
+    /// 4. Try OpenAI (if OPENAI_API_KEY set)
+    /// 5. Fall back to Ollama (free local)
     pub async fn auto_detect() -> Result<Self> {
         info!("Auto-detecting available model provider...");
 
@@ -90,6 +96,29 @@ impl ModelRouter {
                     model_name,
                 })
                 .await;
+            }
+        }
+
+        // Try Colony Cloud (highest priority after explicit override)
+        #[cfg(feature = "cloud")]
+        if env::var("COLONY_API_KEY").is_ok() {
+            info!("Found COLONY_API_KEY, using Colony Cloud provider");
+            let model = env::var("COLONY_MODEL_NAME")
+                .unwrap_or_else(|_| ProviderType::Cloud.default_model().to_string());
+
+            match crate::providers::CloudProvider::from_env(&model) {
+                Ok(provider) => {
+                    return Ok(Self {
+                        provider: Box::new(provider),
+                        config: RouterConfig {
+                            provider_type: ProviderType::Cloud,
+                            model_name: model,
+                        },
+                    });
+                }
+                Err(e) => {
+                    warn!("Colony Cloud provider creation failed, trying next: {}", e);
+                }
             }
         }
 
@@ -150,6 +179,20 @@ impl ModelRouter {
     /// Create router from explicit configuration
     pub async fn from_config(config: RouterConfig) -> Result<Self> {
         let provider: Box<dyn ModelProvider> = match config.provider_type {
+            ProviderType::Cloud => {
+                #[cfg(feature = "cloud")]
+                {
+                    let p = crate::providers::CloudProvider::from_env(&config.model_name)?;
+                    Box::new(p)
+                }
+                #[cfg(not(feature = "cloud"))]
+                {
+                    return Err(crate::AgentError::Protocol(
+                        "Colony Cloud provider requires the 'cloud' feature flag".to_string(),
+                    ));
+                }
+            }
+
             ProviderType::Anthropic => {
                 let api_key = env::var("ANTHROPIC_API_KEY").map_err(|_| {
                     crate::AgentError::Protocol(
@@ -208,6 +251,16 @@ impl ModelRouter {
     /// List available providers (based on API keys, Ollama installation)
     pub async fn list_available_providers() -> Vec<ProviderInfo> {
         let mut available = Vec::new();
+
+        // Check Colony Cloud
+        if env::var("COLONY_API_KEY").is_ok() {
+            available.push(ProviderInfo {
+                provider_type: ProviderType::Cloud,
+                model: ProviderType::Cloud.default_model().to_string(),
+                available: true,
+                reason: None,
+            });
+        }
 
         // Check Anthropic
         if env::var("ANTHROPIC_API_KEY").is_ok() {
@@ -286,6 +339,8 @@ mod tests {
 
     #[test]
     fn test_provider_type_parsing() {
+        assert_eq!(ProviderType::parse("colony"), Some(ProviderType::Cloud));
+        assert_eq!(ProviderType::parse("cloud"), Some(ProviderType::Cloud));
         assert_eq!(
             ProviderType::parse("anthropic"),
             Some(ProviderType::Anthropic)
@@ -300,6 +355,10 @@ mod tests {
 
     #[test]
     fn test_default_models() {
+        assert_eq!(
+            ProviderType::Cloud.default_model(),
+            "claude-3.5-sonnet"
+        );
         assert_eq!(
             ProviderType::Anthropic.default_model(),
             "claude-3-5-sonnet-20241022"
