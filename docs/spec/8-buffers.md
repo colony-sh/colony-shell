@@ -501,7 +501,7 @@ impl PaneManager {
             },
         });
         
-        // Debug: main + context + tool + trace
+        // Debug: main + context + tool + diagnostic
         self.presets.insert("debug".to_string(), LayoutPreset {
             name: "debug".to_string(),
             description: "Full debug layout with all channels".to_string(),
@@ -532,9 +532,9 @@ impl PaneManager {
                         scrollback: 200,
                     })),
                     right: Box::new(LayoutNode::Pane(PaneInfo {
-                        id: "trace".to_string(),
-                        title: "Trace".to_string(),
-                        channel_id: Some(STDTRACE),
+                        id: "diagnostic".to_string(),
+                        title: "Diagnostic".to_string(),
+                        channel_id: Some(STDDIAG),
                         visible: true,
                         scrollback: 5000,
                     })),
