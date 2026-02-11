@@ -26,11 +26,11 @@ use std::os::unix::io::RawFd;
 pub const STDCONTEXT: RawFd = 3;
 pub const STDLLM: RawFd = 4;
 pub const STDTOOL: RawFd = 5;
-pub const STDTRACE: RawFd = 6;
+pub const STDDIAG: RawFd = 6;
 
 /// Check if fd is a channel fd (3-6)
 pub fn is_channel_fd(fd: RawFd) -> bool {
-    matches!(fd, STDCONTEXT | STDLLM | STDTOOL | STDTRACE)
+    matches!(fd, STDCONTEXT | STDLLM | STDTOOL | STDDIAG)
 }
 
 /// Channel pipe - represents a pipe created for capturing channel writes
@@ -228,9 +228,13 @@ pub fn apply_redirects(
                     redirect.kind,
                     RedirectKind::HereDoc(HereDocKind::HereString)
                 ) {
-                    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-                        crate::execute_and_capture(stmt, ctx)
-                    });
+                    let mut expander = Expander::with_executor_and_expr(
+                        context.clone(),
+                        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+                        |expr, ctx| {
+                            crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
+                        },
+                    );
                     let content = if let Ok(fields) = expander.expand_word(word) {
                         fields
                             .iter()
@@ -255,9 +259,13 @@ pub fn apply_redirects(
                             continue;
                         }
                     }
-                    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-                        crate::execute_and_capture(stmt, ctx)
-                    });
+                    let mut expander = Expander::with_executor_and_expr(
+                        context.clone(),
+                        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+                        |expr, ctx| {
+                            crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
+                        },
+                    );
                     if let Ok(expanded_fields) = expander.expand_word(word) {
                         if let Some(first) = expanded_fields.first() {
                             if let Ok(target_fd) = first.text.parse::<RawFd>() {
@@ -316,9 +324,11 @@ fn apply_vredir_file(
 ) -> Result<RawFd> {
     use nix::fcntl::{fcntl, FcntlArg};
 
-    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-        crate::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        context.clone(),
+        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
     let fields = expander.expand_word(word)?;
 
     if fields.is_empty() || fields.len() > 1 {
@@ -573,9 +583,11 @@ fn apply_file_redirect(
     opened_fds: &mut Vec<RawFd>,
 ) -> Result<()> {
     // Expand the filename (with command substitution support)
-    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-        crate::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        context.clone(),
+        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
     let fields = expander.expand_word(word)?;
 
     if fields.is_empty() {

@@ -1,0 +1,169 @@
+//! Type definitions for special files system (F030)
+//!
+//! These types represent the parsed contents of AGENT.md, CONTEXT.md,
+//! TOOLS.md, PROMPT.md, HEARTBEAT.md, and .colony/config.toml.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+/// Parsed agent definition from AGENT.md
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentDefinition {
+    pub name: String,
+    pub description: String,
+    pub capabilities: AgentCapabilities,
+    pub tools: Vec<String>,
+    pub parameters: Vec<AgentParameter>,
+    pub prompt_template: String,
+    pub hooks: Option<String>,
+    pub source_file: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentCapabilities {
+    pub model: Option<String>,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
+    pub mcp_servers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentParameter {
+    pub name: String,
+    pub type_name: String,
+    pub required: bool,
+    pub default: Option<String>,
+    pub description: String,
+}
+
+/// Parsed context entry from CONTEXT.md
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextEntry {
+    pub section: String,
+    pub content: String,
+    pub source_file: PathBuf,
+}
+
+/// Parsed tool config from TOOLS.md
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolConfig {
+    pub name: String,
+    pub description: String,
+    pub schema: Option<serde_json::Value>,
+    pub configuration: HashMap<String, String>,
+}
+
+/// Parsed prompt template from PROMPT.md
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptTemplate {
+    pub name: String,
+    pub template: String,
+    pub variables: Vec<String>,
+}
+
+/// Parsed heartbeat entry from HEARTBEAT.md
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeartbeatEntry {
+    pub agent_name: String,
+    pub status: HeartbeatStatus,
+    pub task: Option<String>,
+    pub progress: Option<u8>,
+    pub started: Option<String>,
+    pub updated: String,
+    pub pid: Option<u32>,
+    pub last_task: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HeartbeatStatus {
+    Idle,
+    Working,
+    Thinking,
+    Streaming,
+    Error,
+    Done,
+    Unknown,
+}
+
+impl std::fmt::Display for HeartbeatStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Idle => "idle",
+            Self::Working => "working",
+            Self::Thinking => "thinking",
+            Self::Streaming => "streaming",
+            Self::Error => "error",
+            Self::Done => "done",
+            Self::Unknown => "unknown",
+        };
+        f.write_str(s)
+    }
+}
+
+impl HeartbeatStatus {
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_lowercase().as_str() {
+            "idle" => Self::Idle,
+            "working" => Self::Working,
+            "thinking" => Self::Thinking,
+            "streaming" => Self::Streaming,
+            "error" => Self::Error,
+            "done" => Self::Done,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Project config from .colony/config.toml
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ProjectConfig {
+    pub project: ProjectInfo,
+    pub channels: ChannelsConfig,
+    pub agents: AgentsConfig,
+    pub tools: ToolsProjectConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ProjectInfo {
+    pub name: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ChannelsConfig {
+    pub auto_load_context: Option<bool>,
+    pub context_max_entries: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct AgentsConfig {
+    pub default_model: Option<String>,
+    pub max_parallel_agents: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ToolsProjectConfig {
+    pub allowed: Vec<String>,
+    pub denied: Vec<String>,
+    pub require_confirmation: Vec<String>,
+}
+
+/// Result of loading all special files from a directory
+#[derive(Debug, Clone)]
+pub struct SpecialFilesState {
+    pub directory: PathBuf,
+    pub agents: Vec<AgentDefinition>,
+    pub context_entries: Vec<ContextEntry>,
+    pub tool_configs: Vec<ToolConfig>,
+    pub prompt_templates: Vec<PromptTemplate>,
+    pub project_config: Option<ProjectConfig>,
+    pub heartbeat_entries: Vec<HeartbeatEntry>,
+}

@@ -24,6 +24,8 @@ impl ComplexityScorer {
             Statement::While(while_stmt) => Self::score_while(while_stmt),
             Statement::Until(until_stmt) => Self::score_until(until_stmt),
             Statement::Case(case_stmt) => Self::score_case(case_stmt),
+            Statement::Match(_) => ComplexityLevel::High,
+            Statement::Try(_) => ComplexityLevel::High,
             Statement::FunctionDef(_) => ComplexityLevel::High,
             Statement::Subshell(_) => ComplexityLevel::Medium,
             Statement::BraceGroup(_) => ComplexityLevel::Medium,
@@ -161,6 +163,7 @@ impl ComplexityScorer {
             WordPart::CommandSubRaw(_) | WordPart::CommandSub(_) => ComplexityLevel::High,
 
             WordPart::ArithRaw(_) => ComplexityLevel::Medium,
+            WordPart::ExprSub(_) => ComplexityLevel::Medium,
 
             WordPart::ProcessSub { .. } => ComplexityLevel::High,
 

@@ -236,6 +236,9 @@ impl TutorialRunner {
                             colony_parser::PipeOp::Arrow => " ->",
                             colony_parser::PipeOp::FatArrow => " =>",
                             colony_parser::PipeOp::Alter => " ~>",
+                            colony_parser::PipeOp::PipeTap => " |>",
+                            colony_parser::PipeOp::PipeGuard => " ?>",
+                            colony_parser::PipeOp::PipeCatch => " !>",
                         })
                         .unwrap_or("");
                     lines.push(format!("{}{}[{}]{}", child_prefix, connector, i, pipe_op));
@@ -289,6 +292,41 @@ impl TutorialRunner {
                         else_body.len()
                     ));
                 }
+                lines.join("\n")
+            }
+            Statement::Try(try_stmt) => {
+                let mut lines = vec![format!("{}{}TryStatement", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!(
+                    "{}├─body: {} stmt(s)",
+                    child_prefix,
+                    try_stmt.body.len()
+                ));
+                if let Some(catch_block) = &try_stmt.catch {
+                    lines.push(format!(
+                        "{}├─catch: {} stmt(s)",
+                        child_prefix,
+                        catch_block.body.len()
+                    ));
+                }
+                if let Some(finally_body) = &try_stmt.finally_body {
+                    lines.push(format!(
+                        "{}└─finally: {} stmt(s)",
+                        child_prefix,
+                        finally_body.len()
+                    ));
+                }
+                lines.join("\n")
+            }
+            Statement::Match(match_stmt) => {
+                let mut lines = vec![format!("{}{}MatchStatement", prefix, branch)];
+                let child_prefix = format!("{}│ ", prefix);
+                lines.push(format!("{}├─value: <expr>", child_prefix));
+                lines.push(format!(
+                    "{}└─arms: {} arm(s)",
+                    child_prefix,
+                    match_stmt.arms.len()
+                ));
                 lines.join("\n")
             }
             Statement::For(for_stmt) => {
@@ -398,6 +436,7 @@ impl TutorialRunner {
             }
             WordPart::CommandSubRaw(cmd) => format!("CmdSub({})", cmd),
             WordPart::ArithRaw(expr) => format!("Arith({})", expr),
+            WordPart::ExprSub(expr) => format!("ExprSub({:?})", expr),
             WordPart::Tilde(user) => {
                 if let Some(u) = user {
                     format!("Tilde(~{})", u)
@@ -533,6 +572,16 @@ impl TutorialRunner {
                     input: format!("$(({}))", expr),
                     output: "(arithmetic evaluated)".to_string(),
                     explanation: "Evaluates arithmetic expression".to_string(),
+                })
+                .ok();
+            }
+            WordPart::ExprSub(expr) => {
+                tx.send(TraceEvent::Expand {
+                    line,
+                    phase: ExpansionPhase::Arithmetic,
+                    input: format!("$[{:?}]", expr),
+                    output: "(expression evaluated)".to_string(),
+                    explanation: "Evaluates inline expression".to_string(),
                 })
                 .ok();
             }
@@ -935,6 +984,7 @@ impl TutorialRunner {
                 }
                 WordPart::CommandSubRaw(_) => concepts.push(Concept::DollarParenSub),
                 WordPart::ArithRaw(_) => concepts.push(Concept::ArithmeticExpansion),
+                WordPart::ExprSub(_) => concepts.push(Concept::ArithmeticExpansion),
                 WordPart::Tilde(_) => {}
                 WordPart::SingleQuoted(_) => concepts.push(Concept::SingleQuote),
                 WordPart::DoubleQuoted(parts) => {
@@ -987,6 +1037,7 @@ impl TutorialRunner {
             }
             WordPart::CommandSubRaw(_) => concepts.push(Concept::DollarParenSub),
             WordPart::ArithRaw(_) => concepts.push(Concept::ArithmeticExpansion),
+            WordPart::ExprSub(_) => concepts.push(Concept::ArithmeticExpansion),
             _ => {}
         }
     }

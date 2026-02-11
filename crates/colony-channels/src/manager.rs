@@ -1,7 +1,7 @@
 //! Channel manager with registry and alias resolution
 
 use crate::{
-    Channel, ChannelError, ChannelId, ContextChannel, Result, STDCONTEXT, STDLLM, STDTOOL, STDTRACE,
+    Channel, ChannelError, ChannelId, ContextChannel, Result, STDCONTEXT, STDDIAG, STDLLM, STDTOOL,
 };
 use std::collections::HashMap;
 
@@ -35,7 +35,8 @@ impl ChannelManager {
         manager.register_alias("context", STDCONTEXT);
         manager.register_alias("llm", STDLLM);
         manager.register_alias("tool", STDTOOL);
-        manager.register_alias("trace", STDTRACE);
+        manager.register_alias("diag", STDDIAG);
+        manager.register_alias("diagnostic", STDDIAG);
 
         manager
     }
@@ -147,7 +148,7 @@ mod tests {
         assert_eq!(manager.resolve("context"), Some(STDCONTEXT));
         assert_eq!(manager.resolve("llm"), Some(STDLLM));
         assert_eq!(manager.resolve("tool"), Some(STDTOOL));
-        assert_eq!(manager.resolve("trace"), Some(STDTRACE));
+        assert_eq!(manager.resolve("diag"), Some(STDDIAG));
     }
 
     #[test]
@@ -168,6 +169,6 @@ mod tests {
         let manager = ChannelManager::new();
         let aliases = manager.list_aliases();
 
-        assert!(aliases.len() >= 5); // At least ctx, context, llm, tool, trace
+        assert!(aliases.len() >= 5); // At least ctx, context, llm, tool, diag
     }
 }

@@ -1,7 +1,7 @@
 //! Trace event types for tutorial mode
 //!
 //! These events are emitted during script execution and consumed by the TUI
-//! or written to fd 6 (stdtrace) as JSON.
+//! or written to fd 6 (stddiag) as JSON.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

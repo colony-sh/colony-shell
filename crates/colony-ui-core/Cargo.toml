@@ -15,5 +15,6 @@ colony-tuple = { workspace = true }
 colony-exec = { workspace = true }
 thiserror = { workspace = true }
 hostname = "0.4"
+parking_lot = { workspace = true }
 
 [dev-dependencies]

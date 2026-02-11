@@ -1,11 +1,15 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::shell::execution::handle_llm_command;
 use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
-use colony_protocol::{emit_prompt, InteractiveConfig, PromptComponentData, PromptSpan};
+use colony_protocol::{
+    emit_prompt, emit_prompt_busy, emit_prompt_ready, emit_prompt_state, GitStateData,
+    InteractiveConfig, PromptComponentData, PromptSpan, PromptStateData,
+};
 use colony_tree_sitter::parse;
 use colony_tuple::{Tuple, Value};
 use colony_ui_core::{color_to_string, ComponentContext, PromptData, PromptManager};
@@ -20,6 +24,11 @@ use rustyline::{Editor, Helper};
 use tokio::sync::RwLock;
 
 use crate::shell::execute_shell_command;
+
+/// Returns true if running inside colony-terminal (COLONY_TERMINAL env var set)
+fn is_colony_terminal() -> bool {
+    std::env::var("COLONY_TERMINAL").is_ok()
+}
 
 struct ColonyHelper {
     commands: Vec<String>,
@@ -273,16 +282,27 @@ pub(crate) async fn run_repl(
     configure_history(&mut executor, &mut rl);
 
     let mut prompt_manager = PromptManager::default();
+    let use_osc = is_colony_terminal();
 
     loop {
         let model_name = agent.as_ref().map(|a| a.current_provider().1.to_string());
-        let ctx = ComponentContext::from_executor(&executor, model_name);
+        let ctx = ComponentContext::from_executor(&executor, model_name.clone());
         let terminal_width = terminal_size::terminal_size()
             .map(|(w, _)| w.0 as usize)
             .unwrap_or(80);
 
-        let prompt_data = prompt_manager.render_data(&ctx);
-        emit_prompt_osc(&prompt_data);
+        // Emit prompt data via OSC 2337 (only when running in colony-terminal)
+        if use_osc {
+            let prompt_data = prompt_manager.render_data(&ctx);
+            emit_prompt_osc(&prompt_data);
+
+            // Emit full PromptState for reactive terminal rendering
+            let state = build_prompt_state(&ctx, &prompt_data, model_name.as_deref());
+            emit_prompt_state(state);
+
+            // Signal shell is ready for input
+            emit_prompt_ready(None);
+        }
 
         let prompt = prompt_manager.render(&ctx, terminal_width);
 
@@ -340,14 +360,37 @@ pub(crate) async fn run_repl(
                     }
                 }
 
+                // Emit Prompt=busy before command execution
+                if use_osc {
+                    emit_prompt_busy(line);
+                }
+                let cmd_start = Instant::now();
+
                 match execute_shell_command(line, &mut executor).await {
                     Ok(()) => {
+                        let duration_ms = cmd_start.elapsed().as_millis() as u64;
                         prompt_manager.on_event("cmd_complete");
-                        display_tuple_activity(&executor, &mut prompt_manager, &cwd_handle).await;
+                        display_tuple_activity(
+                            &mut executor,
+                            &mut prompt_manager,
+                            &cwd_handle,
+                            &mut agent,
+                        )
+                        .await;
+
+                        // Emit Prompt=ready after command completes
+                        if use_osc {
+                            emit_prompt_ready(Some(duration_ms));
+                        }
                     }
                     Err(e) => {
+                        let duration_ms = cmd_start.elapsed().as_millis() as u64;
                         eprintln!("Error: {}", e);
                         prompt_manager.on_event("cmd_complete");
+
+                        if use_osc {
+                            emit_prompt_ready(Some(duration_ms));
+                        }
                     }
                 }
             }
@@ -373,21 +416,124 @@ pub(crate) async fn run_repl(
     Ok(())
 }
 
+/// Build a PromptStateData from the current context and rendered prompt data
+fn build_prompt_state(
+    ctx: &ComponentContext,
+    prompt_data: &PromptData,
+    model: Option<&str>,
+) -> PromptStateData {
+    let cwd = ctx.cwd.to_string_lossy().to_string();
+    let display_path = prompt_data
+        .left
+        .iter()
+        .find(|c| c.id == "pwd")
+        .and_then(|c| c.output.data.as_ref())
+        .and_then(|d| d.get("display"))
+        .and_then(|v| v.as_str())
+        .unwrap_or(&cwd)
+        .to_string();
+
+    // Extract git state from rendered component data
+    let git = prompt_data
+        .left
+        .iter()
+        .chain(prompt_data.right.iter())
+        .find(|c| c.id == "git_branch")
+        .and_then(|branch_data| {
+            let branch = branch_data
+                .output
+                .data
+                .as_ref()?
+                .get("branch")?
+                .as_str()?
+                .to_string();
+            let detached = branch_data
+                .output
+                .data
+                .as_ref()
+                .and_then(|d| d.get("detached"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            // Extract git status from status component
+            let status_data = prompt_data
+                .left
+                .iter()
+                .chain(prompt_data.right.iter())
+                .find(|c| c.id == "git_status");
+
+            let (staged, modified, untracked, insertions, deletions) = status_data
+                .and_then(|sd| sd.output.data.as_ref())
+                .map(|d| {
+                    (
+                        d.get("staged").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                        d.get("modified").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                        d.get("untracked").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                        d.get("insertions").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                        d.get("deletions").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                    )
+                })
+                .unwrap_or_default();
+
+            Some(GitStateData {
+                branch,
+                detached,
+                commit: None,
+                staged,
+                modified,
+                untracked,
+                conflicted: 0,
+                ahead: None,
+                behind: None,
+                insertions,
+                deletions,
+            })
+        });
+
+    let shlvl = std::env::var("SHLVL")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+
+    let in_job = ctx.running_jobs > 0;
+
+    PromptStateData {
+        cwd,
+        display_path,
+        user: std::env::var("USER").ok(),
+        host: ctx.hostname.clone(),
+        exit_status: ctx.last_exit_code,
+        git,
+        agent: None, // Agent state populated when agent is active
+        shlvl,
+        in_job,
+        model: model.map(|s| s.to_string()),
+    }
+}
+
 async fn display_tuple_activity(
-    executor: &Executor,
+    executor: &mut Executor,
     prompt_manager: &mut PromptManager,
     cwd_handle: &Option<Arc<RwLock<PathBuf>>>,
+    agent: &mut Option<Agent>,
 ) {
-    let tuple_space = executor.tuple_space();
+    // Collect tuples first, then process (avoids holding immutable borrow across mutable calls)
+    let env_tuples: Vec<Tuple> = {
+        let tuple_space = executor.tuple_space();
+        let env_pattern = Tuple::pattern(&[
+            Value::Str("env_change".to_string()),
+            Value::Wildcard,
+            Value::Wildcard,
+            Value::Wildcard,
+        ]);
+        let mut tuples = Vec::new();
+        while let Some(tuple) = tuple_space.inp(env_pattern.clone()) {
+            tuples.push(tuple);
+        }
+        tuples
+    };
 
-    let env_pattern = Tuple::pattern(&[
-        Value::Str("env_change".to_string()),
-        Value::Wildcard,
-        Value::Wildcard,
-        Value::Wildcard,
-    ]);
-
-    while let Some(tuple) = tuple_space.inp(env_pattern.clone()) {
+    for tuple in &env_tuples {
         prompt_manager.on_event("env_change");
         if let (Some(Value::Str(var)), Some(Value::Str(old)), Some(new)) = (
             tuple.fields.get(1),
@@ -396,13 +542,13 @@ async fn display_tuple_activity(
         ) {
             match new {
                 Value::Null => {
-                    println!("🔄 Environment: unset {}", var);
+                    println!("  Environment: unset {}", var);
                 }
                 Value::Str(new_val) => {
                     if old.is_empty() {
-                        println!("🔄 Environment: {} = {}", var, new_val);
+                        println!("  Environment: {} = {}", var, new_val);
                     } else {
-                        println!("🔄 Environment: {} = {} (was: {})", var, new_val, old);
+                        println!("  Environment: {} = {} (was: {})", var, new_val, old);
                     }
                 }
                 _ => {}
@@ -410,21 +556,133 @@ async fn display_tuple_activity(
         }
     }
 
-    let dir_pattern = Tuple::pattern(&[
-        Value::Str("dir_change".to_string()),
-        Value::Wildcard,
-        Value::Wildcard,
-    ]);
+    let dir_tuples: Vec<Tuple> = {
+        let tuple_space = executor.tuple_space();
+        let dir_pattern = Tuple::pattern(&[
+            Value::Str("dir_change".to_string()),
+            Value::Wildcard,
+            Value::Wildcard,
+        ]);
+        let mut tuples = Vec::new();
+        while let Some(tuple) = tuple_space.inp(dir_pattern.clone()) {
+            tuples.push(tuple);
+        }
+        tuples
+    };
 
-    while let Some(tuple) = tuple_space.inp(dir_pattern.clone()) {
+    for tuple in &dir_tuples {
         prompt_manager.on_event("dir_change");
         if let (Some(Value::Str(_old)), Some(Value::Str(new))) =
             (tuple.fields.get(1), tuple.fields.get(2))
         {
-            println!("🔄 Directory: {}", new);
+            println!("  Directory: {}", new);
             if let Some(handle) = cwd_handle {
                 handle.write().await.clone_from(&PathBuf::from(new));
             }
+
+            // Load special files from new directory (F030)
+            let new_path = PathBuf::from(new);
+            if colony_exec::special_files::SpecialFilesLoader::has_special_files(&new_path) {
+                executor.load_special_files(&new_path);
+
+                if let Some(state) = executor.special_files() {
+                    if !state.agents.is_empty() {
+                        let names: Vec<&str> =
+                            state.agents.iter().map(|a| a.name.as_str()).collect();
+                        println!("Agents loaded: {}", names.join(", "));
+
+                        // Configure the agent from the first AGENT.md definition
+                        if let Some(first_def) = state.agents.first() {
+                            match agent {
+                                Some(ref mut a) => {
+                                    if let Err(e) = a.configure_from_definition(first_def).await {
+                                        eprintln!(
+                                            "Warning: failed to configure agent from {}: {}",
+                                            first_def.name, e
+                                        );
+                                    } else {
+                                        println!(
+                                            "Agent configured: {} (model: {})",
+                                            first_def.name,
+                                            a.current_provider().1,
+                                        );
+                                    }
+                                }
+                                None => {
+                                    // No agent yet, create one from the definition
+                                    match Agent::from_definition(first_def).await {
+                                        Ok(new_agent) => {
+                                            println!(
+                                                "Agent created: {} (model: {})",
+                                                first_def.name,
+                                                new_agent.current_provider().1,
+                                            );
+                                            *agent = Some(new_agent);
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "Warning: failed to create agent from {}: {}",
+                                                first_def.name, e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !state.context_entries.is_empty() {
+                        println!("Context seeded: {} entries", state.context_entries.len());
+                    }
+                }
+            }
+        }
+    }
+
+    // Poll heartbeat watcher (F030)
+    executor.poll_heartbeat();
+
+    // Collect and display heartbeat updates
+    let heartbeat_tuples: Vec<Tuple> = {
+        let tuple_space = executor.tuple_space();
+        let heartbeat_pattern = Tuple::pattern(&[
+            Value::Str("heartbeat".to_string()),
+            Value::Wildcard,
+            Value::Wildcard,
+            Value::Wildcard,
+            Value::Wildcard,
+        ]);
+        let mut tuples = Vec::new();
+        while let Some(tuple) = tuple_space.inp(heartbeat_pattern.clone()) {
+            tuples.push(tuple);
+        }
+        tuples
+    };
+
+    for tuple in &heartbeat_tuples {
+        if let (
+            Some(Value::Str(agent)),
+            Some(Value::Str(status)),
+            Some(Value::Str(task)),
+            Some(Value::Str(updated)),
+        ) = (
+            tuple.fields.get(1),
+            tuple.fields.get(2),
+            tuple.fields.get(3),
+            tuple.fields.get(4),
+        ) {
+            if !task.is_empty() {
+                println!("[{}] {}: {}", agent, status, task);
+            } else {
+                println!("[{}] {}", agent, status);
+            }
+
+            // Emit OSC 2337 heartbeat to terminal
+            let task_opt: Option<&str> = if task.is_empty() {
+                None
+            } else {
+                Some(task.as_str())
+            };
+            colony_protocol::emit_heartbeat(agent, status, task_opt, None, updated);
         }
     }
 }

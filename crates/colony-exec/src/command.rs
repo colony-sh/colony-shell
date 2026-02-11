@@ -39,9 +39,11 @@ fn execute_command_blocking(
     context: &mut ExpansionContext,
 ) -> Result<ExitStatus> {
     // Create expander with command substitution support
-    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-        crate::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        context.clone(),
+        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
 
     // 1. Expand command name
     let name_fields = expander.expand_word(&cmd.name)?;

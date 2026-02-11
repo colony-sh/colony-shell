@@ -45,6 +45,9 @@ pub(crate) fn statement_to_shell_string(stmt: &Statement) -> String {
                             WordPart::Variable(v) => {
                                 result.push_str(&varref_to_string(v));
                             }
+                            WordPart::ExprSub(expr) => {
+                                result.push_str(&format!("$[{:?}]", expr));
+                            }
                             _ => result.push_str(&format!("{:?}", p)),
                         }
                     }
@@ -68,6 +71,11 @@ pub(crate) fn statement_to_shell_string(stmt: &Statement) -> String {
                     result.push_str("$((");
                     result.push_str(s);
                     result.push_str("))");
+                }
+                WordPart::ExprSub(expr) => {
+                    result.push_str("$[");
+                    result.push_str(&format!("{:?}", expr));
+                    result.push(']');
                 }
                 other => result.push_str(&format!("{:?}", other)),
             }
@@ -96,6 +104,50 @@ pub(crate) fn statement_to_shell_string(stmt: &Statement) -> String {
         match cond {
             colony_parser::Condition::Command(stmt) => statement_to_shell_string(stmt),
             colony_parser::Condition::Expression(expr) => format!("{:?}", expr),
+        }
+    }
+
+    fn match_pattern_to_string(pattern: &colony_parser::MatchPattern) -> String {
+        match pattern {
+            colony_parser::MatchPattern::Literal(expr) => format!("{:?}", expr),
+            colony_parser::MatchPattern::Binding(name) => name.clone(),
+            colony_parser::MatchPattern::Wildcard => "_".to_string(),
+            colony_parser::MatchPattern::List(list) => {
+                let mut parts: Vec<String> =
+                    list.items.iter().map(match_pattern_to_string).collect();
+                match &list.rest {
+                    colony_parser::ListRest::None => {}
+                    colony_parser::ListRest::Ignore => parts.push("..".to_string()),
+                    colony_parser::ListRest::Bind(name) => parts.push(format!("..{}", name)),
+                }
+                format!("[{}]", parts.join(", "))
+            }
+            colony_parser::MatchPattern::Dict(dict) => {
+                let mut parts = Vec::new();
+                for field in &dict.fields {
+                    if let Some(pattern) = &field.pattern {
+                        parts.push(format!(
+                            "{}: {}",
+                            field.name,
+                            match_pattern_to_string(pattern)
+                        ));
+                    } else {
+                        parts.push(field.name.clone());
+                    }
+                }
+                if dict.allow_extra {
+                    parts.push("..".to_string());
+                }
+                format!("{{{}}}", parts.join(", "))
+            }
+            colony_parser::MatchPattern::Tuple(tuple) => {
+                let parts: Vec<String> = tuple.items.iter().map(match_pattern_to_string).collect();
+                format!("({})", parts.join(", "))
+            }
+            colony_parser::MatchPattern::Or(patterns) => {
+                let parts: Vec<String> = patterns.iter().map(match_pattern_to_string).collect();
+                parts.join(" | ")
+            }
         }
     }
 
@@ -139,6 +191,51 @@ pub(crate) fn statement_to_shell_string(stmt: &Statement) -> String {
                 result.push_str(&format!("; else {}", statements_to_string(else_body)));
             }
             result.push_str("; fi");
+            result
+        }
+        Statement::Try(try_stmt) => {
+            let mut result = format!("try {{ {} }}", statements_to_string(&try_stmt.body));
+            if let Some(catch_block) = &try_stmt.catch {
+                result.push_str(" catch");
+                if let Some(binding) = &catch_block.binding {
+                    result.push(' ');
+                    result.push_str(binding);
+                }
+                if let Some(error_type) = &catch_block.error_type {
+                    result.push_str(" : ");
+                    result.push_str(error_type);
+                }
+                result.push_str(&format!(
+                    " {{ {} }}",
+                    statements_to_string(&catch_block.body)
+                ));
+            }
+            if let Some(finally_body) = &try_stmt.finally_body {
+                result.push_str(&format!(
+                    " finally {{ {} }}",
+                    statements_to_string(finally_body)
+                ));
+            }
+            result
+        }
+        Statement::Match(match_stmt) => {
+            let mut result = format!("match {:?} {{ ", match_stmt.value);
+            for arm in &match_stmt.arms {
+                result.push_str(&match_pattern_to_string(&arm.pattern));
+                if let Some(guard) = &arm.guard {
+                    result.push_str(&format!(" if {:?}", guard));
+                }
+                result.push_str(" => ");
+                match &arm.body {
+                    colony_parser::MatchBody::Block(stmts) => {
+                        result.push_str(&format!("{{ {} }} ", statements_to_string(stmts)));
+                    }
+                    colony_parser::MatchBody::Expr(expr) => {
+                        result.push_str(&format!("{:?} ", expr));
+                    }
+                }
+            }
+            result.push('}');
             result
         }
         Statement::While(while_stmt) => format!(

@@ -1,4 +1,4 @@
-//! TraceEmitter - writes structured trace events to fd 6 (stdtrace)
+//! TraceEmitter - writes structured trace events to fd 6 (stddiag)
 //!
 //! The tracer is the bridge between the executor and the TUI/file output.
 //! It emits JSON events that describe what's happening during script execution.
@@ -12,9 +12,9 @@ use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 
-/// File descriptor for stdtrace (Colony's trace channel)
+/// File descriptor for stddiag (Colony's diagnostic channel)
 #[allow(dead_code)]
-pub const STDTRACE_FD: RawFd = 6;
+pub const STDDIAG_FD: RawFd = 6;
 
 /// Trace depth levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -52,7 +52,7 @@ impl Default for TracerConfig {
 /// Output destination for trace events
 #[allow(dead_code)]
 pub enum TraceOutput {
-    /// Write to fd 6 (stdtrace)
+    /// Write to fd 6 (stddiag)
     Fd6,
     /// Write to a file
     File(std::fs::File),
@@ -181,7 +181,7 @@ impl TraceEmitter {
                 // Safety: fd 6 should be set up by the shell
                 // In production, we'd validate this
                 if let Ok(json) = serde_json::to_string(&event) {
-                    let mut output = unsafe { std::fs::File::from_raw_fd(STDTRACE_FD) };
+                    let mut output = unsafe { std::fs::File::from_raw_fd(STDDIAG_FD) };
                     let _ = writeln!(output, "{}", json);
                     // Don't close fd 6 when output is dropped
                     std::mem::forget(output);

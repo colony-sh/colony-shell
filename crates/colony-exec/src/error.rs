@@ -37,6 +37,12 @@ pub enum ExecutionError {
     #[error("Invalid redirect: {0}")]
     InvalidRedirect(String),
 
+    #[error("Invalid variable declaration: {0}")]
+    InvalidVarDecl(String),
+
+    #[error("Invalid pipeline: {0}")]
+    InvalidPipeline(String),
+
     #[error("Return with exit code {0}")]
     Return(i32),
 

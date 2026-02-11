@@ -4,7 +4,7 @@
 //! - stdcontext (fd 3): Session context, observations, decisions
 //! - stdllm (fd 4): LLM conversation history
 //! - stdtool (fd 5): Tool call logging
-//! - stdtrace (fd 6): Execution trace
+//! - stddiag (fd 6): Diagnostics
 //!
 //! Phase 1: Parent-side channels (builtins can write/read)
 //! Phase 2: Pipe-based redirects (external commands can write)
@@ -16,7 +16,7 @@ mod manager;
 
 pub use buffer::InternalBuffer;
 pub use channel::{
-    Channel, ChannelId, STDCONTEXT, STDERR, STDIN, STDLLM, STDOUT, STDTOOL, STDTRACE,
+    Channel, ChannelId, STDCONTEXT, STDDIAG, STDERR, STDIN, STDLLM, STDOUT, STDTOOL,
 };
 pub use context::ContextChannel;
 pub use manager::ChannelManager;

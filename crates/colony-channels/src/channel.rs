@@ -15,7 +15,7 @@ pub const STDERR: ChannelId = 2;
 pub const STDCONTEXT: ChannelId = 3;
 pub const STDLLM: ChannelId = 4;
 pub const STDTOOL: ChannelId = 5;
-pub const STDTRACE: ChannelId = 6;
+pub const STDDIAG: ChannelId = 6;
 
 /// Channel trait - all channels implement this
 ///
@@ -69,6 +69,6 @@ mod tests {
         assert_eq!(STDCONTEXT, 3);
         assert_eq!(STDLLM, 4);
         assert_eq!(STDTOOL, 5);
-        assert_eq!(STDTRACE, 6);
+        assert_eq!(STDDIAG, 6);
     }
 }
