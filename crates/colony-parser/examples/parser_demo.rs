@@ -92,6 +92,12 @@ fn describe_program(prog: &colony_parser::Program) -> String {
                     desc.push_str(&format!("      else: {} statement(s)\n", else_body.len()));
                 }
             }
+            Statement::Try(try_stmt) => {
+                desc.push_str(&format!(
+                    "Try statement: body={} statement(s)\n",
+                    try_stmt.body.len()
+                ));
+            }
             Statement::While(w) => {
                 desc.push_str(&format!("While loop with {} statement(s)\n", w.body.len()));
             }
@@ -103,7 +109,11 @@ fn describe_program(prog: &colony_parser::Program) -> String {
                 ));
             }
             Statement::VarDecl(v) => {
-                desc.push_str(&format!("Variable declaration: {} = <expr>\n", v.name));
+                let target = match &v.target {
+                    colony_parser::VarDeclTarget::Name(name) => name.clone(),
+                    colony_parser::VarDeclTarget::Tuple(names) => format!("({})", names.join(", ")),
+                };
+                desc.push_str(&format!("Variable declaration: {} = <expr>\n", target));
             }
             Statement::FunctionDef(func) => {
                 desc.push_str(&format!(

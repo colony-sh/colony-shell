@@ -28,6 +28,10 @@ pub enum Statement {
     Subshell(Subshell),
     /// if/elif/else/fi
     If(IfStatement),
+    /// try/catch/finally
+    Try(TryStatement),
+    /// match statement
+    Match(MatchStatement),
     /// case/esac
     Case(CaseStatement),
     /// for/do/done
@@ -54,6 +58,8 @@ pub enum Statement {
     FunctionDef(FunctionDef),
     /// proc name(...) { }
     ProcDef(ProcDef),
+    /// @agent_name "prompt" or @agent_name:tool "args"
+    AgentInvocation(AgentInvocation),
 
     /// `return [value]`
     Return(ReturnStatement),
@@ -71,6 +77,8 @@ impl Statement {
             Statement::BraceGroup(b) => &b.span,
             Statement::Subshell(s) => &s.span,
             Statement::If(i) => &i.span,
+            Statement::Try(t) => &t.span,
+            Statement::Match(m) => &m.span,
             Statement::Case(c) => &c.span,
             Statement::For(f) => &f.span,
             Statement::CStyleFor(f) => &f.span,
@@ -82,6 +90,7 @@ impl Statement {
             Statement::VarDecl(v) => &v.span,
             Statement::FunctionDef(f) => &f.span,
             Statement::ProcDef(p) => &p.span,
+            Statement::AgentInvocation(a) => &a.span,
             Statement::Return(r) => &r.span,
             Statement::Empty => &Span::DUMMY,
         }
@@ -151,6 +160,12 @@ pub struct PipelineElement {
 pub enum PipeOp {
     /// | - POSIX byte pipe
     Pipe,
+    /// |> - Tap pipe (copy for diagnostics)
+    PipeTap,
+    /// ?> - Guard pipe (stop pipeline on failure)
+    PipeGuard,
+    /// !> - Error handler pipe
+    PipeCatch,
     /// -> - Typed pipe
     Arrow,
     /// => - Auto-converting pipe
@@ -295,6 +310,8 @@ pub enum WordPart {
     CommandSubRaw(String),
     /// Arithmetic expansion: $((expr)) - raw string, evaluated during expansion
     ArithRaw(String),
+    /// Inline expression expansion: $[expr]
+    ExprSub(Box<Expression>),
     /// Tilde expansion: ~ or ~user
     Tilde(Option<String>),
     /// Brace expansion: {a,b,c} or {1..5} - raw string, expanded at expansion time
@@ -428,6 +445,90 @@ pub struct IfStatement {
 pub struct ElifBranch {
     pub condition: Condition,
     pub body: Vec<Statement>,
+}
+
+/// try/catch/finally
+#[derive(Clone, Debug, Serialize)]
+pub struct TryStatement {
+    pub body: Vec<Statement>,
+    pub catch: Option<CatchBlock>,
+    pub finally_body: Option<Vec<Statement>>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CatchBlock {
+    pub binding: Option<String>,
+    pub error_type: Option<String>,
+    pub body: Vec<Statement>,
+    pub span: Span,
+}
+
+/// match statement
+#[derive(Clone, Debug, Serialize)]
+pub struct MatchStatement {
+    pub value: Expression,
+    pub arms: Vec<MatchArm>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MatchArm {
+    pub pattern: MatchPattern,
+    pub guard: Option<Expression>,
+    pub body: MatchBody,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum MatchBody {
+    Block(Vec<Statement>),
+    Expr(Expression),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum MatchPattern {
+    List(ListPattern),
+    Dict(DictPattern),
+    Tuple(TuplePattern),
+    Literal(Expression),
+    Binding(String),
+    Wildcard,
+    Or(Vec<MatchPattern>),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ListPattern {
+    pub items: Vec<MatchPattern>,
+    pub rest: ListRest,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum ListRest {
+    None,
+    Ignore,
+    Bind(String),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DictPattern {
+    pub fields: Vec<DictPatternField>,
+    pub allow_extra: bool,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DictPatternField {
+    pub name: String,
+    pub pattern: Option<MatchPattern>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TuplePattern {
+    pub items: Vec<MatchPattern>,
+    pub span: Span,
 }
 
 /// Condition for if/while/until
@@ -627,9 +728,16 @@ pub struct ArithmeticCommand {
 #[derive(Clone, Debug, Serialize)]
 pub struct VarDecl {
     pub kind: VarKind,
-    pub name: String,
+    pub target: VarDeclTarget,
+    pub type_annotation: Option<String>,
     pub value: Expression,
     pub span: Span,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum VarDeclTarget {
+    Name(String),
+    Tuple(Vec<String>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -663,6 +771,15 @@ pub struct ProcDef {
 pub struct ProcParam {
     pub name: String,
     pub default: Option<Expression>,
+}
+
+/// Agent invocation: @agent_name "prompt" or @agent_name:tool "args"
+#[derive(Clone, Debug, Serialize)]
+pub struct AgentInvocation {
+    pub agent_name: String,
+    pub tool: Option<String>,
+    pub prompt: Word,
+    pub span: Span,
 }
 
 /// return statement
@@ -758,6 +875,27 @@ pub enum Expression {
         args: Vec<Expression>,
         span: Span,
     },
+    MethodCall {
+        target: Box<Expression>,
+        name: String,
+        args: Vec<Expression>,
+        span: Span,
+    },
+    OptionalCall {
+        name: String,
+        args: Vec<Expression>,
+        span: Span,
+    },
+
+    // === Optional / Unwrap ===
+    OptionalChain {
+        target: Box<Expression>,
+        span: Span,
+    },
+    Unwrap {
+        target: Box<Expression>,
+        span: Span,
+    },
 
     // === Substitutions ===
     CommandSub {
@@ -803,6 +941,10 @@ impl Expression {
             Expression::NullCoalesce { span, .. } => span,
             Expression::Field { span, .. } => span,
             Expression::FuncCall { span, .. } => span,
+            Expression::MethodCall { span, .. } => span,
+            Expression::OptionalCall { span, .. } => span,
+            Expression::OptionalChain { span, .. } => span,
+            Expression::Unwrap { span, .. } => span,
             Expression::CommandSub { span, .. } => span,
             Expression::Tuple { span, .. } => span,
             Expression::Lambda { span, .. } => span,

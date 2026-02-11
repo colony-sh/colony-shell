@@ -292,7 +292,7 @@ echo "log" >&3
 # fd 3: stdcontext - Session context, observations, decisions
 # fd 4: stdllm - LLM conversation history
 # fd 5: stdtool - Tool invocations and results
-# fd 6: stdtrace - Execution trace (debug)
+# fd 6: stddiag - Diagnostics (debug)
 
 # Write to context channel
 echo "Starting deployment to production" >&ctx
@@ -325,7 +325,7 @@ echo "msg" >&4     # stdllm
 echo "note" >&ctx
 echo "note" >&context
 echo "msg" >&llm
-echo "trace" >&trace
+echo "diagnostic" >&diag
 ```
 
 ### Compatibility
@@ -444,9 +444,9 @@ cat file | grep pattern | wc -l
 command1 ?> command2 ?> command3
 # If command1 fails, pipeline stops immediately
 
-# Tap pipeline: |> (inspect without consuming)
+# Tap pipeline: |> (inspect with passthrough)
 data | transform |> log:debug | output
-# |> sends copy to log:debug, original continues to output
+# |> behaves like a normal pipe but also keeps a copy for diagnostics
 
 # Split pipeline: &> (parallel execution)
 data &> [process1, process2, process3]

@@ -501,6 +501,21 @@ fn inject_arithmetic(stmt: &mut crate::ast::Statement, arith_map: &[(String, Str
                 }
             }
         }
+        Statement::Try(try_stmt) => {
+            for stmt in &mut try_stmt.body {
+                inject_arithmetic(stmt, arith_map);
+            }
+            if let Some(catch_block) = &mut try_stmt.catch {
+                for stmt in &mut catch_block.body {
+                    inject_arithmetic(stmt, arith_map);
+                }
+            }
+            if let Some(finally_body) = &mut try_stmt.finally_body {
+                for stmt in finally_body {
+                    inject_arithmetic(stmt, arith_map);
+                }
+            }
+        }
         Statement::For(for_stmt) => {
             for word in &mut for_stmt.words {
                 inject_into_word(word, arith_map);
@@ -627,6 +642,21 @@ fn inject_heredoc_contents(
             }
             if let Some(else_body) = &mut if_stmt.else_body {
                 for stmt in else_body {
+                    inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+                }
+            }
+        }
+        Statement::Try(try_stmt) => {
+            for stmt in &mut try_stmt.body {
+                inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+            }
+            if let Some(catch_block) = &mut try_stmt.catch {
+                for stmt in &mut catch_block.body {
+                    inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
+                }
+            }
+            if let Some(finally_body) = &mut try_stmt.finally_body {
+                for stmt in finally_body {
                     inject_heredoc_contents(stmt, heredoc_contents, heredoc_index);
                 }
             }

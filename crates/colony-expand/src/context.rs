@@ -820,6 +820,7 @@ pub struct ExpansionContext {
     environment: HashMap<String, String>,
     aliases: HashMap<String, String>,
     functions: HashMap<String, colony_parser::FunctionDef>,
+    procs: HashMap<String, colony_parser::ProcDef>,
     /// Set of function names that are marked for export to child processes
     exported_functions: std::collections::HashSet<String>,
     completions: HashMap<String, CompletionSpec>,
@@ -858,6 +859,7 @@ impl fmt::Debug for ExpansionContext {
             .field("environment", &format!("<{} vars>", self.environment.len()))
             .field("aliases", &self.aliases)
             .field("functions", &format!("<{} funcs>", self.functions.len()))
+            .field("procs", &format!("<{} procs>", self.procs.len()))
             .field("positional_params", &self.positional_params)
             .field("shell_name", &self.shell_name)
             .field("cwd", &self.cwd)
@@ -890,6 +892,7 @@ impl Clone for ExpansionContext {
             environment: self.environment.clone(),
             aliases: self.aliases.clone(),
             functions: self.functions.clone(),
+            procs: self.procs.clone(),
             exported_functions: self.exported_functions.clone(),
             completions: self.completions.clone(),
             positional_params: self.positional_params.clone(),
@@ -933,6 +936,7 @@ impl ExpansionContext {
             environment: std::env::vars().collect(),
             aliases: HashMap::new(),
             functions: HashMap::new(),
+            procs: HashMap::new(),
             exported_functions: std::collections::HashSet::new(),
             completions: HashMap::new(),
             positional_params: Vec::new(),
@@ -1349,6 +1353,21 @@ impl ExpansionContext {
     /// Get all defined functions
     pub fn functions(&self) -> &HashMap<String, colony_parser::FunctionDef> {
         &self.functions
+    }
+
+    /// Define a proc
+    pub fn define_proc(&mut self, name: String, def: colony_parser::ProcDef) {
+        self.procs.insert(name, def);
+    }
+
+    /// Get a proc definition
+    pub fn get_proc(&self, name: &str) -> Option<&colony_parser::ProcDef> {
+        self.procs.get(name)
+    }
+
+    /// Check if a name is a defined proc
+    pub fn is_proc(&self, name: &str) -> bool {
+        self.procs.contains_key(name)
     }
 
     /// Mark a function for export to child processes

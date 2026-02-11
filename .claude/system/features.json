@@ -24,7 +24,9 @@
       "description": "[DEPRECATED] Parser that builds AST from token stream. Handles simple commands, pipelines, lists (&&, ||, ;, &), compound commands (if/while/for/case), subshells, brace groups, and function definitions. DEPRECATED: Pest PEG parser (F021) replaces this.",
       "status": "deprecated",
       "priority": 1,
-      "dependencies": ["F001"],
+      "dependencies": [
+        "F001"
+      ],
       "notes": [
         "2025-12-16: Starting F002 - F001 dependency satisfied",
         "2025-12-16: Assessing existing parser stub and AST structure",
@@ -33,17 +35,19 @@
         "2025-12-16: Implemented for loops with optional 'in' clause",
         "2025-12-16: Implemented case/esac with pattern matching and terminators (;;, ;&, ;;&)",
         "2025-12-16: Implemented POSIX function definitions (name() and function keyword)",
-        "2025-12-16: Fixed precedence: Statement→List→Pipeline→Simple/Compound",
+        "2025-12-16: Fixed precedence: Statement\u2192List\u2192Pipeline\u2192Simple/Compound",
         "2025-12-16: COMPLETE - 28 tests passing (12 lexer + 16 parser)"
       ]
     },
     {
       "id": "F003",
       "name": "Expansion system",
-      "description": "Implement POSIX expansion order: tilde → parameter (all ${} forms) → command substitution → arithmetic → field splitting → pathname/glob → quote removal.",
+      "description": "Implement POSIX expansion order: tilde \u2192 parameter (all ${} forms) \u2192 command substitution \u2192 arithmetic \u2192 field splitting \u2192 pathname/glob \u2192 quote removal.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F002"],
+      "dependencies": [
+        "F002"
+      ],
       "notes": [
         "2025-12-16: Starting F003 - F002 dependency satisfied",
         "2025-12-16: Enhanced AST committed as prep work for future Colony features",
@@ -62,7 +66,9 @@
       "description": "Execute external commands via fork/exec using nix crate. Handle PATH lookup, environment passing, and exit status capture.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F003"],
+      "dependencies": [
+        "F003"
+      ],
       "notes": [
         "2025-12-16: Starting F004 - F003 dependency satisfied",
         "2025-12-16: Implemented PATH resolution with absolute/relative path handling",
@@ -79,7 +85,9 @@
       "description": "Execute pipelines (cmd1 | cmd2 | cmd3) with proper pipe creation, fd manipulation via dup2, and concurrent process management.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F004"],
+      "dependencies": [
+        "F004"
+      ],
       "notes": [
         "2025-12-16: Starting F005 - F004 dependency satisfied",
         "2025-12-16: Implemented pipe creation with nix pipe() - N-1 pipes for N commands",
@@ -97,7 +105,9 @@
       "description": "Implement all POSIX redirections: >, >>, <, >&, N>&M, N<&M. Handle heredocs with delimiter quoting rules.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F004"],
+      "dependencies": [
+        "F004"
+      ],
       "notes": [
         "2025-12-17: Starting F006 - F004 dependency satisfied",
         "2025-12-17: Plan: Implement redirect handling using nix::fcntl::open and dup2",
@@ -122,7 +132,9 @@
       "description": "Implement essential builtins that must run in shell process: cd, export, unset, exit, source/., echo, pwd, type, alias, unalias.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F004"],
+      "dependencies": [
+        "F004"
+      ],
       "notes": [
         "2025-12-17: Starting F007 - F004 dependency satisfied",
         "2025-12-17: Created builtins.rs module with builtin dispatch",
@@ -161,7 +173,9 @@
       "description": "Process groups, foreground/background jobs, signal handling (SIGCHLD, SIGINT, SIGTSTP, SIGCONT), job table, fg/bg/jobs/wait builtins.",
       "status": "complete",
       "priority": 3,
-      "dependencies": ["F005"],
+      "dependencies": [
+        "F005"
+      ],
       "notes": [
         "2025-12-17: Starting F008 - F005 dependency satisfied",
         "2025-12-17: Plan: JobTable with parking_lot::RwLock, signal-hook-tokio for SIGCHLD",
@@ -187,7 +201,9 @@
       "description": "Emit custom escape sequences to communicate with colony-terminal: Agent status, Widget requests, Output metadata, Memory operations.",
       "status": "complete",
       "priority": 3,
-      "dependencies": ["F004"],
+      "dependencies": [
+        "F004"
+      ],
       "notes": [
         "2025-12-17: Starting F009 - independent feature",
         "2025-12-17: OSC format: ESC ] 2337 ; <JSON> BEL (\\x1b]2337;<json>\\x07)",
@@ -240,7 +256,10 @@
       "description": "Event-driven cross-process notifications via ipc-channel. Adds real-time pub/sub on top of PersistentTupleSpace, eliminating polling delays. Enables instant coordination between shell and terminal processes.",
       "status": "complete",
       "priority": 4,
-      "dependencies": ["F010", "F012"],
+      "dependencies": [
+        "F010",
+        "F012"
+      ],
       "notes": [
         "2025-12-17: Starting F011 - F010 and F012 dependencies satisfied",
         "2025-12-17: CONTEXT: F012 provides persistent storage, F011 adds event-driven notifications",
@@ -257,7 +276,7 @@
         "2025-12-17: TOTAL: 17 unit tests + 10 doc tests = 27 tests passing",
         "2025-12-17: PHASE 1 COMPLETE: API and notification infrastructure ready",
         "2025-12-17: FUTURE: Phase 2 would implement actual IPC server/client for pub/sub",
-        "2025-12-17: ENABLES: Shell ↔ Terminal instant coordination foundation"
+        "2025-12-17: ENABLES: Shell \u2194 Terminal instant coordination foundation"
       ]
     },
     {
@@ -266,7 +285,9 @@
       "description": "SQLite-backed persistent tuple space for cross-process coordination. Hybrid storage (memory cache + disk), write-through cache, transaction support for locks, background cleanup of expired tuples. Enables distributed locks, task queues, and messaging that survive shell restarts.",
       "status": "complete",
       "priority": 4,
-      "dependencies": ["F010"],
+      "dependencies": [
+        "F010"
+      ],
       "notes": [
         "2025-12-17: Starting F012 - F010 dependency satisfied",
         "2025-12-17: REPURPOSED: Originally 'Memory substrate' but reinterpreted as persistent tuple space",
@@ -293,7 +314,9 @@
       "description": "Vector embeddings via LanceDB + fastembed (all-MiniLM-L6-v2). Semantic search over memories with hybrid text+vector queries.",
       "status": "complete",
       "priority": 4,
-      "dependencies": ["F012"],
+      "dependencies": [
+        "F012"
+      ],
       "notes": [
         "2025-12-29: Implementation complete with full vector memory store",
         "2025-12-29: LanceDB v0.17 + fastembed v4 (all-MiniLM-L6-v2, 384d vectors)",
@@ -311,7 +334,10 @@
       "description": "Detect natural language input (# or ? prefix, failed parse heuristics) and route to LLM instead of shell execution. Includes model router abstraction for multi-provider support (Anthropic, OpenAI, Ollama).",
       "status": "complete",
       "priority": 4,
-      "dependencies": ["F002", "F009"],
+      "dependencies": [
+        "F002",
+        "F009"
+      ],
       "notes": [
         "2025-12-17: Starting F014 - dependencies F002 (deprecated but satisfied via F021), F009 complete",
         "2025-12-17: SCOPE EXPANSION: Multi-provider support from the start (not just Anthropic)",
@@ -320,14 +346,19 @@
         "2025-12-17: IMPLEMENTED: OpenAIProvider - ChatCompletions API (200 lines)",
         "2025-12-17: IMPLEMENTED: OllamaProvider - local models, free fallback (260 lines)",
         "2025-12-17: IMPLEMENTED: ModelRouter - auto-detection, health checks, runtime switching (280 lines)",
-        "2025-12-17: AUTO-DETECT ORDER: Anthropic → OpenAI → Ollama (local)",
+        "2025-12-17: AUTO-DETECT ORDER: Anthropic \u2192 OpenAI \u2192 Ollama (local)",
         "2025-12-17: ENV VARS: COLONY_MODEL_PROVIDER, COLONY_MODEL_NAME for override",
         "2025-12-17: REFACTORED: Agent to use ModelRouter (provider-agnostic)",
         "2025-12-17: CONVERSATION: Vec<Message> replaces ConversationBuilder (simpler, works across providers)",
         "2025-12-17: IMPLEMENTED: llm command - status, list, use provider:model",
         "2025-12-17: TESTED: Auto-detection works (Ollama fallback, OpenAI detection)",
         "2025-12-17: TESTED: llm status/list commands show provider info",
-        "2025-12-17: COMPLETE: 1000+ lines of provider abstraction, full multi-LLM support"
+        "2025-12-17: COMPLETE: 1000+ lines of provider abstraction, full multi-LLM support",
+        "2026-02-09: ENHANCED: Added Agent::from_definition() and configure_from_definition() (P1-06)",
+        "2026-02-09: ENHANCED: Added infer_provider_from_model() for model name -> provider inference",
+        "2026-02-09: ENHANCED: llm builtin now supports direct prompt calls via `llm ask` and `llm <text>` (P1-09)",
+        "2026-02-09: ENHANCED: llm status shows system prompt, max_tokens, temperature",
+        "2026-02-09: ENHANCED: REPL auto-configures agent from AGENT.md on directory change"
       ]
     },
     {
@@ -336,7 +367,10 @@
       "description": "Connect to Claude API via ADK, handle streaming responses, register MCP tools, manage conversation context.",
       "status": "complete",
       "priority": 5,
-      "dependencies": ["F014", "F013"],
+      "dependencies": [
+        "F014",
+        "F013"
+      ],
       "notes": [
         "2025-12-11: Use programmatic tool calling (disable_user_input) for auto-execute tools",
         "2025-12-11: Implement Rust port of Claude Agent SDK, not FFI wrapper",
@@ -352,40 +386,85 @@
       "id": "F016",
       "name": "MCP connection pool",
       "description": "Manage connections to multiple MCP servers via rmcp. Introspect tool schemas, handle reconnection.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
       "dependencies": [],
-      "notes": []
+      "notes": [
+        "2026-02-10: Created colony-mcp crate with rmcp 0.15 dependency",
+        "2026-02-10: McpConnection: stdio transport via TokioChildProcess, tool introspection, reconnection",
+        "2026-02-10: McpConnectionPool: multi-server management, auto-routing tool calls, connect/disconnect lifecycle",
+        "2026-02-10: ConnectionState enum: Disconnected, Connected, Reconnecting, Failed",
+        "2026-02-10: ToolInfo caches tool schemas per server for fast lookup",
+        "2026-02-10: ColonyClientHandler implements ClientHandler with colony-shell identity",
+        "2026-02-10: Reconnection with max 3 attempts, state tracking per connection",
+        "2026-02-10: Server config from McpServer (colony-config .colonyrc [mcp] section)",
+        "2026-02-10: COMPLETE: All 11 unit tests + 2 doc tests passing"
+      ]
     },
     {
       "id": "F017",
       "name": "MCP TypeScript codegen",
       "description": "Generate typed TypeScript client classes from MCP server schemas using Tera templates. Cache by schema hash.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
-      "dependencies": ["F016"],
-      "notes": []
+      "dependencies": [
+        "F016"
+      ],
+      "notes": [
+        "2026-02-10: McpCodegen with Tera template engine for TypeScript generation",
+        "2026-02-10: JSON Schema -> TypeScript type mapping (string, number, boolean, array, object, enum, anyOf, oneOf)",
+        "2026-02-10: Generated output: interface per tool params + client class per server",
+        "2026-02-10: SHA-256 schema content hashing for cache invalidation",
+        "2026-02-10: Output to ~/.colony/mcp-clients/<server-name>/client.ts",
+        "2026-02-10: Helper functions: to_pascal_case, to_camel_case for naming conventions",
+        "2026-02-10: 9 unit tests for type mapping, naming, hashing, template rendering",
+        "2026-02-10: COMPLETE: Full codegen pipeline functional"
+      ]
     },
     {
       "id": "F018",
       "name": "MCP executor session",
       "description": "Special agent session that receives tasks via tuple space, generates TS scripts, executes in rustyscript sandbox, returns results.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
-      "dependencies": ["F010", "F017"],
+      "dependencies": [
+        "F010",
+        "F017"
+      ],
       "notes": [
         "2025-12-11: MCP tools classified as PROGRAMMATIC or USER_FACING based on manifest",
-        "2025-12-11: Approval requests routed to terminal via OSC 2337 Widget= protocol"
+        "2025-12-11: Approval requests routed to terminal via OSC 2337 Widget= protocol",
+        "2026-02-10: McpSession: orchestrates pool, codegen, and tuple space for tool calls",
+        "2026-02-10: ToolClassification: Programmatic (auto-execute) vs UserFacing (require approval)",
+        "2026-02-10: ToolCallRequest/ToolCallResponse: serializable structs for tuple space messaging",
+        "2026-02-10: execute_request: checks classification, calls pool, returns structured response",
+        "2026-02-10: Approval workflow: post_approval_request / post_response via tuple space",
+        "2026-02-10: generate_client / generate_all_clients for TypeScript codegen integration",
+        "2026-02-10: COMPLETE: Session infrastructure ready for integration with agent system"
       ]
     },
     {
       "id": "F019",
       "name": "Goal and task tracking",
       "description": "Persistent goal trees with status, progress, blockers. Checkpoint creation, session summaries, resume capability.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
-      "dependencies": ["F012"],
-      "notes": []
+      "dependencies": [
+        "F012"
+      ],
+      "notes": [
+        "2026-02-10: CREATED: goals module in colony-exec with Goal, GoalTree, GoalStatus types",
+        "2026-02-10: IMPLEMENTED: Goal struct (id, title, status, children, progress, blockers, timestamps)",
+        "2026-02-10: IMPLEMENTED: GoalTree with file-backed persistence at ~/.colony/goals/<project-hash>.json",
+        "2026-02-10: IMPLEMENTED: SHA-256 project path hashing for per-project goal storage",
+        "2026-02-10: IMPLEMENTED: Checkpoint creation (snapshot goal state with label)",
+        "2026-02-10: IMPLEMENTED: Session recording (started_at, ended_at, completed/progressed goals, notes)",
+        "2026-02-10: IMPLEMENTED: goal builtin command (add, list, update, complete, block, checkpoint, tree)",
+        "2026-02-10: IMPLEMENTED: Hierarchical child goals with recursive find",
+        "2026-02-10: IMPLEMENTED: Progress auto-calculation from children",
+        "2026-02-10: TESTED: 16 unit tests passing for goals module",
+        "2026-02-10: COMPLETE: Full goal tracking with persistence and shell integration"
+      ]
     },
     {
       "id": "F020",
@@ -400,7 +479,7 @@
         "2025-12-17: IMPLEMENTED: ColonyConfig with sections: agent, project, mcp, tools, completion",
         "2025-12-17: IMPLEMENTED: TrustManager with SHA256 hashing (direnv-style)",
         "2025-12-17: TRUST STORAGE: ~/.config/colony/trusted.toml",
-        "2025-12-17: TRUST WORKFLOW: Detect → Hash → Check → Prompt → Save",
+        "2025-12-17: TRUST WORKFLOW: Detect \u2192 Hash \u2192 Check \u2192 Prompt \u2192 Save",
         "2025-12-17: CHANGE DETECTION: Re-prompt when config content changes",
         "2025-12-17: IMPLEMENTED: Config discovery (walk up directory tree + ~/.colonyrc)",
         "2025-12-17: LAYERING: System config + project config merged",
@@ -415,10 +494,14 @@
     {
       "id": "F021",
       "name": "pest PEG Parser Migration",
-      "description": "Migrated to pure PEG parser using pest. Two-stage pipeline: pest (syntax) → AST builder. Pure PEG for all constructs except heredocs (minimal preprocessing). Achieves full POSIX compliance with declarative grammar, better error messages, and simpler architecture.",
+      "description": "Migrated to pure PEG parser using pest. Two-stage pipeline: pest (syntax) \u2192 AST builder. Pure PEG for all constructs except heredocs (minimal preprocessing). Achieves full POSIX compliance with declarative grammar, better error messages, and simpler architecture.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F001", "F002", "F003"],
+      "dependencies": [
+        "F001",
+        "F002",
+        "F003"
+      ],
       "notes": [
         "2025-12-16: Created feature/pest-parser branch",
         "2025-12-16: Added pest v2.7 dependencies to workspace",
@@ -436,7 +519,7 @@
         "2025-12-16: COMMIT: Complete AST builders - pest pipeline functional",
         "2025-12-16: BREAKTHROUGH: Pure PEG approach works - F001 lexer NOT needed!",
         "2025-12-16: DISCOVERY: Grammar structure provides context (no mode stack required)",
-        "2025-12-16: VALIDATED: SimpleCommand→Word vs Expression→Identifier distinction works",
+        "2025-12-16: VALIDATED: SimpleCommand\u2192Word vs Expression\u2192Identifier distinction works",
         "2025-12-16: VALIDATED: Operator context from syntactic position (< redirect vs comparison)",
         "2025-12-16: COMPLETE: Enhanced grammar with Bareword, DoubleQuotedContent interpolation",
         "2025-12-16: COMPLETE: pest_api.rs public API (parse, parse_statement, parse_expression)",
@@ -502,7 +585,7 @@
         "2025-12-16: Recommended: Fork tree-sitter-bash as proven baseline",
         "2025-12-16: DECISION: Use standard tree-sitter with C parser (not rust-sitter)",
         "2025-12-16: RATIONALE: rust-sitter requires rewriting entire grammar in Rust (not practical)",
-        "2025-12-16: FIX: Changed grammar name 'bash' → 'colony' and regenerated",
+        "2025-12-16: FIX: Changed grammar name 'bash' \u2192 'colony' and regenerated",
         "2025-12-16: FIX: Updated scanner.c function names to match 'colony'",
         "2025-12-16: FIX: Enabled scanner.c compilation in build.rs",
         "2025-12-16: COMPLETE: Parser compiles and links successfully",
@@ -514,7 +597,7 @@
         "2025-12-16: ADDED Colony typed pipes (-> => ~>) to pipeline rule",
         "2025-12-16: VERIFIED: Bash grammar + typed pipes working perfectly",
         "2025-12-16: RELOCATED to crates/colony-tree-sitter (proper workspace member)",
-        "2025-12-16: COMPLETE: Standard tree-sitter approach (grammar.js → parser.c → FFI)",
+        "2025-12-16: COMPLETE: Standard tree-sitter approach (grammar.js \u2192 parser.c \u2192 FFI)",
         "2025-12-16: VALIDATED: 5 unit tests + 3 doc tests passing",
         "2025-12-16: FEATURES IMPLEMENTED: POSIX bash + typed pipes + var/const/setvar + types",
         "2025-12-16: MILESTONE: F022 COMPLETE at Phase 1 level (editor-ready)",
@@ -528,7 +611,11 @@
       "description": "Collection of real-world bash scripts sourced from the web for POSIX compatibility testing. Includes original scripts (as-is compatibility tests) and Colony-enhanced variants (demonstrating modern features). Validates parser, expansion, and execution against real-world use cases.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F021", "F003", "F007"],
+      "dependencies": [
+        "F021",
+        "F003",
+        "F007"
+      ],
       "notes": [
         "2025-12-17: Starting F023 - all execution features complete, parser operational",
         "2025-12-17: RATIONALE: Unit tests validate individual features, real scripts validate integration",
@@ -562,7 +649,7 @@
         "2025-12-17: PATTERN: Dependency injection via CommandExecutor callback (avoids circular deps)",
         "2025-12-17: INTEGRATED: command.rs, pipeline.rs, redirect.rs, builtins.rs, main.rs",
         "2025-12-17: TESTED: execute_and_capture tests passing, $(pwd) works manually",
-        "2025-12-17: VALIDATED: External command redirects working (/bin/echo > file) ✅",
+        "2025-12-17: VALIDATED: External command redirects working (/bin/echo > file) \u2705",
         "2025-12-17: KNOWN ISSUE: Builtin redirects not working (builtins run in-process)",
         "2025-12-17: KNOWN ISSUE: Some command sub forms need debugging ($(echo world))",
         "2025-12-17: ARCHITECTURE NOTE: Builtins need fd redirect support (bash temporarily redirects)",
@@ -572,8 +659,8 @@
         "2025-12-17: SOLUTION: Capture $(.) as raw string, parse during expansion (two-pass)",
         "2025-12-17: GRAMMAR: DollarCommandSubRaw = @{ \"$(\" ~ (!\")\" ~ ANY)* ~ \")\" }",
         "2025-12-17: AST: Added WordPart::CommandSubRaw(String) variant",
-        "2025-12-17: EXPANSION: parse_statement() → execute_and_capture() → trim newlines",
-        "2025-12-17: TESTED: echo hello $(echo world) → 'hello world' ✅",
+        "2025-12-17: EXPANSION: parse_statement() \u2192 execute_and_capture() \u2192 trim newlines",
+        "2025-12-17: TESTED: echo hello $(echo world) \u2192 'hello world' \u2705",
         "2025-12-17: RESULT: 18/20 tests passing (90%) - +5pp improvement!",
         "2025-12-17: MILESTONE: F023 90% COMPLETE!",
         "2025-12-17: REMAINING: pwd comparison (test harness), builtin redirects (architectural)",
@@ -582,19 +669,19 @@
         "2025-12-17: FEATURE: Implemented alias and unalias builtins (165 lines)",
         "2025-12-17: STORAGE: aliases HashMap in ExpansionContext",
         "2025-12-17: EXPANSION: Alias checked before builtins/external in execute_simple_command()",
-        "2025-12-17: TESTED: alias definition, listing, expansion, unalias ✅",
+        "2025-12-17: TESTED: alias definition, listing, expansion, unalias \u2705",
         "2025-12-17: VALIDATED: 18/20 tests maintained (90% POSIX compliance)",
         "2025-12-17: COMPLETE: F007 stub builtins (alias, unalias) now fully implemented",
         "2025-12-17: BREAKTHROUGH: Implemented builtin redirect support (148 lines)",
         "2025-12-17: ARCHITECTURE: BuiltinRedirectGuard with RAII save/restore pattern",
         "2025-12-17: TECHNIQUE: dup() saves FDs, apply redirects to shell, Drop restores",
         "2025-12-17: SAFETY: FDs restored even on panic/error (RAII guarantee)",
-        "2025-12-17: TESTED: echo hello > file && cat file → file created ✅",
+        "2025-12-17: TESTED: echo hello > file && cat file \u2192 file created \u2705",
         "2025-12-17: TEST FIX: Test 13 fixed by user (cd ~ instead of /tmp)",
         "2025-12-17: TEST FIX: Test 20 fixed with BuiltinRedirectGuard",
         "2025-12-17: RESULT FINAL: 20/20 tests passing (100%) - PERFECT SCORE!",
         "2025-12-17: MILESTONE: F023 100% COMPLETE!",
-        "2025-12-17: SESSION PROGRESSION: 85% → 90% → 95% → 100%",
+        "2025-12-17: SESSION PROGRESSION: 85% \u2192 90% \u2192 95% \u2192 100%",
         "2025-12-17: STATUS: COMPLETE - Full POSIX compliance for initial test suite validated",
         "2025-12-17: FUTURE: Expand with bash upstream tests from github.com/bminor/bash/tree/master/tests"
       ]
@@ -602,10 +689,12 @@
     {
       "id": "F024",
       "name": "Extended Channels System (fd 3-6)",
-      "description": "Implement stdcontext (fd 3), stdllm (fd 4), stdtool (fd 5), stdtrace (fd 6) channels. Each channel maintains structured history with builtins for management. Enables context tracking, conversation history, tool logging, and execution tracing.",
+      "description": "Implement stdcontext (fd 3), stdllm (fd 4), stdtool (fd 5), stddiag (fd 6) channels. Each channel maintains structured history with builtins for management. Enables context tracking, conversation history, tool logging, and execution tracing.",
       "status": "complete",
       "priority": 5,
-      "dependencies": ["F009"],
+      "dependencies": [
+        "F009"
+      ],
       "notes": [
         "2025-12-17: Starting F024 - F009 dependency satisfied",
         "2025-12-17: PHASE 1: Parent-side only infrastructure (no child process access yet)",
@@ -614,7 +703,7 @@
         "2025-12-17: IMPLEMENTED: InternalBuffer - line storage with timestamps (130 lines)",
         "2025-12-17: IMPLEMENTED: ContextChannel (fd 3) - add_text, lines, last, search, export",
         "2025-12-17: IMPLEMENTED: ChannelManager - registry with fd and alias resolution",
-        "2025-12-17: ALIASES: ctx/context → fd 3, llm → fd 4, tool → fd 5, trace → fd 6",
+        "2025-12-17: ALIASES: ctx/context \u2192 fd 3, llm \u2192 fd 4, tool \u2192 fd 5, trace \u2192 fd 6",
         "2025-12-17: WIRED: ChannelManager into Executor struct",
         "2025-12-17: CREATED: context builtin with subcommands (add, show, clear, show --last N)",
         "2025-12-17: REFACTORED: execute_builtin() signature to pass ChannelManager",
@@ -623,18 +712,18 @@
         "2025-12-17: TESTED: context clear - buffer cleared successfully",
         "2025-12-17: PHASE 1 COMPLETE: Builtins can read/write context channel",
         "2025-12-17: PHASE 2: Tuple space IPC for external commands",
-        "2025-12-17: ARCHITECTURE: prepare→fork→dup2→exec→pipe read→tuple→channel sync",
+        "2025-12-17: ARCHITECTURE: prepare\u2192fork\u2192dup2\u2192exec\u2192pipe read\u2192tuple\u2192channel sync",
         "2025-12-17: IMPLEMENTED: prepare_channel_redirects() - detects >&3-6, creates pipes (100 lines)",
         "2025-12-17: IMPLEMENTED: apply_channel_redirects_in_child() - dups write ends to fds",
         "2025-12-17: IMPLEMENTED: process_channel_writes() - reads pipes, emits tuples (60 lines)",
         "2025-12-17: IMPLEMENTED: sync_channels_from_tuple_space() - flushes tuples to channels",
         "2025-12-17: MODIFIED: ProcessHandle includes channel_pipes with take_channel_pipes()",
         "2025-12-17: MODIFIED: ChannelPipe uses Option<OwnedFd> for write_end (parent=None)",
-        "2025-12-17: FLOW: Child writes to >&3 → pipe → tuple ('channel_write', fd, content, ts)",
-        "2025-12-17: FLOW: Parent syncs: tuple → ChannelManager → ContextChannel buffer",
-        "2025-12-17: TESTED: /bin/echo 'data' >&3 && context show - captures and displays ✓",
-        "2025-12-17: DEBUG LOGS: 'Captured 7 bytes', 'Wrote 7 bytes to channel 3', output appears ✓",
-        "2025-12-17: WORKAROUND: Parser bug >&3 → File('3') not Fd(3) - handled in both functions",
+        "2025-12-17: FLOW: Child writes to >&3 \u2192 pipe \u2192 tuple ('channel_write', fd, content, ts)",
+        "2025-12-17: FLOW: Parent syncs: tuple \u2192 ChannelManager \u2192 ContextChannel buffer",
+        "2025-12-17: TESTED: /bin/echo 'data' >&3 && context show - captures and displays \u2713",
+        "2025-12-17: DEBUG LOGS: 'Captured 7 bytes', 'Wrote 7 bytes to channel 3', output appears \u2713",
+        "2025-12-17: WORKAROUND: Parser bug >&3 \u2192 File('3') not Fd(3) - handled in both functions",
         "2025-12-17: ADDED: chrono dependency for timestamps",
         "2025-12-17: PHASE 2 COMPLETE: External commands can write to channels!",
         "2025-12-17: F024 100% COMPLETE: Both builtins and external commands access channels",
@@ -647,28 +736,71 @@
       "id": "F025",
       "name": "Buffer Management",
       "description": "Styled text buffers with ANSI parsing, scrollback management, search, and persistence. Each channel has associated buffer. Supports CharStyle, LineStyle, Color, and buffer operations (scroll, search, clear, export).",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
-      "dependencies": ["F024"],
-      "notes": []
+      "dependencies": [
+        "F024"
+      ],
+      "notes": [
+        "2026-02-10: CREATED: buffers module in colony-exec with 4 submodules",
+        "2026-02-10: IMPLEMENTED: StyledSpan with Color enum (16 + 256 + RGB), StyleFlags (bold/dim/italic/underline/blink/inverse/strikethrough)",
+        "2026-02-10: IMPLEMENTED: StyledBuffer line-based buffer with optional max capacity, push_line, push_text, clear, text export",
+        "2026-02-10: IMPLEMENTED: BufferLine with spans, plain text creation, text() concatenation",
+        "2026-02-10: IMPLEMENTED: BufferView scrollable window (scroll_up/down, page_up/down, scroll_to_top/bottom, at_bottom)",
+        "2026-02-10: IMPLEMENTED: ANSI escape parser - CSI SGR sequence parsing, 256-color and RGB support",
+        "2026-02-10: IMPLEMENTED: Search support - search_buffer and search_buffer_case_insensitive returning line/column/length",
+        "2026-02-10: IMPLEMENTED: Full serde Serialize/Deserialize for all types",
+        "2026-02-10: TESTED: 53 unit tests passing (14 ansi + 10 buffer + 9 search + 8 span + 12 view)",
+        "2026-02-10: COMPLETE: Buffer management with ANSI parsing, scrollback, and search"
+      ]
     },
     {
       "id": "F026",
       "name": "Pane Management & Layout System",
       "description": "Pane manager with layout presets (default, dev, debug, agent), split operations (horizontal/vertical), focus management (Ctrl+w navigation), zoom, resize. LayoutNode tree with Horizontal/Vertical/Tabbed nodes. Keyboard shortcuts for pane operations.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
-      "dependencies": ["F025"],
-      "notes": []
+      "dependencies": [
+        "F025"
+      ],
+      "notes": [
+        "2026-02-10: CREATED: panes module in colony-exec with layout.rs and builtins.rs",
+        "2026-02-10: IMPLEMENTED: PaneLayout with built-in presets (default, dev, debug)",
+        "2026-02-10: IMPLEMENTED: TOML layout loading from ~/.colony/layouts.toml",
+        "2026-02-10: IMPLEMENTED: PaneDefinition struct with direction, ratio, optional command",
+        "2026-02-10: IMPLEMENTED: split builtin (--horizontal/--vertical, --ratio)",
+        "2026-02-10: IMPLEMENTED: vsplit builtin (shorthand for split --vertical)",
+        "2026-02-10: IMPLEMENTED: layout builtin (apply named preset, list available)",
+        "2026-02-10: IMPLEMENTED: pane builtin (focus left/right/up/down, close with optional id)",
+        "2026-02-10: IMPLEMENTED: All commands emit OSC 2337 via colony-protocol helpers",
+        "2026-02-10: ADDED: PaneSplit, PaneClose, PaneFocus, PaneLayout variants to ProtocolMessage",
+        "2026-02-10: ADDED: PaneSplitDirection, PaneFocusDirection enums to colony-protocol",
+        "2026-02-10: ADDED: emit_pane_split/close/focus/layout helpers to colony-protocol",
+        "2026-02-10: TESTED: 26 unit tests passing (20 builtin + 6 layout)",
+        "2026-02-10: COMPLETE: Pane management with layout presets and OSC protocol"
+      ]
     },
     {
       "id": "F027",
       "name": "Reactive Prompt Architecture",
       "description": "PromptManager that subscribes to tuple space for reactive updates (dir_change, env_change). Emit PromptState via OSC 2337 Prompt=state. Git info caching (500ms default). Prompt=ready/Prompt=busy signals. Fallback text prompt when COLONY_TERMINAL not set.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
-      "dependencies": ["F010", "F009"],
-      "notes": []
+      "dependencies": [
+        "F010",
+        "F009"
+      ],
+      "notes": [
+        "2026-02-09: Started F027 - dependencies F010 (tuple space) and F009 (OSC 2337) satisfied",
+        "2026-02-09: Added PromptStateData, GitStateData, AgentStateData structs to colony-protocol",
+        "2026-02-09: Added PromptState, PromptReady, PromptBusy variants to ProtocolMessage",
+        "2026-02-09: Added emit_prompt_state(), emit_prompt_ready(), emit_prompt_busy() to colony-protocol",
+        "2026-02-09: Added 500ms TTL git caching to GitBranchComponent and GitStatusComponent via parking_lot::Mutex",
+        "2026-02-09: REPL now emits Prompt=busy before command, Prompt=ready after with duration_ms",
+        "2026-02-09: REPL gates all OSC emission on COLONY_TERMINAL env var (fallback text prompt)",
+        "2026-02-09: REPL builds and emits full PromptState from ComponentContext + rendered data",
+        "2026-02-09: COMPLETE - 63 tests passing across colony-protocol and colony-ui-core"
+      ]
     },
     {
       "id": "F052",
@@ -676,7 +808,9 @@
       "description": "Shared component system for prompt and sidebar widgets. PromptComponent and SidebarComponent traits. TOML+shell user components. Tuple space subscriptions. Used by both colony-tui and colony-terminal.",
       "status": "new",
       "priority": 3,
-      "dependencies": ["F010"],
+      "dependencies": [
+        "F010"
+      ],
       "notes": [
         "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md"
       ]
@@ -687,7 +821,10 @@
       "description": "Full ratatui-based TUI replacing rustyline. Modal vim keybindings. Mini-editor with tree-sitter highlighting, ghost completions, fzf history. Left/right sidebars. Structured agent task view. Command palette.",
       "status": "new",
       "priority": 3,
-      "dependencies": ["F052", "F022"],
+      "dependencies": [
+        "F052",
+        "F022"
+      ],
       "notes": [
         "2025-12-29: Design completed - docs/plans/2025-12-29-reactive-tui-design.md"
       ]
@@ -696,19 +833,53 @@
       "id": "F028",
       "name": "File Tree State & Watching",
       "description": "Shell-side file tree state management. TreeState with FileNode structure, FileSystemWatcher via notify crate, GitStatusCache for git indicators. Agent context includes tree state. Enables agent awareness of file selection and project structure.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
       "dependencies": [],
-      "notes": []
+      "notes": [
+        "2026-02-10: CREATED: file_tree module in colony-exec with TreeState, FileNode, GitFileStatus",
+        "2026-02-10: IMPLEMENTED: TreeState with scan() for directory tree building (max depth limit)",
+        "2026-02-10: IMPLEMENTED: FileNode tree (name, path, is_dir, git_status, children)",
+        "2026-02-10: IMPLEMENTED: GitStatusCache with 500ms TTL, git status --porcelain parsing",
+        "2026-02-10: IMPLEMENTED: FileSystemWatcher using notify v6 with recursive watching",
+        "2026-02-10: IMPLEMENTED: Emits tree_change tuples (created/modified/removed) to tuple space",
+        "2026-02-10: IMPLEMENTED: Git cache invalidation on .git directory changes",
+        "2026-02-10: IMPLEMENTED: Smart file filtering (hidden files, node_modules, target, etc.)",
+        "2026-02-10: TESTED: 11 unit tests passing for file_tree module",
+        "2026-02-10: COMPLETE: Full file tree state management and watching"
+      ]
     },
     {
       "id": "F029",
-      "name": "File Tree Protocol (Shell ↔ Terminal)",
+      "name": "File Tree Protocol (Shell \u2194 Terminal)",
       "description": "TreeProtocol for syncing file tree state between shell and terminal. TreeStateUpdate messages (Snapshot, NodeAdded, NodeRemoved, NodeModified). TreeUserAction messages (Navigate, Expand, Open, Delete, Rename, Create). Hybrid: OSC for small updates, side channel for bulk data.",
-      "status": "new",
+      "status": "complete",
       "priority": 5,
-      "dependencies": ["F028", "F009"],
-      "notes": []
+      "dependencies": [
+        "F028",
+        "F009"
+      ],
+      "notes": [
+        "2026-02-10: CREATED: file_tree/protocol.rs with TreeProtocol struct",
+        "2026-02-10: IMPLEMENTED: TreeProtocol observes tree_change tuples and emits OSC 2337",
+        "2026-02-10: IMPLEMENTED: initial_sync() scans directory, applies git status, emits snapshot",
+        "2026-02-10: IMPLEMENTED: process_tree_change() handles created/modified/removed deltas",
+        "2026-02-10: IMPLEMENTED: change_root() for cd-triggered full resync",
+        "2026-02-10: IMPLEMENTED: force_sync() for manual full resync",
+        "2026-02-10: IMPLEMENTED: Git status overlay (relative paths, status string mapping)",
+        "2026-02-10: ADDED: FileTreeSnapshot, FileTreeDelta, FileTreeGit variants to ProtocolMessage",
+        "2026-02-10: ADDED: FileTreeChangeKind enum (created/modified/removed) to colony-protocol",
+        "2026-02-10: ADDED: emit_file_tree_snapshot/delta/git helpers to colony-protocol",
+        "2026-02-10: IMPLEMENTED: tree builtin (tree, tree --json, tree --sync)",
+        "2026-02-10: IMPLEMENTED: print_tree_node for pretty-printed tree with git indicators",
+        "2026-02-10: ADDED: colony-protocol dependency to colony-exec Cargo.toml",
+        "2026-02-10: TESTED: 7 protocol tests + 14 protocol message tests passing",
+        "2026-02-10: COMPLETE: File tree protocol with OSC sync and tree builtin",
+        "2026-02-10: ENHANCED: Added shell_id (Option<String>) to FileTreeSnapshot, FileTreeDelta, FileTreeGit for pane association",
+        "2026-02-10: ENHANCED: Added cwd (String) to FileTreeSnapshot so terminal knows tree directory",
+        "2026-02-10: ENHANCED: TreeProtocol generates shell_instance_id from std::process::id() at creation",
+        "2026-02-10: TESTED: 37 colony-protocol tests + 18 file_tree tests passing"
+      ]
     },
     {
       "id": "F030",
@@ -716,7 +887,9 @@
       "description": "Parse and load special files: AGENT.md (agent definitions), CONTEXT.md (seed context), TOOLS.md (tool configs), PROMPT.md (templates), .colony/config.toml. SpecialFilesLoader auto-loads on directory change. AgentMdParser for Markdown agent definitions.",
       "status": "new",
       "priority": 5,
-      "dependencies": ["F020"],
+      "dependencies": [
+        "F020"
+      ],
       "notes": []
     },
     {
@@ -725,7 +898,10 @@
       "description": "Full POSIX heredoc implementation with content injection into AST. Supports <<EOF (normal), <<-EOF (strip tabs), <<'EOF' (quoted delimiter, no expansion), and all POSIX heredoc features.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F021", "F038"],
+      "dependencies": [
+        "F021",
+        "F038"
+      ],
       "notes": [
         "2025-12-19: Starting F039 - heredoc implementation",
         "2025-12-19: CREATED: 07_heredoc.bats with 32 comprehensive tests",
@@ -736,14 +912,14 @@
         "2025-12-19: ARCHITECTURE: Sequential index (0,1,2...) matches heredocs to content",
         "2025-12-19: TESTED: Manual execution works - 'cat <<EOF\\nline\\nEOF' outputs correctly",
         "2025-12-19: VALIDATED: All 89 parser tests passing",
-        "2025-12-19: RESULT: Heredoc content flows: preprocessor → HashMap → AST → executor",
-        "2025-12-19: PROGRESS: 0% → 69% test pass rate (22/32 BATS tests)",
+        "2025-12-19: RESULT: Heredoc content flows: preprocessor \u2192 HashMap \u2192 AST \u2192 executor",
+        "2025-12-19: PROGRESS: 0% \u2192 69% test pass rate (22/32 BATS tests)",
         "2025-12-19: FIXED: Quoted delimiter bug - SingleQuoted/DoubleQuoted WordPart handling",
         "2025-12-19: IMPLEMENTED: Variable expansion in heredocs ($var, ${var})",
         "2025-12-19: IMPLEMENTED: Strip tabs (<<-) functionality",
         "2025-12-19: FIXED: Heredoc in pipeline - apply_redirects before execve",
         "2025-12-19: REMAINING: 10 tests (multiple heredocs, command sub, backslash handling)",
-        "2025-12-19: PROGRESS: 72% → 78% test pass rate (25/32 BATS tests, +6pp improvement)",
+        "2025-12-19: PROGRESS: 72% \u2192 78% test pass rate (25/32 BATS tests, +6pp improvement)",
         "2025-12-19: FIXED: Empty assignment grammar (empty=;) - made Word optional in builder",
         "2025-12-19: IMPLEMENTED: Backslash-newline continuation in heredoc content",
         "2025-12-19: POSIX COMPLIANCE: \\<newline> joins lines (unquoted delimiters only)",
@@ -763,7 +939,9 @@
       "description": "Full POSIX-compliant read builtin with multiple variables, IFS splitting, -r raw mode, REPLY default, backslash continuation, and proper whitespace handling.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-19: CREATED: 12_read.bats with 58 comprehensive tests from bash read.tests",
         "2025-12-19: BASELINE: 0% passing - basic read only supported single variable",
@@ -789,7 +967,9 @@
       "description": "POSIX tilde expansion support: ~ expands to HOME, ~/path to HOME/path, ~+ to PWD, ~- to OLDPWD.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F021"],
+      "dependencies": [
+        "F021"
+      ],
       "notes": [
         "2025-12-19: DIAGNOSIS: Tilde expansion code existed in colony-expand but grammar never called it",
         "2025-12-19: ROOT CAUSE: WordPart rule in pest grammar was missing TildeExpansion",
@@ -817,7 +997,9 @@
       "description": "Implementation of directory stack management builtins: dirs (display stack), pushd (push/rotate), popd (pop). Supports all bash options including -c, -l, -p, -v, -n and +N/-N index notation.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-22: Starting F042 - Implementing directory stack builtins",
         "2025-12-22: Added dir_stack: Vec<PathBuf> to ExpansionContext",
@@ -864,7 +1046,9 @@
       "description": "Process standard shell startup files like bash does. Login shells source /etc/profile and user profile. Interactive non-login shells source ~/.bashrc. Non-interactive shells only source BASH_ENV/ENV. Supports --login, --noprofile, --norc, --rcfile options.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-22: Starting F044 - Implementing bash-compatible startup file processing",
         "2025-12-22: Added ShellOptions struct for command-line argument parsing",
@@ -891,7 +1075,9 @@
       "description": "ANSI-C quoting with $'...' syntax. Supports escape sequences: \\n, \\t, \\r, \\a, \\b, \\e, \\f, \\v, \\\\, \\', \\\", octal (\\nnn), hex (\\xHH), unicode (\\uHHHH, \\UHHHHHHHH), and control chars (\\cX).",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F021"],
+      "dependencies": [
+        "F021"
+      ],
       "notes": [
         "2025-12-23: Starting F045 - Implementing ANSI-C quoting",
         "2025-12-23: Added DollarSingleQuote grammar rule to colony.pest",
@@ -910,7 +1096,9 @@
       "description": "Bash-compatible extended glob patterns: ?(pat) zero or one, *(pat) zero or more, +(pat) one or more, @(pat) exactly one, !(pat) negation. Works in pathname expansion and case statement patterns.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F021"],
+      "dependencies": [
+        "F021"
+      ],
       "notes": [
         "2025-12-24: Starting F046 - Extended glob pattern implementation",
         "2025-12-24: ExtGlob grammar rule already exists in colony.pest (lines 896-920)",
@@ -936,7 +1124,10 @@
       "description": "Bash-compatible coprocess support: coproc [NAME] command. Runs command asynchronously with bidirectional pipes. Sets NAME array with read/write fds and NAME_PID with process ID. Supports compound commands, subshells, and simple commands.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F021", "F006"],
+      "dependencies": [
+        "F021",
+        "F006"
+      ],
       "notes": [
         "2025-12-24: Starting coproc implementation",
         "2025-12-24: Grammar: CoprocCommand parses coproc with optional name",
@@ -957,7 +1148,9 @@
       "description": "Bash-compatible programmable completion builtins: complete and compgen. Supports completion actions (-a alias, -b builtin, -c command, -d directory, -f file, -v variable, etc), wordlist (-W), glob patterns (-G), prefix/suffix (-P/-S), and filter patterns (-X).",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-24: Starting programmable completion implementation",
         "2025-12-24: Added CompletionSpec and CompletionAction to colony-expand",
@@ -976,7 +1169,9 @@
       "description": "Bash-compatible mapfile (readarray) builtin for reading lines from stdin into an array. Supports -t (trim newlines), -n count, -O origin, -s skip, -d delimiter options.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-24: Implemented mapfile and readarray as aliases",
         "2025-12-24: Supports -t (remove trailing delimiter), -n count (max lines)",
@@ -992,7 +1187,9 @@
       "description": "Bash-compatible shopt builtin for shell option management. Supports globstar, extglob, dotglob, nullglob, nocaseglob, failglob and other bash shell options.",
       "status": "complete",
       "priority": 2,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-24: Implemented shopt builtin with -s (set), -u (unset), -p (print), -q (quiet)",
         "2025-12-24: Supports options: globstar, extglob, dotglob, nullglob, nocaseglob, failglob",
@@ -1008,7 +1205,9 @@
       "description": "Interactive script learning mode with 4-pane TUI: Script, Magic (AST/trace), Environment, and Output. Real-time execution tracing, concept explanations, and variable tracking.",
       "status": "complete",
       "priority": 3,
-      "dependencies": ["F021"],
+      "dependencies": [
+        "F021"
+      ],
       "notes": [
         "2025-12-23: Started Tutorial Mode implementation",
         "2025-12-23: Created tutorial module with runner, events, tracer, complexity scorer",
@@ -1031,25 +1230,40 @@
       "id": "F054",
       "name": "Colony Cloud (Managed LLM Service)",
       "description": "Managed LLM service wrapping AWS Bedrock. REST API (OpenAI-compatible) + native Rust SDK. Tiered subscriptions (Free/Pro/Enterprise), usage tracking, rate limiting, prompt caching. Includes Recipe Registry for sharing recipes/plugins/skills/bundles.",
-      "status": "new",
+      "status": "in_progress",
       "priority": 6,
-      "dependencies": ["F014"],
+      "dependencies": [
+        "F014"
+      ],
       "notes": [
         "2025-12-29: Design completed - docs/plans/2025-12-29-colony-cloud-design.md",
         "2025-12-29: Implementation plan completed - docs/plans/2025-12-29-colony-cloud-impl-plan.md",
         "2025-12-29: Init prompt created - docs/plans/2025-12-29-colony-cloud-init-prompt.md",
         "2025-12-29: Separate repository (colony-cloud) - not part of this workspace",
         "2025-12-29: 32 features planned across 4 phases (8 weeks)",
-        "2025-12-29: SDK crate (colony-cloud-sdk) will integrate with colony-agent ModelRouter"
+        "2025-12-29: SDK crate (colony-cloud-sdk) will integrate with colony-agent ModelRouter",
+        "2026-02-10: P1-08 COMPLETE: colony-cloud-sdk crate created with typed API client",
+        "2026-02-10: CREATED: colony-cloud-sdk crate (new workspace member)",
+        "2026-02-10: IMPLEMENTED: ColonyClient with reqwest (from_env, new, with_base_url)",
+        "2026-02-10: IMPLEMENTED: POST /v1/chat/completions (streaming SSE + non-streaming)",
+        "2026-02-10: IMPLEMENTED: GET /v1/models (list available models)",
+        "2026-02-10: IMPLEMENTED: POST /v1/recipes (recipe submission)",
+        "2026-02-10: IMPLEMENTED: Auth via COLONY_API_KEY env var or ~/.colony/config.toml",
+        "2026-02-10: IMPLEMENTED: CloudProvider in colony-agent (ModelProvider trait, feature-gated 'cloud')",
+        "2026-02-10: IMPLEMENTED: Cloud variant in ProviderType, auto-detection as highest priority",
+        "2026-02-10: TESTED: 5 colony-cloud-sdk tests + 13 colony-agent tests passing"
       ]
     },
     {
       "id": "F055",
       "name": "Recipe System (LLM Modes)",
       "description": "Declarative TOML configuration for LLM modes. Recipes combine system prompts, tools, skills, UI layout, and behaviors. Plugins provide prompts, commands, hooks, and subagents. Optional Lua scripting for dynamic behavior. Registry integration with Colony Cloud.",
-      "status": "new",
+      "status": "in_progress",
       "priority": 5,
-      "dependencies": ["F014", "F020"],
+      "dependencies": [
+        "F014",
+        "F020"
+      ],
       "notes": [
         "2025-12-29: Design completed - docs/plans/2025-12-29-recipe-system-design.md",
         "2025-12-29: Implementation plan completed - docs/plans/2025-12-29-recipe-system-impl-plan.md",
@@ -1057,9 +1271,114 @@
         "2025-12-29: 31 features planned across 5 phases (8 weeks)",
         "2025-12-29: Core concepts: Recipe, Plugin, Skill, Bundle",
         "2025-12-29: Lua scripting via mlua (optional, sandboxed)",
-        "2025-12-29: Registry integration with F054 (Colony Cloud)"
+        "2025-12-29: Registry integration with F054 (Colony Cloud)",
+        "2026-02-10: CREATED: colony-recipe crate (RS-001) - Recipe, RecipeLoader, RecipeRegistry types",
+        "2026-02-10: IMPLEMENTED: Recipe TOML parsing with meta, prompt, tools, skills, commands, model, behavior sections",
+        "2026-02-10: IMPLEMENTED: RecipeLoader with multi-path discovery (project > user > config > registry priority)",
+        "2026-02-10: IMPLEMENTED: RecipeRegistry with TOML manifest persistence at ~/.colony/recipes/registry.toml",
+        "2026-02-10: IMPLEMENTED: validate_recipe_dir() and recipe_package_files() utilities",
+        "2026-02-10: IMPLEMENTED: colony install builtin - installs recipes from local search paths to ~/.colony/recipes/",
+        "2026-02-10: IMPLEMENTED: colony publish builtin - validates recipe files, checks API key (upload pending cloud)",
+        "2026-02-10: IMPLEMENTED: colony recipe list/show builtins - lists installed and available recipes",
+        "2026-02-10: TESTED: 17 colony-recipe unit tests passing (recipe parsing, loader, registry)",
+        "2026-02-10: TESTED: 183 colony-exec tests passing (no regressions)",
+        "2026-02-10: Phase 1 core infrastructure complete (RS-001 through RS-005, RS-008 partial)"
+      ]
+    },
+    {
+      "id": "F056",
+      "name": "Match Statement",
+      "description": "Modern match statement for structured control flow with pattern arms, guards, and destructuring.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": [
+        "F021"
+      ],
+      "notes": [
+        "2026-02-06: Added to roadmap from language extensions review",
+        "2026-02-10: Grammar: Added or-pattern support (pattern1 | pattern2) to MatchArm rule",
+        "2026-02-10: Grammar: Fixed MatchPattern ordering (WildcardPattern before BindingPattern)",
+        "2026-02-10: Grammar: Restricted LiteralPattern to UnaryExpr to prevent | ambiguity with BitwiseOrExpr",
+        "2026-02-10: AST: Added MatchPattern::Or(Vec<MatchPattern>) variant for or-patterns",
+        "2026-02-10: Builder: Updated build_match_arm to collect multiple patterns into Or variant",
+        "2026-02-10: Builder: Updated build_match_pattern LiteralPattern to use build_expression_recursive",
+        "2026-02-10: Executor: Added Or pattern handling in match_pattern_internal (lib.rs)",
+        "2026-02-10: Executor: Added Or pattern handling in match_pattern_in_child (pipeline.rs)",
+        "2026-02-10: Serialization: Added Or pattern to match_pattern_to_string (serialization.rs, builtins.rs)",
+        "2026-02-10: Tests: Added test_build_match_or_pattern parser unit test",
+        "2026-02-10: Tests: Created 51_match.bats with 24 BATS tests - all passing",
+        "2026-02-10: COMPLETE: Match statement with literals, bindings, wildcards, guards, or-patterns, list/dict/tuple destructuring"
+      ]
+    },
+    {
+      "id": "F057",
+      "name": "Proc Definitions",
+      "description": "proc name(...) { } with typed params, defaults, and optional return types.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": [
+        "F021"
+      ],
+      "notes": [
+        "2026-02-06: Added to roadmap from language extensions review",
+        "2026-02-10: Grammar: ProcDef, ProcParams, ProcParam rules already existed. Added 'proc' to ReservedKeyword.",
+        "2026-02-10: Builder: Added build_proc_def and build_proc_param methods. Handles name, params, defaults, block.",
+        "2026-02-10: AST: ProcDef and ProcParam already existed with name, params, body, default fields.",
+        "2026-02-10: Context: Added procs HashMap to ExpansionContext with define_proc, get_proc, is_proc methods.",
+        "2026-02-10: Executor: Added execute_proc method with declare_local for scoped params, default value evaluation.",
+        "2026-02-10: Executor: Added Statement::ProcDef handling in execute_statement_recursive and control_flow.rs.",
+        "2026-02-10: Pipeline: Added proc lookup and execution in both blocking child and current shell paths.",
+        "2026-02-10: Serialization: Added ProcDef formatting in builtins.rs statement_to_string.",
+        "2026-02-10: Tests: 3 parser unit tests (simple, with_default, no_params) - all passing.",
+        "2026-02-10: Tests: 22 BATS tests (52_proc.bats) covering basic calls, defaults, scoping, return, pipeline, nesting.",
+        "2026-02-10: Known limitation: $((arithmetic)) inside proc bodies returns empty (pre-existing expansion issue).",
+        "2026-02-10: COMPLETE: Proc definitions with named params, defaults, local scoping, return, pipeline support."
+      ]
+    },
+    {
+      "id": "F058",
+      "name": "Pipeline Extensions",
+      "description": "Extended pipeline operators |>, ?>, !> for structured routing, guards, and error-aware pipelines.",
+      "status": "complete",
+      "priority": 3,
+      "dependencies": [
+        "F021",
+        "F005"
+      ],
+      "notes": [
+        "2026-02-06: Added to roadmap from language extensions review",
+        "2026-02-10: Grammar: PipeOp already includes |>, ?>, !> operators. PipeExtOp excluded from BarewordChar.",
+        "2026-02-10: AST: PipeOp enum already has PipeTap, PipeGuard, PipeCatch variants.",
+        "2026-02-10: Builder: build_pipe_op maps |> -> PipeTap, ?> -> PipeGuard, !> -> PipeCatch.",
+        "2026-02-10: Executor: execute_pipeline_extended with split_pipeline_catch and guard segments.",
+        "2026-02-10: Pipeline: |> creates Tap link (copies data to stddiag), ?> splits at guard boundaries, !> routes to error handler.",
+        "2026-02-10: Tests: 24 BATS tests (53_pipeline_ext.bats) covering tap, guard, catch, combined operators, edge cases.",
+        "2026-02-10: COMPLETE: All three extended pipeline operators working with full test coverage."
+      ]
+    },
+    {
+      "id": "F059",
+      "name": "Agent Syntax",
+      "description": "Agent invocation syntax (@agent, agent:*) and pipeline integration.",
+      "status": "complete",
+      "priority": 3,
+      "dependencies": [
+        "F014",
+        "F021"
+      ],
+      "notes": [
+        "2026-02-06: Added to roadmap from language extensions review",
+        "2026-02-10: Grammar: Added AgentInvocation, AgentTarget, AgentPromptArg rules. AgentInvocation in PipelineElement.",
+        "2026-02-10: AST: Added AgentInvocation struct with agent_name, tool (Option), prompt (Word), span.",
+        "2026-02-10: Builder: Added build_agent_invocation parsing @agent_name:tool into name/tool split.",
+        "2026-02-10: Executor: execute_agent_invocation expands prompt, outputs @agent format, sets AGENT_NAME/AGENT_PROMPT/AGENT_TOOL.",
+        "2026-02-10: Pipeline: AgentInvocation handled in both child process and current shell pipeline paths.",
+        "2026-02-10: Control flow: AgentInvocation integrated in execute_statement_with_errexit_control.",
+        "2026-02-10: Tests: 3 parser unit tests + 20 BATS tests (54_agent_syntax.bats).",
+        "2026-02-10: Supports: @name \"prompt\", @name:tool \"args\", variable expansion, cmd | @agent, @agent | cmd.",
+        "2026-02-10: Known: Redirects on agent invocations not yet supported (requires grammar extension).",
+        "2026-02-10: COMPLETE: Agent invocation syntax with pipeline integration and full test coverage."
       ]
     }
   ]
 }
-

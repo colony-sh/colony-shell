@@ -50,6 +50,8 @@ pub enum ExpansionError {
 
     #[error("Arithmetic error: {0}")]
     ArithmeticError(String),
+    #[error("Expression error: {0}")]
+    ExpressionError(String),
 
     #[error("Glob pattern error: {0}")]
     GlobError(String),
@@ -93,6 +95,16 @@ pub type CommandExecutor = Box<
     dyn Fn(&colony_parser::Statement, &mut ExpansionContext) -> std::result::Result<String, String>,
 >;
 
+/// Expression evaluator callback
+///
+/// Takes an expression AST and expansion context, returns evaluated string
+pub type ExpressionEvaluator = Box<
+    dyn Fn(
+        &colony_parser::Expression,
+        &mut ExpansionContext,
+    ) -> std::result::Result<String, String>,
+>;
+
 /// Process substitution executor callback
 ///
 /// Takes a statement AST and expansion context, runs the command without capturing
@@ -105,6 +117,8 @@ pub struct Expander {
     /// Optional command executor for command substitution
     /// If None, command substitution returns empty string
     command_executor: Option<CommandExecutor>,
+    /// Optional expression evaluator for $[expr] expansion
+    expression_evaluator: Option<ExpressionEvaluator>,
     /// Optional executor for process substitution (runs commands without capturing)
     process_sub_executor: Option<ProcessSubExecutor>,
 }
@@ -114,6 +128,7 @@ impl Expander {
         Self {
             context,
             command_executor: None,
+            expression_evaluator: None,
             process_sub_executor: None,
         }
     }
@@ -130,6 +145,33 @@ impl Expander {
         Self {
             context,
             command_executor: Some(Box::new(executor)),
+            expression_evaluator: None,
+            process_sub_executor: None,
+        }
+    }
+
+    /// Create expander with command and expression evaluators
+    pub fn with_executor_and_expr<F, G>(
+        context: ExpansionContext,
+        executor: F,
+        expr_evaluator: G,
+    ) -> Self
+    where
+        F: Fn(
+                &colony_parser::Statement,
+                &mut ExpansionContext,
+            ) -> std::result::Result<String, String>
+            + 'static,
+        G: Fn(
+                &colony_parser::Expression,
+                &mut ExpansionContext,
+            ) -> std::result::Result<String, String>
+            + 'static,
+    {
+        Self {
+            context,
+            command_executor: Some(Box::new(executor)),
+            expression_evaluator: Some(Box::new(expr_evaluator)),
             process_sub_executor: None,
         }
     }
@@ -151,8 +193,20 @@ impl Expander {
         Self {
             context,
             command_executor: Some(Box::new(cmd_executor)),
+            expression_evaluator: None,
             process_sub_executor: Some(Box::new(procsub_executor)),
         }
+    }
+
+    pub fn set_expression_evaluator<G>(&mut self, expr_evaluator: G)
+    where
+        G: Fn(
+                &colony_parser::Expression,
+                &mut ExpansionContext,
+            ) -> std::result::Result<String, String>
+            + 'static,
+    {
+        self.expression_evaluator = Some(Box::new(expr_evaluator));
     }
 
     pub fn into_context(self) -> ExpansionContext {
@@ -206,6 +260,18 @@ impl Expander {
                         result.push_str(&val);
                     }
                 }
+                WordPart::ExprSub(expr) => {
+                    if let Some(ref evaluator) = self.expression_evaluator {
+                        match evaluator(expr, &mut self.context) {
+                            Ok(val) => result.push_str(&val),
+                            Err(e) => return Err(ExpansionError::ExpressionError(e)),
+                        }
+                    } else {
+                        return Err(ExpansionError::ExpressionError(
+                            "expression evaluator not available".to_string(),
+                        ));
+                    }
+                }
                 WordPart::DoubleQuoted(inner) => {
                     for inner_part in inner {
                         match inner_part {
@@ -231,6 +297,18 @@ impl Expander {
                                             }
                                         }
                                     }
+                                }
+                            }
+                            WordPart::ExprSub(expr) => {
+                                if let Some(ref evaluator) = self.expression_evaluator {
+                                    match evaluator(expr, &mut self.context) {
+                                        Ok(val) => result.push_str(&val),
+                                        Err(e) => return Err(ExpansionError::ExpressionError(e)),
+                                    }
+                                } else {
+                                    return Err(ExpansionError::ExpressionError(
+                                        "expression evaluator not available".to_string(),
+                                    ));
                                 }
                             }
                             _ => {}
@@ -347,10 +425,13 @@ impl Expander {
 
     fn word_has_command_sub(&self, word: &Word) -> bool {
         word.parts.iter().any(|part| match part {
-            WordPart::CommandSubRaw(_) | WordPart::CommandSub(_) => true,
-            WordPart::DoubleQuoted(inner) => inner
-                .iter()
-                .any(|p| matches!(p, WordPart::CommandSubRaw(_) | WordPart::CommandSub(_))),
+            WordPart::CommandSubRaw(_) | WordPart::CommandSub(_) | WordPart::ExprSub(_) => true,
+            WordPart::DoubleQuoted(inner) => inner.iter().any(|p| {
+                matches!(
+                    p,
+                    WordPart::CommandSubRaw(_) | WordPart::CommandSub(_) | WordPart::ExprSub(_)
+                )
+            }),
             _ => false,
         })
     }
@@ -855,6 +936,25 @@ impl Expander {
                     out.push_quoted(&result);
                 } else {
                     out.push_expanded(&result);
+                }
+            }
+
+            WordPart::ExprSub(expr) => {
+                if let Some(ref evaluator) = self.expression_evaluator {
+                    match evaluator(expr, &mut self.context) {
+                        Ok(val) => {
+                            if in_double_quote {
+                                out.push_quoted(&val);
+                            } else {
+                                out.push_expanded(&val);
+                            }
+                        }
+                        Err(e) => return Err(ExpansionError::ExpressionError(e)),
+                    }
+                } else {
+                    return Err(ExpansionError::ExpressionError(
+                        "expression evaluator not available".to_string(),
+                    ));
                 }
             }
 

@@ -139,9 +139,11 @@ fn execute_statement_in_child_with_return(
         }
 
         Statement::SimpleCommand(cmd) => {
-            let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-                execute_and_capture(stmt, ctx)
-            });
+            let mut expander = Expander::with_executor_and_expr(
+                context.clone(),
+                |stmt, ctx| execute_and_capture(stmt, ctx),
+                |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+            );
 
             let name_fields = match expander.expand_word(&cmd.name) {
                 Ok(fields) if !fields.is_empty() => fields,
@@ -261,6 +263,37 @@ fn execute_statement_in_child_with_return(
             ChildExitResult::Exit(last_exit)
         }
 
+        Statement::Try(try_stmt) => {
+            let mut last_exit = context.last_exit_status();
+            for stmt in &try_stmt.body {
+                match execute_statement_in_child_with_return(stmt, context) {
+                    ChildExitResult::Exit(code) => {
+                        last_exit = code;
+                        context.set_last_exit_status(last_exit);
+                    }
+                    ChildExitResult::Return(code) => {
+                        return ChildExitResult::Return(code);
+                    }
+                }
+            }
+
+            if let Some(finally_body) = &try_stmt.finally_body {
+                for stmt in finally_body {
+                    match execute_statement_in_child_with_return(stmt, context) {
+                        ChildExitResult::Exit(code) => {
+                            last_exit = code;
+                            context.set_last_exit_status(last_exit);
+                        }
+                        ChildExitResult::Return(code) => {
+                            return ChildExitResult::Return(code);
+                        }
+                    }
+                }
+            }
+
+            ChildExitResult::Exit(last_exit)
+        }
+
         _other => ChildExitResult::Exit(1),
     }
 }
@@ -280,7 +313,10 @@ fn execute_command_in_child_blocking(
     use std::os::unix::ffi::OsStrExt;
 
     // Create expander with command substitution (recursive!)
-    let mut expander = Expander::with_executor(context.clone(), execute_and_capture);
+    let mut expander =
+        Expander::with_executor_and_expr(context.clone(), execute_and_capture, |expr, ctx| {
+            crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
+        });
 
     // Expand command name
     let name_fields = expander.expand_word(&cmd.name)?;
@@ -433,7 +469,10 @@ fn execute_single_element_blocking(
     use std::io::Write;
 
     if let colony_parser::Statement::SimpleCommand(cmd) = &*element.command {
-        let mut expander = Expander::with_executor(context.clone(), execute_and_capture);
+        let mut expander =
+            Expander::with_executor_and_expr(context.clone(), execute_and_capture, |expr, ctx| {
+                crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
+            });
 
         let name_fields = match expander.expand_word(&cmd.name) {
             Ok(fields) if !fields.is_empty() => fields,

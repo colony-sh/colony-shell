@@ -5,16 +5,32 @@
 
 use crate::path::resolve_command;
 use crate::process::ExitStatus;
+use crate::redirect::STDDIAG;
 use crate::{ExecutionError, Result};
 use colony_expand::{Expander, ExpansionContext};
-use colony_parser::{Pipeline, PipelineElement, Statement};
+use colony_parser::{PipeOp, Pipeline, PipelineElement, Statement};
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{close, dup2, execve, fork, pipe, ForkResult, Pid};
+use nix::unistd::{close, dup, dup2, execve, fork, pipe, ForkResult, Pid};
 use std::ffi::CString;
+use std::fs::File;
+use std::io::Write;
+use std::os::fd::{BorrowedFd, FromRawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::{AsRawFd, RawFd};
+use std::thread::JoinHandle;
 
 pub async fn execute_pipeline(
+    pipeline: &Pipeline,
+    context: &mut ExpansionContext,
+) -> Result<ExitStatus> {
+    if has_extended_pipe_ops(pipeline) {
+        return execute_pipeline_extended(pipeline, context).await;
+    }
+
+    execute_pipeline_basic(pipeline, context).await
+}
+
+async fn execute_pipeline_basic(
     pipeline: &Pipeline,
     context: &mut ExpansionContext,
 ) -> Result<ExitStatus> {
@@ -32,6 +48,155 @@ pub async fn execute_pipeline(
         })
         .await
         .map_err(|e| ExecutionError::IoError(std::io::Error::other(e)))?
+    }
+}
+
+fn has_extended_pipe_ops(pipeline: &Pipeline) -> bool {
+    pipeline.elements.iter().any(|element| {
+        matches!(
+            element.pipe_op,
+            Some(PipeOp::PipeGuard | PipeOp::PipeCatch | PipeOp::PipeTap)
+        )
+    })
+}
+
+async fn execute_pipeline_extended(
+    pipeline: &Pipeline,
+    context: &mut ExpansionContext,
+) -> Result<ExitStatus> {
+    let (main_elements, handler) = split_pipeline_catch(pipeline)?;
+
+    let enforce_pipefail = handler.is_some();
+    let saved_pipefail = context.shell_options().pipefail;
+    if enforce_pipefail {
+        context.shell_options_mut().pipefail = true;
+    }
+    let status = execute_pipeline_with_guard_segments(&main_elements, pipeline.span, context).await;
+    if enforce_pipefail {
+        context.shell_options_mut().pipefail = saved_pipefail;
+    }
+
+    let status = status?;
+    if status.code() != 0 {
+        if let Some(handler_stmt) = handler {
+            let handler_status =
+                execute_single_pipeline_element_in_current_shell(&handler_stmt, context).await?;
+            return Ok(handler_status);
+        }
+    }
+
+    Ok(status)
+}
+
+fn split_pipeline_catch(
+    pipeline: &Pipeline,
+) -> Result<(Vec<PipelineElement>, Option<PipelineElement>)> {
+    let mut catch_index: Option<usize> = None;
+    for (idx, element) in pipeline.elements.iter().enumerate() {
+        if matches!(element.pipe_op, Some(PipeOp::PipeCatch)) {
+            if catch_index.is_some() {
+                return Err(ExecutionError::InvalidPipeline(
+                    "multiple !> operators in pipeline".to_string(),
+                ));
+            }
+            catch_index = Some(idx);
+        }
+    }
+
+    if let Some(idx) = catch_index {
+        if idx + 1 >= pipeline.elements.len() {
+            return Err(ExecutionError::InvalidPipeline(
+                "missing handler after !>".to_string(),
+            ));
+        }
+
+        if idx + 2 < pipeline.elements.len() {
+            return Err(ExecutionError::InvalidPipeline(
+                "handler for !> must be the final pipeline element".to_string(),
+            ));
+        }
+
+        let mut main_elements = pipeline.elements[..=idx].to_vec();
+        if let Some(last) = main_elements.last_mut() {
+            last.pipe_op = None;
+        }
+
+        let handler = pipeline.elements[idx + 1].clone();
+        if handler.pipe_op.is_some() {
+            return Err(ExecutionError::InvalidPipeline(
+                "handler for !> must not be piped".to_string(),
+            ));
+        }
+
+        Ok((main_elements, Some(handler)))
+    } else {
+        Ok((pipeline.elements.clone(), None))
+    }
+}
+
+async fn execute_pipeline_with_guard_segments(
+    elements: &[PipelineElement],
+    span: colony_parser::Span,
+    context: &mut ExpansionContext,
+) -> Result<ExitStatus> {
+    let segments = split_pipeline_guard_segments(elements)?;
+    let mut last_status = ExitStatus::success();
+
+    for segment in segments {
+        let status = execute_pipeline_basic(
+            &Pipeline {
+                elements: segment,
+                span,
+            },
+            context,
+        )
+        .await?;
+        last_status = status;
+        if last_status.code() != 0 {
+            break;
+        }
+    }
+
+    Ok(last_status)
+}
+
+fn split_pipeline_guard_segments(
+    elements: &[PipelineElement],
+) -> Result<Vec<Vec<PipelineElement>>> {
+    let mut segments: Vec<Vec<PipelineElement>> = Vec::new();
+    let mut current: Vec<PipelineElement> = Vec::new();
+
+    for element in elements.iter().cloned() {
+        let mut normalized = element;
+        if let Some(op) = normalized.pipe_op {
+            normalized.pipe_op = Some(normalize_pipe_op(op)?);
+        }
+
+        if matches!(normalized.pipe_op, Some(PipeOp::PipeGuard)) {
+            normalized.pipe_op = None;
+            current.push(normalized);
+            segments.push(current);
+            current = Vec::new();
+        } else {
+            current.push(normalized);
+        }
+    }
+
+    if !current.is_empty() {
+        segments.push(current);
+    }
+
+    Ok(segments)
+}
+
+fn normalize_pipe_op(op: PipeOp) -> Result<PipeOp> {
+    match op {
+        PipeOp::PipeTap => Ok(PipeOp::PipeTap),
+        PipeOp::PipeGuard => Ok(PipeOp::PipeGuard),
+        PipeOp::PipeCatch => Err(ExecutionError::InvalidPipeline(
+            "!> must terminate a pipeline".to_string(),
+        )),
+        other => Ok(other),
     }
 }
 
@@ -117,15 +282,8 @@ fn execute_pipeline_head_blocking(
 ) -> Result<(Vec<Pid>, RawFd)> {
     let num_commands = pipeline.elements.len();
 
-    let mut pipes: Vec<(RawFd, RawFd)> = Vec::new();
-    for _ in 0..(num_commands - 1) {
-        let pipe_fds = pipe().map_err(ExecutionError::ForkError)?;
-        let read_end = pipe_fds.0.as_raw_fd();
-        let write_end = pipe_fds.1.as_raw_fd();
-        pipes.push((read_end, write_end));
-        std::mem::forget(pipe_fds.0);
-        std::mem::forget(pipe_fds.1);
-    }
+    let links = build_pipeline_links(pipeline)?;
+    let mut tap_threads: Vec<JoinHandle<()>> = Vec::new();
 
     let mut pids: Vec<Pid> = Vec::new();
 
@@ -135,26 +293,28 @@ fn execute_pipeline_head_blocking(
                 pids.push(child);
             }
             ForkResult::Child => {
-                setup_pipeline_fds(i, num_commands, &pipes);
-
-                for (read_fd, write_fd) in &pipes {
-                    let _ = close(*read_fd);
-                    let _ = close(*write_fd);
-                }
+                setup_pipeline_fds(i, num_commands, &links);
+                close_child_fds(&links);
 
                 execute_pipeline_element_in_child(element, context);
             }
         }
     }
 
-    for (i, (read_fd, write_fd)) in pipes.iter().enumerate() {
-        let _ = close(*write_fd);
-        if i < pipes.len() - 1 {
-            let _ = close(*read_fd);
+    for (idx, link) in links.iter().enumerate() {
+        if let Some((tap_read, down_write)) = link.parent_tap_fds() {
+            tap_threads.push(spawn_tap_thread(tap_read, down_write));
         }
+        close_parent_unused_fds_head(link, idx + 1 == links.len());
     }
 
-    let last_pipe_read_fd = pipes[pipes.len() - 1].0;
+    // Let tap threads run in background while the last element consumes input.
+    std::mem::forget(tap_threads);
+
+    let last_pipe_read_fd = links
+        .last()
+        .map(|link| link.read_fd_for_next())
+        .ok_or_else(|| ExecutionError::InvalidPipeline("empty pipeline".to_string()))?;
     Ok((pids, last_pipe_read_fd))
 }
 
@@ -181,6 +341,21 @@ async fn execute_single_pipeline_element_in_current_shell(
         Statement::If(if_stmt) => {
             let mut executor = crate::Executor::new(context.clone());
             let code = executor.execute_if_internal(if_stmt).await.unwrap_or(1);
+            *context = executor.into_context();
+            Ok(ExitStatus::new(code))
+        }
+        Statement::Try(try_stmt) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let code = executor.execute_try_internal(try_stmt).await.unwrap_or(1);
+            *context = executor.into_context();
+            Ok(ExitStatus::new(code))
+        }
+        Statement::Match(match_stmt) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let code = executor
+                .execute_match_internal(match_stmt)
+                .await
+                .unwrap_or(1);
             *context = executor.into_context();
             Ok(ExitStatus::new(code))
         }
@@ -219,6 +394,12 @@ async fn execute_single_pipeline_element_in_current_shell(
             executor.run_exit_trap().await;
             Ok(ExitStatus::new(last))
         }
+        Statement::AgentInvocation(invocation) => {
+            let mut executor = crate::Executor::new(context.clone());
+            let status = executor.execute_agent_invocation(invocation).await?;
+            *context = executor.into_context();
+            Ok(status)
+        }
         _ => Err(ExecutionError::CommandNotFound("<complex>".to_string())),
     }
 }
@@ -243,16 +424,8 @@ fn execute_pipeline_blocking(
         return Ok(negate_exit_status(status, element.negated));
     }
 
-    // Create pipes: N commands need N-1 pipes
-    let mut pipes: Vec<(RawFd, RawFd)> = Vec::new();
-    for _ in 0..(num_commands - 1) {
-        let pipe_fds = pipe().map_err(ExecutionError::ForkError)?;
-        let read_end = pipe_fds.0.as_raw_fd();
-        let write_end = pipe_fds.1.as_raw_fd();
-        pipes.push((read_end, write_end));
-        std::mem::forget(pipe_fds.0);
-        std::mem::forget(pipe_fds.1);
-    }
+    let links = build_pipeline_links(pipeline)?;
+    let mut tap_threads: Vec<JoinHandle<()>> = Vec::new();
 
     // Spawn all processes
     let mut pids: Vec<Pid> = Vec::new();
@@ -263,22 +436,20 @@ fn execute_pipeline_blocking(
                 pids.push(child);
             }
             ForkResult::Child => {
-                setup_pipeline_fds(i, num_commands, &pipes);
-
-                for (read_fd, write_fd) in &pipes {
-                    let _ = close(*read_fd);
-                    let _ = close(*write_fd);
-                }
+                setup_pipeline_fds(i, num_commands, &links);
+                close_child_fds(&links);
 
                 execute_pipeline_element_in_child(element, context);
             }
         }
     }
 
-    // Parent: close all pipe ends
-    for (read_fd, write_fd) in pipes {
-        let _ = close(read_fd);
-        let _ = close(write_fd);
+    // Parent: close unused fds and spawn tap threads
+    for link in &links {
+        if let Some((tap_read, down_write)) = link.parent_tap_fds() {
+            tap_threads.push(spawn_tap_thread(tap_read, down_write));
+        }
+        close_parent_unused_fds(link);
     }
 
     // Wait for all children and collect exit statuses
@@ -295,6 +466,10 @@ fn execute_pipeline_blocking(
                 statuses.push(0);
             }
         }
+    }
+
+    for handle in tap_threads {
+        let _ = handle.join();
     }
 
     let final_status = if pipefail {
@@ -327,22 +502,189 @@ fn negate_exit_status(status: ExitStatus, negated: bool) -> ExitStatus {
 }
 
 /// Setup file descriptors for a command in the pipeline
-fn setup_pipeline_fds(index: usize, num_commands: usize, pipes: &[(RawFd, RawFd)]) {
+fn setup_pipeline_fds(index: usize, num_commands: usize, links: &[PipelineLink]) {
     // First command: stdin from parent, stdout to pipe[0]
     // Middle commands: stdin from pipe[i-1], stdout to pipe[i]
     // Last command: stdin from pipe[N-2], stdout to parent
 
     if index > 0 {
         // Not the first command - read from previous pipe
-        let (read_fd, _) = pipes[index - 1];
+        let read_fd = links[index - 1].read_fd_for_next();
         dup2(read_fd, 0).unwrap(); // stdin = read_fd
     }
 
     if index < num_commands - 1 {
         // Not the last command - write to next pipe
-        let (_, write_fd) = pipes[index];
+        let write_fd = links[index].write_fd_for_prev();
         dup2(write_fd, 1).unwrap(); // stdout = write_fd
     }
+}
+
+#[derive(Clone, Debug)]
+enum PipelineLink {
+    Direct {
+        read_fd: RawFd,
+        write_fd: RawFd,
+    },
+    Tap {
+        tap_read: RawFd,
+        tap_write: RawFd,
+        down_read: RawFd,
+        down_write: RawFd,
+    },
+}
+
+impl PipelineLink {
+    fn read_fd_for_next(&self) -> RawFd {
+        match self {
+            PipelineLink::Direct { read_fd, .. } => *read_fd,
+            PipelineLink::Tap { down_read, .. } => *down_read,
+        }
+    }
+
+    fn write_fd_for_prev(&self) -> RawFd {
+        match self {
+            PipelineLink::Direct { write_fd, .. } => *write_fd,
+            PipelineLink::Tap { tap_write, .. } => *tap_write,
+        }
+    }
+
+    fn parent_tap_fds(&self) -> Option<(RawFd, RawFd)> {
+        match self {
+            PipelineLink::Tap {
+                tap_read,
+                down_write,
+                ..
+            } => Some((*tap_read, *down_write)),
+            _ => None,
+        }
+    }
+}
+
+fn build_pipeline_links(pipeline: &Pipeline) -> Result<Vec<PipelineLink>> {
+    let mut links: Vec<PipelineLink> = Vec::new();
+    if pipeline.elements.len() < 2 {
+        return Ok(links);
+    }
+
+    for element in pipeline.elements.iter().take(pipeline.elements.len() - 1) {
+        let op = element.pipe_op.unwrap_or(PipeOp::Pipe);
+        match op {
+            PipeOp::PipeTap => {
+                let tap_pipe = pipe().map_err(ExecutionError::ForkError)?;
+                let down_pipe = pipe().map_err(ExecutionError::ForkError)?;
+                let tap_read = tap_pipe.0.as_raw_fd();
+                let tap_write = tap_pipe.1.as_raw_fd();
+                let down_read = down_pipe.0.as_raw_fd();
+                let down_write = down_pipe.1.as_raw_fd();
+                std::mem::forget(tap_pipe.0);
+                std::mem::forget(tap_pipe.1);
+                std::mem::forget(down_pipe.0);
+                std::mem::forget(down_pipe.1);
+                links.push(PipelineLink::Tap {
+                    tap_read,
+                    tap_write,
+                    down_read,
+                    down_write,
+                });
+            }
+            _ => {
+                let pipe_fds = pipe().map_err(ExecutionError::ForkError)?;
+                let read_fd = pipe_fds.0.as_raw_fd();
+                let write_fd = pipe_fds.1.as_raw_fd();
+                std::mem::forget(pipe_fds.0);
+                std::mem::forget(pipe_fds.1);
+                links.push(PipelineLink::Direct { read_fd, write_fd });
+            }
+        }
+    }
+
+    Ok(links)
+}
+
+fn close_child_fds(links: &[PipelineLink]) {
+    for link in links {
+        match link {
+            PipelineLink::Direct { read_fd, write_fd } => {
+                let _ = close(*read_fd);
+                let _ = close(*write_fd);
+            }
+            PipelineLink::Tap {
+                tap_read,
+                tap_write,
+                down_read,
+                down_write,
+            } => {
+                let _ = close(*tap_read);
+                let _ = close(*tap_write);
+                let _ = close(*down_read);
+                let _ = close(*down_write);
+            }
+        }
+    }
+}
+
+fn close_parent_unused_fds(link: &PipelineLink) {
+    match link {
+        PipelineLink::Direct { read_fd, write_fd } => {
+            let _ = close(*read_fd);
+            let _ = close(*write_fd);
+        }
+        PipelineLink::Tap {
+            tap_write,
+            down_read,
+            ..
+        } => {
+            let _ = close(*tap_write);
+            let _ = close(*down_read);
+        }
+    }
+}
+
+fn close_parent_unused_fds_head(link: &PipelineLink, is_last_link: bool) {
+    match link {
+        PipelineLink::Direct { read_fd, write_fd } => {
+            let _ = close(*write_fd);
+            if !is_last_link {
+                let _ = close(*read_fd);
+            }
+        }
+        PipelineLink::Tap {
+            tap_write,
+            down_read,
+            ..
+        } => {
+            let _ = close(*tap_write);
+            if !is_last_link {
+                let _ = close(*down_read);
+            }
+        }
+    }
+}
+
+fn spawn_tap_thread(tap_read: RawFd, down_write: RawFd) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        let diag_fd = dup(STDDIAG).ok();
+        let mut diag_file = diag_fd.map(|fd| unsafe { File::from_raw_fd(fd) });
+
+        loop {
+            let n = match nix::unistd::read(tap_read, &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+
+            let down_fd = unsafe { BorrowedFd::borrow_raw(down_write) };
+            let _ = nix::unistd::write(down_fd, &buf[..n]);
+            if let Some(file) = diag_file.as_mut() {
+                let _ = file.write_all(&buf[..n]);
+                let _ = file.flush();
+            }
+        }
+
+        let _ = close(tap_read);
+        let _ = close(down_write);
+    })
 }
 
 /// Execute a statement in a child process (blocking, no async)
@@ -396,6 +738,8 @@ fn execute_statement_in_child_blocking(
         }
         Statement::For(for_stmt) => execute_for_in_child_blocking(for_stmt, context),
         Statement::If(if_stmt) => execute_if_in_child_blocking(if_stmt, context),
+        Statement::Try(try_stmt) => execute_try_in_child_blocking(try_stmt, context),
+        Statement::Match(match_stmt) => execute_match_in_child_blocking(match_stmt, context),
         Statement::While(while_stmt) => execute_while_in_child_blocking(while_stmt, context),
         Statement::BraceGroup(brace) => {
             let mut last = 0;
@@ -433,6 +777,10 @@ fn execute_statement_in_child_blocking(
             context.define_function(func_def.name.clone(), func_def.clone());
             Ok(0)
         }
+        Statement::ProcDef(proc_def) => {
+            context.define_proc(proc_def.name.clone(), proc_def.clone());
+            Ok(0)
+        }
         Statement::Empty => Ok(0),
         _ => {
             eprintln!("colony: unsupported statement type in function body");
@@ -447,9 +795,11 @@ fn execute_simple_command_in_child_blocking(
 ) -> Result<i32> {
     use colony_parser::AssignmentValue;
 
-    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-        crate::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        context.clone(),
+        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
 
     let is_assignment_only = cmd.name.as_literal() == Some(":")
         && cmd.args.is_empty()
@@ -541,6 +891,50 @@ fn execute_simple_command_in_child_blocking(
                 Err(e) => return Err(e),
             }
         }
+        return Ok(last_exit);
+    }
+
+    if let Some(proc_def) = context.get_proc(command_name).cloned() {
+        let mut args = extra_args_from_name.clone();
+        for arg_word in &cmd.args {
+            if let Ok(fields) = expander.expand_word(arg_word) {
+                for field in fields {
+                    args.push(field.text);
+                }
+            }
+        }
+
+        crate::xtrace::trace_simple_command(context, command_name, &args);
+        context.enter_function();
+        context.set_positional_params(args.clone());
+
+        for (i, param) in proc_def.params.iter().enumerate() {
+            let value = if let Some(arg) = args.get(i) {
+                arg.clone()
+            } else {
+                String::new()
+            };
+            context.declare_local(&param.name, Some(colony_expand::Variable::String(value)));
+        }
+
+        let mut last_exit = 0;
+        for stmt in &proc_def.body {
+            match execute_statement_in_child_blocking(stmt, context) {
+                Ok(code) => {
+                    last_exit = code;
+                    context.set_last_exit_status(code);
+                }
+                Err(crate::ExecutionError::Return(code)) => {
+                    context.exit_function();
+                    return Ok(code);
+                }
+                Err(e) => {
+                    context.exit_function();
+                    return Err(e);
+                }
+            }
+        }
+        context.exit_function();
         return Ok(last_exit);
     }
 
@@ -699,9 +1093,11 @@ fn execute_for_in_child_blocking(
     for_stmt: &colony_parser::ForStatement,
     context: &mut ExpansionContext,
 ) -> Result<i32> {
-    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-        crate::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        context.clone(),
+        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
 
     let mut words_expanded = Vec::new();
     for word in &for_stmt.words {
@@ -788,6 +1184,294 @@ fn execute_if_in_child_blocking(
     Ok(0)
 }
 
+fn execute_try_in_child_blocking(
+    try_stmt: &colony_parser::TryStatement,
+    context: &mut ExpansionContext,
+) -> Result<i32> {
+    let mut last_exit = context.last_exit_status();
+
+    for stmt in &try_stmt.body {
+        match execute_statement_in_child_blocking(stmt, context) {
+            Ok(code) => {
+                last_exit = code;
+                context.set_last_exit_status(code);
+            }
+            Err(crate::ExecutionError::Return(code)) => {
+                return Err(crate::ExecutionError::Return(code));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    if let Some(finally_body) = &try_stmt.finally_body {
+        for stmt in finally_body {
+            match execute_statement_in_child_blocking(stmt, context) {
+                Ok(code) => {
+                    last_exit = code;
+                    context.set_last_exit_status(code);
+                }
+                Err(crate::ExecutionError::Return(code)) => {
+                    return Err(crate::ExecutionError::Return(code));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    Ok(last_exit)
+}
+
+fn execute_match_in_child_blocking(
+    match_stmt: &colony_parser::MatchStatement,
+    context: &mut ExpansionContext,
+) -> Result<i32> {
+    let value = crate::eval_expression_in_context(context, &match_stmt.value)?;
+
+    for arm in &match_stmt.arms {
+        let mut bindings: Vec<(String, crate::EvalValue)> = Vec::new();
+        if !match_pattern_in_child(context, &value, &arm.pattern, &mut bindings)? {
+            continue;
+        }
+
+        let saved = apply_match_bindings_in_child(context, &bindings)?;
+        let guard_ok = if let Some(guard) = &arm.guard {
+            let guard_val = crate::eval_expression_in_context(context, guard)?;
+            crate::is_truthy(&guard_val)
+        } else {
+            true
+        };
+
+        if !guard_ok {
+            restore_match_bindings_in_child(context, saved);
+            continue;
+        }
+
+        let code = match &arm.body {
+            colony_parser::MatchBody::Block(stmts) => {
+                let mut last = 0;
+                for stmt in stmts {
+                    match execute_statement_in_child_blocking(stmt, context) {
+                        Ok(code) => {
+                            last = code;
+                            context.set_last_exit_status(code);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                last
+            }
+            colony_parser::MatchBody::Expr(expr) => {
+                let value = crate::eval_expression_in_context(context, expr)?;
+                if crate::is_truthy(&value) {
+                    0
+                } else {
+                    1
+                }
+            }
+        };
+
+        context.set_last_exit_status(code);
+        return Ok(code);
+    }
+
+    context.set_last_exit_status(0);
+    Ok(0)
+}
+
+fn match_pattern_in_child(
+    context: &mut ExpansionContext,
+    value: &crate::EvalValue,
+    pattern: &colony_parser::MatchPattern,
+    bindings: &mut Vec<(String, crate::EvalValue)>,
+) -> Result<bool> {
+    use colony_parser::MatchPattern;
+
+    let value = crate::unwrap_optional(value.clone());
+
+    match pattern {
+        MatchPattern::Wildcard => Ok(true),
+        MatchPattern::Binding(name) => Ok(bind_match_value_in_child(bindings, name, &value)),
+        MatchPattern::Literal(expr) => {
+            let expected = crate::eval_expression_in_context(context, expr)?;
+            Ok(crate::eval_value_equals(&value, &expected))
+        }
+        MatchPattern::List(list) => match value {
+            crate::EvalValue::List(items) => {
+                match_list_pattern_in_child(context, items, list, bindings)
+            }
+            crate::EvalValue::Tuple(items) => {
+                match_list_pattern_in_child(context, items, list, bindings)
+            }
+            _ => Ok(false),
+        },
+        MatchPattern::Dict(dict) => match value {
+            crate::EvalValue::Dict(entries) => {
+                match_dict_pattern_in_child(context, entries, dict, bindings)
+            }
+            _ => Ok(false),
+        },
+        MatchPattern::Tuple(tuple) => match value {
+            crate::EvalValue::Tuple(items) => {
+                match_tuple_pattern_in_child(context, items, tuple, bindings)
+            }
+            _ => Ok(false),
+        },
+        MatchPattern::Or(patterns) => {
+            for pat in patterns {
+                let mut trial_bindings = Vec::new();
+                if match_pattern_in_child(context, &value, pat, &mut trial_bindings)? {
+                    bindings.extend(trial_bindings);
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+    }
+}
+
+fn match_list_pattern_in_child(
+    context: &mut ExpansionContext,
+    items: Vec<crate::EvalValue>,
+    list: &colony_parser::ListPattern,
+    bindings: &mut Vec<(String, crate::EvalValue)>,
+) -> Result<bool> {
+    if items.len() < list.items.len() {
+        return Ok(false);
+    }
+
+    for (item, pattern) in items.iter().zip(list.items.iter()) {
+        if !match_pattern_in_child(context, item, pattern, bindings)? {
+            return Ok(false);
+        }
+    }
+
+    match list.rest {
+        colony_parser::ListRest::None => Ok(items.len() == list.items.len()),
+        colony_parser::ListRest::Ignore => Ok(true),
+        colony_parser::ListRest::Bind(ref name) => {
+            let rest = items[list.items.len()..].to_vec();
+            Ok(bind_match_value_in_child(
+                bindings,
+                name,
+                &crate::EvalValue::List(rest),
+            ))
+        }
+    }
+}
+
+fn match_dict_pattern_in_child(
+    context: &mut ExpansionContext,
+    entries: Vec<(crate::EvalValue, crate::EvalValue)>,
+    dict: &colony_parser::DictPattern,
+    bindings: &mut Vec<(String, crate::EvalValue)>,
+) -> Result<bool> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut map: HashMap<String, crate::EvalValue> = HashMap::new();
+    for (k, v) in entries {
+        map.insert(crate::eval_value_to_string(k), v);
+    }
+
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for field in &dict.fields {
+        let key = field.name.clone();
+        let value = match map.get(&key) {
+            Some(val) => val.clone(),
+            None => return Ok(false),
+        };
+        seen.insert(key.clone());
+
+        if let Some(pattern) = &field.pattern {
+            if !match_pattern_in_child(context, &value, pattern, bindings)? {
+                return Ok(false);
+            }
+        } else if !bind_match_value_in_child(bindings, &key, &value) {
+            return Ok(false);
+        }
+    }
+
+    if !dict.allow_extra {
+        for key in map.keys() {
+            if !seen.contains(key) {
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+fn match_tuple_pattern_in_child(
+    context: &mut ExpansionContext,
+    items: Vec<crate::EvalValue>,
+    tuple: &colony_parser::TuplePattern,
+    bindings: &mut Vec<(String, crate::EvalValue)>,
+) -> Result<bool> {
+    if items.len() != tuple.items.len() {
+        return Ok(false);
+    }
+
+    for (item, pattern) in items.iter().zip(tuple.items.iter()) {
+        if !match_pattern_in_child(context, item, pattern, bindings)? {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn bind_match_value_in_child(
+    bindings: &mut Vec<(String, crate::EvalValue)>,
+    name: &str,
+    value: &crate::EvalValue,
+) -> bool {
+    for (existing_name, existing_value) in bindings.iter() {
+        if existing_name == name {
+            return crate::eval_value_equals(existing_value, value);
+        }
+    }
+
+    bindings.push((name.to_string(), value.clone()));
+    true
+}
+
+fn apply_match_bindings_in_child(
+    context: &mut ExpansionContext,
+    bindings: &[(String, crate::EvalValue)],
+) -> Result<Vec<(String, Option<colony_expand::Variable>)>> {
+    let mut saved = Vec::new();
+
+    for (name, value) in bindings {
+        let previous = context.get_variable(name).cloned();
+        saved.push((name.clone(), previous));
+
+        if context.is_readonly(name) {
+            return Err(crate::ExecutionError::InvalidVarDecl(format!(
+                "readonly variable: {}",
+                name
+            )));
+        }
+
+        let var = crate::eval_value_to_variable(value.clone())?;
+        context.set_variable(name.clone(), var);
+    }
+
+    Ok(saved)
+}
+
+fn restore_match_bindings_in_child(
+    context: &mut ExpansionContext,
+    saved: Vec<(String, Option<colony_expand::Variable>)>,
+) {
+    for (name, previous) in saved {
+        match previous {
+            Some(var) => context.set_variable(name, var),
+            None => context.unset_variable(&name),
+        }
+    }
+}
+
 fn execute_while_in_child_blocking(
     while_stmt: &colony_parser::WhileStatement,
     context: &mut ExpansionContext,
@@ -856,11 +1540,41 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
                 Err(_) => std::process::exit(1),
             }
         }
-        Statement::For(_) | Statement::If(_) | Statement::While(_) | Statement::List(_) => {
+        Statement::For(_)
+        | Statement::If(_)
+        | Statement::Try(_)
+        | Statement::Match(_)
+        | Statement::While(_)
+        | Statement::List(_) => {
             match execute_statement_in_child_blocking(&element.command, &mut context) {
                 Ok(code) => std::process::exit(code),
                 Err(_) => std::process::exit(1),
             }
+        }
+        Statement::AgentInvocation(invocation) => {
+            let mut expander = Expander::with_executor_and_expr(
+                context.clone(),
+                |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+                |expr, ctx| {
+                    crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
+                },
+            );
+            let prompt_text = match expander.expand_word(&invocation.prompt) {
+                Ok(fields) => fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" "),
+                Err(_) => {
+                    eprintln!("colony: agent prompt expansion failed");
+                    std::process::exit(1);
+                }
+            };
+            match invocation.tool.as_deref() {
+                Some(tool_name) => {
+                    println!("@{}:{} {}", invocation.agent_name, tool_name, prompt_text);
+                }
+                None => {
+                    println!("@{} {}", invocation.agent_name, prompt_text);
+                }
+            }
+            std::process::exit(0);
         }
         _ => {
             eprintln!("colony-exec: unsupported pipeline element type");
@@ -873,9 +1587,11 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         _ => unreachable!(),
     };
 
-    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-        crate::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        context.clone(),
+        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
 
     let name_fields = match expander.expand_word(&simple_cmd.name) {
         Ok(fields) if !fields.is_empty() => fields,
@@ -915,6 +1631,50 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
                 }
             }
         }
+        std::process::exit(last_exit);
+    }
+
+    if let Some(proc_def) = context.get_proc(command_name).cloned() {
+        let mut args = extra_args_from_name.clone();
+        for arg_word in &simple_cmd.args {
+            if let Ok(fields) = expander.expand_word(arg_word) {
+                for field in fields {
+                    args.push(field.text);
+                }
+            }
+        }
+
+        crate::xtrace::trace_simple_command(&context, command_name, &args);
+
+        let mut context = context.clone();
+        context.enter_function();
+        context.set_positional_params(args.clone());
+
+        for (i, param) in proc_def.params.iter().enumerate() {
+            let value = if let Some(arg) = args.get(i) {
+                arg.clone()
+            } else {
+                String::new()
+            };
+            context.declare_local(&param.name, Some(colony_expand::Variable::String(value)));
+        }
+
+        let mut last_exit = 0;
+        for stmt in &proc_def.body {
+            match execute_statement_in_child_blocking(stmt, &mut context) {
+                Ok(code) => {
+                    last_exit = code;
+                    context.set_last_exit_status(code);
+                }
+                Err(crate::ExecutionError::Return(code)) => {
+                    std::process::exit(code);
+                }
+                Err(_) => {
+                    std::process::exit(1);
+                }
+            }
+        }
+        context.exit_function();
         std::process::exit(last_exit);
     }
 
@@ -1116,6 +1876,14 @@ fn execute_single_pipeline_element(
                 Ok(ExitStatus::new(code))
             })
         }
+        Statement::Try(try_stmt) => {
+            let context_mut = context.clone();
+            tokio::runtime::Handle::current().block_on(async {
+                let mut executor = crate::Executor::new(context_mut);
+                let code = executor.execute_try_internal(try_stmt).await.unwrap_or(1);
+                Ok(ExitStatus::new(code))
+            })
+        }
         Statement::While(while_stmt) => {
             let context_mut = context.clone();
             tokio::runtime::Handle::current().block_on(async {
@@ -1220,6 +1988,58 @@ mod tests {
                 pipe_op: None,
                 negated: false,
             }],
+            span: Span::DUMMY,
+        };
+
+        let result = execute_pipeline(&pipeline, &mut context.clone()).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_success());
+    }
+
+    #[tokio::test]
+    async fn test_guard_pipeline_short_circuit() {
+        let context = ExpansionContext::new();
+
+        // false ?> true should stop after false and return non-zero
+        let pipeline = Pipeline {
+            elements: vec![
+                PipelineElement {
+                    command: Box::new(make_simple_cmd_statement("false", vec![])),
+                    pipe_op: Some(PipeOp::PipeGuard),
+                    negated: false,
+                },
+                PipelineElement {
+                    command: Box::new(make_simple_cmd_statement("true", vec![])),
+                    pipe_op: None,
+                    negated: false,
+                },
+            ],
+            span: Span::DUMMY,
+        };
+
+        let result = execute_pipeline(&pipeline, &mut context.clone()).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().code(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_catch_pipeline_handler_runs() {
+        let context = ExpansionContext::new();
+
+        // false !> true should run handler and return its status
+        let pipeline = Pipeline {
+            elements: vec![
+                PipelineElement {
+                    command: Box::new(make_simple_cmd_statement("false", vec![])),
+                    pipe_op: Some(PipeOp::PipeCatch),
+                    negated: false,
+                },
+                PipelineElement {
+                    command: Box::new(make_simple_cmd_statement("true", vec![])),
+                    pipe_op: None,
+                    negated: false,
+                },
+            ],
             span: Span::DUMMY,
         };
 

@@ -60,6 +60,7 @@ PipelineElement = {
   | ConditionalCommand
   | CompoundCommand
   | CoprocCommand
+  | AgentInvocation
   | SimpleCommand
   | Subshell
 }
@@ -125,10 +126,13 @@ AssocArrayValue = @{
 
 PipeOp = {
     "|&"
-  | "|"
+  | "|>"
+  | "?>"
+  | "!>"
   | "->"
   | "=>"
   | "~>"
+  | "|"
 }
 
 ListOp = {
@@ -393,40 +397,42 @@ MatchStatement = {
 }
 
 MatchArm = {
-    MatchPattern ~ ("if" ~ Expression)? ~ "=>" ~ (Block | Expression)
+    MatchPattern ~ ("|" ~ MatchPattern)* ~ ("if" ~ Expression)? ~ "=>" ~ (Block | Expression)
 }
 
 MatchPattern = {
     ListPattern
   | DictPattern
   | TuplePattern
-  | LiteralPattern
-  | BindingPattern
   | WildcardPattern
+  | BindingPattern
+  | LiteralPattern
 }
 
 ListPattern = {
-    "[" ~ (MatchPattern ~ ("," ~ MatchPattern)*)? ~ ("," ~ ".." ~ Identifier?)? ~ "]"
+    "[" ~ (MatchPattern ~ ("," ~ MatchPattern)*)? ~ ("," ~ ListRest)? ~ "]"
 }
 
 DictPattern = {
-    "{" ~ (DictPatternField ~ ("," ~ DictPatternField)*)? ~ ("," ~ "..")? ~ "}"
+    "{" ~ (DictPatternField ~ ("," ~ DictPatternField)*)? ~ ("," ~ DictRest)? ~ "}"
 }
 
 DictPatternField = { Identifier ~ (":" ~ MatchPattern)? }
+
+ListRest = { ".." ~ Identifier? }
+
+DictRest = { ".." }
 
 TuplePattern = { "(" ~ MatchPattern ~ ("," ~ MatchPattern)+ ~ ")" }
 
 // TODO: Re-add RangePattern with proper precedence
 // RangePattern = { Expression ~ ".." ~ "="? ~ Expression }
 
-LiteralPattern = { Expression }
+LiteralPattern = { UnaryExpr }
 
 BindingPattern = { Identifier }
 
 WildcardPattern = { "_" }
-
-OrPattern = { MatchPattern ~ ("|" ~ MatchPattern)+ }
 
 TryStatement = {
     "try" ~ Block
@@ -453,8 +459,12 @@ NL = _{ "\n" }
 // ============================================================================
 
 VarDecl = {
-    VarKind ~ Identifier ~ (":" ~ TypeAnnotation)? ~ "=" ~ Expression
+    VarKind ~ VarDeclTarget ~ (":" ~ TypeAnnotation)? ~ "=" ~ Expression
 }
+
+VarDeclTarget = { Identifier | TupleTarget }
+
+TupleTarget = { "(" ~ Identifier ~ ("," ~ Identifier)+ ~ ")" }
 
 VarKind = { "var" | "const" | "setvar" }
 
@@ -519,6 +529,18 @@ AgentDef = {
     "agent" ~ Identifier ~ "{"
     ~ AgentField*
     ~ "}"
+}
+
+AgentInvocation = {
+    "@" ~ AgentTarget ~ AgentPromptArg
+}
+
+AgentTarget = @{
+    ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-")* ~ (":" ~ (ASCII_ALPHANUMERIC | "_" | "-")+)?
+}
+
+AgentPromptArg = {
+    Word
 }
 
 AgentField = {
@@ -617,7 +639,7 @@ RedirectOp = {
 Expression = { TernaryExpr }
 
 TernaryExpr = {
-    NullCoalesceExpr ~ ("?" ~ Expression ~ ":" ~ Expression)?
+    NullCoalesceExpr ~ (("?" ~ !"?" ) ~ Expression ~ ":" ~ Expression)?
 }
 
 NullCoalesceExpr = {
@@ -720,8 +742,12 @@ PostfixOp = {
     ("[" ~ Expression ~ "]")  // index
   | ("." ~ Identifier)        // field
   | ("(" ~ ArgList ~ ")")     // call
-  | "?"                        // optional-chain
+  | OptionalChainOp
   | "!"                        // unwrap
+}
+
+OptionalChainOp = {
+    "?" ~ &("." | "[" | "(" | ")" | "]" | "}" | ";" | NEWLINE | !ANY) ~ !"?"
 }
 
 ArgList = {
@@ -1000,7 +1026,11 @@ BarewordChars = @{
 }
 
 BarewordChar = @{
-    !WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"`" ~ !"\\" ~ !ExtGlobStart ~ ANY
+    !WHITESPACE ~ !SpecialChar ~ !"$" ~ !"\"" ~ !"'" ~ !"`" ~ !"\\" ~ !ExtGlobStart ~ !PipeExtOp ~ ANY
+}
+
+PipeExtOp = @{
+    ("?" | "!" | "|") ~ ">"
 }
 
 ExtGlobStart = @{
@@ -1017,11 +1047,19 @@ SpecialChar = {
 DollarExpansion = {
     DollarArithRaw                       // $((expr)) captured as string
   | DollarCommandSubRaw                  // $(cmd)   captured as string
-  | ("$[" ~ Expression ~ "]")            // $[expr]  - parsed inline (Colony)
+  | ExprSub                              // $[expr]  - parsed inline (Colony)
   | ("${" ~ VariableRef ~ "}")           // ${var}   - parsed inline
   | ("$" ~ PositionalParam)              // $1, $@, $#, etc. - positional parameters
   | ("$" ~ VariableName)                 // $var     - parsed inline (allows reserved words)
   | LiteralDollar                        // $ not followed by valid expansion (literal)
+}
+
+ExprSub = @{
+    "$[" ~ ExprSubInner ~ "]"
+}
+
+ExprSubInner = @{
+    (!"]" ~ ANY)*
 }
 
 // Literal dollar sign - $ not followed by anything that forms a valid expansion
@@ -1302,6 +1340,7 @@ ReservedKeyword = @{
   | "var" | "const" | "setvar"
   | "try" | "catch" | "finally"
   | "match" | "return" | "break" | "continue"
+  | "proc" | "func" | "agent"
 }
 
 WordBoundary = { !ASCII_ALPHANUMERIC ~ !"_" | EOI }

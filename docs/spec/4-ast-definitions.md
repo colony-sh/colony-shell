@@ -685,37 +685,58 @@ pub struct MatchStatement {
 pub struct MatchArm {
     pub pattern: MatchPattern,
     pub guard: Option<Expression>,
-    pub body: Vec<Statement>,
+    pub body: MatchBody,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum MatchBody {
+    Block(Vec<Statement>),
+    Expr(Expression),
 }
 
 #[derive(Clone, Debug)]
 pub enum MatchPattern {
-    /// Literal value
+    List(ListPattern),
+    Dict(DictPattern),
+    Tuple(TuplePattern),
     Literal(Expression),
-    /// Range: 1..10
-    Range {
-        start: Expression,
-        end: Expression,
-        inclusive: bool,
-    },
-    /// List destructure: [a, b, ...rest]
-    List {
-        items: Vec<MatchPattern>,
-        rest: Option<String>,
-    },
-    /// Dict destructure: {name, age: a}
-    Dict {
-        fields: Vec<(String, Option<String>)>,
-        rest: Option<String>,
-    },
-    /// Tuple: (a, b, c)
-    Tuple(Vec<MatchPattern>),
-    /// Variable binding
     Binding(String),
-    /// Wildcard: _
     Wildcard,
-    /// Or pattern: pat1 | pat2
-    Or(Vec<MatchPattern>),
+}
+
+#[derive(Clone, Debug)]
+pub struct ListPattern {
+    pub items: Vec<MatchPattern>,
+    pub rest: ListRest,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum ListRest {
+    None,
+    Ignore,
+    Bind(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct DictPattern {
+    pub fields: Vec<DictPatternField>,
+    pub allow_extra: bool,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct DictPatternField {
+    pub name: String,
+    pub pattern: Option<MatchPattern>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct TuplePattern {
+    pub items: Vec<MatchPattern>,
+    pub span: Span,
 }
 ```
 

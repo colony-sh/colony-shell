@@ -5,9 +5,10 @@
 //! and constructs AST nodes.
 
 use crate::ast::*;
-use crate::pest_parser::Rule;
+use crate::pest_parser::{ColonyParser, Rule};
 use crate::span::{Position, Span};
 use pest::iterators::{Pair, Pairs};
+use pest::Parser;
 
 /// Builds AST from pest parse tree
 pub struct AstBuilder;
@@ -57,6 +58,8 @@ impl AstBuilder {
             Rule::Pipeline => Self::build_pipeline(pair).map(Statement::Pipeline),
             Rule::CommandList => Self::build_command_list(pair).map(Statement::List),
             Rule::IfStatement => Self::build_if_statement(pair).map(Statement::If),
+            Rule::TryStatement => Self::build_try_statement(pair).map(Statement::Try),
+            Rule::MatchStatement => Self::build_match_statement(pair).map(Statement::Match),
             Rule::ForStatement => Self::build_for_statement(pair),
             Rule::WhileStatement => Self::build_while_statement(pair).map(Statement::While),
             Rule::UntilStatement => Self::build_until_statement(pair).map(Statement::Until),
@@ -116,6 +119,10 @@ impl AstBuilder {
                     env_assignments: vec![],
                     span,
                 }))
+            }
+            Rule::ProcDef => Self::build_proc_def(pair).map(Statement::ProcDef),
+            Rule::AgentInvocation => {
+                Self::build_agent_invocation(pair).map(Statement::AgentInvocation)
             }
             Rule::ReturnStatement => Self::build_return_statement(pair).map(Statement::Return),
             Rule::EmptyStatement => Ok(Statement::Empty),
@@ -363,6 +370,9 @@ impl AstBuilder {
         let op_str = pair.as_str();
         match op_str {
             "|" => Ok(PipeOp::Pipe),
+            "|>" => Ok(PipeOp::PipeTap),
+            "?>" => Ok(PipeOp::PipeGuard),
+            "!>" => Ok(PipeOp::PipeCatch),
             "->" => Ok(PipeOp::Arrow),
             "=>" => Ok(PipeOp::FatArrow),
             "~>" => Ok(PipeOp::Alter),
@@ -513,6 +523,252 @@ impl AstBuilder {
             then_body,
             elif_branches,
             else_body,
+            span,
+        })
+    }
+
+    fn build_try_statement(pair: Pair<Rule>) -> Result<TryStatement, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        let try_block = inner.next().ok_or(BuildError::MissingBody)?;
+        let body = Self::build_block(try_block)?;
+
+        let mut catch = None;
+        let mut finally_body = None;
+
+        for part in inner {
+            match part.as_rule() {
+                Rule::CatchBlock => catch = Some(Self::build_catch_block(part)?),
+                Rule::Block => finally_body = Some(Self::build_block(part)?),
+                _ => {}
+            }
+        }
+
+        Ok(TryStatement {
+            body,
+            catch,
+            finally_body,
+            span,
+        })
+    }
+
+    fn build_match_statement(pair: Pair<Rule>) -> Result<MatchStatement, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        let value_pair = inner.next().ok_or(BuildError::EmptyExpression)?;
+        let value = Self::build_expression(value_pair)?;
+
+        let mut arms = Vec::new();
+        for part in inner {
+            if part.as_rule() == Rule::MatchArm {
+                arms.push(Self::build_match_arm(part)?);
+            }
+        }
+
+        Ok(MatchStatement { value, arms, span })
+    }
+
+    fn build_match_arm(pair: Pair<Rule>) -> Result<MatchArm, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        let pattern_pair = inner.next().ok_or(BuildError::EmptyExpression)?;
+        let first_pattern = Self::build_match_pattern(pattern_pair)?;
+
+        let mut or_patterns = vec![first_pattern];
+        let mut guard = None;
+        let mut body = None;
+
+        for part in inner {
+            match part.as_rule() {
+                Rule::MatchPattern => {
+                    or_patterns.push(Self::build_match_pattern(part)?);
+                }
+                Rule::Expression => {
+                    if body.is_none() {
+                        if guard.is_none() {
+                            guard = Some(Self::build_expression(part)?);
+                        } else {
+                            body = Some(MatchBody::Expr(Self::build_expression(part)?));
+                        }
+                    }
+                }
+                Rule::Block => {
+                    body = Some(MatchBody::Block(Self::build_block(part)?));
+                }
+                _ => {}
+            }
+        }
+
+        // If guard was set but body wasn't, the "guard" was actually the body expression
+        if body.is_none() {
+            if let Some(guard_expr) = guard.take() {
+                body = Some(MatchBody::Expr(guard_expr));
+            }
+        }
+
+        let body = body.ok_or(BuildError::MissingBody)?;
+
+        let pattern = if or_patterns.len() == 1 {
+            or_patterns.into_iter().next().expect("checked len == 1")
+        } else {
+            MatchPattern::Or(or_patterns)
+        };
+
+        Ok(MatchArm {
+            pattern,
+            guard,
+            body,
+            span,
+        })
+    }
+
+    fn build_match_pattern(pair: Pair<Rule>) -> Result<MatchPattern, BuildError> {
+        match pair.as_rule() {
+            Rule::MatchPattern => {
+                let inner = pair
+                    .into_inner()
+                    .next()
+                    .ok_or(BuildError::EmptyExpression)?;
+                Self::build_match_pattern(inner)
+            }
+            Rule::ListPattern => {
+                let span = span_from_pair(&pair);
+                let mut items = Vec::new();
+                let mut rest = ListRest::None;
+
+                for part in pair.into_inner() {
+                    match part.as_rule() {
+                        Rule::MatchPattern => {
+                            items.push(Self::build_match_pattern(part)?);
+                        }
+                        Rule::ListRest => {
+                            let mut inner = part.into_inner();
+                            if let Some(name) = inner.next() {
+                                rest = ListRest::Bind(name.as_str().to_string());
+                            } else {
+                                rest = ListRest::Ignore;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                Ok(MatchPattern::List(ListPattern { items, rest, span }))
+            }
+            Rule::DictPattern => {
+                let span = span_from_pair(&pair);
+                let mut fields = Vec::new();
+                let mut allow_extra = false;
+
+                for part in pair.into_inner() {
+                    match part.as_rule() {
+                        Rule::DictPatternField => {
+                            fields.push(Self::build_dict_pattern_field(part)?);
+                        }
+                        Rule::DictRest => {
+                            allow_extra = true;
+                        }
+                        _ => {}
+                    }
+                }
+
+                Ok(MatchPattern::Dict(DictPattern {
+                    fields,
+                    allow_extra,
+                    span,
+                }))
+            }
+            Rule::TuplePattern => {
+                let span = span_from_pair(&pair);
+                let mut items = Vec::new();
+                for part in pair.into_inner() {
+                    if part.as_rule() == Rule::MatchPattern {
+                        items.push(Self::build_match_pattern(part)?);
+                    }
+                }
+                Ok(MatchPattern::Tuple(TuplePattern { items, span }))
+            }
+            Rule::BindingPattern => Ok(MatchPattern::Binding(pair.as_str().to_string())),
+            Rule::LiteralPattern => {
+                let expr_pair = pair
+                    .into_inner()
+                    .next()
+                    .ok_or(BuildError::EmptyExpression)?;
+                let expr = Self::build_expression_recursive(expr_pair)?;
+                Ok(MatchPattern::Literal(expr))
+            }
+            Rule::WildcardPattern => Ok(MatchPattern::Wildcard),
+            Rule::Identifier => Ok(MatchPattern::Binding(pair.as_str().to_string())),
+            _ => Err(BuildError::UnexpectedRule {
+                expected: "match pattern",
+                found: format!("{:?}", pair.as_rule()),
+            }),
+        }
+    }
+
+    fn build_dict_pattern_field(pair: Pair<Rule>) -> Result<DictPatternField, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+        let name = inner
+            .next()
+            .ok_or(BuildError::MissingVarName)?
+            .as_str()
+            .to_string();
+
+        let mut pattern = None;
+        for part in inner {
+            if part.as_rule() == Rule::MatchPattern {
+                pattern = Some(Self::build_match_pattern(part)?);
+            }
+        }
+
+        Ok(DictPatternField {
+            name,
+            pattern,
+            span,
+        })
+    }
+
+    fn build_catch_block(pair: Pair<Rule>) -> Result<CatchBlock, BuildError> {
+        let span = span_from_pair(&pair);
+        let pair_text = pair.as_str().to_string();
+        let mut binding = None;
+        let mut error_type = None;
+        let mut body = Vec::new();
+
+        for part in pair.into_inner() {
+            match part.as_rule() {
+                Rule::Identifier => {
+                    if binding.is_none() {
+                        binding = Some(part.as_str().to_string());
+                    } else if error_type.is_none() {
+                        error_type = Some(part.as_str().to_string());
+                    }
+                }
+                Rule::Block => {
+                    body = Self::build_block(part)?;
+                }
+                _ => {}
+            }
+        }
+
+        // If a single identifier is provided, interpret it as an error type.
+        if error_type.is_none() && binding.is_some() && !pair_text.contains(':') {
+            error_type = binding.take();
+        }
+
+        // If only a type was provided via "catch :Type", treat the single identifier as type.
+        if error_type.is_none() && binding.is_some() && pair_text.contains(':') {
+            error_type = binding.take();
+        }
+
+        Ok(CatchBlock {
+            binding,
+            error_type,
+            body,
             span,
         })
     }
@@ -1049,21 +1305,56 @@ impl AstBuilder {
             _ => return Err(BuildError::InvalidVarKind(kind_str.to_string())),
         };
 
-        let name = inner
-            .next()
-            .ok_or(BuildError::MissingVarName)?
-            .as_str()
-            .to_string();
+        let target_pair = inner.next().ok_or(BuildError::MissingVarName)?;
+        let target = match target_pair.as_rule() {
+            Rule::VarDeclTarget => {
+                let inner_target = target_pair
+                    .into_inner()
+                    .next()
+                    .ok_or(BuildError::MissingVarName)?;
+                match inner_target.as_rule() {
+                    Rule::Identifier => {
+                        crate::ast::VarDeclTarget::Name(inner_target.as_str().to_string())
+                    }
+                    Rule::TupleTarget => {
+                        let mut names = Vec::new();
+                        for part in inner_target.into_inner() {
+                            if part.as_rule() == Rule::Identifier {
+                                names.push(part.as_str().to_string());
+                            }
+                        }
+                        crate::ast::VarDeclTarget::Tuple(names)
+                    }
+                    _ => return Err(BuildError::MissingVarName),
+                }
+            }
+            Rule::Identifier => crate::ast::VarDeclTarget::Name(target_pair.as_str().to_string()),
+            Rule::TupleTarget => {
+                let mut names = Vec::new();
+                for part in target_pair.into_inner() {
+                    if part.as_rule() == Rule::Identifier {
+                        names.push(part.as_str().to_string());
+                    }
+                }
+                crate::ast::VarDeclTarget::Tuple(names)
+            }
+            _ => return Err(BuildError::MissingVarName),
+        };
 
-        // Skip optional type annotation for now
-        // TODO: Parse type annotations properly
+        let mut type_annotation = None;
 
-        // Find the expression (after '=')
+        // Find optional type annotation and expression (after '=')
         let mut expr = None;
         for part in inner {
-            if part.as_rule() == Rule::Expression {
-                expr = Some(Self::build_expression(part)?);
-                break;
+            match part.as_rule() {
+                Rule::TypeAnnotation => {
+                    type_annotation = Some(part.as_str().to_string());
+                }
+                Rule::Expression => {
+                    expr = Some(Self::build_expression(part)?);
+                    break;
+                }
+                _ => {}
             }
         }
 
@@ -1071,7 +1362,8 @@ impl AstBuilder {
 
         Ok(VarDecl {
             kind,
-            name,
+            target,
+            type_annotation,
             value,
             span,
         })
@@ -1107,6 +1399,107 @@ impl AstBuilder {
         let body = Self::build_block(block)?;
 
         Ok(FunctionDef { name, body, span })
+    }
+
+    fn build_proc_def(pair: Pair<Rule>) -> Result<ProcDef, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        // ProcDef = "proc" ~ Identifier ~ PipelineTypeAnnot? ~ ProcParams ~ Block
+        let name = inner
+            .next()
+            .ok_or(BuildError::MissingFunctionName)?
+            .as_str()
+            .to_string();
+
+        let mut params = Vec::new();
+        let mut body = Vec::new();
+
+        for part in inner {
+            match part.as_rule() {
+                Rule::PipelineTypeAnnot => {
+                    // Pipeline type annotation [T -> U] — skip for now (future)
+                }
+                Rule::ProcParams => {
+                    for param_pair in part.into_inner() {
+                        if param_pair.as_rule() == Rule::ProcParam {
+                            params.push(Self::build_proc_param(param_pair)?);
+                        }
+                    }
+                }
+                Rule::Block => {
+                    body = Self::build_block(part)?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(ProcDef {
+            name,
+            params,
+            body,
+            span,
+        })
+    }
+
+    fn build_proc_param(pair: Pair<Rule>) -> Result<ProcParam, BuildError> {
+        let mut inner = pair.into_inner();
+
+        // ProcParam = Identifier ~ (":" ~ TypeAnnotation)? ~ ("=" ~ Expression)?
+        let name = inner
+            .next()
+            .ok_or(BuildError::MissingVarName)?
+            .as_str()
+            .to_string();
+
+        let mut default = None;
+
+        for part in inner {
+            match part.as_rule() {
+                Rule::TypeAnnotation => {
+                    // Type annotation — skip for now (future type checking)
+                }
+                Rule::Expression => {
+                    default = Some(Self::build_expression(part)?);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(ProcParam { name, default })
+    }
+
+    fn build_agent_invocation(pair: Pair<Rule>) -> Result<AgentInvocation, BuildError> {
+        let span = span_from_pair(&pair);
+        let mut inner = pair.into_inner();
+
+        let target = inner
+            .next()
+            .ok_or(BuildError::MissingFunctionName)?
+            .as_str();
+
+        let (agent_name, tool) = if let Some(colon_pos) = target.find(':') {
+            (
+                target[..colon_pos].to_string(),
+                Some(target[colon_pos + 1..].to_string()),
+            )
+        } else {
+            (target.to_string(), None)
+        };
+
+        let prompt_pair = inner
+            .next()
+            .ok_or(BuildError::MissingFunctionName)?;
+        let prompt_word = prompt_pair.into_inner().next()
+            .ok_or(BuildError::MissingFunctionName)?;
+        let prompt = Self::build_word(prompt_word)?;
+
+        Ok(AgentInvocation {
+            agent_name,
+            tool,
+            prompt,
+            span,
+        })
     }
 
     fn build_return_statement(pair: Pair<Rule>) -> Result<ReturnStatement, BuildError> {
@@ -1462,21 +1855,19 @@ impl AstBuilder {
         // TernaryExpr = NullCoalesceExpr ~ ("?" ~ Expression ~ ":" ~ Expression)?
         let condition = Self::build_expression_recursive(inner.next().unwrap())?;
 
-        // Check if there's a ternary operator
-        if let Some(question) = inner.next() {
-            if question.as_str() == "?" {
-                let then_expr = Self::build_expression_recursive(inner.next().unwrap())?;
-                // Skip ":"
-                inner.next();
-                let else_expr = Self::build_expression_recursive(inner.next().unwrap())?;
+        let then_part = inner.next();
+        let else_part = inner.next();
 
-                return Ok(Expression::Ternary {
-                    condition: Box::new(condition),
-                    then_expr: Box::new(then_expr),
-                    else_expr: Box::new(else_expr),
-                    span,
-                });
-            }
+        if let (Some(then_expr), Some(else_expr)) = (then_part, else_part) {
+            let then_expr = Self::build_expression_recursive(then_expr)?;
+            let else_expr = Self::build_expression_recursive(else_expr)?;
+
+            return Ok(Expression::Ternary {
+                condition: Box::new(condition),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+                span,
+            });
         }
 
         Ok(condition)
@@ -1489,16 +1880,13 @@ impl AstBuilder {
         let mut left = Self::build_expression_recursive(inner.next().unwrap())?;
 
         // NullCoalesceExpr = OrExpr ~ ("??" ~ OrExpr)*
-        while let Some(op_part) = inner.next() {
-            if op_part.as_str() == "??" {
-                let right = Self::build_expression_recursive(inner.next().unwrap())?;
-
-                left = Expression::NullCoalesce {
-                    left: Box::new(left),
-                    right: Box::new(right),
-                    span,
-                };
-            }
+        for right_part in inner {
+            let right = Self::build_expression_recursive(right_part)?;
+            left = Expression::NullCoalesce {
+                left: Box::new(left),
+                right: Box::new(right),
+                span,
+            };
         }
 
         Ok(left)
@@ -1553,47 +1941,71 @@ impl AstBuilder {
         // Apply postfix operators left-to-right
         for op in inner {
             if op.as_rule() == Rule::PostfixOp {
+                let op_text = op.as_str();
                 let mut op_inner = op.into_inner();
-                if let Some(op_first) = op_inner.next() {
-                    match op_first.as_str() {
-                        "[" => {
-                            // Index: expr[index]
-                            if let Some(index_expr) = op_inner.next() {
-                                let index = Self::build_expression_recursive(index_expr)?;
-                                expr = Expression::Index {
-                                    target: Box::new(expr),
-                                    index: Box::new(index),
-                                    span,
-                                };
-                            }
-                        }
-                        "." => {
-                            // Field: expr.field
-                            if let Some(field_name) = op_inner.next() {
-                                let field = field_name.as_str().to_string();
-                                expr = Expression::Field {
-                                    target: Box::new(expr),
-                                    field,
-                                    span,
-                                };
-                            }
-                        }
-                        "(" => {
-                            // Call: expr(args)
-                            let _args = Self::build_arg_list(op_inner)?;
-                            // TODO: Convert to FuncCall or MethodCall
-                            // For now, just return expr unchanged
-                        }
-                        "?" => {
-                            // Optional chain: expr?
-                            // TODO: Add OptionalChain expression type
-                        }
-                        "!" => {
-                            // Unwrap: expr!
-                            // TODO: Add Unwrap expression type
-                        }
-                        _ => {}
+
+                if op_text.starts_with('[') {
+                    if let Some(index_expr) = op_inner.next() {
+                        let index = Self::build_expression_recursive(index_expr)?;
+                        expr = Expression::Index {
+                            target: Box::new(expr),
+                            index: Box::new(index),
+                            span,
+                        };
                     }
+                } else if op_text.starts_with('.') {
+                    if let Some(field_name) = op_inner.next() {
+                        let field = field_name.as_str().to_string();
+                        expr = Expression::Field {
+                            target: Box::new(expr),
+                            field,
+                            span,
+                        };
+                    }
+                } else if op_text.starts_with('(') {
+                    let args = Self::build_arg_list(op_inner)?;
+                    match expr {
+                        Expression::Variable { name, .. } => {
+                            expr = Expression::FuncCall { name, args, span };
+                        }
+                        Expression::OptionalChain { target, .. } => match *target {
+                            Expression::Variable { name, .. } => {
+                                expr = Expression::OptionalCall { name, args, span };
+                            }
+                            other => {
+                                return Err(BuildError::UnsupportedExpression(format!(
+                                    "optional call target: {:?}",
+                                    other
+                                )));
+                            }
+                        },
+                        Expression::Field { target, field, .. } => {
+                            expr = Expression::MethodCall {
+                                target,
+                                name: field,
+                                args,
+                                span,
+                            };
+                        }
+                        other => {
+                            expr = Expression::MethodCall {
+                                target: Box::new(other),
+                                name: "__call__".to_string(),
+                                args,
+                                span,
+                            };
+                        }
+                    }
+                } else if op_text == "?" {
+                    expr = Expression::OptionalChain {
+                        target: Box::new(expr),
+                        span,
+                    };
+                } else if op_text == "!" {
+                    expr = Expression::Unwrap {
+                        target: Box::new(expr),
+                        span,
+                    };
                 }
             }
         }
@@ -1653,8 +2065,16 @@ impl AstBuilder {
         let mut args = Vec::new();
 
         for part in inner {
-            if part.as_rule() == Rule::Expression {
-                args.push(Self::build_expression(part)?);
+            match part.as_rule() {
+                Rule::Expression => args.push(Self::build_expression(part)?),
+                Rule::ArgList => {
+                    for arg in part.into_inner() {
+                        if arg.as_rule() == Rule::Expression {
+                            args.push(Self::build_expression(arg)?);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -1684,16 +2104,22 @@ impl AstBuilder {
 
                 // Key (Identifier, StringLiteral, or [Expression])
                 let key_pair = entry_inner.next().unwrap();
-                let key = if key_pair.as_str().starts_with('[') {
-                    // [Expression] as key
-                    Self::build_expression(entry_inner.next().unwrap())?
-                } else {
-                    // Identifier or StringLiteral
-                    Expression::Str(key_pair.as_str().to_string(), span_from_pair(&key_pair))
+                let key = match key_pair.as_rule() {
+                    Rule::Identifier | Rule::StringLiteral => {
+                        Expression::Str(key_pair.as_str().to_string(), span_from_pair(&key_pair))
+                    }
+                    Rule::Expression => Self::build_expression(key_pair)?,
+                    _ => {
+                        return Err(BuildError::UnexpectedRule {
+                            expected: "dict key",
+                            found: format!("{:?}", key_pair.as_rule()),
+                        })
+                    }
                 };
 
                 // Value
-                let value = Self::build_expression(entry_inner.next().unwrap())?;
+                let value_pair = entry_inner.next().ok_or(BuildError::EmptyExpression)?;
+                let value = Self::build_expression(value_pair)?;
 
                 entries.push((key, value));
             }
@@ -2074,10 +2500,22 @@ impl AstBuilder {
                 let stmt = Self::build_command_list(inner)?;
                 Ok(WordPart::CommandSub(Box::new(Statement::List(stmt))))
             }
+            Rule::ExprSub => {
+                let text = inner.as_str();
+                let content = &text[2..text.len() - 1];
+                let pairs = ColonyParser::parse(Rule::Expression, content)
+                    .map_err(|e| BuildError::Parse(e.to_string()))?;
+                let expr_pair = pairs
+                    .into_iter()
+                    .next()
+                    .ok_or(BuildError::EmptyExpression)?;
+                let expr = Self::build_expression(expr_pair)?;
+                Ok(WordPart::ExprSub(Box::new(expr)))
+            }
             Rule::Expression => {
-                // $[expr] - for now, treat as literal placeholder
-                // TODO: Implement expression expansion
-                Ok(WordPart::Literal(format!("$[{}]", inner.as_str())))
+                // $[expr] - parsed inline into expression AST
+                let expr = Self::build_expression(inner)?;
+                Ok(WordPart::ExprSub(Box::new(expr)))
             }
             _ => {
                 // Fallback
@@ -2998,6 +3436,51 @@ mod tests {
     }
 
     #[test]
+    fn test_build_pipeline_extensions() {
+        let source = "one ?> two |> three !> handler";
+        let pairs = ColonyParser::parse(Rule::Pipeline, source).unwrap();
+        let result = AstBuilder::build_pipeline(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok());
+        let pipeline = result.unwrap();
+        assert_eq!(pipeline.elements.len(), 4);
+        assert!(matches!(
+            pipeline.elements[0].pipe_op,
+            Some(PipeOp::PipeGuard)
+        ));
+        assert!(matches!(
+            pipeline.elements[1].pipe_op,
+            Some(PipeOp::PipeTap)
+        ));
+        assert!(matches!(
+            pipeline.elements[2].pipe_op,
+            Some(PipeOp::PipeCatch)
+        ));
+        assert!(pipeline.elements[3].pipe_op.is_none());
+    }
+
+    #[test]
+    fn test_build_pipeline_catch_from_program() {
+        let source = "false !> echo caught";
+        let stmt = crate::pest_api::parse_statement(source).unwrap();
+        let pipeline = match &stmt {
+            Statement::Pipeline(p) => p,
+            Statement::List(list) => {
+                match &*list.first {
+                    Statement::Pipeline(p) => p,
+                    other => panic!("Expected Pipeline inside List, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Pipeline or List, got {:?}", other),
+        };
+        assert_eq!(pipeline.elements.len(), 2);
+        assert!(matches!(
+            pipeline.elements[0].pipe_op,
+            Some(PipeOp::PipeCatch)
+        ));
+    }
+
+    #[test]
     fn test_build_if_statement() {
         let source = "if [ 1 -eq 1 ]; then echo yes; fi";
         let pairs = ColonyParser::parse(Rule::IfStatement, source).unwrap();
@@ -3016,6 +3499,56 @@ mod tests {
         assert!(!if_stmt.then_body.is_empty());
         assert_eq!(if_stmt.elif_branches.len(), 0);
         assert!(if_stmt.else_body.is_none());
+    }
+
+    #[test]
+    fn test_build_match_statement() {
+        let source = "match foo { [a, ..rest] if a => { echo ok; } _ => 0 }";
+        let pairs = ColonyParser::parse(Rule::MatchStatement, source).unwrap();
+        let result = AstBuilder::build_match_statement(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok());
+        let match_stmt = result.unwrap();
+        assert_eq!(match_stmt.arms.len(), 2);
+
+        match &match_stmt.arms[0].pattern {
+            MatchPattern::List(list) => {
+                assert_eq!(list.items.len(), 1);
+                assert!(matches!(list.rest, ListRest::Bind(_)));
+            }
+            _ => panic!("expected list pattern"),
+        }
+
+        assert!(match_stmt.arms[0].guard.is_some());
+        match &match_stmt.arms[0].body {
+            MatchBody::Block(body) => assert_eq!(body.len(), 1),
+            _ => panic!("expected block body"),
+        }
+
+        assert!(matches!(match_stmt.arms[1].pattern, MatchPattern::Wildcard));
+    }
+
+    #[test]
+    fn test_build_match_or_pattern() {
+        let source = "match x { 1 | 2 | 3 => { echo small; } _ => { echo big; } }";
+        let pairs = ColonyParser::parse(Rule::MatchStatement, source).unwrap();
+        let result = AstBuilder::build_match_statement(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok());
+        let match_stmt = result.unwrap();
+        assert_eq!(match_stmt.arms.len(), 2);
+
+        match &match_stmt.arms[0].pattern {
+            MatchPattern::Or(patterns) => {
+                assert_eq!(patterns.len(), 3);
+                assert!(matches!(&patterns[0], MatchPattern::Literal(_)));
+                assert!(matches!(&patterns[1], MatchPattern::Literal(_)));
+                assert!(matches!(&patterns[2], MatchPattern::Literal(_)));
+            }
+            _ => panic!("expected or pattern"),
+        }
+
+        assert!(matches!(match_stmt.arms[1].pattern, MatchPattern::Wildcard));
     }
 
     #[test]
@@ -3068,9 +3601,44 @@ mod tests {
 
         assert!(result.is_ok());
         let var_decl = result.unwrap();
-        assert_eq!(var_decl.name, "count");
+        assert!(matches!(
+            var_decl.target,
+            crate::ast::VarDeclTarget::Name(ref name) if name == "count"
+        ));
         assert!(matches!(var_decl.kind, VarKind::Var));
+        assert!(var_decl.type_annotation.is_none());
         assert!(matches!(var_decl.value, Expression::Int(42, _)));
+    }
+
+    #[test]
+    fn test_build_typed_var_decl() {
+        let source = "const total: Int = 7";
+        let pairs = ColonyParser::parse(Rule::VarDecl, source).unwrap();
+        let result = AstBuilder::build_var_decl(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok());
+        let var_decl = result.unwrap();
+        assert!(matches!(
+            var_decl.target,
+            crate::ast::VarDeclTarget::Name(ref name) if name == "total"
+        ));
+        assert!(matches!(var_decl.kind, VarKind::Const));
+        assert_eq!(var_decl.type_annotation.as_deref(), Some("Int"));
+        assert!(matches!(var_decl.value, Expression::Int(7, _)));
+    }
+
+    #[test]
+    fn test_build_tuple_var_decl() {
+        let source = "var (a, b) = (1, 2)";
+        let pairs = ColonyParser::parse(Rule::VarDecl, source).unwrap();
+        let result = AstBuilder::build_var_decl(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok());
+        let var_decl = result.unwrap();
+        assert!(matches!(
+            var_decl.target,
+            crate::ast::VarDeclTarget::Tuple(ref names) if names == &vec!["a".to_string(), "b".to_string()]
+        ));
     }
 
     #[test]
@@ -3083,6 +3651,50 @@ mod tests {
         let func = result.unwrap();
         assert_eq!(func.name, "greet");
         assert_eq!(func.body.len(), 1);
+    }
+
+    #[test]
+    fn test_build_proc_def_simple() {
+        let source = "proc greet(name) { echo hello }";
+        let pairs = ColonyParser::parse(Rule::ProcDef, source).unwrap();
+        let result = AstBuilder::build_proc_def(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+        let proc_def = result.unwrap();
+        assert_eq!(proc_def.name, "greet");
+        assert_eq!(proc_def.params.len(), 1);
+        assert_eq!(proc_def.params[0].name, "name");
+        assert!(proc_def.params[0].default.is_none());
+        assert_eq!(proc_def.body.len(), 1);
+    }
+
+    #[test]
+    fn test_build_proc_def_with_default() {
+        let source = "proc greet(name, greeting = \"Hello\") { echo hello }";
+        let pairs = ColonyParser::parse(Rule::ProcDef, source).unwrap();
+        let result = AstBuilder::build_proc_def(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+        let proc_def = result.unwrap();
+        assert_eq!(proc_def.name, "greet");
+        assert_eq!(proc_def.params.len(), 2);
+        assert_eq!(proc_def.params[0].name, "name");
+        assert!(proc_def.params[0].default.is_none());
+        assert_eq!(proc_def.params[1].name, "greeting");
+        assert!(proc_def.params[1].default.is_some());
+    }
+
+    #[test]
+    fn test_build_proc_def_no_params() {
+        let source = "proc hello() { echo hello }";
+        let pairs = ColonyParser::parse(Rule::ProcDef, source).unwrap();
+        let result = AstBuilder::build_proc_def(pairs.into_iter().next().unwrap());
+
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+        let proc_def = result.unwrap();
+        assert_eq!(proc_def.name, "hello");
+        assert!(proc_def.params.is_empty());
+        assert_eq!(proc_def.body.len(), 1);
     }
 
     #[test]
@@ -3586,6 +4198,89 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_func_call_expression() {
+        let source = "len([1, 2])";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Expression::FuncCall { name, args, .. } => {
+                assert_eq!(name, "len");
+                assert_eq!(args.len(), 1);
+            }
+            other => panic!("Expected func call, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_method_call_expression() {
+        let source = "[1, 2].join(\",\")";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Expression::MethodCall { name, args, .. } => {
+                assert_eq!(name, "join");
+                assert_eq!(args.len(), 1);
+            }
+            other => panic!("Expected method call, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_optional_method_call_expression() {
+        let source = "value?.keys()";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Expression::MethodCall { .. }));
+    }
+
+    #[test]
+    fn test_optional_chain_with_index_expression() {
+        let source = "obj?.items[0].name?.len()";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Expression::MethodCall { .. }));
+    }
+
+    #[test]
+    fn test_optional_call_expression() {
+        let source = "maybe?()";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Expression::OptionalCall { .. }));
+    }
+
+    #[test]
+    fn test_direct_method_call_expression() {
+        let source = "items.len()";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Expression::MethodCall { .. }));
+    }
+
+    #[test]
+    fn test_optional_unwrap_expression() {
+        let source = "value?";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Expression::OptionalChain { .. }));
+
+        let source = "value!";
+        let result = parse_and_build_expr(source);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Expression::Unwrap { .. }));
+    }
+
+    #[test]
+    fn test_dollar_expr_sub_parsing() {
+        use pest::Parser;
+
+        let source = "$[1 + 2]";
+        let mut pairs = ColonyParser::parse(Rule::Word, source).unwrap();
+        let word = AstBuilder::build_word(pairs.next().unwrap()).unwrap();
+        assert!(matches!(word.parts[0], WordPart::ExprSub(_)));
+    }
+
     // Helper function for expression tests
     fn parse_and_build_expr(source: &str) -> Result<Expression, BuildError> {
         let pairs = ColonyParser::parse(Rule::Expression, source).unwrap();
@@ -3702,5 +4397,66 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_build_agent_invocation_basic() {
+        let source = "@myagent \"hello world\"";
+        let stmt = crate::pest_api::parse_statement(source).unwrap();
+        let pipeline = match &stmt {
+            Statement::Pipeline(p) => p,
+            Statement::List(list) => match &*list.first {
+                Statement::Pipeline(p) => p,
+                other => panic!("Expected Pipeline inside List, got {:?}", other),
+            },
+            other => panic!("Expected Pipeline or List, got {:?}", other),
+        };
+        assert_eq!(pipeline.elements.len(), 1);
+        match &*pipeline.elements[0].command {
+            Statement::AgentInvocation(inv) => {
+                assert_eq!(inv.agent_name, "myagent");
+                assert!(inv.tool.is_none());
+            }
+            other => panic!("Expected AgentInvocation, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_build_agent_invocation_with_tool() {
+        let source = "@myagent:search \"find stuff\"";
+        let stmt = crate::pest_api::parse_statement(source).unwrap();
+        let pipeline = match &stmt {
+            Statement::Pipeline(p) => p,
+            Statement::List(list) => match &*list.first {
+                Statement::Pipeline(p) => p,
+                other => panic!("Expected Pipeline inside List, got {:?}", other),
+            },
+            other => panic!("Expected Pipeline or List, got {:?}", other),
+        };
+        assert_eq!(pipeline.elements.len(), 1);
+        match &*pipeline.elements[0].command {
+            Statement::AgentInvocation(inv) => {
+                assert_eq!(inv.agent_name, "myagent");
+                assert_eq!(inv.tool.as_deref(), Some("search"));
+            }
+            other => panic!("Expected AgentInvocation, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_build_agent_in_pipeline() {
+        let source = "echo test | @agent \"process\"";
+        let stmt = crate::pest_api::parse_statement(source).unwrap();
+        let pipeline = match &stmt {
+            Statement::Pipeline(p) => p,
+            Statement::List(list) => match &*list.first {
+                Statement::Pipeline(p) => p,
+                other => panic!("Expected Pipeline inside List, got {:?}", other),
+            },
+            other => panic!("Expected Pipeline or List, got {:?}", other),
+        };
+        assert_eq!(pipeline.elements.len(), 2);
+        assert!(matches!(&*pipeline.elements[0].command, Statement::SimpleCommand(_)));
+        assert!(matches!(&*pipeline.elements[1].command, Statement::AgentInvocation(_)));
     }
 }

@@ -181,9 +181,11 @@ pub(crate) async fn execute_for_loop_with_control(
     for_stmt: &colony_parser::ForStatement,
     executor: &mut Executor,
 ) -> (i32, ControlFlow) {
-    let mut expander = Expander::with_executor(executor.context().clone(), |stmt, ctx| {
-        colony_exec::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        executor.context().clone(),
+        |stmt, ctx| colony_exec::execute_and_capture(stmt, ctx),
+        |expr, ctx| colony_exec::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
     let mut values = Vec::new();
 
     for word in &for_stmt.words {
@@ -305,6 +307,78 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                             (code, ControlFlow::Normal)
                         }
                     }
+                    Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
+                    Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
+                    Err(ref e) => {
+                        eprintln!("execution error: {e}");
+                        let exit_code = match e {
+                            ExecutionError::CommandNotFound(_) => 127,
+                            ExecutionError::PermissionDenied(_) => 126,
+                            _ => 1,
+                        };
+                        if !errexit_exempt && executor.context().shell_options().errexit {
+                            (exit_code, ControlFlow::Exit)
+                        } else {
+                            (exit_code, ControlFlow::Normal)
+                        }
+                    }
+                };
+                if result.0 != 0 {
+                    execute_err_trap(executor, execute_statement_for_code).await;
+                }
+                result
+            }
+            Statement::Try(try_stmt) => {
+                let result = match executor.execute_try_internal(try_stmt).await {
+                    Ok(code) => {
+                        if !errexit_exempt
+                            && executor.context().shell_options().errexit
+                            && code != 0
+                        {
+                            (code, ControlFlow::Exit)
+                        } else {
+                            (code, ControlFlow::Normal)
+                        }
+                    }
+                    Err(ExecutionError::Return(code)) => (code, ControlFlow::Return),
+                    Err(ExecutionError::Break) => (0, ControlFlow::Break),
+                    Err(ExecutionError::Continue) => (0, ControlFlow::Continue),
+                    Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
+                    Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
+                    Err(ref e) => {
+                        eprintln!("execution error: {e}");
+                        let exit_code = match e {
+                            ExecutionError::CommandNotFound(_) => 127,
+                            ExecutionError::PermissionDenied(_) => 126,
+                            _ => 1,
+                        };
+                        if !errexit_exempt && executor.context().shell_options().errexit {
+                            (exit_code, ControlFlow::Exit)
+                        } else {
+                            (exit_code, ControlFlow::Normal)
+                        }
+                    }
+                };
+                if result.0 != 0 {
+                    execute_err_trap(executor, execute_statement_for_code).await;
+                }
+                result
+            }
+            Statement::Match(match_stmt) => {
+                let result = match executor.execute_match_internal(match_stmt).await {
+                    Ok(code) => {
+                        if !errexit_exempt
+                            && executor.context().shell_options().errexit
+                            && code != 0
+                        {
+                            (code, ControlFlow::Exit)
+                        } else {
+                            (code, ControlFlow::Normal)
+                        }
+                    }
+                    Err(ExecutionError::Return(code)) => (code, ControlFlow::Return),
+                    Err(ExecutionError::Break) => (0, ControlFlow::Break),
+                    Err(ExecutionError::Continue) => (0, ControlFlow::Continue),
                     Err(ExecutionError::Exit(code)) => (code, ControlFlow::Exit),
                     Err(ExecutionError::Errexit(code)) => (code, ControlFlow::Exit),
                     Err(ref e) => {
@@ -469,7 +543,13 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                 (0, ControlFlow::Normal)
             }
             Statement::Return(_ret_stmt) => (0, ControlFlow::Return),
-            Statement::VarDecl(_) | Statement::ProcDef(_) => {
+            Statement::ProcDef(proc_def) => {
+                executor
+                    .context_mut()
+                    .define_proc(proc_def.name.clone(), proc_def.clone());
+                (0, ControlFlow::Normal)
+            }
+            Statement::VarDecl(_) => {
                 eprintln!("This declaration not yet supported");
                 (1, ControlFlow::Normal)
             }
@@ -488,6 +568,16 @@ pub(crate) fn execute_statement_with_errexit_control<'a>(
                     (1, ControlFlow::Normal)
                 }
             },
+            Statement::AgentInvocation(agent_invoke) => {
+                let result = executor.execute_agent_invocation(agent_invoke).await;
+                match result {
+                    Ok(status) => (status.code(), ControlFlow::Normal),
+                    Err(e) => {
+                        eprintln!("colony: agent error: {e}");
+                        (1, ControlFlow::Normal)
+                    }
+                }
+            }
             Statement::Empty => (executor.context().last_exit_status(), ControlFlow::Normal),
         }
     })

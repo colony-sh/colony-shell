@@ -126,7 +126,7 @@ block_comment   = '/#' { (* any char except #/ *) } '#/' ;
 
 ```ebnf
 (* Pipeline operators *)
-pipe_op         = '|' | '->' | '=>' | '~>' | '|&' ;
+pipe_op         = '|' | '|>' | '?>' | '!>' | '->' | '=>' | '~>' | '|&' ;
 
 (* List operators *)
 list_op         = '&&' | '||' | ';' | '&' ;
