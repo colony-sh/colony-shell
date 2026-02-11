@@ -16,6 +16,9 @@
 //! - Streaming cancellation: CancellationToken for Ctrl+C support
 //! - Provider fallback: ProviderChain with health tracking
 //! - Memory integration: colony-memory for persistent context
+//! - Tuple bridge: colony-tuple reactive coordination (P5-35)
+//! - Planning: Goal tree integration for multi-turn planning (P5-36)
+//! - Recipe config: Recipe-driven agent configuration (P5-37)
 
 pub mod agent;
 pub mod approval;
@@ -24,12 +27,15 @@ pub mod context;
 pub mod detector;
 pub mod memory_integration;
 pub mod persistence;
+pub mod planning;
 pub mod provider;
 pub mod provider_chain;
 pub mod providers;
+pub mod recipe_config;
 pub mod router;
 pub mod token_accounting;
 pub mod tool;
+pub mod tuple_bridge;
 
 pub use agent::{Agent, AgentConfig};
 pub use approval::{ApprovalConfig, ApprovalManager, ApprovalResponse};

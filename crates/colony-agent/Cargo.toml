@@ -14,6 +14,8 @@ colony-exec.workspace = true
 colony-cloud-sdk = { workspace = true, optional = true }
 colony-memory = { workspace = true, optional = true }
 colony-tuple = { workspace = true, optional = true }
+colony-focus = { workspace = true, optional = true }
+colony-recipe = { workspace = true, optional = true }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -55,5 +57,7 @@ default = []
 cloud = ["colony-cloud-sdk"]
 memory = ["colony-memory"]
 tuple = ["colony-tuple"]
+focus = ["colony-focus"]
+recipe = ["colony-recipe"]
 bedrock = ["claude-sdk/bedrock"]
-full = ["cloud", "memory", "tuple", "bedrock"]
+full = ["cloud", "memory", "tuple", "focus", "recipe", "bedrock"]
