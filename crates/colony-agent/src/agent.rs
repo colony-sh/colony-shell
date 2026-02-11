@@ -125,6 +125,99 @@ impl Agent {
         Self::with_config(AgentConfig::default()).await
     }
 
+    /// Create an agent from an AGENT.md definition.
+    ///
+    /// Uses the definition's capabilities to select model/provider,
+    /// and its prompt_template as the system prompt.
+    pub async fn from_definition(
+        definition: &colony_exec::special_files::AgentDefinition,
+    ) -> Result<Self> {
+        let mut config = AgentConfig::default();
+
+        // Use the prompt template as system prompt
+        if !definition.prompt_template.is_empty() {
+            config.system_prompt = definition.prompt_template.clone();
+        } else if !definition.description.is_empty() {
+            config.system_prompt = definition.description.clone();
+        }
+
+        // Apply capabilities
+        if let Some(max_tokens) = definition.capabilities.max_tokens {
+            config.max_tokens = max_tokens;
+        }
+        config.temperature = definition.capabilities.temperature;
+
+        // If model is specified in AGENT.md, try to use it
+        if let Some(ref model_spec) = definition.capabilities.model {
+            // Try to parse "provider:model" format or just "model"
+            if let Some((provider_str, model_name)) = model_spec.split_once(':') {
+                if let Some(provider_type) = ProviderType::parse(provider_str) {
+                    return Self::with_provider(provider_type, model_name, config).await;
+                }
+            }
+
+            // Bare model name -- infer provider from model name
+            let provider_type = infer_provider_from_model(model_spec);
+            return Self::with_provider(provider_type, model_spec.as_str(), config).await;
+        }
+
+        // No model specified, use auto-detect
+        Self::with_config(config).await
+    }
+
+    /// Reconfigure this agent from an AGENT.md definition.
+    ///
+    /// Updates the system prompt and capabilities. Optionally switches
+    /// the model if the definition specifies one different from current.
+    pub async fn configure_from_definition(
+        &mut self,
+        definition: &colony_exec::special_files::AgentDefinition,
+    ) -> Result<()> {
+        // Update system prompt
+        if !definition.prompt_template.is_empty() {
+            self.config.system_prompt = definition.prompt_template.clone();
+        } else if !definition.description.is_empty() {
+            self.config.system_prompt = definition.description.clone();
+        }
+
+        // Update capabilities
+        if let Some(max_tokens) = definition.capabilities.max_tokens {
+            self.config.max_tokens = max_tokens;
+        }
+        if definition.capabilities.temperature.is_some() {
+            self.config.temperature = definition.capabilities.temperature;
+        }
+
+        // Switch model if specified and different from current
+        if let Some(ref model_spec) = definition.capabilities.model {
+            let (provider_type, model_name) =
+                if let Some((provider_str, model_name)) = model_spec.split_once(':') {
+                    let pt = ProviderType::parse(provider_str)
+                        .unwrap_or_else(|| infer_provider_from_model(model_spec));
+                    (pt, model_name.to_string())
+                } else {
+                    (infer_provider_from_model(model_spec), model_spec.clone())
+                };
+
+            let current = self.router.current_model();
+            if current != model_name {
+                self.switch_model(provider_type, model_name).await?;
+            }
+        }
+
+        // Clear conversation history for fresh start with new agent config
+        self.messages.clear();
+
+        info!(
+            "Agent reconfigured from definition '{}': model={}, max_tokens={}",
+            definition.name,
+            self.router.current_model(),
+            self.config.max_tokens,
+        );
+
+        Ok(())
+    }
+
     /// Create agent with custom configuration
     pub async fn with_config(config: AgentConfig) -> Result<Self> {
         let router = ModelRouter::auto_detect().await?;
@@ -349,5 +442,98 @@ impl Agent {
         self.tools
             .execute(tool_name, input)
             .map_err(|e| AgentError::ToolExecution(e.to_string()))
+    }
+
+    /// Get the current system prompt
+    pub fn system_prompt(&self) -> &str {
+        &self.config.system_prompt
+    }
+
+    /// Get the agent configuration
+    pub fn config(&self) -> &AgentConfig {
+        &self.config
+    }
+}
+
+/// Infer provider type from model name string.
+///
+/// Uses common model name patterns:
+/// - "claude-*" / "sonnet-*" / "opus-*" / "haiku-*" -> Anthropic
+/// - "gpt-*" / "o1-*" / "o3-*" -> OpenAI
+/// - anything else -> Ollama (local fallback)
+fn infer_provider_from_model(model_name: &str) -> ProviderType {
+    let lower = model_name.to_lowercase();
+    if lower.starts_with("claude")
+        || lower.contains("sonnet")
+        || lower.contains("opus")
+        || lower.contains("haiku")
+    {
+        ProviderType::Anthropic
+    } else if lower.starts_with("gpt")
+        || lower.starts_with("o1")
+        || lower.starts_with("o3")
+        || lower.starts_with("chatgpt")
+    {
+        ProviderType::OpenAI
+    } else {
+        ProviderType::Ollama
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_infer_provider_claude_models() {
+        assert_eq!(
+            infer_provider_from_model("claude-3-5-sonnet-20241022"),
+            ProviderType::Anthropic
+        );
+        assert_eq!(
+            infer_provider_from_model("claude-sonnet-4-20250514"),
+            ProviderType::Anthropic
+        );
+        assert_eq!(
+            infer_provider_from_model("claude-3-opus"),
+            ProviderType::Anthropic
+        );
+        assert_eq!(
+            infer_provider_from_model("claude-3-haiku"),
+            ProviderType::Anthropic
+        );
+    }
+
+    #[test]
+    fn test_infer_provider_openai_models() {
+        assert_eq!(
+            infer_provider_from_model("gpt-4-turbo"),
+            ProviderType::OpenAI
+        );
+        assert_eq!(infer_provider_from_model("gpt-4o"), ProviderType::OpenAI);
+        assert_eq!(
+            infer_provider_from_model("o1-preview"),
+            ProviderType::OpenAI
+        );
+        assert_eq!(infer_provider_from_model("o3-mini"), ProviderType::OpenAI);
+    }
+
+    #[test]
+    fn test_infer_provider_ollama_models() {
+        assert_eq!(infer_provider_from_model("llama3"), ProviderType::Ollama);
+        assert_eq!(infer_provider_from_model("mistral"), ProviderType::Ollama);
+        assert_eq!(infer_provider_from_model("codellama"), ProviderType::Ollama);
+    }
+
+    #[test]
+    fn test_agent_config_defaults() {
+        let config = AgentConfig::default();
+        assert_eq!(config.max_tokens, 4096);
+        assert!(config.use_caching);
+        assert!(config.temperature.is_none());
+        assert_eq!(
+            config.system_prompt,
+            "You are Colony Shell's agent assistant."
+        );
     }
 }

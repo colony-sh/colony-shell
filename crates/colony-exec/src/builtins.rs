@@ -62,7 +62,7 @@ impl BuiltinResult {
     }
 }
 
-pub fn is_builtin(name: &str) -> bool {
+fn is_builtin_base(name: &str) -> bool {
     matches!(
         name,
         "cd" | "export"
@@ -111,7 +111,26 @@ pub fn is_builtin(name: &str) -> bool {
             | "eval"
             | "hash"
             | "path"
+            | "flux"
+            | "colony"
+            | "goal"
+            | "tree"
+            | "split"
+            | "vsplit"
+            | "layout"
+            | "pane"
     )
+}
+
+fn split_namespaced_builtin(name: &str) -> Option<(&str, &str)> {
+    name.split_once(':')
+}
+
+pub fn is_builtin(name: &str) -> bool {
+    if let Some((base, _sub)) = split_namespaced_builtin(name) {
+        return is_builtin_base(base);
+    }
+    is_builtin_base(name)
 }
 
 pub fn serialize_function_for_export(func: &colony_parser::FunctionDef) -> String {
@@ -133,9 +152,11 @@ pub fn execute_builtin(
     channels: &mut ChannelManager,
     history: Option<&mut crate::history::History>,
 ) -> Option<Result<BuiltinResult>> {
-    let mut expander = Expander::with_executor(context.clone(), |stmt, ctx| {
-        crate::execute_and_capture(stmt, ctx)
-    });
+    let mut expander = Expander::with_executor_and_expr(
+        context.clone(),
+        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+    );
     let name_fields = match expander.expand_word(&cmd.name) {
         Ok(fields) => fields,
         Err(e) => return Some(Err(e.into())),
@@ -146,15 +167,25 @@ pub fn execute_builtin(
     }
 
     let name = &name_fields[0].text;
+    let (name, namespaced_arg) = if let Some((base, sub)) = split_namespaced_builtin(name) {
+        (base, Some(sub.to_string()))
+    } else {
+        (name.as_str(), None)
+    };
 
-    if !is_builtin(name) {
+    if !is_builtin_base(name) {
         return None;
     }
 
     // Expand arguments - include extra fields from name expansion (e.g., "$@" -> multiple fields)
     let mut args: Vec<String> = name_fields[1..].iter().map(|f| f.text.clone()).collect();
+    if let Some(ns) = namespaced_arg {
+        if !ns.is_empty() {
+            args.insert(0, ns);
+        }
+    }
     let is_assignment_builtin = matches!(
-        name.as_str(),
+        name,
         "export" | "declare" | "local" | "readonly" | "typeset"
     );
 
@@ -187,7 +218,7 @@ pub fn execute_builtin(
 
     context.sync_variables_from(expander.context());
 
-    let result = match name.as_str() {
+    let result = match name {
         "cd" => builtin_cd(&args, context, tuple_space),
         "export" => builtin_export(&args, context, tuple_space),
         "unset" => builtin_unset(&args, context, tuple_space),
@@ -232,6 +263,14 @@ pub fn execute_builtin(
         "hash" => builtin_hash(&args, context),
         "history" => builtin_history(&args, history),
         "path" => builtin_path(&args, context, tuple_space),
+        "flux" => crate::flux::builtin_flux(&args, tuple_space),
+        "colony" => builtin_colony(&args),
+        "goal" => builtin_goal(&args),
+        "tree" => crate::file_tree::protocol::builtin_tree(&args),
+        "split" => crate::panes::builtin_split(&args),
+        "vsplit" => crate::panes::builtin_vsplit(&args),
+        "layout" => crate::panes::builtin_layout(&args),
+        "pane" => crate::panes::builtin_pane(&args),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -2751,6 +2790,59 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
             result.push_str("\nfi");
             result
         }
+        Statement::Try(try_stmt) => {
+            let mut result = String::from("try {\n");
+            result.push_str(&format_statements_indented(&try_stmt.body));
+            result.push_str("\n}");
+            if let Some(catch_block) = &try_stmt.catch {
+                result.push_str(" catch");
+                if let Some(binding) = &catch_block.binding {
+                    result.push(' ');
+                    result.push_str(binding);
+                }
+                if let Some(error_type) = &catch_block.error_type {
+                    result.push_str(" : ");
+                    result.push_str(error_type);
+                }
+                result.push_str(" {\n");
+                result.push_str(&format_statements_indented(&catch_block.body));
+                result.push_str("\n}");
+            }
+            if let Some(finally_body) = &try_stmt.finally_body {
+                result.push_str(" finally {\n");
+                result.push_str(&format_statements_indented(finally_body));
+                result.push_str("\n}");
+            }
+            result
+        }
+        Statement::Match(match_stmt) => {
+            let mut result = format!("match {} {{\n", format_expr(&match_stmt.value));
+            for arm in &match_stmt.arms {
+                let mut arm_line = format!("    {}", format_match_pattern(&arm.pattern));
+                if let Some(guard) = &arm.guard {
+                    arm_line.push_str(&format!(" if {}", format_expr(guard)));
+                }
+                arm_line.push_str(" => ");
+                match &arm.body {
+                    colony_parser::MatchBody::Block(stmts) => {
+                        arm_line.push_str("{\n");
+                        let body = format_statements_double_indented(stmts);
+                        if !body.is_empty() {
+                            arm_line.push_str(&body);
+                            arm_line.push('\n');
+                        }
+                        arm_line.push_str("    }");
+                    }
+                    colony_parser::MatchBody::Expr(expr) => {
+                        arm_line.push_str(&format_expr(expr));
+                    }
+                }
+                arm_line.push('\n');
+                result.push_str(&arm_line);
+            }
+            result.push('}');
+            result
+        }
         Statement::While(while_stmt) => {
             format!(
                 "while {}; do\n{}\ndone",
@@ -2800,6 +2892,25 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
                 format_function_body(&func.body)
             )
         }
+        Statement::ProcDef(proc_def) => {
+            let params: Vec<String> = proc_def
+                .params
+                .iter()
+                .map(|p| {
+                    if p.default.is_some() {
+                        format!("{} = ...", p.name)
+                    } else {
+                        p.name.clone()
+                    }
+                })
+                .collect();
+            format!(
+                "proc {} ({}) {{\n{}\n}}",
+                proc_def.name,
+                params.join(", "),
+                format_function_body(&proc_def.body)
+            )
+        }
         Statement::BraceGroup(group) => {
             format!("{{\n{}\n}}", format_statements_indented(&group.body))
         }
@@ -2807,7 +2918,29 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
             format!("(\n{}\n)", format_statements_indented(&sub.body))
         }
         Statement::VarDecl(decl) => {
-            format!("{}={}", decl.name, format_expr(&decl.value))
+            let kind = match decl.kind {
+                colony_parser::VarKind::Var => "var",
+                colony_parser::VarKind::Const => "const",
+                colony_parser::VarKind::Setvar => "setvar",
+            };
+            let type_suffix = decl
+                .type_annotation
+                .as_ref()
+                .map(|t| format!(": {}", t))
+                .unwrap_or_default();
+            let target = match &decl.target {
+                colony_parser::VarDeclTarget::Name(name) => name.clone(),
+                colony_parser::VarDeclTarget::Tuple(names) => {
+                    format!("({})", names.join(", "))
+                }
+            };
+            format!(
+                "{} {}{} = {}",
+                kind,
+                target,
+                type_suffix,
+                format_expr(&decl.value)
+            )
         }
         Statement::Return(ret) => {
             if let Some(ref val) = ret.value {
@@ -2817,6 +2950,45 @@ fn format_statement(stmt: &colony_parser::Statement) -> String {
             }
         }
         _ => "# unsupported".to_string(),
+    }
+}
+
+fn format_match_pattern(pattern: &colony_parser::MatchPattern) -> String {
+    match pattern {
+        colony_parser::MatchPattern::Literal(expr) => format_expr(expr),
+        colony_parser::MatchPattern::Binding(name) => name.clone(),
+        colony_parser::MatchPattern::Wildcard => "_".to_string(),
+        colony_parser::MatchPattern::List(list) => {
+            let mut parts: Vec<String> = list.items.iter().map(format_match_pattern).collect();
+            match &list.rest {
+                colony_parser::ListRest::None => {}
+                colony_parser::ListRest::Ignore => parts.push("..".to_string()),
+                colony_parser::ListRest::Bind(name) => parts.push(format!("..{}", name)),
+            }
+            format!("[{}]", parts.join(", "))
+        }
+        colony_parser::MatchPattern::Dict(dict) => {
+            let mut parts = Vec::new();
+            for field in &dict.fields {
+                if let Some(pattern) = &field.pattern {
+                    parts.push(format!("{}: {}", field.name, format_match_pattern(pattern)));
+                } else {
+                    parts.push(field.name.clone());
+                }
+            }
+            if dict.allow_extra {
+                parts.push("..".to_string());
+            }
+            format!("{{{}}}", parts.join(", "))
+        }
+        colony_parser::MatchPattern::Tuple(tuple) => {
+            let parts: Vec<String> = tuple.items.iter().map(format_match_pattern).collect();
+            format!("({})", parts.join(", "))
+        }
+        colony_parser::MatchPattern::Or(patterns) => {
+            let parts: Vec<String> = patterns.iter().map(format_match_pattern).collect();
+            parts.join(" | ")
+        }
     }
 }
 
@@ -2884,6 +3056,9 @@ fn format_word(word: &colony_parser::Word) -> String {
             WordPart::ArithRaw(s) => {
                 result.push_str(&format!("$(({})", s));
             }
+            WordPart::ExprSub(expr) => {
+                result.push_str(&format!("$[{}]", format_expr(expr)));
+            }
             WordPart::Tilde(user) => {
                 result.push('~');
                 if let Some(u) = user {
@@ -2932,6 +3107,22 @@ fn format_expr(expr: &colony_parser::Expression) -> String {
         Expression::Str(s, _) => format!("\"{}\"", s),
         Expression::Bool(b, _) => b.to_string(),
         Expression::Variable { name, .. } => format!("${}", name),
+        Expression::FuncCall { name, args, .. } => {
+            let arg_strs: Vec<String> = args.iter().map(format_expr).collect();
+            format!("{}({})", name, arg_strs.join(", "))
+        }
+        Expression::MethodCall {
+            target, name, args, ..
+        } => {
+            let arg_strs: Vec<String> = args.iter().map(format_expr).collect();
+            format!("{}.{}({})", format_expr(target), name, arg_strs.join(", "))
+        }
+        Expression::OptionalCall { name, args, .. } => {
+            let arg_strs: Vec<String> = args.iter().map(format_expr).collect();
+            format!("{}?({})", name, arg_strs.join(", "))
+        }
+        Expression::OptionalChain { target, .. } => format!("{}?", format_expr(target)),
+        Expression::Unwrap { target, .. } => format!("{}!", format_expr(target)),
         Expression::Binary {
             left, op, right, ..
         } => {
@@ -5205,6 +5396,696 @@ fn get_builtin_names() -> Vec<&'static str> {
     ]
 }
 
+/// colony - Colony Shell recipe and package management
+///
+/// Usage:
+///   colony install <recipe>        Install a recipe package
+///   colony publish                  Publish current directory as a recipe
+///   colony recipe list              List installed recipes
+///   colony recipe show <name>       Show recipe details
+fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("colony: missing subcommand");
+        eprintln!("Usage: colony <install|publish|recipe> [args...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let subcommand = &args[0];
+    let sub_args = &args[1..];
+
+    match subcommand.as_str() {
+        "install" => colony_install(sub_args),
+        "publish" => colony_publish(sub_args),
+        "recipe" => colony_recipe(sub_args),
+        _ => {
+            eprintln!("colony: unknown subcommand '{}'", subcommand);
+            eprintln!("Usage: colony <install|publish|recipe> [args...]");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+/// colony install <recipe> - Install a recipe package
+///
+/// Accepts a recipe name or URL:
+///   colony install code-reviewer
+///   colony install https://social.colony.sh/content/code-reviewer
+///
+/// Downloads recipe files (AGENT.md, TOOLS.md, CONTEXT.md, shell scripts)
+/// to ~/.colony/recipes/<name>/ and registers in the recipe registry.
+fn colony_install(args: &[String]) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("colony install: missing recipe name or URL");
+        eprintln!("Usage: colony install <recipe-name|url>");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let source = &args[0];
+
+    let (name, source_url) = if source.starts_with("http://") || source.starts_with("https://") {
+        let name = extract_recipe_name_from_url(source);
+        let Some(name) = name else {
+            eprintln!("colony install: could not extract recipe name from URL: {}", source);
+            return Ok(BuiltinResult::Failure(1));
+        };
+        (name, Some(source.clone()))
+    } else {
+        (source.clone(), None)
+    };
+
+    let recipes_dir = match colony_recipe::RecipeRegistry::recipes_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("colony install: {}", e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    let install_dir = recipes_dir.join(&name);
+
+    let mut registry = match colony_recipe::RecipeRegistry::open() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("colony install: failed to open registry: {}", e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    if registry.is_installed(&name) {
+        eprintln!("colony install: recipe '{}' is already installed", name);
+        eprintln!("  installed at: {}", install_dir.display());
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    if let Some(url) = &source_url {
+        eprintln!("colony install: downloading from URL is not yet supported: {}", url);
+        eprintln!("  To install a local recipe, copy files to: {}", install_dir.display());
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let search_dirs = build_install_search_dirs();
+
+    let found = search_dirs.iter().find_map(|dir| {
+        let candidate_dir = dir.join(&name);
+        if candidate_dir.is_dir() {
+            if colony_recipe::validate_recipe_dir(&candidate_dir).is_ok() {
+                return Some(candidate_dir);
+            }
+        }
+        let candidate_file = dir.join(format!("{}.toml", name));
+        if candidate_file.exists() {
+            return Some(candidate_file);
+        }
+        None
+    });
+
+    let Some(source_path) = found else {
+        eprintln!("colony install: recipe '{}' not found", name);
+        eprintln!("  searched in:");
+        for dir in &search_dirs {
+            eprintln!("    {}", dir.display());
+        }
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    if let Err(e) = std::fs::create_dir_all(&install_dir) {
+        eprintln!("colony install: failed to create {}: {}", install_dir.display(), e);
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    if source_path.is_dir() {
+        let files = colony_recipe::recipe_package_files(&source_path);
+        if files.is_empty() {
+            eprintln!("colony install: no recipe files found in {}", source_path.display());
+            return Ok(BuiltinResult::Failure(1));
+        }
+        for file in &files {
+            let file_name = match file.strip_prefix(&source_path) {
+                Ok(rel) => rel.to_path_buf(),
+                Err(_) => {
+                    let Some(fname) = file.file_name() else { continue };
+                    PathBuf::from(fname)
+                }
+            };
+            let dest = install_dir.join(&file_name);
+            if let Some(parent) = dest.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::copy(file, &dest) {
+                eprintln!("colony install: failed to copy {}: {}", file.display(), e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+        }
+        println!("Installed {} files to {}", files.len(), install_dir.display());
+    } else {
+        let dest = install_dir.join("recipe.toml");
+        if let Err(e) = std::fs::copy(&source_path, &dest) {
+            eprintln!("colony install: failed to copy {}: {}", source_path.display(), e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+        println!("Installed recipe.toml to {}", install_dir.display());
+    }
+
+    if let Err(e) = colony_recipe::validate_recipe_dir(&install_dir) {
+        eprintln!("colony install: warning: installed recipe has validation issues: {}", e);
+    }
+
+    let version = read_recipe_version(&install_dir);
+    let description = read_recipe_description(&install_dir);
+
+    let now = chrono::Utc::now().to_rfc3339();
+    if let Err(e) = registry.register(colony_recipe::InstalledRecipe {
+        name: name.clone(),
+        version,
+        description,
+        install_path: install_dir.clone(),
+        source_url,
+        installed_at: now,
+    }) {
+        eprintln!("colony install: warning: failed to register recipe: {}", e);
+    }
+
+    println!("Recipe '{}' installed successfully", name);
+    Ok(BuiltinResult::Success(0))
+}
+
+/// colony publish - Package and publish a recipe to the registry
+///
+/// Packages the current directory's special files (AGENT.md, TOOLS.md, etc.)
+/// into a recipe and publishes to the Colony Cloud registry.
+fn colony_publish(args: &[String]) -> Result<BuiltinResult> {
+    let dir = if let Some(path) = args.first() {
+        PathBuf::from(path)
+    } else {
+        std::env::current_dir().map_err(|e| {
+            ExecutionError::IoError(e)
+        })?
+    };
+
+    if let Err(e) = colony_recipe::validate_recipe_dir(&dir) {
+        eprintln!("colony publish: {}", e);
+        eprintln!("  A publishable recipe must contain at least AGENT.md or recipe.toml");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let files = colony_recipe::recipe_package_files(&dir);
+    if files.is_empty() {
+        eprintln!("colony publish: no recipe files found in {}", dir.display());
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let api_key = std::env::var("COLONY_API_KEY").ok().or_else(|| {
+        read_config_api_key()
+    });
+
+    let Some(_api_key) = api_key else {
+        eprintln!("colony publish: authentication required");
+        eprintln!("  Set COLONY_API_KEY environment variable or add api_key to ~/.colony/config.toml");
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    let name = detect_recipe_name(&dir);
+    let version = read_recipe_version(&dir);
+
+    println!("Publishing recipe: {} v{}", name, version);
+    println!("Files:");
+    for file in &files {
+        let rel = file.strip_prefix(&dir).unwrap_or(file);
+        println!("  {}", rel.display());
+    }
+
+    eprintln!("colony publish: registry upload not yet implemented");
+    eprintln!("  Recipe validated and ready to publish when Colony Cloud is available");
+
+    Ok(BuiltinResult::Success(0))
+}
+
+/// colony recipe <subcommand> - Manage recipes
+fn colony_recipe(args: &[String]) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("colony recipe: missing subcommand");
+        eprintln!("Usage: colony recipe <list|show> [args...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    match args[0].as_str() {
+        "list" => colony_recipe_list(),
+        "show" => {
+            if args.len() < 2 {
+                eprintln!("colony recipe show: missing recipe name");
+                return Ok(BuiltinResult::Failure(1));
+            }
+            colony_recipe_show(&args[1])
+        }
+        _ => {
+            eprintln!("colony recipe: unknown subcommand '{}'", args[0]);
+            eprintln!("Usage: colony recipe <list|show> [args...]");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+fn colony_recipe_list() -> Result<BuiltinResult> {
+    let registry = match colony_recipe::RecipeRegistry::open() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("colony recipe list: {}", e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    let recipes = registry.list();
+    if recipes.is_empty() {
+        println!("No recipes installed.");
+        println!("  Use 'colony install <recipe>' to install one.");
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    println!("Installed recipes:");
+    for recipe in &recipes {
+        let desc = recipe.description.as_deref().unwrap_or("");
+        println!("  {:<20} v{:<10} {}", recipe.name, recipe.version, desc);
+    }
+
+    let loader = colony_recipe::RecipeLoader::new();
+    let discovered = loader.discover();
+    let non_installed: Vec<_> = discovered
+        .iter()
+        .filter(|d| !registry.is_installed(&d.name))
+        .collect();
+
+    if !non_installed.is_empty() {
+        println!();
+        println!("Available (not installed):");
+        for info in &non_installed {
+            println!("  {:<20} [{}]", info.name, info.source);
+        }
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+fn colony_recipe_show(name: &str) -> Result<BuiltinResult> {
+    let registry = match colony_recipe::RecipeRegistry::open() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("colony recipe show: {}", e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    let Some(entry) = registry.get(name) else {
+        eprintln!("colony recipe show: recipe '{}' not found", name);
+        return Ok(BuiltinResult::Failure(1));
+    };
+
+    println!("Recipe: {} v{}", entry.name, entry.version);
+    if let Some(desc) = &entry.description {
+        println!("Description: {}", desc);
+    }
+    println!("Path: {}", entry.install_path.display());
+    if let Some(url) = &entry.source_url {
+        println!("Source: {}", url);
+    }
+    println!("Installed: {}", entry.installed_at);
+
+    let files = colony_recipe::recipe_package_files(&entry.install_path);
+    if !files.is_empty() {
+        println!("Files:");
+        for file in &files {
+            let rel = file.strip_prefix(&entry.install_path).unwrap_or(file);
+            println!("  {}", rel.display());
+        }
+    }
+
+    if entry.install_path.join("recipe.toml").exists() {
+        let mut loader = colony_recipe::RecipeLoader::new();
+        if let Ok(recipe) = loader.load_from_path(&entry.install_path.join("recipe.toml")) {
+            if !recipe.imports().is_empty() {
+                println!("Imports:");
+                for import in recipe.imports() {
+                    println!("  {}", import);
+                }
+            }
+            if !recipe.skills.is_empty() {
+                println!("Skills:");
+                for (name, skill) in &recipe.skills {
+                    let trigger = skill.trigger.as_deref().unwrap_or("");
+                    let desc = skill.description.as_deref().unwrap_or("");
+                    println!("  {:<15} {:<10} {}", name, trigger, desc);
+                }
+            }
+            if !recipe.commands.is_empty() {
+                println!("Commands:");
+                for cmd in &recipe.commands {
+                    let desc = cmd.description.as_deref().unwrap_or("");
+                    println!("  /{:<14} {}", cmd.name, desc);
+                }
+            }
+        }
+    }
+
+    Ok(BuiltinResult::Success(0))
+}
+
+fn extract_recipe_name_from_url(url: &str) -> Option<String> {
+    url.rsplit('/').next().map(|s| {
+        s.trim_end_matches(".toml")
+            .trim_end_matches(".tar.gz")
+            .trim_end_matches(".zip")
+            .to_string()
+    })
+}
+
+fn build_install_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs.push(cwd.join(".colony/recipes"));
+    }
+
+    if let Some(config) = dirs::config_dir() {
+        dirs.push(config.join("colony/recipes"));
+    }
+
+    if let Some(cache) = dirs::cache_dir() {
+        dirs.push(cache.join("colony/registry"));
+    }
+
+    dirs
+}
+
+fn read_recipe_version(dir: &std::path::Path) -> String {
+    let recipe_toml = dir.join("recipe.toml");
+    if recipe_toml.exists() {
+        if let Ok(content) = std::fs::read_to_string(&recipe_toml) {
+            if let Ok(recipe) = colony_recipe::Recipe::from_toml(&content, &recipe_toml) {
+                return recipe.meta.version;
+            }
+        }
+    }
+    "0.1.0".to_string()
+}
+
+fn read_recipe_description(dir: &std::path::Path) -> Option<String> {
+    let recipe_toml = dir.join("recipe.toml");
+    if recipe_toml.exists() {
+        if let Ok(content) = std::fs::read_to_string(&recipe_toml) {
+            if let Ok(recipe) = colony_recipe::Recipe::from_toml(&content, &recipe_toml) {
+                return recipe.meta.description;
+            }
+        }
+    }
+
+    let agent_md = dir.join("AGENT.md");
+    if agent_md.exists() {
+        if let Ok(content) = std::fs::read_to_string(&agent_md) {
+            for line in content.lines().skip(1) {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with("---") {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn detect_recipe_name(dir: &std::path::Path) -> String {
+    let recipe_toml = dir.join("recipe.toml");
+    if recipe_toml.exists() {
+        if let Ok(content) = std::fs::read_to_string(&recipe_toml) {
+            if let Ok(recipe) = colony_recipe::Recipe::from_toml(&content, &recipe_toml) {
+                return recipe.meta.name;
+            }
+        }
+    }
+
+    let agent_md = dir.join("AGENT.md");
+    if agent_md.exists() {
+        if let Ok(content) = std::fs::read_to_string(&agent_md) {
+            for line in content.lines() {
+                if line.starts_with("## ") {
+                    return line.trim_start_matches("## ").trim().to_string();
+                }
+            }
+        }
+    }
+
+    dir.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unnamed")
+        .to_string()
+}
+
+fn read_config_api_key() -> Option<String> {
+    let config_path = dirs::home_dir()?.join(".colony/config.toml");
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let table: toml::Table = toml::from_str(&content).ok()?;
+    table
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+/// goal -- Goal and task tracking builtin
+///
+/// Subcommands:
+///   goal add <title>              Add a new top-level goal
+///   goal add <parent-id> <title>  Add a child goal
+///   goal list                     List all goals
+///   goal update <id> <status>     Update goal status
+///   goal complete <id>            Mark a goal as complete
+///   goal block <id> <reason>      Mark a goal as blocked
+///   goal checkpoint <label>       Create a snapshot of current goals
+///   goal tree                     Show goals as a tree
+fn builtin_goal(args: &[String]) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("goal: missing subcommand");
+        eprintln!("Usage: goal <add|list|update|complete|block|checkpoint|tree> [args...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let cwd = env::current_dir()?;
+
+    let mut tree = match crate::goals::GoalTree::load(&cwd) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("goal: failed to load goal tree: {}", e);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    let subcommand = &args[0];
+    let sub_args = &args[1..];
+
+    let result = match subcommand.as_str() {
+        "add" => goal_add(&mut tree, sub_args),
+        "list" | "ls" => goal_list(&tree),
+        "update" => goal_update(&mut tree, sub_args),
+        "complete" | "done" => goal_complete(&mut tree, sub_args),
+        "block" => goal_block(&mut tree, sub_args),
+        "checkpoint" | "cp" => goal_checkpoint(&mut tree, sub_args),
+        "tree" => goal_tree(&tree),
+        _ => {
+            eprintln!("goal: unknown subcommand '{}'", subcommand);
+            eprintln!("Usage: goal <add|list|update|complete|block|checkpoint|tree> [args...]");
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    if result.is_ok() {
+        if let Err(e) = tree.save() {
+            eprintln!("goal: warning: failed to save: {}", e);
+        }
+    }
+
+    result
+}
+
+fn goal_add(tree: &mut crate::goals::GoalTree, args: &[String]) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("goal add: missing title");
+        eprintln!("Usage: goal add <title>");
+        eprintln!("       goal add <parent-id> <title>");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    // Check if first arg is a numeric parent ID
+    if args.len() >= 2 {
+        if let Ok(parent_id) = args[0].parse::<u64>() {
+            let title = args[1..].join(" ");
+            match tree.add_child(parent_id, &title) {
+                Ok(id) => {
+                    eprintln!("Added goal #{} under #{}: {}", id, parent_id, title);
+                    return Ok(BuiltinResult::Success(0));
+                }
+                Err(e) => {
+                    eprintln!("goal add: {}", e);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+            }
+        }
+    }
+
+    let title = args.join(" ");
+    let id = tree.add(&title);
+    eprintln!("Added goal #{}: {}", id, title);
+    Ok(BuiltinResult::Success(0))
+}
+
+fn goal_list(tree: &crate::goals::GoalTree) -> Result<BuiltinResult> {
+    let goals = tree.all_goals();
+    if goals.is_empty() {
+        eprintln!("No goals. Use 'goal add <title>' to create one.");
+        return Ok(BuiltinResult::Success(0));
+    }
+
+    for goal in &goals {
+        let status_icon = match goal.status {
+            crate::goals::GoalStatus::Pending => "[ ]",
+            crate::goals::GoalStatus::InProgress => "[~]",
+            crate::goals::GoalStatus::Completed => "[x]",
+            crate::goals::GoalStatus::Blocked => "[!]",
+            crate::goals::GoalStatus::Cancelled => "[-]",
+        };
+        eprintln!(
+            "{} #{}: {} ({}%)",
+            status_icon, goal.id, goal.title, goal.progress
+        );
+    }
+    Ok(BuiltinResult::Success(0))
+}
+
+fn goal_update(
+    tree: &mut crate::goals::GoalTree,
+    args: &[String],
+) -> Result<BuiltinResult> {
+    if args.len() < 2 {
+        eprintln!("goal update: missing arguments");
+        eprintln!("Usage: goal update <id> <pending|in_progress|completed|blocked|cancelled>");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let id: u64 = match args[0].parse() {
+        Ok(id) => id,
+        Err(_) => {
+            eprintln!("goal update: invalid goal ID: {}", args[0]);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    let status = match args[1].as_str() {
+        "pending" => crate::goals::GoalStatus::Pending,
+        "in_progress" | "active" => crate::goals::GoalStatus::InProgress,
+        "completed" | "done" => crate::goals::GoalStatus::Completed,
+        "blocked" => crate::goals::GoalStatus::Blocked,
+        "cancelled" | "canceled" => crate::goals::GoalStatus::Cancelled,
+        other => {
+            eprintln!("goal update: unknown status '{}'", other);
+            eprintln!("Valid: pending, in_progress, completed, blocked, cancelled");
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    match tree.update_status(id, status) {
+        Ok(()) => {
+            eprintln!("Updated goal #{} to {}", id, status);
+            Ok(BuiltinResult::Success(0))
+        }
+        Err(e) => {
+            eprintln!("goal update: {}", e);
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+fn goal_complete(
+    tree: &mut crate::goals::GoalTree,
+    args: &[String],
+) -> Result<BuiltinResult> {
+    if args.is_empty() {
+        eprintln!("goal complete: missing goal ID");
+        eprintln!("Usage: goal complete <id>");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let id: u64 = match args[0].parse() {
+        Ok(id) => id,
+        Err(_) => {
+            eprintln!("goal complete: invalid goal ID: {}", args[0]);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    match tree.complete(id) {
+        Ok(()) => {
+            eprintln!("Completed goal #{}", id);
+            Ok(BuiltinResult::Success(0))
+        }
+        Err(e) => {
+            eprintln!("goal complete: {}", e);
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+fn goal_block(
+    tree: &mut crate::goals::GoalTree,
+    args: &[String],
+) -> Result<BuiltinResult> {
+    if args.len() < 2 {
+        eprintln!("goal block: missing arguments");
+        eprintln!("Usage: goal block <id> <reason>");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let id: u64 = match args[0].parse() {
+        Ok(id) => id,
+        Err(_) => {
+            eprintln!("goal block: invalid goal ID: {}", args[0]);
+            return Ok(BuiltinResult::Failure(1));
+        }
+    };
+
+    let reason = args[1..].join(" ");
+    match tree.add_blocker(id, &reason) {
+        Ok(()) => {
+            eprintln!("Blocked goal #{}: {}", id, reason);
+            Ok(BuiltinResult::Success(0))
+        }
+        Err(e) => {
+            eprintln!("goal block: {}", e);
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+fn goal_checkpoint(
+    tree: &mut crate::goals::GoalTree,
+    args: &[String],
+) -> Result<BuiltinResult> {
+    let label = if args.is_empty() {
+        chrono::Utc::now().format("%Y-%m-%d %H:%M").to_string()
+    } else {
+        args.join(" ")
+    };
+
+    tree.checkpoint(&label);
+    eprintln!("Created checkpoint: {}", label);
+    Ok(BuiltinResult::Success(0))
+}
+
+fn goal_tree(tree: &crate::goals::GoalTree) -> Result<BuiltinResult> {
+    let output = tree.format_tree();
+    if output.is_empty() {
+        eprintln!("No goals. Use 'goal add <title>' to create one.");
+    } else {
+        eprint!("{}", output);
+    }
+    Ok(BuiltinResult::Success(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5230,6 +6111,8 @@ mod tests {
         assert!(is_builtin("echo"));
         assert!(is_builtin("pwd"));
         assert!(is_builtin("exit"));
+        assert!(is_builtin("pwd:noop"));
+        assert!(is_builtin("context:show"));
         assert!(!is_builtin("ls"));
         assert!(!is_builtin("grep"));
     }
@@ -5240,7 +6123,7 @@ mod tests {
         let jobs = JobTable::new();
         let tuple_space = TupleSpace::new();
         let mut channels = ChannelManager::new();
-        let cmd = make_simple_command("pwd", vec![]);
+        let cmd = make_simple_command("pwd:noop", vec![]);
 
         let result = execute_builtin(&cmd, &mut context, &jobs, &tuple_space, &mut channels, None);
         assert!(result.is_some());

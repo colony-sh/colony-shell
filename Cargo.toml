@@ -8,6 +8,7 @@ members = [
     "crates/colony-agent",
     "crates/colony-channels",
     "crates/colony-config",
+    "crates/colony-cloud-sdk",
     "crates/colony-memory",
     "crates/colony-tuple",
     "crates/colony-mcp",
@@ -16,6 +17,7 @@ members = [
     "crates/colony-shell",
     "crates/colony-tree-sitter",
     "crates/colony-ui-core",
+    "crates/colony-recipe",
 ]
 
 [workspace.package]
@@ -92,7 +94,9 @@ colony-mcp = { path = "crates/colony-mcp" }
 colony-focus = { path = "crates/colony-focus" }
 colony-secure = { path = "crates/colony-secure" }
 colony-tree-sitter = { path = "crates/colony-tree-sitter" }
+colony-cloud-sdk = { path = "crates/colony-cloud-sdk" }
 colony-ui-core = { path = "crates/colony-ui-core" }
+colony-recipe = { path = "crates/colony-recipe" }
 
 [profile.dev]
 opt-level = 0
