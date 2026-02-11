@@ -7,6 +7,22 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+colony-config = { path = "../colony-config" }
 colony-tuple.workspace = true
+
 tokio.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+rmcp = { version = "0.15", features = ["client", "transport-child-process", "transport-io"] }
+
+sha2 = "0.10"
+hex = "0.4"
+tera = "1"
+dirs = "5.0"
+
+[dev-dependencies]
+tempfile = "3"
