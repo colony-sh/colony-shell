@@ -23,6 +23,44 @@ ESC ] 2337 ; <command> ; <payload> BEL
 └── Escape character (0x1B)
 ```
 
+### B.1.3 Protocol Version Handshake (Minimal)
+
+To avoid drift between shell and terminal, a minimal version handshake is required.
+This uses the same JSON message payloads as other OSC 2337 messages.
+
+**Hello (Shell -> Terminal, Terminal -> Shell):**
+```json
+{
+  "type": "Hello",
+  "role": "shell|terminal",
+  "min_version": 1,
+  "max_version": 1
+}
+```
+
+**HelloAck (Responder -> Initiator):**
+```json
+{
+  "type": "HelloAck",
+  "role": "shell|terminal",
+  "negotiated_version": 1
+}
+```
+
+**HelloNack (Responder -> Initiator):**
+```json
+{
+  "type": "HelloNack",
+  "role": "shell|terminal",
+  "reason": "unsupported protocol version"
+}
+```
+
+**Rules:**
+- The responder selects a compatible version within `[min_version, max_version]`.
+- If no overlap exists, respond with `HelloNack` and a reason.
+- Unknown messages must be safely ignored (forward compatibility).
+
 ## B.2 Command Categories
 
 ### B.2.1 Agent Commands
@@ -94,6 +132,21 @@ Commands for reactive prompt updates:
 | `Prompt=update` | Shell→Terminal | Partial state update |
 | `Prompt=ready` | Shell→Terminal | Shell ready for input |
 | `Prompt=busy` | Shell→Terminal | Shell executing command |
+
+### B.2.7 Output Payloads
+
+Structured output can include a payload that the terminal renders. For example,
+Markdown should be rendered **only** in colony-terminal; other terminals should
+fall back to plain text.
+
+Example payload:
+```json
+{
+  "type": "Output",
+  "content_type": "markdown",
+  "payload": { "markdown": "# Title\\n\\nBody" }
+}
+```
 
 ## B.3 Payload Specifications
 
