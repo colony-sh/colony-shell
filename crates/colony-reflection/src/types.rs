@@ -107,6 +107,18 @@ impl SessionTracker {
         }
     }
 
+    /// Create a tracker with an explicit session ID.
+    pub fn with_session_id(session_id: String) -> Self {
+        Self {
+            session_id,
+            start_time: Instant::now(),
+            command_count: 0,
+            last_observation: None,
+            error_window: VecDeque::with_capacity(ERROR_WINDOW_SIZE),
+            inter_command_times: VecDeque::with_capacity(INTER_CMD_WINDOW_SIZE),
+        }
+    }
+
     /// Build a snapshot of the current session context.
     pub fn build_context(&mut self) -> SessionContext {
         let now = Instant::now();
