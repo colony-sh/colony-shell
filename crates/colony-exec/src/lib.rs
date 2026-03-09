@@ -45,7 +45,10 @@ pub use redirect::{
 use colony_channels::ChannelManager;
 use colony_expand::{ExpansionContext, VarAttributes, Variable};
 use colony_parser::{Pipeline, SimpleCommand};
+use colony_reflection::ReflectionObserver;
 use colony_tuple::TupleSpace;
+
+use std::sync::Arc;
 
 pub use history::History;
 
@@ -2210,6 +2213,8 @@ pub struct Executor {
     special_files: Option<special_files::SpecialFilesState>,
     /// Heartbeat file watcher (F030)
     heartbeat_watcher: Option<special_files::HeartbeatWatcher>,
+    /// Reflection observer for collecting usage data
+    observer: Arc<dyn ReflectionObserver>,
 }
 
 impl Executor {
@@ -2224,6 +2229,7 @@ impl Executor {
             history: History::new(),
             special_files: None,
             heartbeat_watcher: None,
+            observer: Arc::new(colony_reflection::NoopObserver),
         }
     }
 
@@ -2238,6 +2244,7 @@ impl Executor {
             history,
             special_files: None,
             heartbeat_watcher: None,
+            observer: Arc::new(colony_reflection::NoopObserver),
         }
     }
 
@@ -2257,6 +2264,16 @@ impl Executor {
     /// Get mutable reference to channel manager
     pub fn channels_mut(&mut self) -> &mut ChannelManager {
         &mut self.channels
+    }
+
+    /// Set the reflection observer
+    pub fn set_observer(&mut self, observer: Arc<dyn ReflectionObserver>) {
+        self.observer = observer;
+    }
+
+    /// Get reference to the reflection observer
+    pub fn observer(&self) -> &Arc<dyn ReflectionObserver> {
+        &self.observer
     }
 
     /// Get reference to job table
@@ -2527,12 +2544,70 @@ impl Executor {
         Ok(ExitStatus::new(last_exit))
     }
 
-    /// Execute a simple command
+    /// Execute a simple command with reflection observation.
+    ///
+    /// Wraps the core logic in `execute_simple_command_inner`, timing it and
+    /// recording command and error observations through the reflection observer.
+    pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
+        let start = std::time::Instant::now();
+        let result = self.execute_simple_command_inner(cmd).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        let cmd_name = cmd.name.as_literal().unwrap_or("<unknown>");
+        let cmd_args: Vec<String> = cmd
+            .args
+            .iter()
+            .filter_map(|w| w.as_literal().map(String::from))
+            .collect();
+
+        let exit_code = match &result {
+            Ok(status) => status.code(),
+            Err(_) => -1,
+        };
+
+        let input = if cmd_args.is_empty() {
+            cmd_name.to_string()
+        } else {
+            format!("{} {}", cmd_name, cmd_args.join(" "))
+        };
+
+        self.observer
+            .observe_command(colony_reflection::CommandData {
+                input,
+                exit_code,
+                duration_ms,
+                pipeline_length: 1,
+            })
+            .await;
+
+        if let Err(ref e) = result {
+            if !matches!(
+                e,
+                ExecutionError::Return(_)
+                    | ExecutionError::Break
+                    | ExecutionError::Continue
+                    | ExecutionError::Exit(_)
+                    | ExecutionError::Errexit(_)
+            ) {
+                self.observer
+                    .observe_error(colony_reflection::ErrorData {
+                        kind: error_kind_str(e),
+                        message: e.to_string(),
+                        recoverable: is_recoverable_error(e),
+                    })
+                    .await;
+            }
+        }
+
+        result
+    }
+
+    /// Core logic for simple command execution.
     ///
     /// Checks for aliases, then builtins, then external commands.
     ///
     /// **F024 Phase 2:** Processes channel writes from child processes via tuple space.
-    pub async fn execute_simple_command(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
+    async fn execute_simple_command_inner(&mut self, cmd: &SimpleCommand) -> Result<ExitStatus> {
         use colony_expand::{Expander, Variable};
         use colony_parser::AssignmentValue;
 
@@ -4466,4 +4541,42 @@ impl Executor {
             Err(_) => pattern == value,
         }
     }
+}
+
+/// Classify an `ExecutionError` into a short kind string for observation.
+fn error_kind_str(e: &ExecutionError) -> String {
+    match e {
+        ExecutionError::CommandNotFound(_) => "CommandNotFound",
+        ExecutionError::PermissionDenied(_) => "PermissionDenied",
+        ExecutionError::ExpansionError(_) => "ExpansionError",
+        ExecutionError::ForkError(_) => "ForkError",
+        ExecutionError::ExecError(_) => "ExecError",
+        ExecutionError::WaitError(_) => "WaitError",
+        ExecutionError::IoError(_) => "IoError",
+        ExecutionError::InvalidUtf8 => "InvalidUtf8",
+        ExecutionError::RedirectError(_) => "RedirectError",
+        ExecutionError::AmbiguousRedirect => "AmbiguousRedirect",
+        ExecutionError::InvalidRedirect(_) => "InvalidRedirect",
+        ExecutionError::Return(_) => "Return",
+        ExecutionError::Break => "Break",
+        ExecutionError::Continue => "Continue",
+        ExecutionError::Exit(_) => "Exit",
+        ExecutionError::Errexit(_) => "Errexit",
+        ExecutionError::InvalidVarDecl(_) => "InvalidVarDecl",
+        ExecutionError::InvalidPipeline(_) => "InvalidPipeline",
+    }
+    .to_string()
+}
+
+/// Determine whether an execution error is recoverable (user can retry).
+fn is_recoverable_error(e: &ExecutionError) -> bool {
+    matches!(
+        e,
+        ExecutionError::CommandNotFound(_)
+            | ExecutionError::PermissionDenied(_)
+            | ExecutionError::ExpansionError(_)
+            | ExecutionError::RedirectError(_)
+            | ExecutionError::AmbiguousRedirect
+            | ExecutionError::InvalidRedirect(_)
+    )
 }

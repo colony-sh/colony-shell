@@ -14,6 +14,7 @@ colony-tuple = { path = "../colony-tuple" }
 colony-channels = { path = "../colony-channels" }
 colony-protocol = { path = "../colony-protocol" }
 colony-recipe = { path = "../colony-recipe" }
+colony-reflection = { path = "../colony-reflection" }
 colony-secure = { path = "../colony-secure" }
 nix = { workspace = true, features = ["fs"] }
 signal-hook.workspace = true
