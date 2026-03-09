@@ -4,7 +4,9 @@ use crate::{
     diag::DiagChannel, llm::LlmChannel, tool::ToolChannel, Channel, ChannelError, ChannelId,
     ContextChannel, Result, STDCONTEXT, STDDIAG, STDLLM, STDTOOL,
 };
+use colony_reflection::ReflectionObserver;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Manages all channels with fd and alias resolution
 pub struct ChannelManager {
@@ -13,6 +15,9 @@ pub struct ChannelManager {
 
     /// Alias registry (name → fd)
     aliases: HashMap<String, ChannelId>,
+
+    /// Optional reflection observer for recording channel writes
+    observer: Option<Arc<dyn ReflectionObserver>>,
 }
 
 impl ChannelManager {
@@ -21,6 +26,7 @@ impl ChannelManager {
         let mut manager = Self {
             channels: HashMap::new(),
             aliases: HashMap::new(),
+            observer: None,
         };
 
         // Register standard channels
@@ -38,6 +44,11 @@ impl ChannelManager {
         manager.register_alias("diagnostic", STDDIAG);
 
         manager
+    }
+
+    /// Set a reflection observer for recording channel writes.
+    pub fn set_observer(&mut self, observer: Arc<dyn ReflectionObserver>) {
+        self.observer = Some(observer);
     }
 
     /// Get context channel (convenience method)
@@ -113,10 +124,33 @@ impl ChannelManager {
 
     /// Write to a channel by ID
     pub fn write_to(&mut self, id: ChannelId, data: &[u8]) -> Result<usize> {
-        self.get_mut(id)
+        let bytes_written = self
+            .get_mut(id)
             .ok_or(ChannelError::NotFound(id))?
             .write(data)
-            .map_err(Into::into)
+            .map_err(ChannelError::Io)?;
+
+        if let Some(ref observer) = self.observer {
+            let observer = Arc::clone(observer);
+            let channel_name = self
+                .aliases
+                .iter()
+                .find(|(_, &alias_id)| alias_id == id)
+                .map(|(name, _)| name.clone())
+                .unwrap_or_else(|| id.to_string());
+
+            tokio::spawn(async move {
+                observer
+                    .observe_context_usage(colony_reflection::ContextUsageData {
+                        channel: channel_name,
+                        bytes: bytes_written as u64,
+                        direction: "write".to_string(),
+                    })
+                    .await;
+            });
+        }
+
+        Ok(bytes_written)
     }
 
     /// Write to a channel by alias

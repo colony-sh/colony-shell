@@ -1450,6 +1450,7 @@ dependencies = [
  "colony-parser",
  "colony-protocol",
  "colony-recipe",
+ "colony-reflection",
  "colony-tuple",
  "dirs 5.0.1",
  "futures",
@@ -1471,6 +1472,7 @@ name = "colony-channels"
 version = "0.4.1"
 dependencies = [
  "chrono",
+ "colony-reflection",
  "nix 0.28.0",
  "parking_lot",
  "serde",
@@ -1574,6 +1576,7 @@ name = "colony-filetree"
 version = "0.4.1"
 dependencies = [
  "colony-protocol",
+ "colony-reflection",
  "colony-tuple",
  "git2",
  "miette",

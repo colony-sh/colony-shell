@@ -1,5 +1,11 @@
 //! Agent orchestration with multi-provider LLM support
 
+use std::sync::Arc;
+
+use colony_reflection::ReflectionObserver;
+use futures::StreamExt;
+use tracing::{debug, info, warn};
+
 use crate::{
     approval::{ApprovalConfig, ApprovalManager, ApprovalResponse},
     cancellation::{cancellable_stream, CancellationToken},
@@ -13,8 +19,6 @@ use crate::{
     tool::{ToolOutput, ToolRegistry},
     AgentError, ProviderType, Result, StreamEvent,
 };
-use futures::StreamExt;
-use tracing::{debug, info, warn};
 
 /// Colony Shell agent with multi-provider support
 pub struct Agent {
@@ -28,6 +32,8 @@ pub struct Agent {
     context_manager: ContextManager,
     conversation_store: Option<ConversationStore>,
     conversation_id: Option<String>,
+    /// Reflection observer
+    observer: Option<Arc<dyn ReflectionObserver>>,
 }
 
 /// Agent configuration
@@ -211,6 +217,7 @@ impl Agent {
             context_manager,
             conversation_store: None,
             conversation_id: None,
+            observer: None,
         })
     }
 
@@ -257,6 +264,7 @@ impl Agent {
             context_manager,
             conversation_store: None,
             conversation_id: None,
+            observer: None,
         })
     }
 
@@ -334,6 +342,11 @@ impl Agent {
     /// Get context utilization
     pub fn context_utilization(&self) -> f64 {
         self.context_manager.utilization()
+    }
+
+    /// Set a reflection observer for recording agent chat observations.
+    pub fn set_observer(&mut self, observer: Arc<dyn ReflectionObserver>) {
+        self.observer = Some(observer);
     }
 
     /// Process user input and return agent response
@@ -525,6 +538,20 @@ impl Agent {
         }
 
         self.context_manager.update_estimate(&self.messages);
+
+        // Record agent chat observation
+        if let Some(ref observer) = self.observer {
+            let (provider_type, _) = self.current_provider();
+            observer
+                .observe_agent_chat(colony_reflection::AgentChatData {
+                    provider: format!("{:?}", provider_type).to_lowercase(),
+                    model: self.router.current_model().to_string(),
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    duration_ms: 0,
+                })
+                .await;
+        }
 
         Ok(response_text)
     }

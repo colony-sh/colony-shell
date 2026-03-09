@@ -12,6 +12,7 @@ colony-parser.workspace = true
 colony-protocol.workspace = true
 colony-exec.workspace = true
 colony-cloud-sdk = { workspace = true, optional = true }
+colony-reflection.workspace = true
 colony-memory = { workspace = true, optional = true }
 colony-tuple = { workspace = true, optional = true }
 colony-focus = { workspace = true, optional = true }

@@ -18,6 +18,7 @@ git2 = "0.19"
 # Internal crates
 colony-tuple = { workspace = true }
 colony-protocol = { workspace = true }
+colony-reflection = { path = "../colony-reflection" }
 
 # Async
 tokio = { workspace = true }

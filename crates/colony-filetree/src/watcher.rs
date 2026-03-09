@@ -2,8 +2,10 @@
 
 use crate::node::FileNode;
 use crate::state::TreeState;
+use colony_reflection::ReflectionObserver;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -31,6 +33,8 @@ pub struct FileSystemWatcher {
     _watcher: RecommendedWatcher,
     /// Receiver for watch events
     rx: mpsc::Receiver<WatchEvent>,
+    /// Optional reflection observer for emitting file activity observations
+    observer: Option<Arc<dyn ReflectionObserver>>,
 }
 
 impl FileSystemWatcher {
@@ -59,6 +63,7 @@ impl FileSystemWatcher {
             tree: tree_clone,
             _watcher: watcher,
             rx,
+            observer: None,
         })
     }
 
@@ -78,6 +83,38 @@ impl FileSystemWatcher {
             .unwatch(self.tree.root_path())
             .map_err(|e| miette::miette!("Failed to stop watching: {}", e))?;
         Ok(())
+    }
+
+    /// Set a reflection observer that will receive file activity observations.
+    pub fn set_observer(&mut self, observer: Arc<dyn ReflectionObserver>) {
+        self.observer = Some(observer);
+    }
+
+    /// Process the next watch event, emitting a reflection observation.
+    pub async fn next_event(&mut self) -> Option<WatchEvent> {
+        let event = self.rx.recv().await?;
+
+        if let Some(ref observer) = self.observer {
+            let (path, action) = match &event {
+                WatchEvent::Created(p) => (p.to_string_lossy().into_owned(), "created"),
+                WatchEvent::Modified(p) => (p.to_string_lossy().into_owned(), "modified"),
+                WatchEvent::Removed(p) => (p.to_string_lossy().into_owned(), "removed"),
+                WatchEvent::Renamed { from, .. } => {
+                    (from.to_string_lossy().into_owned(), "renamed")
+                }
+                WatchEvent::Error(_) => return Some(event),
+            };
+
+            observer
+                .observe_file_activity(colony_reflection::FileActivityData {
+                    path,
+                    action: action.to_string(),
+                    language: None,
+                })
+                .await;
+        }
+
+        Some(event)
     }
 
     /// Process pending events (call in a loop or task)
