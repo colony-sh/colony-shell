@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::cli::ShellOptions;
 use crate::config::{build_agent_config, load_colonyrc_with_trust};
 #[cfg(not(feature = "tui"))]
@@ -8,9 +10,24 @@ use crate::widget_server::WidgetServer;
 use colony_agent::Agent;
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
+use colony_reflection::ReflectionObserver;
 use miette::Result;
 use tokio::{pin, select, signal};
 use tracing_subscriber::EnvFilter;
+
+fn create_observer() -> Arc<dyn ReflectionObserver> {
+    let session_id = std::process::id().to_string();
+    match colony_reflection::SqliteObserver::new(session_id) {
+        Ok(observer) => {
+            tracing::info!("Reflection observer initialized");
+            Arc::new(observer)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to initialize reflection observer: {}", e);
+            Arc::new(colony_reflection::NoopObserver)
+        }
+    }
+}
 
 pub(crate) async fn run() -> Result<()> {
     unsafe {
@@ -43,6 +60,7 @@ async fn run_command_mode(command: &str, opts: &ShellOptions) -> ! {
     }
 
     let mut executor = Executor::new(context);
+    executor.set_observer(create_observer());
     run_startup_files(opts, &mut executor).await;
 
     let exec_future = execute_command_with_status(command, &mut executor);
@@ -100,6 +118,7 @@ async fn run_script_mode(script: &std::path::Path, opts: &ShellOptions) -> ! {
     context.set_positional_params(opts.positional_args.clone());
 
     let mut executor = Executor::new(context);
+    executor.set_observer(create_observer());
     run_startup_files(opts, &mut executor).await;
 
     let exec_future = async {
@@ -131,7 +150,7 @@ async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
     let colony_config = load_colonyrc_with_trust().await;
     let agent_config = build_agent_config(&colony_config);
 
-    let agent = match Agent::with_config(agent_config).await {
+    let mut agent = match Agent::with_config(agent_config).await {
         Ok(agent) => {
             let (provider, model) = agent.current_provider();
             println!("🤖 Agent mode enabled");
@@ -152,7 +171,14 @@ async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
     context.set_interactive(true);
     load_exported_functions(&mut context);
     init_secure_registry(&mut context);
-    let executor = Executor::new(context);
+    let mut executor = Executor::new(context);
+
+    let observer = create_observer();
+    executor.set_observer(observer.clone());
+    if let Some(ref mut agent) = agent {
+        agent.set_observer(observer.clone());
+    }
+    executor.channels_mut().set_observer(observer);
 
     println!("🔄 Reactive environment enabled");
     println!("   State changes emit tuples to tuple space\n");

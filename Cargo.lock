@@ -1729,6 +1729,7 @@ dependencies = [
  "colony-expand",
  "colony-parser",
  "colony-protocol",
+ "colony-reflection",
  "colony-secure",
  "colony-tree-sitter",
  "colony-tui",
