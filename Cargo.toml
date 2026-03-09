@@ -15,6 +15,7 @@ members = [
     "crates/colony-mcp",
     "crates/colony-focus",
     "crates/colony-secure",
+    "crates/colony-reflection",
     "crates/colony-shell",
     "crates/colony-tree-sitter",
     "crates/colony-tui",
@@ -96,6 +97,7 @@ colony-mcp = { path = "crates/colony-mcp" }
 colony-focus = { path = "crates/colony-focus" }
 colony-secure = { path = "crates/colony-secure" }
 colony-filetree = { path = "crates/colony-filetree" }
+colony-reflection = { path = "crates/colony-reflection" }
 colony-tree-sitter = { path = "crates/colony-tree-sitter" }
 colony-cloud-sdk = { path = "crates/colony-cloud-sdk" }
 colony-ui-core = { path = "crates/colony-ui-core" }
