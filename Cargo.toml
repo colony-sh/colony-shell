@@ -30,6 +30,8 @@ members = [
     "crates/colony-gitstatus-bin",
     "crates/colony-env-bin",
     "crates/colony-logs-bin",
+    "crates/colony-session-bin",
+    "crates/colony-gitstage-bin",
 ]
 
 [workspace.package]
