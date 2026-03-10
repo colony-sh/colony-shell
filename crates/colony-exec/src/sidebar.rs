@@ -6,10 +6,10 @@
 //!   sidebar reset <position>                  # clear panels at position
 
 use colony_panel::PanelPosition;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Result of parsing a sidebar command.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SidebarCommand {
     /// Add a panel at the given position.
     Add {

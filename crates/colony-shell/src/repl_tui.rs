@@ -1,31 +1,34 @@
 //! TUI-based REPL using colony-tui's InputEditor and ratatui rendering.
 //!
 //! Full-screen TUI with layout containers: the prompt/output lives in a main
-//! pane, and the sidebar is a separate pane. Command output is captured via
-//! pipe/dup2 and rendered in a scrollback buffer within the main pane.
+//! pane, and panels are separate panes managed by PanelHost. Command output is
+//! captured via pipe/dup2 and rendered in a scrollback buffer within the main pane.
 
 use std::io::{self, Read as IoRead, Stdout, Write as IoWrite};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
 use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
-use colony_protocol::{emit_prompt_busy, emit_prompt_ready, emit_prompt_state};
-use colony_tui::editor::{CompletionContext, CompletionEngine, EditorAction, EditorHistory, EditorMode};
-use colony_tui::{InputEditor, LegacyPromptRenderer as PromptRenderer, SidebarRenderer};
-use colony_ui_core::{
-    ComponentContext, FileTreePanel, PromptManager, SidebarData, SidebarManager, SidebarPosition,
+use colony_panel::{
+    Focus, FrameLine, InputEvent as PanelInputEvent, PanelHost, PanelMessage, StyleSpec,
 };
+use colony_protocol::{emit_prompt_busy, emit_prompt_ready, emit_prompt_state};
+use colony_tui::editor::{
+    CompletionContext, CompletionEngine, EditorAction, EditorHistory, EditorMode,
+};
+use colony_tui::{InputEditor, LegacyPromptRenderer as PromptRenderer};
+use colony_ui_core::{ComponentContext, PromptManager};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use crossterm::execute;
 use miette::Result;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -139,117 +142,6 @@ impl Scrollback {
 
         self.lines[start..end].iter().collect()
     }
-
-}
-
-// --- Sidebar types ---
-
-/// Focus area in the TUI REPL
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Focus {
-    Prompt,
-    Sidebar,
-}
-
-/// Context menu for file actions
-#[derive(Debug, Clone)]
-struct ContextMenu {
-    node_path: PathBuf,
-    selected: usize, // 0=insert, 1=preview, 2=open, 3=copy
-}
-
-impl ContextMenu {
-    fn new(path: PathBuf) -> Self {
-        Self {
-            node_path: path,
-            selected: 0,
-        }
-    }
-
-    fn labels() -> &'static [&'static str] {
-        &[
-            "i  Insert path",
-            "p  Preview",
-            "o  Open $EDITOR",
-            "y  Copy path",
-        ]
-    }
-
-    fn move_up(&mut self) {
-        self.selected = self.selected.saturating_sub(1);
-    }
-
-    fn move_down(&mut self) {
-        if self.selected < 3 {
-            self.selected += 1;
-        }
-    }
-}
-
-/// Sidebar UI state (cursor, context menu, visibility)
-struct SidebarState {
-    visible: bool,
-    cursor_index: usize,
-    context_menu: Option<ContextMenu>,
-    #[allow(dead_code)]
-    show_hidden: bool,
-    node_count: usize,
-    /// Tick counter for horizontal scroll animation of truncated highlighted items.
-    /// Resets to 0 when cursor moves; increments each render cycle.
-    scroll_tick: usize,
-}
-
-impl SidebarState {
-    fn new() -> Self {
-        Self {
-            visible: false,
-            cursor_index: 0,
-            context_menu: None,
-            show_hidden: false,
-            node_count: 0,
-            scroll_tick: 0,
-        }
-    }
-
-    /// Compute the horizontal scroll offset from the current tick.
-    /// Starts scrolling after a short delay, advances 1 char every 3 ticks (~150ms).
-    /// The renderer handles looping via modular arithmetic.
-    fn scroll_offset(&self) -> usize {
-        // Wait ~1s before scrolling (20 ticks at 50ms poll interval)
-        let delay_ticks = 20;
-        // Advance 1 char every 3 ticks (~150ms per char)
-        self.scroll_tick.saturating_sub(delay_ticks) / 3
-    }
-
-    fn clamp_cursor(&mut self) {
-        if self.node_count == 0 {
-            self.cursor_index = 0;
-        } else if self.cursor_index >= self.node_count {
-            self.cursor_index = self.node_count - 1;
-        }
-    }
-
-    fn cursor_up(&mut self) {
-        self.cursor_index = self.cursor_index.saturating_sub(1);
-        self.scroll_tick = 0;
-    }
-
-    fn cursor_down(&mut self) {
-        if self.node_count > 0 && self.cursor_index < self.node_count - 1 {
-            self.cursor_index += 1;
-        }
-        self.scroll_tick = 0;
-    }
-}
-
-/// Result of a sidebar key press that needs action from the caller
-enum SidebarAction {
-    None,
-    InsertPath(PathBuf),
-    Preview(PathBuf),
-    OpenEditor(PathBuf),
-    CopyPath(PathBuf),
-    CdParent,
 }
 
 // --- Output Capture ---
@@ -335,234 +227,6 @@ impl OutputCapture {
 
 // --- Helpers ---
 
-/// Render sidebar data from the manager, updating node_count and clamping cursor.
-fn render_sidebar_data(
-    sidebars: &mut SidebarManager,
-    sidebar_state: &mut SidebarState,
-    ctx: &ComponentContext,
-) -> Option<SidebarData> {
-    if sidebar_state.visible {
-        sidebars.invalidate_all();
-        let data = sidebars.render(SidebarPosition::Left, ctx);
-        sidebar_state.node_count = data
-            .panels
-            .first()
-            .map_or(0, |p| p.output.lines.len());
-        sidebar_state.clamp_cursor();
-        Some(data)
-    } else {
-        None
-    }
-}
-
-/// Get the file path for the node at the current cursor position.
-/// Check if the cursor is on the ".." (parent directory) entry.
-fn is_cd_parent_at_cursor(
-    sidebars: &mut SidebarManager,
-    sidebar_state: &SidebarState,
-    ctx: &ComponentContext,
-) -> bool {
-    let data = sidebars.render(SidebarPosition::Left, ctx);
-    let Some(panel) = data.panels.first() else {
-        return false;
-    };
-    let Some(line) = panel.output.lines.get(sidebar_state.cursor_index) else {
-        return false;
-    };
-    let Some(interactive) = line.interactive.as_ref() else {
-        return false;
-    };
-    interactive.click == "cd_parent"
-}
-
-fn get_node_path_at_cursor(
-    sidebars: &mut SidebarManager,
-    sidebar_state: &SidebarState,
-    ctx: &ComponentContext,
-) -> Option<PathBuf> {
-    let data = sidebars.render(SidebarPosition::Left, ctx);
-    let panel = data.panels.first()?;
-    let line = panel.output.lines.get(sidebar_state.cursor_index)?;
-    let interactive = line.interactive.as_ref()?;
-    let path_str = interactive.hover.as_ref().unwrap_or(&interactive.click);
-    let path_str = path_str.strip_prefix("open:").unwrap_or(path_str);
-    Some(PathBuf::from(path_str))
-}
-
-/// Check if the node at cursor is an expanded directory.
-fn is_node_expanded_at_cursor(
-    sidebars: &mut SidebarManager,
-    sidebar_state: &SidebarState,
-    ctx: &ComponentContext,
-) -> bool {
-    let data = sidebars.render(SidebarPosition::Left, ctx);
-    let Some(panel) = data.panels.first() else {
-        return false;
-    };
-    let Some(line) = panel.output.lines.get(sidebar_state.cursor_index) else {
-        return false;
-    };
-    line.expandable && line.expanded
-}
-
-/// Shell-escape a path for safe embedding in commands.
-fn shell_escape(path: &Path) -> String {
-    let s = path.display().to_string();
-    if s.contains(' ') || s.contains('\'') || s.contains('"') {
-        format!("'{}'", s.replace('\'', "'\\''"))
-    } else {
-        s
-    }
-}
-
-/// Handle keyboard input when sidebar is focused.
-fn handle_sidebar_key(
-    key: crossterm::event::KeyEvent,
-    sidebar_state: &mut SidebarState,
-    sidebars: &mut SidebarManager,
-    ctx: &ComponentContext,
-) -> SidebarAction {
-    // If context menu is open, handle menu keys
-    if let Some(ref mut menu) = sidebar_state.context_menu {
-        return match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                menu.move_up();
-                SidebarAction::None
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                menu.move_down();
-                SidebarAction::None
-            }
-            KeyCode::Enter => {
-                let path = menu.node_path.clone();
-                let action = match menu.selected {
-                    0 => SidebarAction::InsertPath(path),
-                    1 => SidebarAction::Preview(path),
-                    2 => SidebarAction::OpenEditor(path),
-                    3 => SidebarAction::CopyPath(path),
-                    _ => SidebarAction::None,
-                };
-                sidebar_state.context_menu = None;
-                action
-            }
-            KeyCode::Char('i') => {
-                let path = menu.node_path.clone();
-                sidebar_state.context_menu = None;
-                SidebarAction::InsertPath(path)
-            }
-            KeyCode::Char('p') => {
-                let path = menu.node_path.clone();
-                sidebar_state.context_menu = None;
-                SidebarAction::Preview(path)
-            }
-            KeyCode::Char('o') => {
-                let path = menu.node_path.clone();
-                sidebar_state.context_menu = None;
-                SidebarAction::OpenEditor(path)
-            }
-            KeyCode::Char('y') => {
-                let path = menu.node_path.clone();
-                sidebar_state.context_menu = None;
-                SidebarAction::CopyPath(path)
-            }
-            KeyCode::Esc => {
-                sidebar_state.context_menu = None;
-                SidebarAction::None
-            }
-            _ => SidebarAction::None,
-        };
-    }
-
-    // Normal sidebar navigation
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            sidebar_state.cursor_up();
-            SidebarAction::None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            sidebar_state.cursor_down();
-            SidebarAction::None
-        }
-        KeyCode::Enter => {
-            if is_cd_parent_at_cursor(sidebars, sidebar_state, ctx) {
-                return SidebarAction::CdParent;
-            }
-            if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
-                if path.is_dir() {
-                    sidebars.handle_action(
-                        "file_tree",
-                        &format!("toggle:{}", path.display()),
-                        ctx,
-                    );
-                    sidebars.invalidate_all();
-                } else {
-                    sidebar_state.context_menu = Some(ContextMenu::new(path));
-                }
-            }
-            SidebarAction::None
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
-                if path.is_dir() {
-                    if is_node_expanded_at_cursor(sidebars, sidebar_state, ctx) {
-                        sidebar_state.cursor_down();
-                    } else {
-                        sidebars.handle_action(
-                            "file_tree",
-                            &format!("toggle:{}", path.display()),
-                            ctx,
-                        );
-                        sidebars.invalidate_all();
-                    }
-                }
-            }
-            SidebarAction::None
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
-                let expanded = is_node_expanded_at_cursor(sidebars, sidebar_state, ctx);
-                if path.is_dir() && expanded {
-                    sidebars.handle_action(
-                        "file_tree",
-                        &format!("toggle:{}", path.display()),
-                        ctx,
-                    );
-                    sidebars.invalidate_all();
-                } else if sidebar_state.cursor_index > 0 {
-                    sidebar_state.cursor_up();
-                }
-            }
-            SidebarAction::None
-        }
-        KeyCode::Char('i') => {
-            if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
-                return SidebarAction::InsertPath(path);
-            }
-            SidebarAction::None
-        }
-        KeyCode::Char('o') => {
-            if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
-                return SidebarAction::OpenEditor(path);
-            }
-            SidebarAction::None
-        }
-        KeyCode::Char('p') => {
-            if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
-                if !path.is_dir() {
-                    return SidebarAction::Preview(path);
-                }
-            }
-            SidebarAction::None
-        }
-        KeyCode::Char('.') => {
-            sidebar_state.show_hidden = !sidebar_state.show_hidden;
-            sidebars.invalidate_all();
-            SidebarAction::None
-        }
-        _ => SidebarAction::None,
-    }
-}
-
 /// Strip ANSI escape sequences from text for clean scrollback rendering.
 fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -612,11 +276,143 @@ fn prompt_text(prompt_manager: &PromptManager, ctx: &ComponentContext) -> String
         .collect()
 }
 
+/// Render a panel's frame lines inside a bordered area.
+fn render_panel_frame(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    lines: &[FrameLine],
+    focused: bool,
+) {
+    let border_style = if focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rendered_lines: Vec<Line> = lines
+        .iter()
+        .take(inner.height as usize)
+        .map(|fl| {
+            let indent = fl.indent.unwrap_or(0) as usize;
+            let style = fl
+                .style
+                .as_deref()
+                .map(|s| StyleSpec::parse(s).to_ratatui_style())
+                .unwrap_or_default();
+
+            let mut spans = Vec::new();
+            if indent > 0 {
+                spans.push(Span::raw(" ".repeat(indent)));
+            }
+            if let Some(ref icon) = fl.icon {
+                spans.push(Span::styled(format!("{} ", icon), style));
+            }
+            spans.push(Span::styled(fl.text.clone(), style));
+            Line::from(spans)
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(rendered_lines);
+    frame.render_widget(paragraph, inner);
+}
+
+/// Convert a crossterm key event to a panel InputEvent.
+fn crossterm_key_to_panel_event(key: crossterm::event::KeyEvent) -> PanelInputEvent {
+    let key_str = match key.code {
+        KeyCode::Enter => "Enter".to_string(),
+        KeyCode::Backspace => "Backspace".to_string(),
+        KeyCode::Left => "Left".to_string(),
+        KeyCode::Right => "Right".to_string(),
+        KeyCode::Up => "Up".to_string(),
+        KeyCode::Down => "Down".to_string(),
+        KeyCode::Tab => "Tab".to_string(),
+        KeyCode::Esc => "Esc".to_string(),
+        KeyCode::Char(c) => c.to_string(),
+        other => format!("{other:?}"),
+    };
+
+    let mut modifiers = Vec::new();
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        modifiers.push("ctrl".to_string());
+    }
+    if key.modifiers.contains(KeyModifiers::SHIFT) {
+        modifiers.push("shift".to_string());
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        modifiers.push("alt".to_string());
+    }
+
+    PanelInputEvent::Key {
+        key: key_str,
+        modifiers,
+    }
+}
+
+/// Process any sidebar_command tuples from the tuple space and apply them to the panel host.
+async fn process_sidebar_commands(executor: &Executor, panel_host: &mut PanelHost) {
+    use colony_exec::sidebar::SidebarCommand;
+
+    let tuple_space = executor.tuple_space();
+    let pattern = colony_tuple::Tuple::pattern(&[
+        colony_tuple::Value::Str("sidebar_command".to_string()),
+        colony_tuple::Value::Wildcard,
+    ]);
+
+    let mut commands = Vec::new();
+    while let Some(tuple) = tuple_space.inp(pattern.clone()) {
+        let Some(colony_tuple::Value::Str(json)) = tuple.fields.get(1) else {
+            continue;
+        };
+        let Ok(cmd) = serde_json::from_str::<SidebarCommand>(json) else {
+            continue;
+        };
+        commands.push(cmd);
+    }
+
+    for cmd in commands {
+        match cmd {
+            SidebarCommand::Add {
+                position,
+                command,
+                args,
+                weight,
+                min_size,
+                max_size,
+                outer,
+            } => {
+                let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                let _ = panel_host
+                    .add_panel(
+                        &command,
+                        &arg_refs,
+                        position,
+                        weight,
+                        min_size.unwrap_or(15),
+                        max_size.unwrap_or(40),
+                        outer,
+                    )
+                    .await;
+            }
+            SidebarCommand::Reset => {
+                panel_host.reset().await;
+            }
+            SidebarCommand::ResetPosition(pos) => {
+                panel_host.reset_position(pos).await;
+            }
+        }
+    }
+}
+
 // --- Main REPL ---
 
 /// Run the TUI-based REPL loop.
 ///
-/// Full-screen TUI: alternate screen with layout containers for sidebar + main pane.
+/// Full-screen TUI: alternate screen with layout containers for panels + main pane.
 /// Command output is captured and rendered in a scrollback buffer.
 pub(crate) async fn run_repl_tui(
     mut agent: Option<Agent>,
@@ -637,11 +433,7 @@ pub(crate) async fn run_repl_tui(
     let mut prompt_manager = PromptManager::default();
     let use_osc = is_colony_terminal();
 
-    // Sidebar state
-    let mut sidebars = SidebarManager::new();
-    sidebars.register(Arc::new(FileTreePanel::new()));
-    let mut sidebar_state = SidebarState::new();
-    let mut focus = Focus::Prompt;
+    let mut panel_host = PanelHost::new();
 
     // Scrollback buffer
     let mut scrollback = Scrollback::new();
@@ -659,15 +451,15 @@ pub(crate) async fn run_repl_tui(
         &mut history,
         &mut prompt_manager,
         use_osc,
-        &mut sidebars,
-        &mut sidebar_state,
-        &mut focus,
+        &mut panel_host,
         &mut scrollback,
         &mut agent,
         &mut executor,
         &cwd_handle,
     )
     .await;
+
+    panel_host.shutdown().await;
 
     // Always clean up terminal state
     let _ = disable_raw_mode();
@@ -685,9 +477,7 @@ async fn run_repl_loop(
     history: &mut EditorHistory,
     prompt_manager: &mut PromptManager,
     use_osc: bool,
-    sidebars: &mut SidebarManager,
-    sidebar_state: &mut SidebarState,
-    focus: &mut Focus,
+    panel_host: &mut PanelHost,
     scrollback: &mut Scrollback,
     agent: &mut Option<Agent>,
     executor: &mut Executor,
@@ -713,9 +503,7 @@ async fn run_repl_loop(
             prompt_manager,
             &ctx,
             editor,
-            sidebars,
-            sidebar_state,
-            *focus,
+            panel_host,
             scrollback,
             &status_message,
         )?;
@@ -728,9 +516,7 @@ async fn run_repl_loop(
             prompt_manager,
             &ctx,
             executor,
-            sidebars,
-            sidebar_state,
-            focus,
+            panel_host,
             scrollback,
             &status_message,
         )
@@ -795,11 +581,18 @@ async fn run_repl_loop(
         )
         .await;
 
-        // Reset sidebar cursor if cwd changed
+        // Process sidebar_command tuples emitted by builtins
+        process_sidebar_commands(executor, panel_host).await;
+
+        // Broadcast cwd change to panels if directory changed
         let new_cwd = std::env::current_dir().unwrap_or_default();
         if new_cwd != ctx.cwd {
-            sidebar_state.cursor_index = 0;
-            sidebars.invalidate_all();
+            panel_host
+                .broadcast_tuple(
+                    "cwd_change",
+                    &serde_json::json!({ "cwd": new_cwd.display().to_string() }),
+                )
+                .await;
         }
 
         scrollback.scroll_to_bottom();
@@ -958,20 +751,16 @@ async fn execute_with_capture(
 
 // --- Drawing ---
 
-/// Draw the complete TUI: sidebar + scrollback + prompt + status bar.
+/// Draw the complete TUI: panels + scrollback + prompt + status bar.
 fn draw_tui(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     prompt_manager: &PromptManager,
     ctx: &ComponentContext,
     editor: &InputEditor,
-    sidebars: &mut SidebarManager,
-    sidebar_state: &mut SidebarState,
-    focus: Focus,
+    panel_host: &PanelHost,
     scrollback: &Scrollback,
     status_message: &str,
 ) -> Result<()> {
-    let sidebar_data = render_sidebar_data(sidebars, sidebar_state, ctx);
-
     let prompt_data = prompt_manager.render_data(ctx);
     let (left_line, _) = PromptRenderer::render(&prompt_data);
     let cursor_row = editor.buffer.cursor_row();
@@ -982,51 +771,31 @@ fn draw_tui(
         .map(|s| s.content.len())
         .sum::<usize>() as u16;
 
+    let focus = panel_host.focus;
+
     terminal
         .draw(|frame| {
             let area = frame.area();
 
-            // Horizontal split: sidebar (if visible) | main
-            let (sidebar_area, main_area) = if let Some(ref sb_data) = sidebar_data {
-                if sb_data.visible && area.width > sb_data.width + 10 {
-                    let chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([
-                            Constraint::Length(sb_data.width),
-                            Constraint::Min(10),
-                        ])
-                        .split(area);
-                    (Some(chunks[0]), chunks[1])
-                } else {
-                    (None, area)
-                }
-            } else {
-                (None, area)
-            };
+            let layout = panel_host.resolve_layout(area);
 
-            // Render sidebar
-            if let (Some(sb_area), Some(ref sb_data)) = (sidebar_area, &sidebar_data) {
-                let selected = if focus == Focus::Sidebar {
-                    Some(sidebar_state.cursor_index)
-                } else {
-                    None
-                };
-                SidebarRenderer::render(frame, sb_area, sb_data, focus == Focus::Sidebar, selected, sidebar_state.scroll_offset());
-
-                // Context menu overlay
-                if let Some(ref menu) = sidebar_state.context_menu {
-                    render_context_menu(frame, sb_area, sidebar_state.cursor_index, menu);
-                }
+            // Render panels
+            for (id, panel_area) in &layout.panels {
+                let lines = panel_host.current_frame(*id);
+                let panel_focused = focus == Focus::Panel(*id);
+                render_panel_frame(frame, *panel_area, lines, panel_focused);
             }
+
+            let main_area = layout.main;
 
             // Main vertical layout: scrollback | prompt+input | status bar
             let input_height = (editor.buffer.lines().len() as u16).max(1);
-            let main_chunks = Layout::default()
-                .direction(Direction::Vertical)
+            let main_chunks = ratatui::layout::Layout::default()
+                .direction(ratatui::layout::Direction::Vertical)
                 .constraints([
-                    Constraint::Min(1),            // scrollback area
-                    Constraint::Length(input_height), // prompt + input
-                    Constraint::Length(1),          // status line
+                    ratatui::layout::Constraint::Min(1),
+                    ratatui::layout::Constraint::Length(input_height),
+                    ratatui::layout::Constraint::Length(1),
                 ])
                 .split(main_area);
 
@@ -1070,8 +839,8 @@ fn draw_tui(
                 Paragraph::new(vec![status_line]).style(Style::default().bg(Color::DarkGray));
             frame.render_widget(status_bar, main_chunks[2]);
 
-            // Position cursor (only when prompt is focused)
-            if focus == Focus::Prompt {
+            // Position cursor (only when main is focused)
+            if focus == Focus::Main {
                 let cursor_x = main_chunks[1].x + prompt_width + cursor_col as u16;
                 let cursor_y = main_chunks[1].y + cursor_row as u16;
                 frame.set_cursor_position((cursor_x, cursor_y));
@@ -1113,57 +882,13 @@ fn render_scrollback(frame: &mut ratatui::Frame, area: Rect, scrollback: &Scroll
     frame.render_widget(paragraph, area);
 }
 
-/// Render the context menu as a floating overlay on the sidebar.
-fn render_context_menu(
-    frame: &mut ratatui::Frame,
-    sb_area: Rect,
-    cursor_index: usize,
-    menu: &ContextMenu,
-) {
-    let menu_width = 20u16.min(sb_area.width.saturating_sub(2));
-    let menu_height = 6u16;
-    let menu_x = sb_area.x + 1;
-    let menu_y = (sb_area.y + cursor_index as u16 + 2)
-        .min(sb_area.y + sb_area.height.saturating_sub(menu_height));
-
-    let menu_area = Rect {
-        x: menu_x,
-        y: menu_y,
-        width: menu_width,
-        height: menu_height,
-    };
-
-    let menu_lines: Vec<Line> = ContextMenu::labels()
-        .iter()
-        .enumerate()
-        .map(|(i, label)| {
-            let style = if i == menu.selected {
-                Style::default().fg(Color::Black).bg(Color::Cyan)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            Line::from(Span::styled(format!(" {} ", label), style))
-        })
-        .collect();
-
-    let menu_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().bg(Color::Rgb(30, 30, 50)));
-    let inner = menu_block.inner(menu_area);
-    frame.render_widget(menu_block, menu_area);
-    frame.render_widget(Paragraph::new(menu_lines), inner);
-}
-
-/// Redraw helper that combines sidebar data rendering and draw call.
+/// Redraw helper that combines layout resolution and draw call.
 fn redraw(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     prompt_manager: &PromptManager,
     ctx: &ComponentContext,
     editor: &InputEditor,
-    sidebars: &mut SidebarManager,
-    sidebar_state: &mut SidebarState,
-    focus: Focus,
+    panel_host: &PanelHost,
     scrollback: &Scrollback,
     status_message: &str,
 ) -> Result<()> {
@@ -1172,9 +897,7 @@ fn redraw(
         prompt_manager,
         ctx,
         editor,
-        sidebars,
-        sidebar_state,
-        focus,
+        panel_host,
         scrollback,
         status_message,
     )
@@ -1193,13 +916,22 @@ async fn read_input_line(
     prompt_manager: &PromptManager,
     ctx: &ComponentContext,
     _executor: &Executor,
-    sidebars: &mut SidebarManager,
-    sidebar_state: &mut SidebarState,
-    focus: &mut Focus,
+    panel_host: &mut PanelHost,
     scrollback: &mut Scrollback,
     status_message: &str,
 ) -> Result<Option<String>> {
     loop {
+        // Poll panels for new frames
+        let messages = panel_host.poll_panels().await;
+        for (id, msg) in &messages {
+            if let PanelMessage::Emit(ref emit) = msg {
+                panel_host
+                    .broadcast_tuple(&emit.key, &emit.value)
+                    .await;
+            }
+            let _ = (id, msg); // suppress unused warnings for non-emit messages
+        }
+
         if event::poll(std::time::Duration::from_millis(50))
             .map_err(|e| miette::miette!("event poll error: {}", e))?
         {
@@ -1209,47 +941,17 @@ async fn read_input_line(
                 Event::Key(key)
                     if key.kind == crossterm::event::KeyEventKind::Press =>
                 {
-                    // Global: Ctrl+B toggles sidebar
-                    if matches!(
-                        (key.modifiers, key.code),
-                        (KeyModifiers::CONTROL, KeyCode::Char('b'))
-                            | (KeyModifiers::NONE, KeyCode::Char('\x02'))
-                    ) {
-                        sidebar_state.visible = !sidebar_state.visible;
-                        sidebars.set_visible(SidebarPosition::Left, sidebar_state.visible);
-                        if !sidebar_state.visible {
-                            *focus = Focus::Prompt;
-                            sidebar_state.context_menu = None;
-                        }
-                        redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            sidebars, sidebar_state, *focus, scrollback,
-                            status_message,
-                        )?;
-                        continue;
-                    }
-
-                    // Tab: switch focus when sidebar visible and prompt empty,
-                    // otherwise fall through to editor for tab completion
-                    if key.code == KeyCode::Tab && sidebar_state.visible {
+                    // Tab: cycle panel focus when panels exist and prompt empty
+                    if key.code == KeyCode::Tab && panel_host.has_panels() {
                         let prompt_empty = editor.text().is_empty();
-                        if prompt_empty || *focus == Focus::Sidebar {
-                            *focus = match focus {
-                                Focus::Prompt => Focus::Sidebar,
-                                Focus::Sidebar => {
-                                    sidebar_state.context_menu = None;
-                                    Focus::Prompt
-                                }
-                            };
+                        if prompt_empty || !matches!(panel_host.focus, Focus::Main) {
+                            panel_host.cycle_focus();
                             redraw(
                                 terminal, prompt_manager, ctx, editor,
-                                sidebars, sidebar_state, *focus, scrollback,
-                                status_message,
+                                panel_host, scrollback, status_message,
                             )?;
                             continue;
                         }
-                        // Fall through: Tab with non-empty prompt goes to editor
-                        // for completion handling
                     }
 
                     // Scrollback navigation: Shift+Up/Down or Ctrl+Up/Down
@@ -1261,8 +963,7 @@ async fn read_input_line(
                         scrollback.scroll_up(3);
                         redraw(
                             terminal, prompt_manager, ctx, editor,
-                            sidebars, sidebar_state, *focus, scrollback,
-                            status_message,
+                            panel_host, scrollback, status_message,
                         )?;
                         continue;
                     }
@@ -1274,69 +975,33 @@ async fn read_input_line(
                         scrollback.scroll_down(3);
                         redraw(
                             terminal, prompt_manager, ctx, editor,
-                            sidebars, sidebar_state, *focus, scrollback,
-                            status_message,
+                            panel_host, scrollback, status_message,
                         )?;
                         continue;
                     }
 
-                    // Sidebar-focused key handling
-                    if *focus == Focus::Sidebar {
-                        let action = handle_sidebar_key(key, sidebar_state, sidebars, ctx);
-                        match action {
-                            SidebarAction::InsertPath(path) => {
-                                let relative =
-                                    path.strip_prefix(&ctx.cwd).unwrap_or(&path);
-                                let path_str = relative.display().to_string();
-                                let current = editor.text();
-                                editor.set_text(&format!("{}{}", current, path_str));
-                                *focus = Focus::Prompt;
-                            }
-                            SidebarAction::Preview(path) => {
-                                return Ok(Some(format!(
-                                    "head -50 {}",
-                                    shell_escape(&path)
-                                )));
-                            }
-                            SidebarAction::OpenEditor(path) => {
-                                let editor_cmd = std::env::var("EDITOR")
-                                    .unwrap_or_else(|_| "vi".to_string());
-                                return Ok(Some(format!(
-                                    "{} {}",
-                                    editor_cmd,
-                                    shell_escape(&path)
-                                )));
-                            }
-                            SidebarAction::CopyPath(path) => {
-                                let relative =
-                                    path.strip_prefix(&ctx.cwd).unwrap_or(&path);
-                                let path_str = relative.display().to_string();
-                                if cfg!(target_os = "macos") {
-                                    let _ = std::process::Command::new("pbcopy")
-                                        .stdin(std::process::Stdio::piped())
-                                        .spawn()
-                                        .and_then(|mut child| {
-                                            if let Some(ref mut stdin) = child.stdin {
-                                                stdin.write_all(path_str.as_bytes())?;
-                                            }
-                                            child.wait()
-                                        });
-                                }
-                            }
-                            SidebarAction::CdParent => {
-                                return Ok(Some("cd ..".to_string()));
-                            }
-                            SidebarAction::None => {}
+                    // Panel-focused key handling: forward keys to the focused panel
+                    if let Focus::Panel(_) = panel_host.focus {
+                        // Esc returns focus to main
+                        if key.code == KeyCode::Esc {
+                            panel_host.focus = Focus::Main;
+                            redraw(
+                                terminal, prompt_manager, ctx, editor,
+                                panel_host, scrollback, status_message,
+                            )?;
+                            continue;
                         }
+
+                        let panel_event = crossterm_key_to_panel_event(key);
+                        let _ = panel_host.send_to_focused(&panel_event).await;
                         redraw(
                             terminal, prompt_manager, ctx, editor,
-                            sidebars, sidebar_state, *focus, scrollback,
-                            status_message,
+                            panel_host, scrollback, status_message,
                         )?;
                         continue;
                     }
 
-                    // --- Prompt-focused key handling ---
+                    // --- Main-focused key handling ---
 
                     // Ctrl+D for EOF
                     if matches!(
@@ -1377,6 +1042,7 @@ async fn read_input_line(
                                 "hash", "ulimit", "umask", "wait", "trap", "return", "break",
                                 "continue", "eval", "exec", "command", "builtin", "local",
                                 "declare", "readonly", "getopts", "times", "llm", "path",
+                                "sidebar",
                             ]
                             .into_iter()
                             .map(String::from)
@@ -1411,26 +1077,28 @@ async fn read_input_line(
 
                     redraw(
                         terminal, prompt_manager, ctx, editor,
-                        sidebars, sidebar_state, *focus, scrollback,
-                        status_message,
+                        panel_host, scrollback, status_message,
                     )?;
                 }
                 Event::Resize(_, _) => {
+                    // Notify panels of new dimensions
+                    let size = terminal.size().unwrap_or_default();
+                    let area = Rect::new(0, 0, size.width, size.height);
+                    let layout = panel_host.resolve_layout(area);
+                    panel_host.notify_resize(&layout).await;
+
                     redraw(
                         terminal, prompt_manager, ctx, editor,
-                        sidebars, sidebar_state, *focus, scrollback,
-                        status_message,
+                        panel_host, scrollback, status_message,
                     )?;
                 }
                 _ => {}
             }
-        } else if *focus == Focus::Sidebar && sidebar_state.visible {
-            // No event: advance scroll animation for truncated highlighted items
-            sidebar_state.scroll_tick += 1;
+        } else if !messages.is_empty() {
+            // Panels produced new frames, redraw
             redraw(
                 terminal, prompt_manager, ctx, editor,
-                sidebars, sidebar_state, *focus, scrollback,
-                status_message,
+                panel_host, scrollback, status_message,
             )?;
         }
     }
