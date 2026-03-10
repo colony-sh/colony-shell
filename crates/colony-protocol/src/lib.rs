@@ -206,6 +206,10 @@ pub enum ProtocolMessage {
     TreeActionResult(TreeActionResult),
     /// User tree action (terminal → shell)
     TreeAction(TreeAction),
+    /// Event worker rules from colony-nerve
+    EventRules {
+        rules: Vec<serde_json::Value>,
+    },
 }
 
 /// Full prompt state data sent via OSC 2337 (Prompt=state per spec B.3.11)
@@ -1186,9 +1190,7 @@ mod tests {
 
     #[test]
     fn test_pane_close() {
-        let msg = ProtocolMessage::PaneClose {
-            pane_id: Some(3),
-        };
+        let msg = ProtocolMessage::PaneClose { pane_id: Some(3) };
 
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"type\":\"PaneClose\""));
