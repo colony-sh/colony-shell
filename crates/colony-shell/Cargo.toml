@@ -53,7 +53,7 @@ clap = { version = "4", features = ["derive", "env"] }
 colony-tui = { path = "../colony-tui", optional = true }
 
 [features]
-default = []
+default = ["tui"]
 tui = ["dep:colony-tui"]
 
 [dev-dependencies]
