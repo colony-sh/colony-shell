@@ -266,6 +266,7 @@ impl App {
                         &left_sidebar,
                         focus == Focus::LeftSidebar,
                         None,
+                        0,
                     );
                 }
 
@@ -277,6 +278,7 @@ impl App {
                         &right_sidebar,
                         focus == Focus::RightSidebar,
                         None,
+                        0,
                     );
                 }
 

@@ -18,12 +18,15 @@ impl SidebarRenderer {
     /// Render a complete sidebar
     ///
     /// `selected_index` highlights the line at that index when focused.
+    /// `scroll_offset` controls horizontal text scrolling for the highlighted line
+    /// when its content is wider than the panel.
     pub fn render(
         frame: &mut Frame,
         area: Rect,
         data: &SidebarData,
         focused: bool,
         selected_index: Option<usize>,
+        scroll_offset: usize,
     ) {
         if !data.visible || area.width == 0 {
             return;
@@ -65,7 +68,7 @@ impl SidebarRenderer {
             } else {
                 None
             };
-            Self::render_panel(frame, panel_area, panel, panel_selected);
+            Self::render_panel(frame, panel_area, panel, panel_selected, scroll_offset);
             y_offset += panel_height;
         }
     }
@@ -86,6 +89,7 @@ impl SidebarRenderer {
         area: Rect,
         panel: &SidebarPanelData,
         selected_index: Option<usize>,
+        scroll_offset: usize,
     ) {
         if area.height == 0 {
             return;
@@ -120,7 +124,7 @@ impl SidebarRenderer {
                 height: area.height - 1,
             };
 
-            Self::render_panel_content(frame, content_area, &panel.output, selected_index);
+            Self::render_panel_content(frame, content_area, &panel.output, selected_index, scroll_offset);
         }
     }
 
@@ -130,6 +134,7 @@ impl SidebarRenderer {
         area: Rect,
         output: &SidebarOutput,
         selected_index: Option<usize>,
+        scroll_offset: usize,
     ) {
         let lines: Vec<Line> = output
             .lines
@@ -137,7 +142,8 @@ impl SidebarRenderer {
             .enumerate()
             .map(|(i, line)| {
                 let highlighted = selected_index == Some(i);
-                Self::component_line_to_ratatui(line, area.width as usize, highlighted)
+                let offset = if highlighted { scroll_offset } else { 0 };
+                Self::component_line_to_ratatui(line, area.width as usize, highlighted, offset)
             })
             .collect();
 
@@ -148,10 +154,13 @@ impl SidebarRenderer {
     /// Convert a ComponentLine to a ratatui Line
     ///
     /// When `highlighted` is true, all spans get the REVERSED modifier for cursor visibility.
+    /// `scroll_offset` shifts the visible window right for highlighted lines that overflow,
+    /// creating a horizontal scroll effect for long names.
     fn component_line_to_ratatui(
         line: &ComponentLine,
         max_width: usize,
         highlighted: bool,
+        scroll_offset: usize,
     ) -> Line<'static> {
         let mut spans = Vec::new();
 
@@ -185,10 +194,15 @@ impl SidebarRenderer {
             ));
         }
 
-        // Truncate if needed
+        // Check if truncation needed
         let total_len: usize = spans.iter().map(|s| s.content.len()).sum();
         if total_len > max_width {
-            // Simple truncation - just cut at max width
+            if highlighted && scroll_offset > 0 {
+                // Scrolling mode: shift the visible window right
+                return Self::scroll_spans(spans, max_width, scroll_offset, total_len);
+            }
+
+            // Static truncation for non-highlighted or offset=0
             let mut remaining = max_width.saturating_sub(3); // Reserve for "..."
             let mut truncated = Vec::new();
 
@@ -218,14 +232,75 @@ impl SidebarRenderer {
         }
 
         if highlighted {
-            let spans = spans
+            // Pad to full width so the REVERSED highlight fills the line
+            let pad = max_width.saturating_sub(total_len);
+            let mut result: Vec<Span<'static>> = spans
                 .into_iter()
                 .map(|s| Span::styled(s.content, s.style.add_modifier(Modifier::REVERSED)))
-                .collect::<Vec<_>>();
-            return Line::from(spans);
+                .collect();
+            if pad > 0 {
+                result.push(Span::styled(
+                    " ".repeat(pad),
+                    Style::default().add_modifier(Modifier::REVERSED),
+                ));
+            }
+            return Line::from(result);
         }
 
         Line::from(spans)
+    }
+
+    /// Apply horizontal scroll offset to spans, showing a sliding window of the text.
+    fn scroll_spans(
+        spans: Vec<Span<'static>>,
+        max_width: usize,
+        scroll_offset: usize,
+        total_len: usize,
+    ) -> Line<'static> {
+        let max_scroll = total_len.saturating_sub(max_width);
+        let offset = scroll_offset.min(max_scroll);
+        let visible_end = offset + max_width;
+
+        let mut result = Vec::new();
+        let mut pos = 0usize; // current position in the flattened text
+
+        for span in spans {
+            let span_len = span.content.len();
+            let span_end = pos + span_len;
+
+            // Skip spans entirely before the visible window
+            if span_end <= offset {
+                pos = span_end;
+                continue;
+            }
+            // Stop if we're past the visible window
+            if pos >= visible_end {
+                break;
+            }
+
+            // Calculate the visible slice of this span
+            let slice_start = if offset > pos { offset - pos } else { 0 };
+            let slice_end = if visible_end < span_end {
+                visible_end - pos
+            } else {
+                span_len
+            };
+
+            let chars: Vec<char> = span.content.chars().collect();
+            let sliced: String = chars[slice_start..slice_end.min(chars.len())]
+                .iter()
+                .collect();
+            if !sliced.is_empty() {
+                result.push(Span::styled(
+                    sliced,
+                    span.style.add_modifier(Modifier::REVERSED),
+                ));
+            }
+
+            pos = span_end;
+        }
+
+        Line::from(result)
     }
 
     /// Convert colony-ui-core style to ratatui style
@@ -283,14 +358,14 @@ mod tests {
     #[test]
     fn test_component_line_to_ratatui() {
         let line = ComponentLine::new(vec![StyledSpan::plain("hello")]);
-        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80, false);
+        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80, false, 0);
         assert!(!ratatui_line.spans.is_empty());
     }
 
     #[test]
     fn test_component_line_with_indent() {
         let line = ComponentLine::new(vec![StyledSpan::plain("indented")]).with_indent(2);
-        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80, false);
+        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80, false, 0);
         // Should have indent + content
         assert!(ratatui_line.spans.len() >= 1);
     }
@@ -298,8 +373,8 @@ mod tests {
     #[test]
     fn test_component_line_highlight() {
         let line = ComponentLine::new(vec![StyledSpan::plain("selected")]);
-        let normal = SidebarRenderer::component_line_to_ratatui(&line, 80, false);
-        let highlighted = SidebarRenderer::component_line_to_ratatui(&line, 80, true);
+        let normal = SidebarRenderer::component_line_to_ratatui(&line, 80, false, 0);
+        let highlighted = SidebarRenderer::component_line_to_ratatui(&line, 80, true, 0);
 
         // Highlighted line should have REVERSED modifier
         let has_reverse = highlighted
