@@ -18,7 +18,10 @@ use crate::ReflectionObserver;
 
 /// Observer that emits observations as OSC 2337 escape sequences to stdout.
 ///
-/// Used when colony-shell is embedded in colony-nerve's terminal widget.
+/// Used when colony-shell runs inside colony-nerve's terminal widget. Unlike
+/// `SqliteObserver`, this does not attach `SessionContext` — colony-nerve
+/// enriches observations with its own canvas context on the receiving end.
+///
 /// Each observation is serialized as JSON and wrapped in the OSC 2337 protocol:
 ///
 /// ```text
@@ -40,9 +43,12 @@ impl OscObserver {
             "data": data,
         });
 
-        let Some(encoded) = serde_json::to_string(&payload).ok() else {
-            tracing::warn!("failed to serialize OSC observation payload");
-            return;
+        let encoded = match serde_json::to_string(&payload) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("failed to serialize OSC observation payload: {e}");
+                return;
+            }
         };
 
         // Write the full escape sequence atomically to avoid interleaving.
