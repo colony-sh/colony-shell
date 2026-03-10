@@ -1648,6 +1648,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-panel"
+version = "0.1.0"
+dependencies = [
+ "ratatui",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "colony-parser"
 version = "0.4.1"
 dependencies = [

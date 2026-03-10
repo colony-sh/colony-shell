@@ -21,6 +21,7 @@ members = [
     "crates/colony-tui",
     "crates/colony-ui-core",
     "crates/colony-recipe",
+    "crates/colony-panel",
 ]
 
 [workspace.package]
@@ -103,6 +104,7 @@ colony-cloud-sdk = { path = "crates/colony-cloud-sdk" }
 colony-ui-core = { path = "crates/colony-ui-core" }
 colony-tui = { path = "crates/colony-tui" }
 colony-recipe = { path = "crates/colony-recipe" }
+colony-panel = { path = "crates/colony-panel" }
 
 [profile.dev]
 opt-level = 0
