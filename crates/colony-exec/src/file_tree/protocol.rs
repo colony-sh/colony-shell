@@ -170,12 +170,21 @@ impl TreeProtocol {
     }
 }
 
+/// Returns true if running inside colony-terminal (`COLONY_TERMINAL` env var set)
+fn is_colony_terminal() -> bool {
+    std::env::var("COLONY_TERMINAL").is_ok()
+}
+
 /// `tree` builtin command
 ///
 /// Usage:
-///   `tree`         — print tree to stdout
+///   `tree`         — print tree to stdout (or emit via OSC in colony terminal)
 ///   `tree --json`  — dump full tree as JSON
 ///   `tree --sync`  — force full sync to terminal via OSC 2337
+///
+/// When `COLONY_TERMINAL=1` is set, the default (no-args) invocation emits a
+/// `FileTreeSnapshot` via OSC 2337 instead of rendering a text tree. This
+/// allows the macOS app to render the tree in its own sidebar widget.
 pub fn builtin_tree(args: &[String]) -> Result<BuiltinResult> {
     let cwd = std::env::current_dir()?;
     let git_cache = Arc::new(GitStatusCache::new(cwd.clone()));
@@ -187,6 +196,16 @@ pub fn builtin_tree(args: &[String]) -> Result<BuiltinResult> {
     }
 
     if args.is_empty() {
+        // In a colony terminal, emit via OSC instead of printing text
+        if is_colony_terminal() {
+            debug!("tree: colony terminal detected, emitting OSC snapshot");
+            if let Err(e) = protocol.force_sync() {
+                eprintln!("tree: OSC sync failed: {}", e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+            return Ok(BuiltinResult::Success(0));
+        }
+
         let Some(root) = protocol.tree_state().root_node() else {
             eprintln!("tree: no tree data");
             return Ok(BuiltinResult::Failure(1));
@@ -391,5 +410,21 @@ mod tests {
         protocol.force_sync().unwrap();
         let root = protocol.tree_state().root_node().unwrap();
         assert_eq!(root.children.len(), 2);
+    }
+
+    #[test]
+    fn test_is_colony_terminal_when_unset() {
+        // Ensure the env var is not set for this test
+        std::env::remove_var("COLONY_TERMINAL");
+        assert!(!is_colony_terminal());
+    }
+
+    #[test]
+    fn test_is_colony_terminal_when_set() {
+        // Temporarily set the env var
+        std::env::set_var("COLONY_TERMINAL", "1");
+        assert!(is_colony_terminal());
+        // Clean up
+        std::env::remove_var("COLONY_TERMINAL");
     }
 }
