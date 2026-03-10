@@ -36,6 +36,7 @@ pub use editor::{EditorAction, EditorHistory, InputEditor};
 pub use event::Event;
 pub use keybindings::{Action, Mode};
 pub use layout::{LayoutState, TuiLayout};
+pub use prompt::PromptRenderer;
 pub use prompt_renderer::{map_color, PromptRenderer as LegacyPromptRenderer};
 pub use sidebar::SidebarRenderer;
 pub use sidebar_renderer::SidebarRenderer as LegacySidebarRenderer;

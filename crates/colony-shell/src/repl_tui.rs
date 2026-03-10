@@ -13,7 +13,7 @@ use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
 use colony_protocol::{emit_prompt_busy, emit_prompt_ready, emit_prompt_state};
 use colony_tui::editor::{CompletionContext, CompletionEngine, EditorAction, EditorHistory};
-use colony_tui::{InputEditor, PromptRenderer};
+use colony_tui::{InputEditor, LegacyPromptRenderer as PromptRenderer};
 use colony_ui_core::{ComponentContext, PromptManager};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
