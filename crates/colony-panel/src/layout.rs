@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct PanelId(pub usize);
 
 /// Which edge of the main area a panel is docked to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PanelPosition {
     Left,
     Right,

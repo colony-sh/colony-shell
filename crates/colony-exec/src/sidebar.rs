@@ -8,14 +8,24 @@
 use colony_panel::PanelPosition;
 use serde::{Deserialize, Serialize};
 
+/// How multiple panels at the same position are arranged.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LayoutMode {
+    /// Show one panel at a time with a tab bar (default).
+    #[default]
+    Tabs,
+    /// Split the space and show all panels simultaneously.
+    Stack,
+}
+
 /// Result of parsing a sidebar command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SidebarCommand {
-    /// Add a panel at the given position.
+    /// Add one or more panels at the given position.
     Add {
         position: PanelPosition,
-        command: String,
-        args: Vec<String>,
+        commands: Vec<(String, Vec<String>)>,
+        layout_mode: LayoutMode,
         weight: u16,
         min_size: Option<u16>,
         max_size: Option<u16>,
@@ -106,17 +116,51 @@ pub fn parse_sidebar_args(args: &[String]) -> Result<SidebarCommand, String> {
         command_start = i;
     }
 
-    if command_start >= args.len() {
-        return Err("sidebar requires a command".to_string());
+    // Parse --tabs or --stack flag
+    let mut layout_mode = LayoutMode::default();
+    while i < args.len() {
+        match args[i].as_str() {
+            "--tabs" => {
+                layout_mode = LayoutMode::Tabs;
+                i += 1;
+                command_start = i;
+            }
+            "--stack" => {
+                layout_mode = LayoutMode::Stack;
+                i += 1;
+                command_start = i;
+            }
+            _ => {
+                command_start = i;
+                break;
+            }
+        }
     }
 
-    let command = args[command_start].clone();
-    let cmd_args = args[command_start + 1..].to_vec();
+    if command_start >= args.len() {
+        return Err("sidebar requires at least one command".to_string());
+    }
+
+    // Remaining args: if only one command, the rest are its args.
+    // If multiple commands, each is a bare command name (no per-command args).
+    let remaining = &args[command_start..];
+    let commands = if remaining.len() == 1 {
+        vec![(remaining[0].clone(), Vec::new())]
+    } else {
+        // Check if any remaining args look like command args (start with --)
+        // If so, treat as single command with args
+        let has_flags = remaining[1..].iter().any(|a| a.starts_with('-'));
+        if has_flags {
+            vec![(remaining[0].clone(), remaining[1..].to_vec())]
+        } else {
+            remaining.iter().map(|cmd| (cmd.clone(), Vec::new())).collect()
+        }
+    };
 
     Ok(SidebarCommand::Add {
         position,
-        command,
-        args: cmd_args,
+        commands,
+        layout_mode,
         weight,
         min_size,
         max_size,
@@ -189,10 +233,12 @@ mod tests {
         let cmd = parse_sidebar_args(&args(&["left", "filetree"])).unwrap();
         match cmd {
             SidebarCommand::Add {
-                position, command, ..
+                position, commands, layout_mode, ..
             } => {
                 assert_eq!(position, PanelPosition::Left);
-                assert_eq!(command, "filetree");
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].0, "filetree");
+                assert_eq!(layout_mode, LayoutMode::Tabs);
             }
             _ => panic!("expected Add"),
         }
@@ -219,13 +265,47 @@ mod tests {
         let cmd =
             parse_sidebar_args(&args(&["right", "preview", "--theme", "dark"])).unwrap();
         match cmd {
-            SidebarCommand::Add {
-                command,
-                args: cmd_args,
-                ..
-            } => {
-                assert_eq!(command, "preview");
-                assert_eq!(cmd_args, vec!["--theme", "dark"]);
+            SidebarCommand::Add { commands, .. } => {
+                assert_eq!(commands.len(), 1);
+                assert_eq!(commands[0].0, "preview");
+                assert_eq!(commands[0].1, vec!["--theme", "dark"]);
+            }
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multi_command_tabs() {
+        let cmd = parse_sidebar_args(&args(&["left", "filetree", "filedetails"])).unwrap();
+        match cmd {
+            SidebarCommand::Add { commands, layout_mode, .. } => {
+                assert_eq!(commands.len(), 2);
+                assert_eq!(commands[0].0, "filetree");
+                assert_eq!(commands[1].0, "filedetails");
+                assert_eq!(layout_mode, LayoutMode::Tabs);
+            }
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stack_mode() {
+        let cmd = parse_sidebar_args(&args(&["left", "--stack", "filetree", "filedetails"])).unwrap();
+        match cmd {
+            SidebarCommand::Add { commands, layout_mode, .. } => {
+                assert_eq!(commands.len(), 2);
+                assert_eq!(layout_mode, LayoutMode::Stack);
+            }
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_parse_explicit_tabs_mode() {
+        let cmd = parse_sidebar_args(&args(&["left", "--tabs", "filetree", "filedetails"])).unwrap();
+        match cmd {
+            SidebarCommand::Add { layout_mode, .. } => {
+                assert_eq!(layout_mode, LayoutMode::Tabs);
             }
             _ => panic!("expected Add"),
         }
@@ -274,9 +354,22 @@ mod tests {
     fn test_parse_hotkey() {
         let cmd = parse_sidebar_args(&args(&["left", "--hotkey", "ctrl-b", "filetree"])).unwrap();
         match cmd {
-            SidebarCommand::Add { hotkey, command, .. } => {
+            SidebarCommand::Add { hotkey, commands, .. } => {
                 assert_eq!(hotkey, Some("ctrl-b".to_string()));
-                assert_eq!(command, "filetree");
+                assert_eq!(commands[0].0, "filetree");
+            }
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hotkey_with_stack() {
+        let cmd = parse_sidebar_args(&args(&["left", "--hotkey", "ctrl-b", "--stack", "filetree", "filedetails"])).unwrap();
+        match cmd {
+            SidebarCommand::Add { hotkey, layout_mode, commands, .. } => {
+                assert_eq!(hotkey, Some("ctrl-b".to_string()));
+                assert_eq!(layout_mode, LayoutMode::Stack);
+                assert_eq!(commands.len(), 2);
             }
             _ => panic!("expected Add"),
         }

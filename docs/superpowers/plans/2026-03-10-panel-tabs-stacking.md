@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Support tabbed and stacked panel groups at each position, defaulting to tabs when multiple panels share a position.
+**Goal:** Support tabbed and stacked panel groups at each position (including main), defaulting to tabs when multiple panels share a position.
 
-**Architecture:** `SidebarCommand::Add` accepts multiple commands. `PanelHost` gains `PositionGroup` to track layout mode, member panels, and active tab. The layout engine gives one rect per position group. The TUI renderer splits that rect into tab bar + active panel (tabs mode) or evenly among all panels (stack mode). `[`/`]` keys cycle the active tab/panel within a focused group.
+**Architecture:** `SidebarCommand::Add` accepts multiple commands. `PanelHost` gains `PositionGroup` to track layout mode, member panels, and active tab. The layout engine gives one rect per position group. The TUI renderer splits that rect into tab bar + active panel (tabs mode) or evenly among all panels (stack mode). `[`/`]` keys cycle the active tab/panel within a focused group. `sidebar main` adds panel tabs to the main area — the shell prompt is always the implicit first tab, panels render in the scrollback region above the prompt, and `[`/`]` cycles tabs when main is focused.
 
 **Tech Stack:** ratatui, colony-panel, colony-exec (sidebar parser)
 

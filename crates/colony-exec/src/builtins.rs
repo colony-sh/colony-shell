@@ -7017,6 +7017,7 @@ mod tests {
             &["add".to_string(), test_dir.clone()],
             &mut context,
             &tuple_space,
+            "test-session",
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
@@ -7041,6 +7042,7 @@ mod tests {
             &["prepend".to_string(), test_dir.clone()],
             &mut context,
             &tuple_space,
+            "test-session",
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
@@ -7061,6 +7063,7 @@ mod tests {
             &["has".to_string(), "/usr/bin".to_string()],
             &mut context,
             &tuple_space,
+            "test-session",
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 0);
@@ -7069,6 +7072,7 @@ mod tests {
             &["has".to_string(), "/nonexistent/path".to_string()],
             &mut context,
             &tuple_space,
+            "test-session",
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 1);

@@ -4,7 +4,7 @@
 //! child processes, manages their I/O through [`PanelSlot`]s, resolves layout
 //! via [`LayoutEngine`], handles focus cycling, and broadcasts tuple events.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::layout::{LayoutEngine, PanelConstraints, PanelId, PanelPosition, ResolvedLayout};
 use crate::protocol::{FrameLine, InputEvent, PanelMessage, ProtocolError};
@@ -15,6 +15,68 @@ use crate::slot::PanelSlot;
 pub enum Focus {
     Main,
     Panel(PanelId),
+}
+
+/// How panels in a position group are arranged.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LayoutMode {
+    #[default]
+    Tabs,
+    Stack,
+}
+
+/// A group of panels at the same position.
+#[derive(Debug)]
+pub struct PositionGroup {
+    pub mode: LayoutMode,
+    pub panels: Vec<PanelId>,
+    pub active_tab: usize,
+}
+
+impl PositionGroup {
+    fn new(mode: LayoutMode) -> Self {
+        Self {
+            mode,
+            panels: Vec::new(),
+            active_tab: 0,
+        }
+    }
+
+    /// Cycle to the next tab/panel.
+    pub fn next_tab(&mut self) {
+        if self.panels.is_empty() {
+            return;
+        }
+        self.active_tab = (self.active_tab + 1) % self.panels.len();
+    }
+
+    /// Cycle to the previous tab/panel.
+    pub fn prev_tab(&mut self) {
+        if self.panels.is_empty() {
+            return;
+        }
+        self.active_tab = if self.active_tab == 0 {
+            self.panels.len() - 1
+        } else {
+            self.active_tab - 1
+        };
+    }
+
+    /// The currently active panel ID.
+    pub fn active_panel(&self) -> Option<PanelId> {
+        self.panels.get(self.active_tab).copied()
+    }
+
+    /// Remove a panel from the group, adjusting active_tab.
+    pub fn remove_panel(&mut self, id: PanelId) {
+        let Some(pos) = self.panels.iter().position(|p| *p == id) else {
+            return;
+        };
+        self.panels.remove(pos);
+        if self.active_tab >= self.panels.len() && !self.panels.is_empty() {
+            self.active_tab = self.panels.len() - 1;
+        }
+    }
 }
 
 /// Remembers how to spawn a panel so it can be toggled back on.
@@ -44,6 +106,8 @@ pub struct PanelHost {
     hotkey_specs: HashMap<String, Vec<PanelSpec>>,
     /// Currently active panel IDs per hotkey group.
     hotkey_active: HashMap<String, Vec<PanelId>>,
+    /// Position groups: position → group of panels with layout mode.
+    groups: HashMap<PanelPosition, PositionGroup>,
 }
 
 impl PanelHost {
@@ -55,6 +119,7 @@ impl PanelHost {
             focus: Focus::Main,
             hotkey_specs: HashMap::new(),
             hotkey_active: HashMap::new(),
+            groups: HashMap::new(),
         }
     }
 
@@ -97,6 +162,11 @@ impl PanelHost {
             slot.kill().await;
         }
         self.layout.remove_panel(id);
+        // Remove from position group
+        for group in self.groups.values_mut() {
+            group.remove_panel(id);
+        }
+        self.groups.retain(|_, g| !g.panels.is_empty());
         if self.focus == Focus::Panel(id) {
             self.focus = Focus::Main;
         }
@@ -225,24 +295,89 @@ impl PanelHost {
         !self.slots.is_empty()
     }
 
-    /// Cycle focus to the next panel (or back to main).
+    /// Cycle focus to the next position group (or back to main).
+    ///
+    /// Tab cycles between position groups (left, right, top, bottom), not
+    /// individual tabs within a group. Use `[`/`]` to cycle within a group.
     pub fn cycle_focus(&mut self) {
-        let mut ids = self.panel_ids();
-        ids.sort_by_key(|id| id.0);
-        if ids.is_empty() {
+        // Collect unique positions in a stable order
+        let position_order = [
+            PanelPosition::Left,
+            PanelPosition::Right,
+            PanelPosition::Top,
+            PanelPosition::Bottom,
+        ];
+        let grouped_ids = self.all_grouped_ids();
+
+        // Positions with groups
+        let positions: Vec<PanelPosition> = position_order
+            .iter()
+            .filter(|pos| self.groups.contains_key(pos))
+            .copied()
+            .collect();
+
+        // Ungrouped panels (added directly, not via groups)
+        let mut ungrouped: Vec<PanelId> = self
+            .slots
+            .keys()
+            .filter(|id| !grouped_ids.contains(id))
+            .copied()
+            .collect();
+        ungrouped.sort_by_key(|id| id.0);
+
+        if positions.is_empty() && ungrouped.is_empty() {
             self.focus = Focus::Main;
             return;
         }
-        self.focus = match self.focus {
-            Focus::Main => Focus::Panel(ids[0]),
-            Focus::Panel(current) => {
-                let pos = ids.iter().position(|id| *id == current);
-                match pos {
-                    Some(i) if i + 1 < ids.len() => Focus::Panel(ids[i + 1]),
-                    _ => Focus::Main,
+
+        match self.focus {
+            Focus::Main => {
+                // Focus first group's active panel, or first ungrouped
+                if let Some(pos) = positions.first() {
+                    if let Some(group) = self.groups.get(pos) {
+                        if let Some(id) = group.active_panel() {
+                            self.focus = Focus::Panel(id);
+                            return;
+                        }
+                    }
+                }
+                if let Some(id) = ungrouped.first() {
+                    self.focus = Focus::Panel(*id);
                 }
             }
-        };
+            Focus::Panel(current) => {
+                // Find which group the current panel is in
+                let current_pos = self.group_for_panel(current).map(|(p, _)| *p);
+
+                if let Some(pos) = current_pos {
+                    let idx = positions.iter().position(|p| *p == pos).unwrap_or(0);
+                    // Try next position group
+                    if idx + 1 < positions.len() {
+                        let next_pos = positions[idx + 1];
+                        if let Some(group) = self.groups.get(&next_pos) {
+                            if let Some(id) = group.active_panel() {
+                                self.focus = Focus::Panel(id);
+                                return;
+                            }
+                        }
+                    }
+                    // Past all groups → ungrouped → main
+                    if let Some(id) = ungrouped.first() {
+                        self.focus = Focus::Panel(*id);
+                        return;
+                    }
+                    self.focus = Focus::Main;
+                } else {
+                    // Currently on an ungrouped panel
+                    let idx = ungrouped.iter().position(|id| *id == current).unwrap_or(0);
+                    if idx + 1 < ungrouped.len() {
+                        self.focus = Focus::Panel(ungrouped[idx + 1]);
+                    } else {
+                        self.focus = Focus::Main;
+                    }
+                }
+            }
+        }
     }
 
     /// Send resize events to all panels with their current dimensions.
@@ -262,12 +397,15 @@ impl PanelHost {
     /// Register a panel spec under a hotkey group.
     ///
     /// The panel is spawned immediately. When the hotkey is pressed later,
-    /// all panels in the group are toggled off/on together.
+    /// all panels in the group are toggled off/on together. Panels at the
+    /// same position are automatically grouped into tabs.
     pub async fn add_panel_with_hotkey(
         &mut self,
         spec: PanelSpec,
         hotkey: &str,
+        layout_mode: LayoutMode,
     ) -> Result<PanelId, ProtocolError> {
+        let position = spec.position;
         let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
         let id = self
             .add_panel(
@@ -280,6 +418,19 @@ impl PanelHost {
                 spec.outer,
             )
             .await?;
+
+        // Auto-group panels at the same position
+        if !self.groups.contains_key(&position) {
+            self.groups.insert(position, PositionGroup::new(layout_mode));
+        }
+        let group = self.groups.get_mut(&position).unwrap();
+        group.mode = layout_mode;
+
+        // In tabs mode, only the first panel in the group occupies layout space
+        if layout_mode == LayoutMode::Tabs && !group.panels.is_empty() {
+            self.layout.remove_panel(id);
+        }
+        group.panels.push(id);
 
         self.hotkey_specs
             .entry(hotkey.to_string())
@@ -311,10 +462,15 @@ impl PanelHost {
         let Some(specs) = self.hotkey_specs.get(hotkey).cloned() else {
             return;
         };
+        // Collect layout modes per position from specs
+        let mut position_modes: HashMap<PanelPosition, LayoutMode> = HashMap::new();
+        // Use the layout mode stored when specs were registered (preserved in groups)
+        // Default to Tabs for new groups
         let mut new_ids = Vec::new();
         for spec in &specs {
+            let position = spec.position;
             let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
-            if let Ok(id) = self
+            let Ok(id) = self
                 .add_panel(
                     &spec.program,
                     &arg_refs,
@@ -325,9 +481,23 @@ impl PanelHost {
                     spec.outer,
                 )
                 .await
-            {
-                new_ids.push(id);
+            else {
+                continue;
+            };
+
+            let mode = *position_modes
+                .entry(position)
+                .or_insert(LayoutMode::Tabs);
+            let group = self
+                .groups
+                .entry(position)
+                .or_insert_with(|| PositionGroup::new(mode));
+            // In tabs mode, only the first panel occupies layout space
+            if mode == LayoutMode::Tabs && !group.panels.is_empty() {
+                self.layout.remove_panel(id);
             }
+            group.panels.push(id);
+            new_ids.push(id);
         }
         self.hotkey_active.insert(hotkey.to_string(), new_ids);
     }
@@ -358,6 +528,95 @@ impl PanelHost {
             .is_some_and(|ids| ids.iter().any(|id| self.slots.contains_key(id)))
     }
 
+    /// Add a group of panels at a position.
+    pub async fn add_panel_group(
+        &mut self,
+        specs: Vec<PanelSpec>,
+        mode: LayoutMode,
+        hotkey: Option<&str>,
+    ) -> Result<Vec<PanelId>, ProtocolError> {
+        if specs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let position = specs[0].position;
+
+        // Ensure the group exists
+        if !self.groups.contains_key(&position) {
+            self.groups.insert(position, PositionGroup::new(mode));
+        }
+        self.groups.get_mut(&position).unwrap().mode = mode;
+
+        let mut ids = Vec::new();
+        for spec in &specs {
+            let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+            let id = self
+                .add_panel(
+                    &spec.program,
+                    &arg_refs,
+                    spec.position,
+                    spec.weight,
+                    spec.min_size,
+                    spec.max_size,
+                    spec.outer,
+                )
+                .await?;
+
+            let group = self.groups.get_mut(&position).unwrap();
+            // In tabs mode, only the first panel occupies layout space
+            if mode == LayoutMode::Tabs && !group.panels.is_empty() {
+                self.layout.remove_panel(id);
+            }
+            let group = self.groups.get_mut(&position).unwrap();
+            group.panels.push(id);
+            ids.push(id);
+        }
+
+        if let Some(hk) = hotkey {
+            for spec in specs {
+                self.hotkey_specs.entry(hk.to_string()).or_default().push(spec);
+            }
+            self.hotkey_active
+                .entry(hk.to_string())
+                .or_default()
+                .extend(ids.iter());
+        }
+
+        Ok(ids)
+    }
+
+    /// Get the position group for a given position.
+    pub fn position_group(&self, position: PanelPosition) -> Option<&PositionGroup> {
+        self.groups.get(&position)
+    }
+
+    /// Get a mutable reference to the position group for a given position.
+    pub fn position_group_mut(&mut self, position: PanelPosition) -> Option<&mut PositionGroup> {
+        self.groups.get_mut(&position)
+    }
+
+    /// Get the position group that contains the given panel.
+    pub fn group_for_panel(&self, id: PanelId) -> Option<(&PanelPosition, &PositionGroup)> {
+        self.groups.iter().find(|(_, g)| g.panels.contains(&id))
+    }
+
+    /// Get the command name for a panel.
+    pub fn panel_command_name(&self, id: PanelId) -> Option<&str> {
+        self.slots.get(&id).map(|s| s.command_name())
+    }
+
+    /// Get all panel IDs that belong to a position group.
+    pub fn all_grouped_ids(&self) -> HashSet<PanelId> {
+        self.groups
+            .values()
+            .flat_map(|g| g.panels.iter().copied())
+            .collect()
+    }
+
+    /// Iterate over all position groups.
+    pub fn all_groups(&self) -> impl Iterator<Item = (&PanelPosition, &PositionGroup)> {
+        self.groups.iter()
+    }
+
     /// Shutdown all panels gracefully.
     pub async fn shutdown(&mut self) {
         for slot in self.slots.values_mut() {
@@ -370,6 +629,7 @@ impl PanelHost {
         }
         self.slots.clear();
         self.layout.clear();
+        self.groups.clear();
     }
 }
 

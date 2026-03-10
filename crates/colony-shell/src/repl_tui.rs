@@ -277,6 +277,105 @@ fn prompt_text(prompt_manager: &PromptManager, ctx: &ComponentContext) -> String
 }
 
 /// Render a panel's frame lines inside a bordered area.
+/// Render a group of panels in their position rect.
+fn render_panel_group(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    group: &colony_panel::PositionGroup,
+    panel_host: &PanelHost,
+    focused: bool,
+) {
+    match group.mode {
+        colony_panel::LayoutMode::Tabs => {
+            render_tabbed_panels(frame, area, group, panel_host, focused);
+        }
+        colony_panel::LayoutMode::Stack => {
+            render_stacked_panels(frame, area, group, panel_host, focused);
+        }
+    }
+}
+
+/// Render panels in tab mode: tab bar at top, active panel below.
+fn render_tabbed_panels(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    group: &colony_panel::PositionGroup,
+    panel_host: &PanelHost,
+    focused: bool,
+) {
+    if area.height < 3 || group.panels.is_empty() {
+        return;
+    }
+
+    // Only show tab bar if there are multiple panels
+    if group.panels.len() == 1 {
+        let id = group.panels[0];
+        let lines = panel_host.current_frame(id);
+        render_panel_frame(frame, area, lines, focused);
+        return;
+    }
+
+    // Tab bar takes 1 line
+    let tab_bar_area = Rect::new(area.x, area.y, area.width, 1);
+    let panel_area = Rect::new(area.x, area.y + 1, area.width, area.height - 1);
+
+    // Render tab bar
+    let mut spans = Vec::new();
+    for (i, id) in group.panels.iter().enumerate() {
+        let name = panel_host.panel_command_name(*id).unwrap_or("?");
+        let is_active = i == group.active_tab;
+        let style = if is_active {
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        if i > 0 {
+            spans.push(Span::styled(
+                " \u{2502} ",
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+        spans.push(Span::styled(format!(" {} ", name), style));
+    }
+    let tab_line = Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Black));
+    frame.render_widget(tab_line, tab_bar_area);
+
+    // Render active panel
+    if let Some(active_id) = group.active_panel() {
+        let lines = panel_host.current_frame(active_id);
+        render_panel_frame(frame, panel_area, lines, focused);
+    }
+}
+
+/// Render panels in stack mode: split space evenly.
+fn render_stacked_panels(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    group: &colony_panel::PositionGroup,
+    panel_host: &PanelHost,
+    focused: bool,
+) {
+    let n = group.panels.len() as u16;
+    if n == 0 || area.height < n {
+        return;
+    }
+
+    let per_panel = area.height / n;
+    let remainder = area.height % n;
+
+    let mut y = area.y;
+    for (i, id) in group.panels.iter().enumerate() {
+        let h = per_panel + if (i as u16) < remainder { 1 } else { 0 };
+        let sub_area = Rect::new(area.x, y, area.width, h);
+        let lines = panel_host.current_frame(*id);
+        let panel_focused = focused && group.active_tab == i;
+        render_panel_frame(frame, sub_area, lines, panel_focused);
+        y += h;
+    }
+}
+
 fn render_panel_frame(
     frame: &mut ratatui::Frame,
     area: Rect,
@@ -450,41 +549,69 @@ async fn process_sidebar_commands(
         match cmd {
             SidebarCommand::Add {
                 position,
-                command,
-                args,
+                commands,
+                layout_mode,
                 weight,
                 min_size,
                 max_size,
                 outer,
                 hotkey,
             } => {
-                let spec = colony_panel::PanelSpec {
-                    program: command,
-                    args,
-                    position,
-                    weight,
-                    min_size: min_size.unwrap_or(15),
-                    max_size: max_size.unwrap_or(40),
-                    outer,
+                let mode = match layout_mode {
+                    colony_exec::sidebar::LayoutMode::Tabs => colony_panel::LayoutMode::Tabs,
+                    colony_exec::sidebar::LayoutMode::Stack => colony_panel::LayoutMode::Stack,
                 };
-                let result = if let Some(ref hk) = hotkey {
-                    panel_host.add_panel_with_hotkey(spec, hk).await
+                if commands.len() == 1 {
+                    // Single command — use add_panel_with_hotkey or add_panel
+                    let (program, args) = commands.into_iter().next().unwrap();
+                    let spec = colony_panel::PanelSpec {
+                        program,
+                        args,
+                        position,
+                        weight,
+                        min_size: min_size.unwrap_or(15),
+                        max_size: max_size.unwrap_or(40),
+                        outer,
+                    };
+                    let result = if let Some(ref hk) = hotkey {
+                        panel_host.add_panel_with_hotkey(spec, hk, mode).await
+                    } else {
+                        let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+                        panel_host
+                            .add_panel(
+                                &spec.program,
+                                &arg_refs,
+                                spec.position,
+                                spec.weight,
+                                spec.min_size,
+                                spec.max_size,
+                                spec.outer,
+                            )
+                            .await
+                    };
+                    if let Err(e) = result {
+                        scrollback.add_error(&format!("sidebar: {e}"));
+                    }
                 } else {
-                    let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
-                    panel_host
-                        .add_panel(
-                            &spec.program,
-                            &arg_refs,
-                            spec.position,
-                            spec.weight,
-                            spec.min_size,
-                            spec.max_size,
-                            spec.outer,
-                        )
-                        .await
-                };
-                if let Err(e) = result {
-                    scrollback.add_error(&format!("sidebar: {e}"));
+                    // Multiple commands — use add_panel_group
+                    let specs: Vec<colony_panel::PanelSpec> = commands
+                        .into_iter()
+                        .map(|(program, args)| colony_panel::PanelSpec {
+                            program,
+                            args,
+                            position,
+                            weight,
+                            min_size: min_size.unwrap_or(15),
+                            max_size: max_size.unwrap_or(40),
+                            outer,
+                        })
+                        .collect();
+                    let result = panel_host
+                        .add_panel_group(specs, mode, hotkey.as_deref())
+                        .await;
+                    if let Err(e) = result {
+                        scrollback.add_error(&format!("sidebar: {e}"));
+                    }
                 }
             }
             SidebarCommand::Reset => {
@@ -899,8 +1026,24 @@ fn draw_tui(
 
             let layout = panel_host.resolve_layout(area);
 
-            // Render panels
+            // Render panels — grouped panels get tab/stack rendering
+            let grouped_ids = panel_host.all_grouped_ids();
+            let mut rendered_groups = std::collections::HashSet::new();
             for (id, panel_area) in &layout.panels {
+                if grouped_ids.contains(id) {
+                    // Find which group this panel belongs to and render the group once
+                    if let Some((pos, group)) = panel_host.group_for_panel(*id) {
+                        if rendered_groups.insert(*pos) {
+                            let group_focused = if let Focus::Panel(fid) = focus {
+                                group.panels.contains(&fid)
+                            } else {
+                                false
+                            };
+                            render_panel_group(frame, *panel_area, group, panel_host, group_focused);
+                        }
+                    }
+                    continue;
+                }
                 let lines = panel_host.current_frame(*id);
                 let panel_focused = focus == Focus::Panel(*id);
                 render_panel_frame(frame, *panel_area, lines, panel_focused);
@@ -1224,7 +1367,7 @@ async fn read_input_line(
                     }
 
                     // Panel-focused key handling: forward keys to the focused panel
-                    if let Focus::Panel(_) = panel_host.focus {
+                    if let Focus::Panel(fid) = panel_host.focus {
                         // Esc returns focus to main
                         if key.code == KeyCode::Esc {
                             panel_host.focus = Focus::Main;
@@ -1233,6 +1376,31 @@ async fn read_input_line(
                                 panel_host, scrollback, status_message, *show_help,
                             )?;
                             continue;
+                        }
+
+                        // Tab cycling within position group: [ and ]
+                        if key.code == KeyCode::Char('[') || key.code == KeyCode::Char(']') {
+                            if let Some((pos, _)) = panel_host.group_for_panel(fid) {
+                                let pos = *pos;
+                                if let Some(group) = panel_host.position_group_mut(pos) {
+                                    if group.panels.len() > 1 {
+                                        if key.code == KeyCode::Char(']') {
+                                            group.next_tab();
+                                        } else {
+                                            group.prev_tab();
+                                        }
+                                        // Update focus to the new active panel
+                                        if let Some(new_id) = group.active_panel() {
+                                            panel_host.focus = Focus::Panel(new_id);
+                                        }
+                                        redraw(
+                                            terminal, prompt_manager, ctx, editor,
+                                            panel_host, scrollback, status_message, *show_help,
+                                        )?;
+                                        continue;
+                                    }
+                                }
+                            }
                         }
 
                         let panel_event = crossterm_key_to_panel_event(key);
