@@ -15,4 +15,5 @@ pub use protocol::{
     FrameLine, FrameParser, InputEvent, PanelConfig, PanelMessage, ProtocolError, StyleSpec,
     TupleEmit,
 };
+pub use host::{Focus, PanelHost};
 pub use slot::PanelSlot;
