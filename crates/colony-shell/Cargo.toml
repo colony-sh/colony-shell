@@ -51,6 +51,8 @@ crossterm = "0.28"
 futures = "0.3"
 clap = { version = "4", features = ["derive", "env"] }
 colony-tui = { path = "../colony-tui", optional = true }
+colony-panel = { path = "../colony-panel" }
+dirs.workspace = true
 
 [features]
 default = ["tui"]
