@@ -1514,6 +1514,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-env-bin"
+version = "0.1.0"
+dependencies = [
+ "colony-panel",
+ "serde_json",
+]
+
+[[package]]
 name = "colony-exec"
 version = "0.4.1"
 dependencies = [
@@ -1622,6 +1630,14 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "uuid",
+]
+
+[[package]]
+name = "colony-gitstatus-bin"
+version = "0.1.0"
+dependencies = [
+ "colony-panel",
+ "serde_json",
 ]
 
 [[package]]

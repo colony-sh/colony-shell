@@ -1,0 +1,12 @@
+[package]
+name = "colony-gitstatus-bin"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "gitstatus"
+path = "src/main.rs"
+
+[dependencies]
+colony-panel = { path = "../colony-panel" }
+serde_json = { workspace = true }
