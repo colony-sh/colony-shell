@@ -2,4 +2,5 @@
 target/
 _bmad/
 .claude/commands/bmad/
-**/.fastembed_cache/*
+**/.fastembed_cache/*.superpowers/
+.superpowers/
