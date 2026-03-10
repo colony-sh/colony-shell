@@ -210,6 +210,12 @@ pub enum ProtocolMessage {
     EventRules {
         rules: Vec<serde_json::Value>,
     },
+    /// Widget response from terminal (e.g. tool approval decision)
+    WidgetResponse {
+        widget: String,
+        component_id: String,
+        approved: bool,
+    },
 }
 
 /// Full prompt state data sent via OSC 2337 (Prompt=state per spec B.3.11)

@@ -12,20 +12,25 @@
 //! Exported as `COLONY_WIDGET_SOCKET` for terminal discovery.
 
 use colony_protocol::ProtocolMessage;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, oneshot, Mutex, RwLock};
 
 use crate::event_worker::EventWorker;
 use crate::widget_handler::{handle_widget_action, handle_widget_request};
+
+/// Pending approval senders keyed by component_id.
+pub type PendingApprovals = Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>;
 
 pub struct WidgetServer {
     socket_path: PathBuf,
     cwd: Arc<RwLock<PathBuf>>,
     shutdown_tx: broadcast::Sender<()>,
     event_worker: Arc<EventWorker>,
+    pending_approvals: PendingApprovals,
 }
 
 impl WidgetServer {
@@ -47,7 +52,16 @@ impl WidgetServer {
             cwd: Arc::new(RwLock::new(cwd)),
             shutdown_tx,
             event_worker: Arc::new(EventWorker::new()),
+            pending_approvals: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    /// Get a shared handle to the pending approvals map.
+    ///
+    /// The `ApprovalManager` inserts oneshot senders here; the widget server
+    /// completes them when a `WidgetResponse` arrives from the terminal.
+    pub fn pending_approvals(&self) -> PendingApprovals {
+        self.pending_approvals.clone()
     }
 
     pub fn socket_path(&self) -> &Path {
@@ -85,8 +99,9 @@ impl WidgetServer {
                         Ok((stream, _addr)) => {
                             let cwd = self.cwd.clone();
                             let event_worker = self.event_worker.clone();
+                            let pending = self.pending_approvals.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_connection(stream, cwd, event_worker).await {
+                                if let Err(e) = handle_connection(stream, cwd, event_worker, pending).await {
                                     tracing::warn!("Widget connection error: {}", e);
                                 }
                             });
