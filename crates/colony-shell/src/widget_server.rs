@@ -18,12 +18,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{broadcast, RwLock};
 
+use crate::event_worker::EventWorker;
 use crate::widget_handler::{handle_widget_action, handle_widget_request};
 
 pub struct WidgetServer {
     socket_path: PathBuf,
     cwd: Arc<RwLock<PathBuf>>,
     shutdown_tx: broadcast::Sender<()>,
+    event_worker: Arc<EventWorker>,
 }
 
 impl WidgetServer {
@@ -44,6 +46,7 @@ impl WidgetServer {
             socket_path,
             cwd: Arc::new(RwLock::new(cwd)),
             shutdown_tx,
+            event_worker: Arc::new(EventWorker::new()),
         })
     }
 
@@ -63,6 +66,12 @@ impl WidgetServer {
         self.shutdown_tx.clone()
     }
 
+    /// Get a shared reference to the event worker.
+    #[allow(dead_code)]
+    pub fn event_worker(&self) -> Arc<EventWorker> {
+        self.event_worker.clone()
+    }
+
     pub async fn run(&self) -> std::io::Result<()> {
         let listener = UnixListener::bind(&self.socket_path)?;
         tracing::info!("Widget server listening on {:?}", self.socket_path);
@@ -75,8 +84,9 @@ impl WidgetServer {
                     match result {
                         Ok((stream, _addr)) => {
                             let cwd = self.cwd.clone();
+                            let event_worker = self.event_worker.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_connection(stream, cwd).await {
+                                if let Err(e) = handle_connection(stream, cwd, event_worker).await {
                                     tracing::warn!("Widget connection error: {}", e);
                                 }
                             });
@@ -114,6 +124,7 @@ impl Drop for WidgetServer {
 async fn handle_connection(
     mut stream: UnixStream,
     cwd: Arc<RwLock<PathBuf>>,
+    event_worker: Arc<EventWorker>,
 ) -> std::io::Result<()> {
     tracing::debug!("New widget connection");
 
@@ -146,7 +157,7 @@ async fn handle_connection(
         tracing::debug!("Received widget message: {}", json);
 
         let cwd_path = cwd.read().await.clone();
-        let response = process_widget_message(json, &cwd_path);
+        let response = process_widget_message(json, &cwd_path, &event_worker);
 
         if let Some(response_json) = response {
             let response_bytes = response_json.as_bytes();
@@ -162,7 +173,7 @@ async fn handle_connection(
     Ok(())
 }
 
-fn process_widget_message(json: &str, cwd: &Path) -> Option<String> {
+fn process_widget_message(json: &str, cwd: &Path, event_worker: &EventWorker) -> Option<String> {
     let msg: ProtocolMessage = match serde_json::from_str(json) {
         Ok(m) => m,
         Err(e) => {
@@ -198,6 +209,10 @@ fn process_widget_message(json: &str, cwd: &Path) -> Option<String> {
                 "payload": payload
             });
             handle_widget_action(&action_json.to_string(), cwd);
+            None
+        }
+        ProtocolMessage::EventRules { rules } => {
+            event_worker.update_rules(rules);
             None
         }
         _ => {

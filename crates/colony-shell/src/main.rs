@@ -1,5 +1,7 @@
 mod cli;
 mod config;
+#[allow(dead_code)]
+mod event_worker;
 #[cfg_attr(feature = "tui", allow(dead_code, unused_imports))]
 mod repl;
 #[cfg(feature = "tui")]
