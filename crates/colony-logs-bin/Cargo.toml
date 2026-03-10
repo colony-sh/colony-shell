@@ -1,0 +1,12 @@
+[package]
+name = "colony-logs-bin"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "logs-panel"
+path = "src/main.rs"
+
+[dependencies]
+colony-panel = { path = "../colony-panel" }
+serde_json = { workspace = true }
