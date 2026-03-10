@@ -23,6 +23,8 @@ members = [
     "crates/colony-recipe",
     "crates/colony-panel",
     "crates/colony-filetree-bin",
+    "crates/colony-preview-bin",
+    "crates/colony-filedetails-bin",
 ]
 
 [workspace.package]

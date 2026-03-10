@@ -1520,6 +1520,7 @@ dependencies = [
  "chrono",
  "colony-channels",
  "colony-expand",
+ "colony-panel",
  "colony-parser",
  "colony-protocol",
  "colony-recipe",
@@ -1574,6 +1575,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-filedetails-bin"
+version = "0.1.0"
+dependencies = [
+ "colony-panel",
+ "serde_json",
+]
+
+[[package]]
 name = "colony-filetree"
 version = "0.4.1"
 dependencies = [
@@ -1592,6 +1601,14 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "colony-filetree-bin"
+version = "0.1.0"
+dependencies = [
+ "colony-panel",
+ "serde_json",
 ]
 
 [[package]]
@@ -1671,6 +1688,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-preview-bin"
+version = "0.1.0"
+dependencies = [
+ "colony-panel",
+ "serde_json",
+]
+
+[[package]]
 name = "colony-protocol"
 version = "0.4.1"
 dependencies = [
@@ -1740,6 +1765,7 @@ dependencies = [
  "colony-config",
  "colony-exec",
  "colony-expand",
+ "colony-panel",
  "colony-parser",
  "colony-protocol",
  "colony-reflection",
@@ -1749,6 +1775,7 @@ dependencies = [
  "colony-tuple",
  "colony-ui-core",
  "crossterm",
+ "dirs 5.0.1",
  "futures",
  "libc",
  "miette",
