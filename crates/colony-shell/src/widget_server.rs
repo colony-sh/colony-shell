@@ -140,6 +140,7 @@ async fn handle_connection(
     mut stream: UnixStream,
     cwd: Arc<RwLock<PathBuf>>,
     event_worker: Arc<EventWorker>,
+    pending_approvals: PendingApprovals,
 ) -> std::io::Result<()> {
     tracing::debug!("New widget connection");
 
@@ -172,7 +173,8 @@ async fn handle_connection(
         tracing::debug!("Received widget message: {}", json);
 
         let cwd_path = cwd.read().await.clone();
-        let response = process_widget_message(json, &cwd_path, &event_worker);
+        let response =
+            process_widget_message(json, &cwd_path, &event_worker, &pending_approvals).await;
 
         if let Some(response_json) = response {
             let response_bytes = response_json.as_bytes();
@@ -188,7 +190,12 @@ async fn handle_connection(
     Ok(())
 }
 
-fn process_widget_message(json: &str, cwd: &Path, event_worker: &EventWorker) -> Option<String> {
+async fn process_widget_message(
+    json: &str,
+    cwd: &Path,
+    event_worker: &EventWorker,
+    pending_approvals: &PendingApprovals,
+) -> Option<String> {
     let msg: ProtocolMessage = match serde_json::from_str(json) {
         Ok(m) => m,
         Err(e) => {
@@ -224,6 +231,29 @@ fn process_widget_message(json: &str, cwd: &Path, event_worker: &EventWorker) ->
                 "payload": payload
             });
             handle_widget_action(&action_json.to_string(), cwd);
+            None
+        }
+        ProtocolMessage::WidgetResponse {
+            widget,
+            component_id,
+            approved,
+        } => {
+            if widget == "approval" {
+                let mut pending = pending_approvals.lock().await;
+                if let Some(tx) = pending.remove(&component_id) {
+                    let _ = tx.send(approved);
+                    tracing::info!(
+                        "Routed approval response for '{}': approved={}",
+                        component_id,
+                        approved
+                    );
+                } else {
+                    tracing::warn!(
+                        "No pending approval for component_id '{}'",
+                        component_id
+                    );
+                }
+            }
             None
         }
         ProtocolMessage::EventRules { rules } => {
