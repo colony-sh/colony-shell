@@ -26,7 +26,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::Terminal;
+use ratatui::{Terminal, TerminalOptions, Viewport};
 use tokio::sync::RwLock;
 
 use crate::shell::execute_shell_command;
@@ -347,30 +347,27 @@ fn handle_sidebar_key(
     }
 }
 
-/// Guard that restores terminal state on drop.
-struct TerminalGuard {
-    terminal: Terminal<CrosstermBackend<Stdout>>,
+/// Create an inline terminal that occupies `height` lines at the current cursor position.
+fn create_inline_terminal(height: u16) -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
+    let backend = CrosstermBackend::new(io::stdout());
+    Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Inline(height),
+        },
+    )
 }
 
-impl TerminalGuard {
-    fn new() -> io::Result<Self> {
-        enable_raw_mode()?;
-        // Enter alternate screen so startup messages stay visible when we exit
-        execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(io::stdout());
-        let terminal = Terminal::new(backend)?;
-        Ok(Self { terminal })
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            io::stdout(),
-            crossterm::terminal::LeaveAlternateScreen,
-            cursor::Show
-        );
+/// Compute how many lines the TUI needs: prompt(1) + status(1) + sidebar height if visible.
+fn tui_height(sidebar_visible: bool) -> u16 {
+    if sidebar_visible {
+        // Use most of the terminal for the sidebar view
+        let (_, term_height) = crossterm::terminal::size().unwrap_or((80, 24));
+        // Leave a few lines of scroll-back visible above
+        term_height.saturating_sub(1)
+    } else {
+        // Just prompt + status bar
+        2
     }
 }
 
