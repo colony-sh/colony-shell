@@ -56,9 +56,22 @@ pub(crate) async fn execute_command_with_status(line: &str, executor: &mut Execu
 }
 
 /// Parse and execute a single statement for REPL/orchestrator, updating last exit status.
+/// Supports auto-cd: if the input is a valid directory path, it is treated as `cd <path>`.
 pub(crate) async fn execute_shell_command(line: &str, executor: &mut Executor) -> Result<()> {
+    // Auto-cd: bare directory paths act as `cd <path>` (like zsh AUTO_CD)
+    let effective_line = if !line.contains(char::is_whitespace) {
+        let path = std::path::Path::new(line);
+        if path.is_dir() {
+            format!("cd {}", line)
+        } else {
+            line.to_string()
+        }
+    } else {
+        line.to_string()
+    };
+
     let mut alias_ctx = AliasContext::from_map(executor.context().aliases().clone());
-    let stmt = colony_parser::pest_api::parse_statement_with_aliases(line, &mut alias_ctx)
+    let stmt = colony_parser::pest_api::parse_statement_with_aliases(&effective_line, &mut alias_ctx)
         .map_err(|e| miette::miette!("parse error: {}", e))?;
 
     let exit_code = execute_statement_for_code(&stmt, executor).await;
