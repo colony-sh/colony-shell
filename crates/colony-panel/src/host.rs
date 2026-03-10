@@ -17,6 +17,18 @@ pub enum Focus {
     Panel(PanelId),
 }
 
+/// Remembers how to spawn a panel so it can be toggled back on.
+#[derive(Debug, Clone)]
+pub struct PanelSpec {
+    pub program: String,
+    pub args: Vec<String>,
+    pub position: PanelPosition,
+    pub weight: u16,
+    pub min_size: u16,
+    pub max_size: u16,
+    pub outer: bool,
+}
+
 /// The panel host manages all panel processes.
 pub struct PanelHost {
     /// Active panel slots indexed by ID.
@@ -27,6 +39,11 @@ pub struct PanelHost {
     next_id: usize,
     /// Current focus.
     pub focus: Focus,
+    /// Hotkey groups: hotkey string → list of panel specs.
+    /// When toggled on, panels are spawned and their IDs stored.
+    hotkey_specs: HashMap<String, Vec<PanelSpec>>,
+    /// Currently active panel IDs per hotkey group.
+    hotkey_active: HashMap<String, Vec<PanelId>>,
 }
 
 impl PanelHost {
@@ -36,6 +53,8 @@ impl PanelHost {
             layout: LayoutEngine::new(),
             next_id: 0,
             focus: Focus::Main,
+            hotkey_specs: HashMap::new(),
+            hotkey_active: HashMap::new(),
         }
     }
 
@@ -238,6 +257,105 @@ impl PanelHost {
                     .await;
             }
         }
+    }
+
+    /// Register a panel spec under a hotkey group.
+    ///
+    /// The panel is spawned immediately. When the hotkey is pressed later,
+    /// all panels in the group are toggled off/on together.
+    pub async fn add_panel_with_hotkey(
+        &mut self,
+        spec: PanelSpec,
+        hotkey: &str,
+    ) -> Result<PanelId, ProtocolError> {
+        let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+        let id = self
+            .add_panel(
+                &spec.program,
+                &arg_refs,
+                spec.position,
+                spec.weight,
+                spec.min_size,
+                spec.max_size,
+                spec.outer,
+            )
+            .await?;
+
+        self.hotkey_specs
+            .entry(hotkey.to_string())
+            .or_default()
+            .push(spec);
+        self.hotkey_active
+            .entry(hotkey.to_string())
+            .or_default()
+            .push(id);
+
+        Ok(id)
+    }
+
+    /// Toggle a hotkey group: if active panels exist, remove them; otherwise spawn them.
+    pub async fn toggle_hotkey(&mut self, hotkey: &str) {
+        // If panels are currently active for this hotkey, remove them
+        if let Some(ids) = self.hotkey_active.remove(hotkey) {
+            let live_ids: Vec<PanelId> =
+                ids.into_iter().filter(|id| self.slots.contains_key(id)).collect();
+            if !live_ids.is_empty() {
+                for id in live_ids {
+                    self.remove_panel(id).await;
+                }
+                return;
+            }
+        }
+
+        // Spawn all panels for this hotkey group
+        let Some(specs) = self.hotkey_specs.get(hotkey).cloned() else {
+            return;
+        };
+        let mut new_ids = Vec::new();
+        for spec in &specs {
+            let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+            if let Ok(id) = self
+                .add_panel(
+                    &spec.program,
+                    &arg_refs,
+                    spec.position,
+                    spec.weight,
+                    spec.min_size,
+                    spec.max_size,
+                    spec.outer,
+                )
+                .await
+            {
+                new_ids.push(id);
+            }
+        }
+        self.hotkey_active.insert(hotkey.to_string(), new_ids);
+    }
+
+    /// Get all registered hotkey strings.
+    pub fn hotkeys(&self) -> Vec<&str> {
+        self.hotkey_specs.keys().map(String::as_str).collect()
+    }
+
+    /// Get the help text for the focused panel, if any.
+    pub fn focused_help(&self) -> Option<&[String]> {
+        let Focus::Panel(id) = self.focus else {
+            return None;
+        };
+        let slot = self.slots.get(&id)?;
+        let help = &slot.config().help;
+        if help.is_empty() {
+            None
+        } else {
+            Some(help)
+        }
+    }
+
+    /// Check if a hotkey group is currently active.
+    pub fn is_hotkey_active(&self, hotkey: &str) -> bool {
+        self.hotkey_active
+            .get(hotkey)
+            .is_some_and(|ids| ids.iter().any(|id| self.slots.contains_key(id)))
     }
 
     /// Shutdown all panels gracefully.

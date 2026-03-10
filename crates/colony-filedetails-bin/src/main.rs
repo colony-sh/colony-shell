@@ -23,6 +23,7 @@ fn main() {
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
             subscriptions: vec!["filetree_select".to_string()],
+            help: Vec::new(),
         };
         writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
         out.flush().ok();
@@ -135,6 +136,7 @@ fn detail_line(style: &str, text: &str) -> FrameLine {
         action: None,
         expandable: None,
         expanded: None,
+        selected: None,
     }
 }
 
@@ -147,6 +149,7 @@ fn label_value(label: &str, value: &str) -> FrameLine {
         action: None,
         expandable: None,
         expanded: None,
+        selected: None,
     }
 }
 

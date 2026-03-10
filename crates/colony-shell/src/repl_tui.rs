@@ -21,7 +21,7 @@ use colony_tui::editor::{
 };
 use colony_tui::{InputEditor, LegacyPromptRenderer as PromptRenderer};
 use colony_ui_core::{ComponentContext, PromptManager};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -31,7 +31,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Terminal;
 use tokio::sync::RwLock;
 
@@ -297,22 +297,42 @@ fn render_panel_frame(
     let rendered_lines: Vec<Line> = lines
         .iter()
         .take(inner.height as usize)
-        .map(|fl| {
+        .enumerate()
+        .map(|(_i, fl)| {
             let indent = fl.indent.unwrap_or(0) as usize;
-            let style = fl
+            let is_selected = fl.selected.unwrap_or(false);
+
+            let base_style = fl
                 .style
                 .as_deref()
                 .map(|s| StyleSpec::parse(s).to_ratatui_style())
                 .unwrap_or_default();
 
+            // Selected line: reverse video
+            let style = if is_selected {
+                base_style.add_modifier(Modifier::REVERSED)
+            } else {
+                base_style
+            };
+
             let mut spans = Vec::new();
             if indent > 0 {
-                spans.push(Span::raw(" ".repeat(indent)));
+                spans.push(Span::styled(" ".repeat(indent), style));
             }
             if let Some(ref icon) = fl.icon {
                 spans.push(Span::styled(format!("{} ", icon), style));
             }
             spans.push(Span::styled(fl.text.clone(), style));
+
+            // Pad to full width so reverse video covers entire line
+            if is_selected {
+                let used: usize = spans.iter().map(|s| s.content.len()).sum();
+                let remaining = (inner.width as usize).saturating_sub(used);
+                if remaining > 0 {
+                    spans.push(Span::styled(" ".repeat(remaining), style));
+                }
+            }
+
             Line::from(spans)
         })
         .collect();
@@ -353,8 +373,59 @@ fn crossterm_key_to_panel_event(key: crossterm::event::KeyEvent) -> PanelInputEv
     }
 }
 
+/// Check if a crossterm key event matches a hotkey string like "ctrl-b" or "ctrl+b".
+fn matches_hotkey(key: &crossterm::event::KeyEvent, hotkey: &str) -> bool {
+    // Normalize: accept both ctrl-b and ctrl+b
+    let hotkey = hotkey.replace('+', "-");
+    let parts: Vec<&str> = hotkey.split('-').collect();
+    let Some(key_part) = parts.last() else {
+        return false;
+    };
+    let mod_parts = &parts[..parts.len() - 1];
+
+    // Check modifiers
+    let mut expected_mods = KeyModifiers::empty();
+    for m in mod_parts {
+        match m.to_lowercase().as_str() {
+            "ctrl" => expected_mods |= KeyModifiers::CONTROL,
+            "alt" => expected_mods |= KeyModifiers::ALT,
+            "shift" => expected_mods |= KeyModifiers::SHIFT,
+            _ => return false,
+        }
+    }
+    if key.modifiers != expected_mods {
+        return false;
+    }
+
+    // Check key
+    let lower = key_part.to_lowercase();
+    match key.code {
+        KeyCode::Char(c) => lower.len() == 1 && c.to_lowercase().next() == lower.chars().next(),
+        KeyCode::F(n) => lower == format!("f{n}"),
+        KeyCode::Tab => lower == "tab",
+        KeyCode::Esc => lower == "esc",
+        KeyCode::Enter => lower == "enter",
+        KeyCode::Backspace => lower == "backspace",
+        KeyCode::Delete => lower == "delete",
+        KeyCode::Insert => lower == "insert",
+        KeyCode::Home => lower == "home",
+        KeyCode::End => lower == "end",
+        KeyCode::PageUp => lower == "pageup",
+        KeyCode::PageDown => lower == "pagedown",
+        KeyCode::Up => lower == "up",
+        KeyCode::Down => lower == "down",
+        KeyCode::Left => lower == "left",
+        KeyCode::Right => lower == "right",
+        _ => false,
+    }
+}
+
 /// Process any sidebar_command tuples from the tuple space and apply them to the panel host.
-async fn process_sidebar_commands(executor: &Executor, panel_host: &mut PanelHost) {
+async fn process_sidebar_commands(
+    executor: &Executor,
+    panel_host: &mut PanelHost,
+    scrollback: &mut Scrollback,
+) {
     use colony_exec::sidebar::SidebarCommand;
 
     let tuple_space = executor.tuple_space();
@@ -366,12 +437,13 @@ async fn process_sidebar_commands(executor: &Executor, panel_host: &mut PanelHos
     let mut commands = Vec::new();
     while let Some(tuple) = tuple_space.inp(pattern.clone()) {
         let Some(colony_tuple::Value::Str(json)) = tuple.fields.get(1) else {
+            scrollback.add_error("[sidebar] tuple field 1 not a string");
             continue;
         };
-        let Ok(cmd) = serde_json::from_str::<SidebarCommand>(json) else {
-            continue;
-        };
-        commands.push(cmd);
+        match serde_json::from_str::<SidebarCommand>(json) {
+            Ok(cmd) => commands.push(cmd),
+            Err(e) => scrollback.add_error(&format!("[sidebar] json parse error: {e} — raw: {json}")),
+        }
     }
 
     for cmd in commands {
@@ -384,19 +456,36 @@ async fn process_sidebar_commands(executor: &Executor, panel_host: &mut PanelHos
                 min_size,
                 max_size,
                 outer,
+                hotkey,
             } => {
-                let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-                let _ = panel_host
-                    .add_panel(
-                        &command,
-                        &arg_refs,
-                        position,
-                        weight,
-                        min_size.unwrap_or(15),
-                        max_size.unwrap_or(40),
-                        outer,
-                    )
-                    .await;
+                let spec = colony_panel::PanelSpec {
+                    program: command,
+                    args,
+                    position,
+                    weight,
+                    min_size: min_size.unwrap_or(15),
+                    max_size: max_size.unwrap_or(40),
+                    outer,
+                };
+                let result = if let Some(ref hk) = hotkey {
+                    panel_host.add_panel_with_hotkey(spec, hk).await
+                } else {
+                    let arg_refs: Vec<&str> = spec.args.iter().map(String::as_str).collect();
+                    panel_host
+                        .add_panel(
+                            &spec.program,
+                            &arg_refs,
+                            spec.position,
+                            spec.weight,
+                            spec.min_size,
+                            spec.max_size,
+                            spec.outer,
+                        )
+                        .await
+                };
+                if let Err(e) = result {
+                    scrollback.add_error(&format!("sidebar: {e}"));
+                }
             }
             SidebarCommand::Reset => {
                 panel_host.reset().await;
@@ -421,8 +510,12 @@ pub(crate) async fn run_repl_tui(
 ) -> Result<()> {
     // Enter alternate screen and raw mode
     enable_raw_mode().map_err(|e| miette::miette!("failed to enable raw mode: {}", e))?;
-    execute!(io::stdout(), EnterAlternateScreen)
-        .map_err(|e| miette::miette!("failed to enter alternate screen: {}", e))?;
+    execute!(
+        io::stdout(),
+        EnterAlternateScreen,
+        crossterm::event::EnableMouseCapture
+    )
+    .map_err(|e| miette::miette!("failed to enter alternate screen: {}", e))?;
 
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)
@@ -445,6 +538,17 @@ pub(crate) async fn run_repl_tui(
 
     configure_history_from_env(&mut executor);
 
+    // Run .colony/init startup scripts
+    for script_path in crate::init::discover_init_scripts() {
+        for line in crate::init::read_init_script(&script_path) {
+            if let Err(e) = executor.execute_eval_string(&line).await {
+                scrollback.add_error(&format!("init: {}: {}", line, e));
+            }
+        }
+    }
+    // Process any sidebar commands emitted by init scripts
+    process_sidebar_commands(&executor, &mut panel_host, &mut scrollback).await;
+
     let result = run_repl_loop(
         &mut terminal,
         &mut editor,
@@ -463,7 +567,11 @@ pub(crate) async fn run_repl_tui(
 
     // Always clean up terminal state
     let _ = disable_raw_mode();
-    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    let _ = execute!(
+        io::stdout(),
+        crossterm::event::DisableMouseCapture,
+        LeaveAlternateScreen
+    );
     let _ = terminal.show_cursor();
 
     result
@@ -484,6 +592,7 @@ async fn run_repl_loop(
     cwd_handle: &Option<Arc<RwLock<PathBuf>>>,
 ) -> Result<()> {
     let mut status_message = String::new();
+    let mut show_help = false;
 
     loop {
         let model_name = agent.as_ref().map(|a| a.current_provider().1.to_string());
@@ -506,6 +615,7 @@ async fn run_repl_loop(
             panel_host,
             scrollback,
             &status_message,
+            show_help,
         )?;
 
         // Read input line
@@ -519,6 +629,7 @@ async fn run_repl_loop(
             panel_host,
             scrollback,
             &status_message,
+            &mut show_help,
         )
         .await?
         {
@@ -582,7 +693,7 @@ async fn run_repl_loop(
         .await;
 
         // Process sidebar_command tuples emitted by builtins
-        process_sidebar_commands(executor, panel_host).await;
+        process_sidebar_commands(executor, panel_host, scrollback).await;
 
         // Broadcast cwd change to panels if directory changed
         let new_cwd = std::env::current_dir().unwrap_or_default();
@@ -623,16 +734,24 @@ async fn execute_with_capture(
 
     if interactive_commands.contains(&first_word) {
         // Temporarily leave TUI for interactive command
+        let _ = execute!(
+            io::stdout(),
+            crossterm::event::DisableMouseCapture,
+            LeaveAlternateScreen
+        );
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
 
         if let Err(e) = execute_shell_command(line, executor).await {
             eprintln!("Error: {}", e);
         }
 
-        // Return to TUI
-        let _ = execute!(io::stdout(), EnterAlternateScreen);
+        // Return to TUI — restore alternate screen, raw mode, and mouse capture
         let _ = enable_raw_mode();
+        let _ = execute!(
+            io::stdout(),
+            EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture
+        );
         prompt_manager.on_event("cmd_complete");
         return;
     }
@@ -760,6 +879,7 @@ fn draw_tui(
     panel_host: &PanelHost,
     scrollback: &Scrollback,
     status_message: &str,
+    show_help: bool,
 ) -> Result<()> {
     let prompt_data = prompt_manager.render_data(ctx);
     let (left_line, _) = PromptRenderer::render(&prompt_data);
@@ -839,11 +959,16 @@ fn draw_tui(
                 Paragraph::new(vec![status_line]).style(Style::default().bg(Color::DarkGray));
             frame.render_widget(status_bar, main_chunks[2]);
 
-            // Position cursor (only when main is focused)
-            if focus == Focus::Main {
+            // Position cursor (only when main is focused and help not shown)
+            if focus == Focus::Main && !show_help {
                 let cursor_x = main_chunks[1].x + prompt_width + cursor_col as u16;
                 let cursor_y = main_chunks[1].y + cursor_row as u16;
                 frame.set_cursor_position((cursor_x, cursor_y));
+            }
+
+            // Help modal overlay
+            if show_help {
+                render_help_modal(frame, area, panel_host);
             }
         })
         .map_err(|e| miette::miette!("TUI render error: {}", e))?;
@@ -882,6 +1007,84 @@ fn render_scrollback(frame: &mut ratatui::Frame, area: Rect, scrollback: &Scroll
     frame.render_widget(paragraph, area);
 }
 
+/// Render a centered help modal overlay.
+fn render_help_modal(frame: &mut ratatui::Frame, area: Rect, panel_host: &PanelHost) {
+    let mut help_lines: Vec<String> = Vec::new();
+
+    match panel_host.focus {
+        Focus::Main => {
+            help_lines.push("Colony Shell".to_string());
+            help_lines.push(String::new());
+            help_lines.push("Tab        Cycle panel focus".to_string());
+            help_lines.push("Shift+Up   Scroll up".to_string());
+            help_lines.push("Shift+Down Scroll down".to_string());
+            help_lines.push("Ctrl+D     Exit".to_string());
+
+            // Add registered hotkeys from init scripts
+            let mut hotkeys: Vec<&str> = panel_host.hotkeys();
+            hotkeys.sort();
+            if !hotkeys.is_empty() {
+                help_lines.push(String::new());
+                help_lines.push("Panels".to_string());
+                for hk in hotkeys {
+                    let state = if panel_host.is_hotkey_active(hk) {
+                        "on"
+                    } else {
+                        "off"
+                    };
+                    help_lines.push(format!(
+                        "{:<10} Toggle panels [{}]",
+                        hk, state
+                    ));
+                }
+            }
+        }
+        Focus::Panel(_) => {
+            if let Some(help) = panel_host.focused_help() {
+                for line in help {
+                    help_lines.push(line.clone());
+                }
+            } else {
+                help_lines.push("No help available".to_string());
+            }
+            help_lines.push(String::new());
+            help_lines.push("Esc        Return to prompt".to_string());
+            help_lines.push("Tab        Cycle focus".to_string());
+        }
+    }
+
+    help_lines.push(String::new());
+    help_lines.push("Press any key to close".to_string());
+
+    // Calculate modal dimensions
+    let max_line_width = help_lines.iter().map(|l| l.len()).max().unwrap_or(20);
+    let modal_width = (max_line_width as u16 + 4).min(area.width.saturating_sub(4));
+    let modal_height = (help_lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let x = area.x + (area.width.saturating_sub(modal_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(modal_height)) / 2;
+    let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+    // Clear the area behind the modal
+    frame.render_widget(Clear, modal_area);
+
+    let lines: Vec<Line> = help_lines
+        .iter()
+        .map(|l| Line::from(Span::styled(l.clone(), Style::default().fg(Color::White))))
+        .collect();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(" Help ")
+        .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().bg(Color::DarkGray));
+
+    frame.render_widget(paragraph, modal_area);
+}
+
 /// Redraw helper that combines layout resolution and draw call.
 fn redraw(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
@@ -891,6 +1094,7 @@ fn redraw(
     panel_host: &PanelHost,
     scrollback: &Scrollback,
     status_message: &str,
+    show_help: bool,
 ) -> Result<()> {
     draw_tui(
         terminal,
@@ -900,6 +1104,7 @@ fn redraw(
         panel_host,
         scrollback,
         status_message,
+        show_help,
     )
 }
 
@@ -919,6 +1124,7 @@ async fn read_input_line(
     panel_host: &mut PanelHost,
     scrollback: &mut Scrollback,
     status_message: &str,
+    show_help: &mut bool,
 ) -> Result<Option<String>> {
     loop {
         // Poll panels for new frames
@@ -941,6 +1147,43 @@ async fn read_input_line(
                 Event::Key(key)
                     if key.kind == crossterm::event::KeyEventKind::Press =>
                 {
+                    // Hotkey toggle: check registered hotkeys first
+                    let matched_hotkey = panel_host
+                        .hotkeys()
+                        .into_iter()
+                        .find(|hk| matches_hotkey(&key, hk))
+                        .map(String::from);
+                    if let Some(hk) = matched_hotkey {
+                        panel_host.toggle_hotkey(&hk).await;
+                        redraw(
+                            terminal, prompt_manager, ctx, editor,
+                            panel_host, scrollback, status_message, *show_help,
+                        )?;
+                        continue;
+                    }
+
+                    // Help modal: '?' toggles help, Esc dismisses
+                    if *show_help {
+                        // Any key dismisses the help modal
+                        *show_help = false;
+                        redraw(
+                            terminal, prompt_manager, ctx, editor,
+                            panel_host, scrollback, status_message, *show_help,
+                        )?;
+                        continue;
+                    }
+                    if key.code == KeyCode::Char('?')
+                        && key.modifiers.is_empty()
+                        && (editor.text().is_empty() || !matches!(panel_host.focus, Focus::Main))
+                    {
+                        *show_help = true;
+                        redraw(
+                            terminal, prompt_manager, ctx, editor,
+                            panel_host, scrollback, status_message, *show_help,
+                        )?;
+                        continue;
+                    }
+
                     // Tab: cycle panel focus when panels exist and prompt empty
                     if key.code == KeyCode::Tab && panel_host.has_panels() {
                         let prompt_empty = editor.text().is_empty();
@@ -948,7 +1191,7 @@ async fn read_input_line(
                             panel_host.cycle_focus();
                             redraw(
                                 terminal, prompt_manager, ctx, editor,
-                                panel_host, scrollback, status_message,
+                                panel_host, scrollback, status_message, *show_help,
                             )?;
                             continue;
                         }
@@ -963,7 +1206,7 @@ async fn read_input_line(
                         scrollback.scroll_up(3);
                         redraw(
                             terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message,
+                            panel_host, scrollback, status_message, *show_help,
                         )?;
                         continue;
                     }
@@ -975,7 +1218,7 @@ async fn read_input_line(
                         scrollback.scroll_down(3);
                         redraw(
                             terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message,
+                            panel_host, scrollback, status_message, *show_help,
                         )?;
                         continue;
                     }
@@ -987,7 +1230,7 @@ async fn read_input_line(
                             panel_host.focus = Focus::Main;
                             redraw(
                                 terminal, prompt_manager, ctx, editor,
-                                panel_host, scrollback, status_message,
+                                panel_host, scrollback, status_message, *show_help,
                             )?;
                             continue;
                         }
@@ -996,7 +1239,7 @@ async fn read_input_line(
                         let _ = panel_host.send_to_focused(&panel_event).await;
                         redraw(
                             terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message,
+                            panel_host, scrollback, status_message, *show_help,
                         )?;
                         continue;
                     }
@@ -1077,8 +1320,27 @@ async fn read_input_line(
 
                     redraw(
                         terminal, prompt_manager, ctx, editor,
-                        panel_host, scrollback, status_message,
+                        panel_host, scrollback, status_message, *show_help,
                     )?;
+                }
+                Event::Mouse(mouse) => {
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            scrollback.scroll_up(3);
+                            redraw(
+                                terminal, prompt_manager, ctx, editor,
+                                panel_host, scrollback, status_message, *show_help,
+                            )?;
+                        }
+                        MouseEventKind::ScrollDown => {
+                            scrollback.scroll_down(3);
+                            redraw(
+                                terminal, prompt_manager, ctx, editor,
+                                panel_host, scrollback, status_message, *show_help,
+                            )?;
+                        }
+                        _ => {}
+                    }
                 }
                 Event::Resize(_, _) => {
                     // Notify panels of new dimensions
@@ -1089,7 +1351,7 @@ async fn read_input_line(
 
                     redraw(
                         terminal, prompt_manager, ctx, editor,
-                        panel_host, scrollback, status_message,
+                        panel_host, scrollback, status_message, *show_help,
                     )?;
                 }
                 _ => {}
@@ -1098,7 +1360,7 @@ async fn read_input_line(
             // Panels produced new frames, redraw
             redraw(
                 terminal, prompt_manager, ctx, editor,
-                panel_host, scrollback, status_message,
+                panel_host, scrollback, status_message, *show_help,
             )?;
         }
     }

@@ -40,12 +40,21 @@ impl PanelSlot {
         args: &[&str],
         position: PanelPosition,
     ) -> Result<Self, ProtocolError> {
-        let mut child = tokio::process::Command::new(program)
+        // Resolve the program path: check next to the current executable first,
+        // then fall back to PATH lookup.
+        let resolved = resolve_panel_program(program);
+        let mut child = tokio::process::Command::new(&resolved)
             .args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
-            .spawn()?;
+            .spawn()
+            .map_err(|e| {
+                ProtocolError::Io(std::io::Error::new(
+                    e.kind(),
+                    format!("{e} (panel '{program}' resolved to '{resolved}')"),
+                ))
+            })?;
 
         let stdout = child
             .stdout
@@ -71,6 +80,7 @@ impl PanelSlot {
             current_frame: Vec::new(),
             config: PanelConfig {
                 subscriptions: Vec::new(),
+                help: Vec::new(),
             },
             command_name: program.to_owned(),
             weight: 1,
@@ -165,6 +175,33 @@ impl PanelSlot {
     pub fn outer(&self) -> bool {
         self.outer
     }
+}
+
+/// Resolve a panel program name to a full path.
+///
+/// Checks for the binary in the same directory as the current executable
+/// (so panel binaries installed alongside `colony` are found without PATH).
+/// Falls back to the bare program name for PATH lookup.
+fn resolve_panel_program(program: &str) -> String {
+    // If it's already an absolute or relative path, use as-is
+    if program.contains('/') {
+        return program.to_string();
+    }
+
+    // Check next to the current executable (canonicalize to resolve symlinks).
+    // This finds panel binaries installed alongside colony via `cargo install`.
+    if let Ok(exe) = std::env::current_exe() {
+        let exe = exe.canonicalize().unwrap_or(exe);
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(program);
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+
+    // Fall back to bare name for PATH lookup
+    program.to_string()
 }
 
 #[cfg(test)]

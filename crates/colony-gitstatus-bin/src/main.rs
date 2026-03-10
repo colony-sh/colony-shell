@@ -19,6 +19,7 @@ fn main() {
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
             subscriptions: vec!["cmd_complete".to_string(), "git_change".to_string()],
+            help: Vec::new(),
         };
         writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
         out.flush().ok();
@@ -237,6 +238,7 @@ impl GitStatusState {
             action: None,
             expandable: None,
             expanded: None,
+            selected: None,
         });
 
         if self.entries.is_empty() {
@@ -248,6 +250,7 @@ impl GitStatusState {
                 action: None,
                 expandable: None,
                 expanded: None,
+                selected: None,
             });
             return lines;
         }
@@ -273,6 +276,7 @@ impl GitStatusState {
                     action: None,
                     expandable: None,
                     expanded: None,
+                    selected: None,
                 });
                 last_status = Some(entry.status);
                 line_idx += 1;
@@ -293,6 +297,7 @@ impl GitStatusState {
                 action: Some(format!("open:{}", entry.path)),
                 expandable: None,
                 expanded: None,
+                selected: None,
             });
             line_idx += 1;
         }

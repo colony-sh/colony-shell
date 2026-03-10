@@ -27,6 +27,7 @@ fn main() {
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
             subscriptions: vec!["agent_tokens".to_string(), "cmd_complete".to_string()],
+            help: Vec::new(),
         };
         writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
         out.flush().ok();
@@ -156,6 +157,7 @@ fn stat_line(label: &str, value: &str) -> FrameLine {
         action: None,
         expandable: None,
         expanded: None,
+        selected: None,
     }
 }
 

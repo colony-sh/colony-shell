@@ -178,6 +178,10 @@ pub struct FrameLine {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expanded: Option<bool>,
+
+    /// Whether this line is the current selection/cursor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected: Option<bool>,
 }
 
 /// An input event sent from the host to a panel process via stdin.
@@ -207,6 +211,10 @@ pub enum InputEvent {
 pub struct PanelConfig {
     #[serde(default)]
     pub subscriptions: Vec<String>,
+
+    /// Help text lines displayed when the user presses "?" while this panel is focused.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub help: Vec<String>,
 }
 
 /// A tuple-space publication emitted by a panel.

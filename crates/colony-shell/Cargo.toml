@@ -16,6 +16,46 @@ description = "POSIX-compliant shell with AI agent integration, reactive environ
 name = "colony"
 path = "src/main.rs"
 
+[[bin]]
+name = "filetree"
+path = "../colony-filetree-bin/src/main.rs"
+
+[[bin]]
+name = "filedetails"
+path = "../colony-filedetails-bin/src/main.rs"
+
+[[bin]]
+name = "preview"
+path = "../colony-preview-bin/src/main.rs"
+
+[[bin]]
+name = "gitstatus"
+path = "../colony-gitstatus-bin/src/main.rs"
+
+[[bin]]
+name = "gitstage"
+path = "../colony-gitstage-bin/src/main.rs"
+
+[[bin]]
+name = "jobs-panel"
+path = "../colony-jobs-bin/src/main.rs"
+
+[[bin]]
+name = "history-panel"
+path = "../colony-history-bin/src/main.rs"
+
+[[bin]]
+name = "env-panel"
+path = "../colony-env-bin/src/main.rs"
+
+[[bin]]
+name = "logs-panel"
+path = "../colony-logs-bin/src/main.rs"
+
+[[bin]]
+name = "session-panel"
+path = "../colony-session-bin/src/main.rs"
+
 [dependencies]
 colony-parser.workspace = true
 colony-expand.workspace = true

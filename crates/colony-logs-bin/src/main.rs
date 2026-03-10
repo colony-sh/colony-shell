@@ -23,6 +23,7 @@ fn main() {
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
             subscriptions: vec!["cmd_output".to_string()],
+            help: Vec::new(),
         };
         writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
         out.flush().ok();
@@ -179,6 +180,7 @@ impl LogState {
                 action: None,
                 expandable: None,
                 expanded: None,
+                selected: None,
             }];
         }
 
@@ -207,6 +209,7 @@ impl LogState {
                     action: None,
                     expandable: None,
                     expanded: None,
+                    selected: None,
                 }
             })
             .collect()

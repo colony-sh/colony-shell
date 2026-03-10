@@ -26,6 +26,7 @@ fn main() {
                 "filetree_select".to_string(),
                 "gitfiles_select".to_string(),
             ],
+            help: Vec::new(),
         };
         writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
         out.flush().ok();
@@ -311,6 +312,7 @@ impl DiffState {
                 action: None,
                 expandable: None,
                 expanded: None,
+                selected: None,
             }];
         };
 
@@ -324,6 +326,7 @@ impl DiffState {
                     action: None,
                     expandable: None,
                     expanded: None,
+                    selected: None,
                 },
                 FrameLine {
                     text: "[no changes]".to_string(),
@@ -333,6 +336,7 @@ impl DiffState {
                     action: None,
                     expandable: None,
                     expanded: None,
+                    selected: None,
                 },
             ];
         }
@@ -350,6 +354,7 @@ impl DiffState {
                 action: None,
                 expandable: None,
                 expanded: None,
+                selected: None,
             })
             .collect()
     }

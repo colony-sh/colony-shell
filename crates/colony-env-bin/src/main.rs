@@ -20,6 +20,7 @@ fn main() {
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
             subscriptions: vec!["env_change".to_string()],
+            help: Vec::new(),
         };
         writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
         out.flush().ok();
@@ -209,6 +210,7 @@ impl EnvState {
                 action: None,
                 expandable: None,
                 expanded: None,
+                selected: None,
             });
         } else if !self.filter.is_empty() {
             lines.push(FrameLine {
@@ -219,6 +221,7 @@ impl EnvState {
                 action: None,
                 expandable: None,
                 expanded: None,
+                selected: None,
             });
         }
 
@@ -241,6 +244,7 @@ impl EnvState {
                 action: None,
                 expandable: None,
                 expanded: None,
+                selected: None,
             });
         }
 

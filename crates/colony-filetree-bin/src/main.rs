@@ -21,7 +21,16 @@ fn main() {
         let mut out = stdout.lock();
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
-            subscriptions: vec!["dir_change".to_string()],
+            subscriptions: vec!["cwd_change".to_string()],
+            help: vec![
+                "j/↓  Move down".to_string(),
+                "k/↑  Move up".to_string(),
+                "Enter/l/→  Expand / enter directory".to_string(),
+                "h/←  Collapse / go up".to_string(),
+                ".    Toggle hidden files".to_string(),
+                "Tab  Switch focus".to_string(),
+                "Esc  Return to prompt".to_string(),
+            ],
         };
         writeln!(out, "{}", serde_json::to_string(&config).unwrap()).ok();
         out.flush().ok();
@@ -53,10 +62,10 @@ fn main() {
             InputEvent::Tuple { ref data } => {
                 // React to dir_change: {"key": "dir_change", "value": {"new": "/path"}}
                 if let Some(key) = data.get("key").and_then(|k| k.as_str()) {
-                    if key == "dir_change" {
+                    if key == "cwd_change" {
                         if let Some(new_dir) = data
                             .get("value")
-                            .and_then(|v| v.get("new"))
+                            .and_then(|v| v.get("cwd"))
                             .and_then(|n| n.as_str())
                         {
                             state.set_root(PathBuf::from(new_dir));
@@ -229,6 +238,7 @@ impl TreeState {
 
     fn render_lines(&self) -> Vec<FrameLine> {
         let mut lines = Vec::new();
+        let mut line_idx = 0usize;
 
         // ".." parent entry
         if self.root.parent().is_some() {
@@ -240,7 +250,13 @@ impl TreeState {
                 action: Some("cd_parent".to_string()),
                 expandable: None,
                 expanded: None,
+                selected: if self.cursor == line_idx {
+                    Some(true)
+                } else {
+                    None
+                },
             });
+            line_idx += 1;
         }
 
         for entry in &self.entries {
@@ -271,7 +287,13 @@ impl TreeState {
                 } else {
                     None
                 },
+                selected: if self.cursor == line_idx {
+                    Some(true)
+                } else {
+                    None
+                },
             });
+            line_idx += 1;
         }
 
         lines

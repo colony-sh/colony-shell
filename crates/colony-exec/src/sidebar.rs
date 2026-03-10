@@ -9,7 +9,7 @@ use colony_panel::PanelPosition;
 use serde::{Deserialize, Serialize};
 
 /// Result of parsing a sidebar command.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SidebarCommand {
     /// Add a panel at the given position.
     Add {
@@ -20,6 +20,7 @@ pub enum SidebarCommand {
         min_size: Option<u16>,
         max_size: Option<u16>,
         outer: bool,
+        hotkey: Option<String>,
     },
     /// Reset all panels.
     Reset,
@@ -49,6 +50,7 @@ pub fn parse_sidebar_args(args: &[String]) -> Result<SidebarCommand, String> {
     let mut min_size = None;
     let mut max_size = None;
     let mut outer = false;
+    let mut hotkey = None;
     let mut command_start = 1;
 
     // Parse options
@@ -87,6 +89,14 @@ pub fn parse_sidebar_args(args: &[String]) -> Result<SidebarCommand, String> {
                 }
                 outer = true;
             }
+            "--hotkey" => {
+                i += 1;
+                let key = args
+                    .get(i)
+                    .ok_or("--hotkey requires a value (e.g. ctrl-b)")?;
+                parse_hotkey_str(key)?; // validate the format
+                hotkey = Some(key.clone());
+            }
             _ => {
                 command_start = i;
                 break;
@@ -111,7 +121,46 @@ pub fn parse_sidebar_args(args: &[String]) -> Result<SidebarCommand, String> {
         min_size,
         max_size,
         outer,
+        hotkey,
     })
+}
+
+/// Validate a hotkey string like "ctrl-b", "ctrl+b", "ctrl-shift-f", "f1".
+///
+/// Returns `(modifiers, key_char_or_name)` if valid.
+/// Accepts both `-` and `+` as separators (normalized to `-` internally).
+pub fn parse_hotkey_str(s: &str) -> Result<(Vec<&str>, &str), String> {
+    // Normalize: split on either - or +
+    let parts: Vec<&str> = s.split(|c| c == '-' || c == '+').collect();
+    if parts.is_empty() {
+        return Err("empty hotkey".to_string());
+    }
+
+    let key = parts.last().unwrap();
+    let modifiers = &parts[..parts.len() - 1];
+
+    for m in modifiers {
+        match m.to_lowercase().as_str() {
+            "ctrl" | "alt" | "shift" => {}
+            _ => return Err(format!("unknown modifier '{}': expected ctrl, alt, or shift", m)),
+        }
+    }
+
+    // Validate key part
+    let lower = key.to_lowercase();
+    let valid_key = lower.len() == 1
+        || matches!(
+            lower.as_str(),
+            "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
+                | "space" | "tab" | "esc" | "enter" | "backspace" | "delete" | "insert"
+                | "home" | "end" | "pageup" | "pagedown" | "up" | "down" | "left" | "right"
+        );
+
+    if !valid_key {
+        return Err(format!("unknown key '{}' in hotkey", key));
+    }
+
+    Ok((modifiers.to_vec(), key))
 }
 
 fn parse_position(s: &str) -> Result<PanelPosition, String> {
@@ -219,5 +268,56 @@ mod tests {
     #[test]
     fn test_no_command_fails() {
         assert!(parse_sidebar_args(&args(&["left"])).is_err());
+    }
+
+    #[test]
+    fn test_parse_hotkey() {
+        let cmd = parse_sidebar_args(&args(&["left", "--hotkey", "ctrl-b", "filetree"])).unwrap();
+        match cmd {
+            SidebarCommand::Add { hotkey, command, .. } => {
+                assert_eq!(hotkey, Some("ctrl-b".to_string()));
+                assert_eq!(command, "filetree");
+            }
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hotkey_plus_syntax() {
+        let cmd = parse_sidebar_args(&args(&["right", "--hotkey", "ctrl+b", "preview"])).unwrap();
+        match cmd {
+            SidebarCommand::Add { hotkey, .. } => {
+                assert_eq!(hotkey, Some("ctrl+b".to_string()));
+            }
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_parse_no_hotkey() {
+        let cmd = parse_sidebar_args(&args(&["left", "filetree"])).unwrap();
+        match cmd {
+            SidebarCommand::Add { hotkey, .. } => assert!(hotkey.is_none()),
+            _ => panic!("expected Add"),
+        }
+    }
+
+    #[test]
+    fn test_parse_hotkey_invalid_modifier() {
+        assert!(parse_sidebar_args(&args(&["left", "--hotkey", "meta-b", "filetree"])).is_err());
+    }
+
+    #[test]
+    fn test_parse_hotkey_str_valid() {
+        assert!(parse_hotkey_str("ctrl-b").is_ok());
+        assert!(parse_hotkey_str("ctrl+shift+f").is_ok());
+        assert!(parse_hotkey_str("f1").is_ok());
+        assert!(parse_hotkey_str("alt-f12").is_ok());
+    }
+
+    #[test]
+    fn test_parse_hotkey_str_invalid() {
+        assert!(parse_hotkey_str("meta-b").is_err());
+        assert!(parse_hotkey_str("ctrl-foo").is_err());
     }
 }
