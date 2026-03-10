@@ -120,6 +120,7 @@ fn is_builtin_base(name: &str) -> bool {
             | "layout"
             | "pane"
             | "secure"
+            | "mirror"
     )
 }
 
@@ -275,6 +276,7 @@ pub fn execute_builtin(
         "layout" => crate::panes::builtin_layout(&args),
         "pane" => crate::panes::builtin_pane(&args),
         "secure" => builtin_secure(&args, context),
+        "mirror" => crate::mirror::builtin_mirror(&args),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 

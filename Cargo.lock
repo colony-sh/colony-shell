@@ -1537,6 +1537,7 @@ dependencies = [
  "parking_lot",
  "ratatui",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "serial_test",
@@ -1549,6 +1550,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

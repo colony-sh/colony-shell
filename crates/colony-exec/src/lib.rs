@@ -18,6 +18,7 @@ pub mod file_tree;
 pub mod flux;
 pub mod goals;
 pub mod history;
+pub mod mirror;
 pub mod panes;
 mod jobs;
 mod path;
