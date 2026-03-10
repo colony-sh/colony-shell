@@ -13,7 +13,7 @@ use std::time::Instant;
 use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
 use colony_protocol::{emit_prompt_busy, emit_prompt_ready, emit_prompt_state};
-use colony_tui::editor::{CompletionContext, CompletionEngine, EditorAction, EditorHistory};
+use colony_tui::editor::{CompletionContext, CompletionEngine, EditorAction, EditorHistory, EditorMode};
 use colony_tui::{InputEditor, LegacyPromptRenderer as PromptRenderer, SidebarRenderer};
 use colony_ui_core::{
     ComponentContext, FileTreePanel, PromptManager, SidebarData, SidebarManager, SidebarPosition,
@@ -670,6 +670,8 @@ async fn run_repl_loop(
     executor: &mut Executor,
     cwd_handle: &Option<Arc<RwLock<PathBuf>>>,
 ) -> Result<()> {
+    let mut status_message = String::new();
+
     loop {
         let model_name = agent.as_ref().map(|a| a.current_provider().1.to_string());
         let ctx = ComponentContext::from_executor(executor, model_name.clone());
@@ -692,6 +694,7 @@ async fn run_repl_loop(
             sidebar_state,
             *focus,
             scrollback,
+            &status_message,
         )?;
 
         // Read input line
@@ -706,6 +709,7 @@ async fn run_repl_loop(
             sidebar_state,
             focus,
             scrollback,
+            &status_message,
         )
         .await?
         {
@@ -762,6 +766,7 @@ async fn run_repl_loop(
             agent,
             prompt_manager,
             scrollback,
+            &mut status_message,
             use_osc,
             cwd_handle,
         )
@@ -781,12 +786,14 @@ async fn run_repl_loop(
 }
 
 /// Execute a command, capturing its output into the scrollback buffer.
+/// Activity messages (e.g. "Directory: /path") are placed in `status_message`.
 async fn execute_with_capture(
     line: &str,
     executor: &mut Executor,
     agent: &mut Option<Agent>,
     prompt_manager: &mut PromptManager,
     scrollback: &mut Scrollback,
+    status_message: &mut String,
     use_osc: bool,
     cwd_handle: &Option<Arc<RwLock<PathBuf>>>,
 ) {
@@ -896,7 +903,19 @@ async fn execute_with_capture(
         Ok(()) => {
             let duration_ms = cmd_start.elapsed().as_millis() as u64;
             prompt_manager.on_event("cmd_complete");
-            display_tuple_activity(executor, prompt_manager, cwd_handle, agent).await;
+
+            // Capture tuple activity output into the status bar
+            if let Ok(activity_capture) = OutputCapture::begin() {
+                display_tuple_activity(executor, prompt_manager, cwd_handle, agent).await;
+                if let Ok(activity_output) = activity_capture.finish() {
+                    let trimmed = strip_ansi(&activity_output).trim().to_string();
+                    if !trimmed.is_empty() {
+                        *status_message = trimmed;
+                    }
+                }
+            } else {
+                display_tuple_activity(executor, prompt_manager, cwd_handle, agent).await;
+            }
 
             if use_osc {
                 emit_prompt_ready(Some(duration_ms));
@@ -926,6 +945,7 @@ fn draw_tui(
     sidebar_state: &mut SidebarState,
     focus: Focus,
     scrollback: &Scrollback,
+    status_message: &str,
 ) -> Result<()> {
     let sidebar_data = render_sidebar_data(sidebars, sidebar_state, ctx);
 
@@ -933,7 +953,6 @@ fn draw_tui(
     let (left_line, _) = PromptRenderer::render(&prompt_data);
     let cursor_row = editor.buffer.cursor_row();
     let cursor_col = editor.buffer.cursor_col();
-    let status = editor.status_line();
     let prompt_spans = left_line.spans.clone();
     let prompt_width: u16 = prompt_spans
         .iter()
@@ -1012,13 +1031,17 @@ fn draw_tui(
             let input_paragraph = Paragraph::new(input_lines);
             frame.render_widget(input_paragraph, main_chunks[1]);
 
-            // Render status bar
+            // Render status bar with activity message
+            let bar_text = if status_message.is_empty() {
+                String::new()
+            } else {
+                format!(" {} ", status_message)
+            };
             let status_line = Line::from(vec![Span::styled(
-                format!(" {} ", status),
+                bar_text,
                 Style::default()
-                    .fg(Color::White)
-                    .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(Color::Yellow)
+                    .bg(Color::DarkGray),
             )]);
             let status_bar =
                 Paragraph::new(vec![status_line]).style(Style::default().bg(Color::DarkGray));
@@ -1119,6 +1142,7 @@ fn redraw(
     sidebar_state: &mut SidebarState,
     focus: Focus,
     scrollback: &Scrollback,
+    status_message: &str,
 ) -> Result<()> {
     draw_tui(
         terminal,
@@ -1129,6 +1153,7 @@ fn redraw(
         sidebar_state,
         focus,
         scrollback,
+        status_message,
     )
 }
 
@@ -1149,6 +1174,7 @@ async fn read_input_line(
     sidebar_state: &mut SidebarState,
     focus: &mut Focus,
     scrollback: &mut Scrollback,
+    status_message: &str,
 ) -> Result<Option<String>> {
     loop {
         if event::poll(std::time::Duration::from_millis(50))
@@ -1175,24 +1201,32 @@ async fn read_input_line(
                         redraw(
                             terminal, prompt_manager, ctx, editor,
                             sidebars, sidebar_state, *focus, scrollback,
+                            status_message,
                         )?;
                         continue;
                     }
 
-                    // Tab switches focus when sidebar is visible
+                    // Tab: switch focus when sidebar visible and prompt empty,
+                    // otherwise fall through to editor for tab completion
                     if key.code == KeyCode::Tab && sidebar_state.visible {
-                        *focus = match focus {
-                            Focus::Prompt => Focus::Sidebar,
-                            Focus::Sidebar => {
-                                sidebar_state.context_menu = None;
-                                Focus::Prompt
-                            }
-                        };
-                        redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            sidebars, sidebar_state, *focus, scrollback,
-                        )?;
-                        continue;
+                        let prompt_empty = editor.text().is_empty();
+                        if prompt_empty || *focus == Focus::Sidebar {
+                            *focus = match focus {
+                                Focus::Prompt => Focus::Sidebar,
+                                Focus::Sidebar => {
+                                    sidebar_state.context_menu = None;
+                                    Focus::Prompt
+                                }
+                            };
+                            redraw(
+                                terminal, prompt_manager, ctx, editor,
+                                sidebars, sidebar_state, *focus, scrollback,
+                                status_message,
+                            )?;
+                            continue;
+                        }
+                        // Fall through: Tab with non-empty prompt goes to editor
+                        // for completion handling
                     }
 
                     // Scrollback navigation: Shift+Up/Down or Ctrl+Up/Down
@@ -1205,6 +1239,7 @@ async fn read_input_line(
                         redraw(
                             terminal, prompt_manager, ctx, editor,
                             sidebars, sidebar_state, *focus, scrollback,
+                            status_message,
                         )?;
                         continue;
                     }
@@ -1217,6 +1252,7 @@ async fn read_input_line(
                         redraw(
                             terminal, prompt_manager, ctx, editor,
                             sidebars, sidebar_state, *focus, scrollback,
+                            status_message,
                         )?;
                         continue;
                     }
@@ -1269,6 +1305,7 @@ async fn read_input_line(
                         redraw(
                             terminal, prompt_manager, ctx, editor,
                             sidebars, sidebar_state, *focus, scrollback,
+                            status_message,
                         )?;
                         continue;
                     }
@@ -1341,15 +1378,22 @@ async fn read_input_line(
                         _ => {}
                     }
 
+                    // Force insert mode — the TUI REPL doesn't use vim normal mode
+                    if editor.mode() != EditorMode::Insert {
+                        editor.set_mode(EditorMode::Insert);
+                    }
+
                     redraw(
                         terminal, prompt_manager, ctx, editor,
                         sidebars, sidebar_state, *focus, scrollback,
+                        status_message,
                     )?;
                 }
                 Event::Resize(_, _) => {
                     redraw(
                         terminal, prompt_manager, ctx, editor,
                         sidebars, sidebar_state, *focus, scrollback,
+                        status_message,
                     )?;
                 }
                 _ => {}
@@ -1360,6 +1404,7 @@ async fn read_input_line(
             redraw(
                 terminal, prompt_manager, ctx, editor,
                 sidebars, sidebar_state, *focus, scrollback,
+                status_message,
             )?;
         }
     }

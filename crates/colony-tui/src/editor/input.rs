@@ -68,6 +68,11 @@ impl InputEditor {
         self.mode
     }
 
+    /// Override the current mode (e.g., to force insert mode).
+    pub fn set_mode(&mut self, mode: EditorMode) {
+        self.mode = mode;
+    }
+
     pub fn command_buffer(&self) -> &str {
         &self.command_buffer
     }
