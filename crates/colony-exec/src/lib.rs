@@ -20,6 +20,7 @@ pub mod goals;
 pub mod history;
 pub mod mirror;
 pub mod panes;
+pub mod sidebar;
 mod jobs;
 mod path;
 mod pipeline;

@@ -121,6 +121,7 @@ fn is_builtin_base(name: &str) -> bool {
             | "pane"
             | "secure"
             | "mirror"
+            | "sidebar"
     )
 }
 
@@ -277,6 +278,22 @@ pub fn execute_builtin(
         "pane" => crate::panes::builtin_pane(&args),
         "secure" => builtin_secure(&args, context),
         "mirror" => crate::mirror::builtin_mirror(&args),
+        "sidebar" => {
+            match crate::sidebar::parse_sidebar_args(&args) {
+                Ok(cmd) => {
+                    let json = serde_json::to_string(&cmd).unwrap_or_default();
+                    tuple_space.out(colony_tuple::Tuple::new(vec![
+                        colony_tuple::Value::Str("sidebar_command".to_string()),
+                        colony_tuple::Value::Str(json),
+                    ]));
+                    Ok(BuiltinResult::Success(0))
+                }
+                Err(e) => {
+                    eprintln!("sidebar: {e}");
+                    Ok(BuiltinResult::Failure(1))
+                }
+            }
+        }
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 

@@ -3,13 +3,14 @@
 use std::collections::HashMap;
 
 use ratatui::layout::Rect;
+use serde::Serialize;
 
 /// Unique identifier for a panel instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PanelId(pub usize);
 
 /// Which edge of the main area a panel is docked to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum PanelPosition {
     Left,
     Right,
