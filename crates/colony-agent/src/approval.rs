@@ -10,7 +10,10 @@ use crate::tool::ToolClassification;
 use crate::AgentError;
 use colony_protocol::{emit_widget_request, ProtocolMessage};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::Write;
+use std::sync::Arc;
+use tokio::sync::{oneshot, Mutex};
 
 /// Tool approval response from user/terminal
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,14 +51,33 @@ impl ApprovalConfig {
     }
 }
 
+/// Pending approval senders keyed by component_id.
+pub type PendingApprovals = Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>;
+
 /// Tool approval manager
 pub struct ApprovalManager {
     config: ApprovalConfig,
+    pending_approvals: Option<PendingApprovals>,
 }
 
 impl ApprovalManager {
     pub fn new(config: ApprovalConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            pending_approvals: None,
+        }
+    }
+
+    /// Create an `ApprovalManager` wired to the widget server's approval channel.
+    ///
+    /// When a `WidgetResponse` arrives on the Unix socket, the widget server
+    /// completes the oneshot sender stored in `pending`. This lets
+    /// `request_osc_approval` block until the user responds in colony-nerve.
+    pub fn with_approvals(config: ApprovalConfig, pending: PendingApprovals) -> Self {
+        Self {
+            config,
+            pending_approvals: Some(pending),
+        }
     }
 
     /// Check if approval is needed for a tool call
