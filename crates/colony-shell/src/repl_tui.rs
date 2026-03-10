@@ -26,7 +26,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::Terminal;
+use ratatui::{Terminal, TerminalOptions, Viewport};
 use tokio::sync::RwLock;
 
 use crate::shell::execute_shell_command;
@@ -352,11 +352,19 @@ struct TerminalGuard {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
 
+/// Height of the inline viewport: prompt line + status bar
+const INLINE_HEIGHT: u16 = 3;
+
 impl TerminalGuard {
     fn new() -> io::Result<Self> {
         enable_raw_mode()?;
         let backend = CrosstermBackend::new(io::stdout());
-        let terminal = Terminal::new(backend)?;
+        let terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(INLINE_HEIGHT),
+            },
+        )?;
         Ok(Self { terminal })
     }
 }

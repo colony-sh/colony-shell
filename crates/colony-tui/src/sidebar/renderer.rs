@@ -35,10 +35,12 @@ impl SidebarRenderer {
             Style::default().fg(Color::DarkGray)
         };
 
-        // Main sidebar block
+        // Main sidebar block with opaque background
+        let bg = Color::Rgb(20, 20, 35);
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(border_style);
+            .border_style(border_style)
+            .style(Style::default().bg(bg));
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
