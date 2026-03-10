@@ -251,6 +251,7 @@ impl SidebarRenderer {
     }
 
     /// Apply horizontal scroll offset to spans, showing a sliding window of the text.
+    /// Loops: scrolls to end, pauses, then wraps back to start.
     fn scroll_spans(
         spans: Vec<Span<'static>>,
         max_width: usize,
@@ -258,7 +259,17 @@ impl SidebarRenderer {
         total_len: usize,
     ) -> Line<'static> {
         let max_scroll = total_len.saturating_sub(max_width);
-        let offset = scroll_offset.min(max_scroll);
+        if max_scroll == 0 {
+            // Nothing to scroll
+            let result: Vec<Span<'static>> = spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, s.style.add_modifier(Modifier::REVERSED)))
+                .collect();
+            return Line::from(result);
+        }
+        // Loop: scroll to end, pause 5 chars worth, then wrap back
+        let cycle_len = max_scroll + 5;
+        let offset = (scroll_offset % cycle_len).min(max_scroll);
         let visible_end = offset + max_width;
 
         let mut result = Vec::new();

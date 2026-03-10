@@ -183,6 +183,18 @@ impl SidebarComponent for FileTreePanel {
         let root = self.root.clone().unwrap_or_else(|| ctx.cwd.clone());
         let mut lines = Vec::new();
 
+        // Add ".." entry to navigate to parent directory
+        if root.parent().is_some() {
+            lines.push(
+                ComponentLine::new(vec![StyledSpan::new(
+                    "..".to_string(),
+                    Style::default().fg(Color::BrightBlack),
+                )])
+                .with_icon(" ")
+                .with_interactive("cd_parent", None),
+            );
+        }
+
         // Get or initialize tree state
         if let Some(tree) = self.get_tree_state(&root) {
             // Get visible nodes (respects expansion state)

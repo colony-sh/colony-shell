@@ -212,11 +212,13 @@ impl SidebarState {
     }
 
     /// Compute the horizontal scroll offset from the current tick.
-    /// Starts scrolling after a short delay, then advances 1 char per tick.
+    /// Starts scrolling after a short delay, advances 1 char every 3 ticks (~150ms).
+    /// The renderer handles looping via modular arithmetic.
     fn scroll_offset(&self) -> usize {
-        // Wait ~500ms before scrolling (10 ticks at 50ms poll interval)
-        let delay_ticks = 10;
-        self.scroll_tick.saturating_sub(delay_ticks)
+        // Wait ~1s before scrolling (20 ticks at 50ms poll interval)
+        let delay_ticks = 20;
+        // Advance 1 char every 3 ticks (~150ms per char)
+        self.scroll_tick.saturating_sub(delay_ticks) / 3
     }
 
     fn clamp_cursor(&mut self) {
@@ -247,6 +249,7 @@ enum SidebarAction {
     Preview(PathBuf),
     OpenEditor(PathBuf),
     CopyPath(PathBuf),
+    CdParent,
 }
 
 // --- Output Capture ---
@@ -353,6 +356,25 @@ fn render_sidebar_data(
 }
 
 /// Get the file path for the node at the current cursor position.
+/// Check if the cursor is on the ".." (parent directory) entry.
+fn is_cd_parent_at_cursor(
+    sidebars: &mut SidebarManager,
+    sidebar_state: &SidebarState,
+    ctx: &ComponentContext,
+) -> bool {
+    let data = sidebars.render(SidebarPosition::Left, ctx);
+    let Some(panel) = data.panels.first() else {
+        return false;
+    };
+    let Some(line) = panel.output.lines.get(sidebar_state.cursor_index) else {
+        return false;
+    };
+    let Some(interactive) = line.interactive.as_ref() else {
+        return false;
+    };
+    interactive.click == "cd_parent"
+}
+
 fn get_node_path_at_cursor(
     sidebars: &mut SidebarManager,
     sidebar_state: &SidebarState,
@@ -462,6 +484,9 @@ fn handle_sidebar_key(
             SidebarAction::None
         }
         KeyCode::Enter => {
+            if is_cd_parent_at_cursor(sidebars, sidebar_state, ctx) {
+                return SidebarAction::CdParent;
+            }
             if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
                 if path.is_dir() {
                     sidebars.handle_action(
@@ -1299,6 +1324,9 @@ async fn read_input_line(
                                             child.wait()
                                         });
                                 }
+                            }
+                            SidebarAction::CdParent => {
+                                return Ok(Some("cd ..".to_string()));
                             }
                             SidebarAction::None => {}
                         }
