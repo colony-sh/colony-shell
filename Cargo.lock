@@ -1625,6 +1625,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-history-bin"
+version = "0.1.0"
+dependencies = [
+ "colony-panel",
+ "serde_json",
+]
+
+[[package]]
+name = "colony-jobs-bin"
+version = "0.1.0"
+dependencies = [
+ "colony-panel",
+ "serde_json",
+]
+
+[[package]]
 name = "colony-mcp"
 version = "0.4.1"
 dependencies = [
