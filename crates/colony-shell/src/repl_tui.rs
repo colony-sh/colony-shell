@@ -771,11 +771,15 @@ async fn read_input_line(
             let ev = event::read().map_err(|e| miette::miette!("event read error: {}", e))?;
 
             match ev {
-                Event::Key(key) => {
+                Event::Key(key)
+                    if key.kind == crossterm::event::KeyEventKind::Press =>
+                {
                     // Global: Ctrl+B toggles sidebar (Task 5)
+                    // Match both Ctrl+B representations crossterm may send
                     if matches!(
                         (key.modifiers, key.code),
                         (KeyModifiers::CONTROL, KeyCode::Char('b'))
+                            | (KeyModifiers::NONE, KeyCode::Char('\x02'))
                     ) {
                         sidebar_state.visible = !sidebar_state.visible;
                         sidebars.set_visible(SidebarPosition::Left, sidebar_state.visible);
