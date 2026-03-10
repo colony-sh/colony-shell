@@ -6,8 +6,8 @@ use async_trait::async_trait;
 
 use crate::storage::{ObservationStore, StorageError};
 use crate::types::{
-    AgentChatData, CommandData, ContextUsageData, ErrorData, FileActivityData,
-    Observation, ObservationCategory, SessionTracker,
+    AgentChatData, CommandData, ContextUsageData, ErrorData, FileActivityData, Observation,
+    ObservationCategory, SessionTracker,
 };
 
 // ---------------------------------------------------------------------------
@@ -188,8 +188,12 @@ mod tests {
         observer.observe_command(make_command_data()).await;
         observer.observe_error(make_error_data()).await;
         observer.observe_agent_chat(make_agent_chat_data()).await;
-        observer.observe_file_activity(make_file_activity_data()).await;
-        observer.observe_context_usage(make_context_usage_data()).await;
+        observer
+            .observe_file_activity(make_file_activity_data())
+            .await;
+        observer
+            .observe_context_usage(make_context_usage_data())
+            .await;
 
         assert_eq!(observer.store().count(None).expect("count"), 5);
     }

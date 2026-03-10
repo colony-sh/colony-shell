@@ -175,9 +175,8 @@ impl SessionTracker {
         let slowness = if self.inter_command_times.is_empty() {
             0.0
         } else {
-            let avg: f64 =
-                self.inter_command_times.iter().sum::<u64>() as f64
-                    / self.inter_command_times.len() as f64;
+            let avg: f64 = self.inter_command_times.iter().sum::<u64>() as f64
+                / self.inter_command_times.len() as f64;
             (avg / 30_000.0).min(1.0)
         };
 
@@ -287,7 +286,11 @@ pub fn detect_git_branch() -> Option<String> {
         .filter(|o| o.status.success())
         .and_then(|o| {
             let branch = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if branch.is_empty() { None } else { Some(branch) }
+            if branch.is_empty() {
+                None
+            } else {
+                Some(branch)
+            }
         })
 }
 
