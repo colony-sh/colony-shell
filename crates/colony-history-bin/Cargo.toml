@@ -1,0 +1,12 @@
+[package]
+name = "colony-history-bin"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "history-panel"
+path = "src/main.rs"
+
+[dependencies]
+colony-panel = { path = "../colony-panel" }
+serde_json = { workspace = true }

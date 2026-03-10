@@ -27,6 +27,7 @@ members = [
     "crates/colony-filedetails-bin",
     "crates/colony-jobs-bin",
     "crates/colony-history-bin",
+    "crates/colony-gitstatus-bin",
 ]
 
 [workspace.package]
