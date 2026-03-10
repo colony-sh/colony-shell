@@ -216,6 +216,11 @@ pub enum ProtocolMessage {
         component_id: String,
         approved: bool,
     },
+    /// Mirror suggestion from shell/agent to terminal sidebar
+    MirrorSuggestion {
+        text: String,
+        priority: String, // "info" or "attention"
+    },
 }
 
 /// Full prompt state data sent via OSC 2337 (Prompt=state per spec B.3.11)
@@ -663,6 +668,19 @@ pub fn emit_pane_layout(preset: &str, panes: Option<serde_json::Value>) {
     let msg = ProtocolMessage::PaneLayout {
         preset: preset.to_string(),
         panes,
+    };
+    emit_message(&msg);
+}
+
+/// Emit a mirror suggestion to the terminal sidebar
+///
+/// Suggestions are contextual nudges displayed in the mirror panel.
+/// Priority should be `"info"` for passive suggestions or `"attention"`
+/// for urgent ones.
+pub fn emit_mirror_suggestion(text: &str, priority: &str) {
+    let msg = ProtocolMessage::MirrorSuggestion {
+        text: text.to_string(),
+        priority: priority.to_string(),
     };
     emit_message(&msg);
 }
