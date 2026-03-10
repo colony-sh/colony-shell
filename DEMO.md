@@ -132,16 +132,25 @@ secure load  # load secure env vars
 
 ---
 
-## 4. Flux Reactive System
+## 4. Flux Process Manager
 
-Built-in reactive variables that update automatically:
+Interactive process management with TUI mode, port tracking, and resource monitoring:
 
 ```bash
-# Set a flux variable
-flux set greeting "Hello, $(whoami)"
+# Interactive TUI — browse and kill processes
+flux --tui
 
-# Flux vars are re-evaluated when dependencies change
-flux set prompt_info "$(git branch --show-current 2>/dev/null || echo 'no-git')"
+# Filter by name
+flux --filter node
+
+# Show what's using port 3000
+flux --port 3000
+
+# Kill processes matching a pattern
+flux --filter "zombie" --nuke
+
+# Sort by memory usage
+flux --sort mem --resources
 ```
 
 ---
@@ -190,7 +199,93 @@ Panels declare subscriptions in their `---CONFIG---` block:
 
 ---
 
-## 7. Full Shell Features
+## 7. Goal Tracking
+
+Track tasks and objectives hierarchically, right from the shell:
+
+```bash
+# Add goals
+goal add "Ship v1.0"
+goal add "Write tests" --parent 1
+
+# Track progress
+goal list
+#  1. [pending] Ship v1.0
+#    2. [pending] Write tests
+
+# Update status
+goal complete 2
+goal block 1 --reason "Waiting on API approval"
+
+# See the tree
+goal tree
+```
+
+Goals support statuses (`pending`, `in_progress`, `completed`, `blocked`, `cancelled`), hierarchical nesting, and auto-calculated progress from children.
+
+---
+
+## 8. Extended Channels
+
+Beyond stdin/stdout/stderr, colony provides dedicated file descriptors for structured communication:
+
+| FD | Name | Purpose |
+|----|------|---------|
+| 3 | `stdcontext` | Session context and observations |
+| 4 | `stdllm` | LLM conversation history |
+| 5 | `stdtool` | Tool call logging |
+| 6 | `stddiag` | Diagnostics |
+
+```bash
+# Write structured context
+echo '{"event":"deploy","status":"success"}' >&3
+
+# Read diagnostics from a command
+mycommand 6>/tmp/diag.log
+```
+
+---
+
+## 9. Agent Framework
+
+Multi-provider LLM integration with tool use, conversation persistence, and token budgets:
+
+```bash
+# Agent auto-detects providers from API keys
+export ANTHROPIC_API_KEY=sk-ant-...   # Claude (primary)
+export OPENAI_API_KEY=sk-...          # GPT (fallback)
+# Or use Ollama locally for free
+
+# Manage agent context
+context add "We're building a REST API in Rust"
+context show
+context clear
+```
+
+Features: streaming responses, tool approval workflow, conversation persistence (SQLite), automatic provider fallback with health tracking.
+
+---
+
+## 10. Mirror & Observation Database
+
+Tail and analyze your shell session history with LLM assistance:
+
+```bash
+# Review recent session observations
+mirror
+
+# Observations are logged automatically:
+# - Commands executed
+# - Errors encountered
+# - File changes
+# - Directory navigation
+```
+
+Observations are stored in `~/.colony/reflection/observations.db` (SQLite) for cross-session analysis.
+
+---
+
+## 11. Full Shell Features
 
 Colony is a real shell — not just a TUI wrapper. It supports:
 
@@ -246,7 +341,7 @@ greet() {
 
 ---
 
-## 8. Example: Full Development Setup
+## 12. Example: Full Development Setup
 
 Put this in `~/.colony/init` for a complete dev environment:
 
