@@ -4,3 +4,4 @@ _bmad/
 .claude/commands/bmad/
 **/.fastembed_cache/*.superpowers/
 .superpowers/
+.worktrees/
