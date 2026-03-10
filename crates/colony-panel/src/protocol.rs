@@ -19,9 +19,9 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 // Sentinel constants
 // ---------------------------------------------------------------------------
 
-const SENTINEL_FRAME: &str = "---FRAME---";
-const SENTINEL_CONFIG: &str = "---CONFIG---";
-const SENTINEL_EMIT: &str = "---EMIT---";
+pub const SENTINEL_FRAME: &str = "---FRAME---";
+pub const SENTINEL_CONFIG: &str = "---CONFIG---";
+pub const SENTINEL_EMIT: &str = "---EMIT---";
 
 // ---------------------------------------------------------------------------
 // Error type
