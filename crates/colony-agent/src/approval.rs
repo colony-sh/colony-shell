@@ -114,27 +114,66 @@ impl ApprovalManager {
         }
     }
 
-    /// Request approval via OSC 2337 Widget=approval escape sequence
+    /// Request approval via OSC 2337 Widget=approval escape sequence.
+    ///
+    /// If a `pending_approvals` channel is wired (via `with_approvals`), this
+    /// method blocks until the terminal responds or a 60-second timeout expires.
+    /// Without a channel it falls back to auto-approve with a warning.
     async fn request_osc_approval(
         &self,
         tool_name: &str,
         input: &serde_json::Value,
     ) -> Result<ApprovalResponse, AgentError> {
+        let component_id = uuid::Uuid::new_v4().to_string();
+
         let approval_data = serde_json::json!({
             "tool": tool_name,
             "input": input,
+            "component_id": &component_id,
         });
 
         emit_widget_request("approval", approval_data);
 
-        // In a full implementation, we would wait for the terminal to respond
-        // via a tuple space message or IPC channel. For now, auto-approve
-        // since the terminal integration is still in development.
-        tracing::warn!(
-            "OSC 2337 approval widget emitted for '{}', auto-approving (terminal response not yet wired)",
-            tool_name
-        );
-        Ok(ApprovalResponse::Approved)
+        // If we have the approval channel, wait for the terminal response.
+        let Some(pending) = &self.pending_approvals else {
+            tracing::warn!(
+                "No approval channel — auto-approving '{}'",
+                tool_name
+            );
+            return Ok(ApprovalResponse::Approved);
+        };
+
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut map = pending.lock().await;
+            map.insert(component_id.clone(), tx);
+        }
+
+        match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
+            Ok(Ok(true)) => {
+                tracing::info!("Tool '{}' approved by user", tool_name);
+                Ok(ApprovalResponse::Approved)
+            }
+            Ok(Ok(false)) => {
+                tracing::info!("Tool '{}' denied by user", tool_name);
+                Ok(ApprovalResponse::Denied("denied by user".to_string()))
+            }
+            Ok(Err(_)) => {
+                tracing::warn!("Approval channel closed for '{}'", tool_name);
+                Ok(ApprovalResponse::Denied(
+                    "approval channel closed".to_string(),
+                ))
+            }
+            Err(_) => {
+                // Timeout — clean up the pending entry
+                let mut map = pending.lock().await;
+                map.remove(&component_id);
+                tracing::warn!("Approval timed out for '{}'", tool_name);
+                Ok(ApprovalResponse::Denied(
+                    "approval timed out after 60s".to_string(),
+                ))
+            }
+        }
     }
 
     /// Fallback: request approval via stderr prompt for non-colony terminals
@@ -184,10 +223,13 @@ impl ApprovalManager {
 impl Default for ApprovalManager {
     fn default() -> Self {
         let colony_terminal = Self::detect_colony_terminal();
-        Self::new(ApprovalConfig {
-            auto_approve_patterns: Vec::new(),
-            colony_terminal,
-        })
+        Self {
+            config: ApprovalConfig {
+                auto_approve_patterns: Vec::new(),
+                colony_terminal,
+            },
+            pending_approvals: None,
+        }
     }
 }
 
