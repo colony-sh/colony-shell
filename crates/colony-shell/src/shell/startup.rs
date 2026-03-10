@@ -4,8 +4,8 @@ use colony_expand::{
 };
 use colony_parser::pest_api::parse_statement;
 use colony_parser::Statement;
-use std::path::PathBuf;
 use parking_lot::Mutex;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[allow(dead_code)]

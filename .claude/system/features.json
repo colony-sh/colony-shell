@@ -873,7 +873,7 @@
         "2026-02-10: IMPLEMENTED: Git cache invalidation on .git directory changes",
         "2026-02-10: IMPLEMENTED: Smart file filtering (hidden files, node_modules, target, etc.)",
         "2026-02-10: TESTED: 11 unit tests passing for file_tree module",
-        "2026-02-10: COMPLETE: Full file tree state management and watching"
+        "2026-02-10: COMPLETE: Full file tree state management and watching",
         "2025-01-26: Created colony-filetree crate (4 modules, ~1100 lines)",
         "2025-01-26: FileNode with id, name, path, file_type, expanded, children, depth, extension",
         "2025-01-26: TreeState with scc::HashMap for concurrent access, load/refresh operations",
@@ -931,7 +931,7 @@
       "id": "F039",
       "name": "Heredoc Support",
       "description": "Full POSIX heredoc implementation with content injection into AST. Supports <<EOF (normal), <<-EOF (strip tabs), <<'EOF' (quoted delimiter, no expansion), and all POSIX heredoc features.",
-      "status": "complete",
+      "status": "in_progress",
       "priority": 2,
       "dependencies": [
         "F021",
@@ -1413,6 +1413,259 @@
         "2026-02-10: Supports: @name \"prompt\", @name:tool \"args\", variable expansion, cmd | @agent, @agent | cmd.",
         "2026-02-10: Known: Redirects on agent invocations not yet supported (requires grammar extension).",
         "2026-02-10: COMPLETE: Agent invocation syntax with pipeline integration and full test coverage."
+      ]
+    },
+    {
+      "id": "F060",
+      "name": "Secure Environment Variables (colony-secure)",
+      "description": "Encrypted environment variable storage and retrieval. SecureRegistry for storing sensitive values with encryption at rest. Integrated into shell startup via init_secure_registry(). SecureAccess/SecureAccessResponse protocol messages for terminal-mediated approval.",
+      "status": "complete",
+      "priority": 4,
+      "dependencies": ["F009"],
+      "notes": [
+        "2026-01-25: Created colony-secure crate with encrypted env var storage",
+        "2026-01-25: SecureRegistry with file-backed encrypted storage",
+        "2026-01-25: Added SecureAccess/SecureAccessResponse to OSC 2337 protocol",
+        "2026-01-25: Wired into shell orchestrator via init_secure_registry()",
+        "2026-01-25: secure builtin for managing encrypted variables",
+        "2026-01-25: COMPLETE: End-to-end secure env var support"
+      ]
+    },
+    {
+      "id": "F061",
+      "name": "Colony Reflection (Observation System)",
+      "description": "Telemetry and observation collection system. ReflectionObserver trait with SqliteObserver (standalone), OscObserver (inside colony-nerve), and NoopObserver (fallback). Collects CommandData, ErrorData, AgentChatData, FileActivityData, ContextUsageData. Wired into Executor, Agent, and ChannelManager.",
+      "status": "complete",
+      "priority": 5,
+      "dependencies": [],
+      "notes": [
+        "2026-03-09: Created colony-reflection crate with observer pattern",
+        "2026-03-09: ReflectionObserver trait: observe_command, observe_error, observe_agent_chat, observe_file_activity, observe_context_usage",
+        "2026-03-09: SqliteObserver for standalone mode (~/.colony/reflection.db)",
+        "2026-03-09: OscObserver for colony-nerve terminal mode (forwards via OSC 2337)",
+        "2026-03-09: NoopObserver as fallback when initialization fails",
+        "2026-03-09: Wired into Executor (command + error observations)",
+        "2026-03-09: Wired into Agent (agent chat observations)",
+        "2026-03-09: Wired into ChannelManager (channel observations)",
+        "2026-03-09: Shell orchestrator auto-detects mode (COLONY_NERVE_TERMINAL env)",
+        "2026-03-09: COMPLETE: Full observation pipeline"
+      ]
+    },
+    {
+      "id": "F062",
+      "name": "Event Worker (Tuple Space Rule Engine)",
+      "description": "Event worker that evaluates rules against tuple space events. Rules define conditions and actions (notify, log, run, webhook, refresh, plugin_action). Receives EventRules via OSC 2337 from colony-nerve terminal.",
+      "status": "complete",
+      "priority": 5,
+      "dependencies": ["F010", "F009"],
+      "notes": [
+        "2026-03-09: Created event_worker.rs in colony-shell",
+        "2026-03-09: EventRules protocol message added to colony-protocol",
+        "2026-03-09: Rule evaluation with structured conditions and actions",
+        "2026-03-09: Integration with colony-nerve terminal",
+        "2026-03-09: COMPLETE: Event-driven rule processing"
+      ]
+    },
+    {
+      "id": "F063",
+      "name": "Widget Server & IPC",
+      "description": "Unix socket IPC server for interactive widget communication between shell and terminal. WidgetServer manages socket lifecycle. WidgetHandler routes WidgetRequest/WidgetAction messages via OSC 2337. Supports branch picker and extensible widget types.",
+      "status": "complete",
+      "priority": 5,
+      "dependencies": ["F009"],
+      "notes": [
+        "2026-02-09: Created widget_server.rs with Unix socket IPC",
+        "2026-02-09: Created widget_handler.rs for routing widget messages",
+        "2026-02-09: WidgetRequest/WidgetData/WidgetAction/WidgetResult protocol messages",
+        "2026-02-09: COMPLETE: Widget IPC infrastructure"
+      ]
+    },
+    {
+      "id": "F064",
+      "name": "Branch Picker Widget",
+      "description": "Interactive git branch selection widget. gather_branch_data() collects local/remote branches with tracking info. switch_branch(), create_branch(), checkout_remote() operations. Integrated via widget handler and OSC 2337.",
+      "status": "complete",
+      "priority": 5,
+      "dependencies": ["F063"],
+      "notes": [
+        "2026-02-09: Created widgets/branch_picker.rs in colony-ui-core",
+        "2026-02-09: BranchPickerData with LocalBranch and RemoteBranch types",
+        "2026-02-09: gather_branch_data() parses git branch output",
+        "2026-02-09: switch_branch/create_branch/checkout_remote operations",
+        "2026-02-09: Integrated into widget_handler for OSC 2337 delivery",
+        "2026-02-09: COMPLETE: Interactive branch picker widget"
+      ]
+    },
+    {
+      "id": "F065",
+      "name": "Interactive Prompt Widgets Framework",
+      "description": "General framework for interactive prompt widgets rendered by terminal. Widget lifecycle: shell emits widget request via OSC 2337, terminal renders UI, user interacts, result returned to shell. Extends beyond branch picker to support file picker, tool approval, and custom widgets.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F063", "F064"],
+      "notes": [
+        "2025-12-29: Design document created (docs/plans/2025-12-29-interactive-prompt-widgets-design.md)",
+        "2026-02-09: Branch picker widget implemented as first concrete widget",
+        "TODO: Generalize widget framework beyond branch picker",
+        "TODO: File picker widget",
+        "TODO: Tool approval widget with rich context display"
+      ]
+    },
+    {
+      "id": "F066",
+      "name": "TUI Vim Editing Operators",
+      "description": "Complete vim-style editing in TUI: delete operators (d, dd, D), yank/paste (y, p, P), undo/redo (u, Ctrl+r), and search (/pattern). Currently stubbed in app.rs action handlers.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": ["F053"],
+      "notes": [
+        "2026-01-26: Action enums defined (DeletePending, YankPending, PasteAfter, PasteBefore, Undo, Redo)",
+        "2026-01-26: Keybindings mapped but handlers return early with no-op",
+        "TODO: Implement delete with motion support (dw, d$, dd)",
+        "TODO: Implement yank register and paste",
+        "TODO: Implement undo/redo with edit history stack",
+        "TODO: Implement / search with highlighting"
+      ]
+    },
+    {
+      "id": "F067",
+      "name": "Job Control Signals (fg/bg completion)",
+      "description": "Complete job control with SIGCONT for suspended processes. fg builtin resumes stopped job in foreground with terminal control. bg builtin resumes stopped job in background. Currently fg/bg are stubs that validate but don't send signals.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": ["F008"],
+      "notes": [
+        "2025-12-17: Job table infrastructure complete (F008)",
+        "2025-12-17: fg/bg builtins exist but return 'not implemented' for actual resumption",
+        "TODO: Send SIGCONT to stopped process groups",
+        "TODO: Terminal control transfer for fg (tcsetpgrp)",
+        "TODO: Wait for foreground job completion",
+        "TODO: Background job monitoring via SIGCHLD"
+      ]
+    },
+    {
+      "id": "F068",
+      "name": "Agent Provider Streaming",
+      "description": "Implement proper streaming responses for OpenAI and Ollama providers. Currently responses are collected in full before returning. Need SSE parsing for OpenAI and NDJSON parsing for Ollama streaming endpoints.",
+      "status": "new",
+      "priority": 4,
+      "dependencies": ["F014"],
+      "notes": [
+        "2025-12-17: Provider trait defined with stream_chat method",
+        "2025-12-17: Anthropic streaming works via claude-sdk",
+        "TODO: OpenAI SSE streaming implementation",
+        "TODO: Ollama NDJSON streaming implementation",
+        "TODO: Handle streaming tool use responses"
+      ]
+    },
+    {
+      "id": "F069",
+      "name": "Dynamic Variables (RANDOM, SECONDS, LINENO, etc.)",
+      "description": "Bash-compatible dynamic shell variables that return different values on each access. RANDOM (0-32767), SECONDS (elapsed time), LINENO (current line), BASHPID (current subshell PID), EPOCHSECONDS, EPOCHREALTIME, SRANDOM.",
+      "status": "complete",
+      "priority": 3,
+      "dependencies": ["F007"],
+      "notes": [
+        "2025-12-23: Design document created (docs/plans/2025-12-23-dynamic-variables.md)",
+        "Completed: All 7 dynamic vars implemented in colony-expand/src/context.rs",
+        "Completed: RANDOM (0-32767, seedable), SRANDOM (32-bit crypto), SECONDS (assignable reset), EPOCHSECONDS, EPOCHREALTIME (microsecond), BASHPID, LINENO",
+        "Completed: 28 BATS tests (25 pass, 3 skipped by design) in tests/scripts/bash-compat/34_dynamic_vars.bats"
+      ]
+    },
+    {
+      "id": "F070",
+      "name": "Export Functions (export -f)",
+      "description": "Bash-compatible function export via environment variables. export -f serializes function body into BASH_FUNC_name%% env vars. Child processes can inherit shell functions.",
+      "status": "new",
+      "priority": 3,
+      "dependencies": ["F007"],
+      "notes": [
+        "2025-12-23: Design document created (docs/plans/2025-12-23-export-functions.md)"
+      ]
+    },
+    {
+      "id": "F071",
+      "name": "Shell Script Debugger",
+      "description": "Comprehensive debugging capabilities for shell scripts: breakpoints, stepping (step into/over/out), variable inspection, call stack visualization. Integration with TUI for interactive debugging sessions.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F021", "F053"],
+      "notes": [
+        "2025-12-24: Design document created (docs/plans/2025-12-24-debugger-support.md)",
+        "Status: paused/design phase"
+      ]
+    },
+    {
+      "id": "F072",
+      "name": "WASM Web Playground",
+      "description": "Browser-based Colony Shell playground compiled to WebAssembly. Interactive tutorial environment, shareable scripts, no install required. Uses wasm-bindgen for Rust→WASM compilation.",
+      "status": "new",
+      "priority": 7,
+      "dependencies": ["F021"],
+      "notes": [
+        "2025-12-24: Design document created (docs/plans/2025-12-24-wasm-web-playground.md)"
+      ]
+    },
+    {
+      "id": "F073",
+      "name": "Programmable TUI Widgets",
+      "description": "Per-directory TUI widgets defined in .colonyrc or widget definition files. Render in sidepanel with contextual info. Built-in widgets: Git (branch/status/stash), Project (package.json/Cargo.toml), Docker, and custom user-defined widgets.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F052", "F053", "F020"],
+      "notes": [
+        "2025-12-24: Design document created (docs/plans/2025-12-24-programmable-tui-widgets.md)"
+      ]
+    },
+    {
+      "id": "F074",
+      "name": "Command Recommendation Engine",
+      "description": "Real-time command recommendation system with inline ghost text suggestions, contextual help, and AI-powered recommendations. History-based, context-aware, and directory-sensitive suggestions.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F014", "F013"],
+      "notes": [
+        "Design document: docs/design/COMMAND_RECOMMENDATIONS.md",
+        "Ghost completion infrastructure exists in colony-tui (F053)",
+        "TODO: AI-powered suggestions beyond history matching"
+      ]
+    },
+    {
+      "id": "F075",
+      "name": "Context Management System",
+      "description": "First-class AI interaction context management. Context windows, automatic summarization, context sharing between agents, context persistence across sessions. Builds on extended channels (fd 3) for context tracking.",
+      "status": "new",
+      "priority": 5,
+      "dependencies": ["F024", "F013"],
+      "notes": [
+        "Spec: docs/spec/16-context.md",
+        "Context channel (fd 3) infrastructure exists via F024",
+        "TODO: Context window management",
+        "TODO: Automatic summarization",
+        "TODO: Cross-agent context sharing"
+      ]
+    },
+    {
+      "id": "F076",
+      "name": "Personal App Platform",
+      "description": "Colony as a personal application platform. Deploy and manage local services, background tasks, and persistent agents. Integration with Docker, process management, and service discovery.",
+      "status": "new",
+      "priority": 7,
+      "dependencies": ["F054"],
+      "notes": [
+        "2025-12-27: Design document created (docs/plans/2025-12-27-personal-app-platform-design.md)"
+      ]
+    },
+    {
+      "id": "F077",
+      "name": "Type System (Gradual Typing)",
+      "description": "Colony gradual type system. Optional type annotations for variables, function parameters, and return values. Type inference for simple cases. Type checking at parse time with runtime validation. Builds on proc definitions.",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F057", "F021"],
+      "notes": [
+        "Spec: docs/spec/3-type-system.md",
+        "Proc definitions (F057) provide the function syntax for typed parameters"
       ]
     }
   ]

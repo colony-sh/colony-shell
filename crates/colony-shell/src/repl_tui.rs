@@ -519,13 +519,8 @@ pub(crate) async fn run_repl_tui(
             Ok(()) => {
                 let duration_ms = cmd_start.elapsed().as_millis() as u64;
                 prompt_manager.on_event("cmd_complete");
-                display_tuple_activity(
-                    &mut executor,
-                    &mut prompt_manager,
-                    &cwd_handle,
-                    &mut agent,
-                )
-                .await;
+                display_tuple_activity(&mut executor, &mut prompt_manager, &cwd_handle, &mut agent)
+                    .await;
 
                 if use_osc {
                     emit_prompt_ready(Some(duration_ms));
@@ -935,11 +930,11 @@ async fn read_input_line(
                         EditorAction::Complete(prefix) => {
                             let builtins = vec![
                                 "cd", "pwd", "echo", "export", "unset", "source", "exit",
-                                "history", "jobs", "fg", "bg", "alias", "unalias", "set",
-                                "shift", "test", "true", "false", "read", "printf", "type",
-                                "hash", "ulimit", "umask", "wait", "trap", "return", "break",
-                                "continue", "eval", "exec", "command", "builtin", "local",
-                                "declare", "readonly", "getopts", "times", "llm", "path",
+                                "history", "jobs", "fg", "bg", "alias", "unalias", "set", "shift",
+                                "test", "true", "false", "read", "printf", "type", "hash",
+                                "ulimit", "umask", "wait", "trap", "return", "break", "continue",
+                                "eval", "exec", "command", "builtin", "local", "declare",
+                                "readonly", "getopts", "times", "llm", "path",
                             ]
                             .into_iter()
                             .map(String::from)
@@ -948,8 +943,7 @@ async fn read_input_line(
                             let history_entries: Vec<String> =
                                 history.entries().iter().cloned().collect();
 
-                            let comp_ctx =
-                                CompletionContext::from_env(builtins, history_entries);
+                            let comp_ctx = CompletionContext::from_env(builtins, history_entries);
                             let items = CompletionEngine::complete(&prefix, &comp_ctx);
 
                             if let Some(first) = items.first() {
