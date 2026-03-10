@@ -16,10 +16,17 @@ use tokio::{pin, select, signal};
 use tracing_subscriber::EnvFilter;
 
 fn create_observer() -> Arc<dyn ReflectionObserver> {
+    // Inside colony-nerve terminal widget: forward via OSC 2337
+    if std::env::var("COLONY_NERVE_TERMINAL").is_ok() {
+        tracing::info!("Reflection observer: OSC mode (inside colony-nerve)");
+        return Arc::new(colony_reflection::OscObserver::new());
+    }
+
+    // Standalone: use local SQLite
     let session_id = std::process::id().to_string();
     match colony_reflection::SqliteObserver::new(session_id) {
         Ok(observer) => {
-            tracing::info!("Reflection observer initialized");
+            tracing::info!("Reflection observer: SQLite mode (standalone)");
             Arc::new(observer)
         }
         Err(e) => {
