@@ -542,9 +542,7 @@ fn handle_sidebar_key(
         }
         KeyCode::Char('o') => {
             if let Some(path) = get_node_path_at_cursor(sidebars, sidebar_state, ctx) {
-                if !path.is_dir() {
-                    return SidebarAction::OpenEditor(path);
-                }
+                return SidebarAction::OpenEditor(path);
             }
             SidebarAction::None
         }
