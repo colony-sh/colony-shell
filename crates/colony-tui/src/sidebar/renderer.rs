@@ -16,7 +16,15 @@ pub struct SidebarRenderer;
 
 impl SidebarRenderer {
     /// Render a complete sidebar
-    pub fn render(frame: &mut Frame, area: Rect, data: &SidebarData, focused: bool) {
+    ///
+    /// `selected_index` highlights the line at that index when focused.
+    pub fn render(
+        frame: &mut Frame,
+        area: Rect,
+        data: &SidebarData,
+        focused: bool,
+        selected_index: Option<usize>,
+    ) {
         if !data.visible || area.width == 0 {
             return;
         }
@@ -37,7 +45,7 @@ impl SidebarRenderer {
 
         // Render panels
         let mut y_offset = 0u16;
-        for panel in &data.panels {
+        for (panel_idx, panel) in data.panels.iter().enumerate() {
             if y_offset >= inner.height {
                 break;
             }
@@ -50,7 +58,12 @@ impl SidebarRenderer {
                 height: panel_height,
             };
 
-            Self::render_panel(frame, panel_area, panel);
+            let panel_selected = if panel_idx == 0 && focused {
+                selected_index
+            } else {
+                None
+            };
+            Self::render_panel(frame, panel_area, panel, panel_selected);
             y_offset += panel_height;
         }
     }
@@ -66,7 +79,12 @@ impl SidebarRenderer {
     }
 
     /// Render a single panel
-    fn render_panel(frame: &mut Frame, area: Rect, panel: &SidebarPanelData) {
+    fn render_panel(
+        frame: &mut Frame,
+        area: Rect,
+        panel: &SidebarPanelData,
+        selected_index: Option<usize>,
+    ) {
         if area.height == 0 {
             return;
         }
@@ -100,16 +118,25 @@ impl SidebarRenderer {
                 height: area.height - 1,
             };
 
-            Self::render_panel_content(frame, content_area, &panel.output);
+            Self::render_panel_content(frame, content_area, &panel.output, selected_index);
         }
     }
 
     /// Render panel content lines
-    fn render_panel_content(frame: &mut Frame, area: Rect, output: &SidebarOutput) {
+    fn render_panel_content(
+        frame: &mut Frame,
+        area: Rect,
+        output: &SidebarOutput,
+        selected_index: Option<usize>,
+    ) {
         let lines: Vec<Line> = output
             .lines
             .iter()
-            .map(|line| Self::component_line_to_ratatui(line, area.width as usize))
+            .enumerate()
+            .map(|(i, line)| {
+                let highlighted = selected_index == Some(i);
+                Self::component_line_to_ratatui(line, area.width as usize, highlighted)
+            })
             .collect();
 
         let paragraph = Paragraph::new(lines);
@@ -117,7 +144,13 @@ impl SidebarRenderer {
     }
 
     /// Convert a ComponentLine to a ratatui Line
-    fn component_line_to_ratatui(line: &ComponentLine, max_width: usize) -> Line<'static> {
+    ///
+    /// When `highlighted` is true, all spans get the REVERSED modifier for cursor visibility.
+    fn component_line_to_ratatui(
+        line: &ComponentLine,
+        max_width: usize,
+        highlighted: bool,
+    ) -> Line<'static> {
         let mut spans = Vec::new();
 
         // Indentation
@@ -173,7 +206,21 @@ impl SidebarRenderer {
             }
 
             truncated.push(Span::styled("...", Style::default().fg(Color::DarkGray)));
+            if highlighted {
+                truncated = truncated
+                    .into_iter()
+                    .map(|s| Span::styled(s.content, s.style.add_modifier(Modifier::REVERSED)))
+                    .collect();
+            }
             return Line::from(truncated);
+        }
+
+        if highlighted {
+            let spans = spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, s.style.add_modifier(Modifier::REVERSED)))
+                .collect::<Vec<_>>();
+            return Line::from(spans);
         }
 
         Line::from(spans)
@@ -234,15 +281,39 @@ mod tests {
     #[test]
     fn test_component_line_to_ratatui() {
         let line = ComponentLine::new(vec![StyledSpan::plain("hello")]);
-        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80);
+        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80, false);
         assert!(!ratatui_line.spans.is_empty());
     }
 
     #[test]
     fn test_component_line_with_indent() {
         let line = ComponentLine::new(vec![StyledSpan::plain("indented")]).with_indent(2);
-        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80);
+        let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80, false);
         // Should have indent + content
         assert!(ratatui_line.spans.len() >= 1);
+    }
+
+    #[test]
+    fn test_component_line_highlight() {
+        let line = ComponentLine::new(vec![StyledSpan::plain("selected")]);
+        let normal = SidebarRenderer::component_line_to_ratatui(&line, 80, false);
+        let highlighted = SidebarRenderer::component_line_to_ratatui(&line, 80, true);
+
+        // Highlighted line should have REVERSED modifier
+        let has_reverse = highlighted
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::REVERSED));
+        assert!(has_reverse, "highlighted line should have REVERSED modifier");
+
+        // Normal line should not
+        let has_reverse_normal = normal
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::REVERSED));
+        assert!(
+            !has_reverse_normal,
+            "normal line should not have REVERSED modifier"
+        );
     }
 }
