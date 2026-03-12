@@ -1,11 +1,11 @@
 {
   "command": "resolve",
   "patterns": [
-    "test_coverage::crates/colony-agent/src/approval.rs"
+    "dupes::crates/colony-ui-core/src/sidebar/panels/file_tree.rs::test_context::crates/colony-ui-core/src/sidebar/panels/git_files.rs::test_context"
   ],
   "status": "fixed",
   "resolved": [
-    "test_coverage::crates/colony-agent/src/approval.rs::untested_module"
+    "dupes::crates/colony-ui-core/src/sidebar/panels/file_tree.rs::test_context::crates/colony-ui-core/src/sidebar/panels/git_files.rs::test_context"
   ],
   "count": 1,
   "next_command": "desloppify next",
@@ -13,11 +13,11 @@
   "objective_score": 69.4,
   "strict_score": 69.4,
   "verified_strict_score": 69.2,
-  "prev_overall_score": 69.4,
+  "prev_overall_score": 69.5,
   "prev_objective_score": 69.4,
   "prev_strict_score": 69.4,
   "prev_verified_strict_score": 69.2,
-  "attestation": "I have actually verified that approval.rs already has 10 tests in its cfg(test) module. colony-agent has 90 passing tests. I am not gaming the score by resolving without fixing.",
+  "attestation": "I have actually Both file_tree and git_files test_context functions now use ComponentContext with ..Default::default(), eliminating exact duplicate boilerplate and I am not gaming the score.",
   "narrative": {
     "phase": "stagnation",
     "headline": "Score plateaued at 69.4 for 5 scans. Test health (0.8%) is where the breakthrough is. 1 wontfix items may also be worth revisiting. (30 review issues \u2014 run `desloppify show review --status open`)",
@@ -58,7 +58,7 @@
         },
         {
           "name": "Duplication",
-          "strict": 99.0,
+          "strict": 99.1,
           "stuck_scans": 5
         },
         {
@@ -70,17 +70,6 @@
     },
     "actions": [
       {
-        "type": "auto_fix",
-        "detector": "clippy_warning",
-        "count": 138,
-        "description": "138 clippy_warning issues \u2014 run `desloppify autofix clippy-warning --dry-run` to preview, then apply",
-        "command": "desloppify autofix clippy-warning --dry-run",
-        "impact": 0.0,
-        "dimension": "Code quality",
-        "priority": 1,
-        "lane": "cleanup"
-      },
-      {
         "type": "reorganize",
         "detector": "orphaned",
         "count": 281,
@@ -88,7 +77,7 @@
         "command": "desloppify show orphaned --status open",
         "impact": 0.0,
         "dimension": "Code quality",
-        "priority": 2,
+        "priority": 1,
         "lane": "restructure"
       },
       {
@@ -99,7 +88,7 @@
         "command": "desloppify show flat_dirs --status open",
         "impact": 0.0,
         "dimension": "Code quality",
-        "priority": 3,
+        "priority": 2,
         "lane": "restructure"
       },
       {
@@ -110,18 +99,18 @@
         "command": "desloppify show structural --status open",
         "impact": 0.0,
         "dimension": "File health",
-        "priority": 4,
+        "priority": 3,
         "lane": "refactor_0"
       },
       {
         "type": "refactor",
         "detector": "dupes",
-        "count": 6,
-        "description": "6 dupes issues \u2014 extract shared utility or consolidate duplicates",
+        "count": 2,
+        "description": "2 dupes issues \u2014 extract shared utility or consolidate duplicates",
         "command": "desloppify show dupes --status open",
         "impact": 0.0,
         "dimension": "Duplication",
-        "priority": 5,
+        "priority": 4,
         "lane": "refactor_0"
       },
       {
@@ -132,7 +121,7 @@
         "command": "desloppify show test_coverage --status open",
         "impact": 0.0,
         "dimension": "Test health",
-        "priority": 6,
+        "priority": 5,
         "lane": "test_coverage"
       },
       {
@@ -143,7 +132,7 @@
         "command": "desloppify show signature --status open",
         "impact": 0.0,
         "dimension": "Unknown",
-        "priority": 7,
+        "priority": 6,
         "lane": "refactor_0"
       },
       {
@@ -154,7 +143,7 @@
         "command": "desloppify show responsibility_cohesion --status open",
         "impact": 0.0,
         "dimension": "Code quality",
-        "priority": 8,
+        "priority": 7,
         "lane": "refactor_0"
       },
       {
@@ -165,7 +154,7 @@
         "command": "desloppify show boilerplate_duplication --status open",
         "impact": 0.0,
         "dimension": "Duplication",
-        "priority": 9,
+        "priority": 8,
         "lane": "refactor_0"
       },
       {
@@ -176,65 +165,23 @@
         "command": "desloppify show review --status open",
         "impact": 0.0,
         "dimension": "Unknown",
-        "priority": 10,
+        "priority": 9,
         "lane": "refactor_1"
-      },
-      {
-        "type": "manual_fix",
-        "detector": "unused",
-        "count": 948,
-        "description": "948 unused issues \u2014 inspect with `desloppify next` and fix manually",
-        "command": "desloppify show unused --status open",
-        "impact": 0.0,
-        "dimension": "Code quality",
-        "priority": 11,
-        "lane": "refactor_0"
-      },
-      {
-        "type": "manual_fix",
-        "detector": "stale_exclude",
-        "count": 2,
-        "description": "2 stale_exclude issues \u2014 remove stale exclusion or verify it's still needed",
-        "command": "desloppify show stale_exclude --status open",
-        "impact": 0.0,
-        "dimension": "Code quality",
-        "priority": 12,
-        "lane": "refactor_2"
-      },
-      {
-        "type": "manual_fix",
-        "detector": "cargo_error",
-        "count": 15,
-        "description": "15 cargo_error issues \u2014 review and fix cargo check issues",
-        "command": "desloppify show cargo_error --status open",
-        "impact": 0.0,
-        "dimension": "Code quality",
-        "priority": 13,
-        "lane": "refactor_3"
       }
     ],
     "strategy": {
       "fixer_leverage": {
-        "auto_fixable_count": 138,
-        "total_count": 1927,
-        "coverage": 0.072,
+        "auto_fixable_count": 0,
+        "total_count": 820,
+        "coverage": 0.0,
         "impact_ratio": 0.0,
         "recommendation": "none"
       },
       "lanes": {
-        "cleanup": {
-          "actions": [
-            1
-          ],
-          "file_count": 46,
-          "total_impact": 0.0,
-          "automation": "full",
-          "run_first": true
-        },
         "restructure": {
           "actions": [
-            2,
-            3
+            1,
+            2
           ],
           "file_count": 283,
           "total_impact": 0.0,
@@ -243,48 +190,29 @@
         },
         "refactor_0": {
           "actions": [
+            3,
             4,
-            5,
+            6,
             7,
-            8,
-            9,
-            11
+            8
           ],
-          "file_count": 275,
+          "file_count": 104,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
         },
         "refactor_1": {
           "actions": [
-            10
+            9
           ],
           "file_count": 1,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
         },
-        "refactor_2": {
-          "actions": [
-            12
-          ],
-          "file_count": 2,
-          "total_impact": 0.0,
-          "automation": "manual",
-          "run_first": false
-        },
-        "refactor_3": {
-          "actions": [
-            13
-          ],
-          "file_count": 8,
-          "total_impact": 0.0,
-          "automation": "manual",
-          "run_first": false
-        },
         "test_coverage": {
           "actions": [
-            6
+            5
           ],
           "file_count": 279,
           "total_impact": 0.0,
@@ -293,17 +221,10 @@
         }
       },
       "can_parallelize": true,
-      "hint": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 30 issue(s) \u2014 `desloppify show review --status open`."
+      "hint": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 30 issue(s) \u2014 `desloppify show review --status open`."
     },
     "tools": {
-      "fixers": [
-        {
-          "name": "clippy-warning",
-          "detector": "clippy_warning",
-          "open_count": 138,
-          "command": "desloppify autofix clippy-warning --dry-run"
-        }
-      ],
+      "fixers": [],
       "move": {
         "available": true,
         "relevant": true,
@@ -330,10 +251,10 @@
     },
     "milestone": null,
     "primary_action": {
-      "command": "desloppify autofix clippy-warning --dry-run",
-      "description": "138 clippy_warning issues \u2014 run `desloppify autofix clippy-warning --dry-run` to preview, then apply"
+      "command": "desloppify show orphaned --status open",
+      "description": "281 orphaned issues \u2014 delete dead files or relocate with `desloppify move`"
     },
-    "why_now": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 30 issue(s) \u2014 `desloppify show review --status open`.",
+    "why_now": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 30 issue(s) \u2014 `desloppify show review --status open`.",
     "verification_step": {
       "command": "desloppify scan",
       "reason": "revalidate after changes"
