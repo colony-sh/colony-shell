@@ -85,7 +85,6 @@ nix = { workspace = true }
 # For tutorial mode
 serde = { workspace = true }
 serde_json = { workspace = true }
-term_size = "0.3"
 thiserror.workspace = true
 ratatui = "0.29"
 crossterm = "0.28"

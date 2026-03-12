@@ -46,9 +46,6 @@ pub enum McpError {
     #[error("codegen failed for server '{server}': {message}")]
     CodegenFailed { server: String, message: String },
 
-    #[error("template error: {0}")]
-    TemplateError(String),
-
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

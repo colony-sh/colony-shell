@@ -12,10 +12,10 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1", features = ["v4"] }
+chrono.workspace = true
+uuid.workspace = true
 async-trait = "0.1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite.workspace = true
 dirs.workspace = true
 
 [dev-dependencies]

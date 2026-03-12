@@ -55,7 +55,6 @@ nix = { version = "0.28", features = ["process", "signal", "term", "poll", "user
 
 # Signal handling
 signal-hook = "0.3"
-signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
 
 # Concurrent collections
 scc = "2.0"
@@ -67,7 +66,6 @@ ipc-channel = "0.18"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rmp-serde = "1.1"
 
 # Async utilities
 futures = "0.3"
@@ -86,6 +84,18 @@ lancedb = "0.17"
 fastembed = "4"
 arrow-array = "53"
 arrow-schema = "53"
+
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID generation
+uuid = { version = "1.6", features = ["v4"] }
+
+# SQLite
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# File system watching
+notify = { version = "6.1", default-features = false, features = ["macos_fsevent"] }
 
 # Directory utilities
 dirs = "5.0"

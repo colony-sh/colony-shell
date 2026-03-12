@@ -19,8 +19,8 @@ fastembed.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 
-uuid = { version = "1.6", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
+uuid.workspace = true
+chrono.workspace = true
 futures.workspace = true
 dirs.workspace = true
 

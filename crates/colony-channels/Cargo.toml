@@ -14,8 +14,8 @@ thiserror.workspace = true
 parking_lot.workspace = true
 tokio.workspace = true
 nix.workspace = true
-uuid = { version = "1.10", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
+uuid.workspace = true
+chrono.workspace = true
 colony-reflection = { path = "../colony-reflection" }
 
 [dev-dependencies]

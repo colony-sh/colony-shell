@@ -19,7 +19,7 @@ futures.workspace = true
 async-trait = "0.1"
 toml = "0.8"
 dirs.workspace = true
-uuid = { version = "1.10", features = ["v4"] }
+uuid.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

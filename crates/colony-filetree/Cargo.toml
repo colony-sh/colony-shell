@@ -10,7 +10,7 @@ description = "File tree state management and watching for Colony Shell"
 
 [dependencies]
 # File system watching
-notify = { version = "6.1", default-features = false, features = ["macos_fsevent"] }
+notify.workspace = true
 
 # Git integration
 git2 = "0.19"

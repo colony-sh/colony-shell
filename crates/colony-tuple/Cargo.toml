@@ -13,12 +13,12 @@ parking_lot.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-uuid = { version = "1.10", features = ["v4"] }
+uuid.workspace = true
 ipc-channel = "0.18"
-chrono = { version = "0.4", features = ["serde"] }
+chrono.workspace = true
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -1,38 +1,38 @@
 {
   "command": "resolve",
   "patterns": [
-    "review::.::holistic::convention_outlier::filetree_bin_wrong_subscription_key"
+    "review::.::holistic::dependency_health::dep_tera_overkill"
   ],
   "status": "fixed",
   "resolved": [
-    "review::.::holistic::convention_outlier::filetree_bin_wrong_subscription_key"
+    "review::.::holistic::dependency_health::dep_tera_overkill"
   ],
   "count": 1,
   "next_command": "desloppify next",
   "overall_score": 69.4,
-  "objective_score": 69.3,
+  "objective_score": 69.2,
   "strict_score": 69.4,
-  "verified_strict_score": 69.3,
+  "verified_strict_score": 69.2,
   "prev_overall_score": 69.4,
-  "prev_objective_score": 69.3,
+  "prev_objective_score": 69.2,
   "prev_strict_score": 69.4,
-  "prev_verified_strict_score": 69.3,
-  "attestation": "I have actually Already fixed: colony-filetree-bin now subscribes to 'dir_change' (main.rs:24,63,65) instead of 'cwd_change'. and I am not gaming the score.",
+  "prev_verified_strict_score": 69.2,
+  "attestation": "I have actually Replaced tera template engine with direct string formatting via std::fmt::Write. Removed tera dependency from colony-mcp/Cargo.toml and removed unused TemplateError variant. All 11 tests pass. Eliminates a heavy transitive dependency tree (pest, globwalk, unic-segment, etc.). and I am not gaming the score.",
   "narrative": {
-    "phase": "early_momentum",
-    "headline": "Score 69.4/100 with 1913 issues open. Keep the momentum going. (69 review issues \u2014 run `desloppify show review --status open`)",
+    "phase": "stagnation",
+    "headline": "Score plateaued at 69.4 for 5 scans. Test health (0.0%) is where the breakthrough is. 1 wontfix items may also be worth revisiting. (60 review issues \u2014 run `desloppify show review --status open`)",
     "dimensions": {
       "lowest_dimensions": [
         {
           "name": "Test health",
           "strict": 0.0,
-          "failing": 283,
+          "failing": 281,
           "impact": 0.0
         },
         {
           "name": "Code quality",
-          "strict": 47.8,
-          "failing": 288,
+          "strict": 47.5,
+          "failing": 286,
           "impact": 0.0
         },
         {
@@ -49,22 +49,22 @@
         {
           "name": "Security",
           "strict": 100.0,
-          "stuck_scans": 4
+          "stuck_scans": 5
         },
         {
           "name": "File health",
-          "strict": 84.4,
-          "stuck_scans": 4
+          "strict": 84.3,
+          "stuck_scans": 5
         },
         {
           "name": "Duplication",
           "strict": 99.0,
-          "stuck_scans": 4
+          "stuck_scans": 5
         },
         {
           "name": "Test health",
           "strict": 0.0,
-          "stuck_scans": 4
+          "stuck_scans": 5
         }
       ]
     },
@@ -83,8 +83,8 @@
       {
         "type": "reorganize",
         "detector": "orphaned",
-        "count": 283,
-        "description": "283 orphaned issues \u2014 delete dead files or relocate with `desloppify move`",
+        "count": 281,
+        "description": "281 orphaned issues \u2014 delete dead files or relocate with `desloppify move`",
         "command": "desloppify show orphaned --status open",
         "impact": 0.0,
         "dimension": "Code quality",
@@ -127,8 +127,8 @@
       {
         "type": "refactor",
         "detector": "test_coverage",
-        "count": 283,
-        "description": "283 test_coverage issues \u2014 add tests for untested production modules \u2014 prioritize by import count",
+        "count": 281,
+        "description": "281 test_coverage issues \u2014 add tests for untested production modules \u2014 prioritize by import count",
         "command": "desloppify show test_coverage --status open",
         "impact": 0.0,
         "dimension": "Test health",
@@ -160,8 +160,8 @@
       {
         "type": "refactor",
         "detector": "boilerplate_duplication",
-        "count": 60,
-        "description": "60 boilerplate_duplication issues \u2014 extract shared boilerplate into reusable helpers or base classes",
+        "count": 59,
+        "description": "59 boilerplate_duplication issues \u2014 extract shared boilerplate into reusable helpers or base classes",
         "command": "desloppify show boilerplate_duplication --status open",
         "impact": 0.0,
         "dimension": "Duplication",
@@ -171,8 +171,8 @@
       {
         "type": "refactor",
         "detector": "review",
-        "count": 69,
-        "description": "69 review issues need investigation \u2014 run `desloppify show review --status open` to see them",
+        "count": 60,
+        "description": "60 review issues need investigation \u2014 run `desloppify show review --status open` to see them",
         "command": "desloppify show review --status open",
         "impact": 0.0,
         "dimension": "Unknown",
@@ -216,8 +216,8 @@
     "strategy": {
       "fixer_leverage": {
         "auto_fixable_count": 138,
-        "total_count": 2051,
-        "coverage": 0.067,
+        "total_count": 2019,
+        "coverage": 0.068,
         "impact_ratio": 0.0,
         "recommendation": "none"
       },
@@ -236,7 +236,7 @@
             2,
             3
           ],
-          "file_count": 285,
+          "file_count": 283,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
@@ -286,14 +286,14 @@
           "actions": [
             6
           ],
-          "file_count": 283,
+          "file_count": 281,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
         }
       },
       "can_parallelize": true,
-      "hint": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 69 issue(s) \u2014 `desloppify show review --status open`."
+      "hint": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 60 issue(s) \u2014 `desloppify show review --status open`."
     },
     "tools": {
       "fixers": [
@@ -307,7 +307,7 @@
       "move": {
         "available": true,
         "relevant": true,
-        "reason": "283 orphaned files + 2 flat directories",
+        "reason": "281 orphaned files + 2 flat directories",
         "usage": "desloppify move <source> <dest> [--dry-run]"
       },
       "plan": {
@@ -324,8 +324,8 @@
     "debt": {
       "overall_gap": 0.0,
       "wontfix_count": 1,
-      "worst_dimension": null,
-      "worst_gap": 0.0,
+      "worst_dimension": "Code quality",
+      "worst_gap": 0.4,
       "trend": "stable"
     },
     "milestone": null,
@@ -333,7 +333,7 @@
       "command": "desloppify autofix clippy-warning --dry-run",
       "description": "138 clippy_warning issues \u2014 run `desloppify autofix clippy-warning --dry-run` to preview, then apply"
     },
-    "why_now": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 69 issue(s) \u2014 `desloppify show review --status open`.",
+    "why_now": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 60 issue(s) \u2014 `desloppify show review --status open`.",
     "verification_step": {
       "command": "desloppify scan",
       "reason": "revalidate after changes"
@@ -369,41 +369,20 @@
       },
       {
         "type": "review_issues_pending",
-        "message": "69 review issue(s) need investigation. Run `desloppify show review --status open` to see the work queue.",
+        "message": "60 review issue(s) need investigation. Run `desloppify show review --status open` to see the work queue.",
         "command": "desloppify show review --status open",
         "priority": 1,
         "severity": "high"
-      },
-      {
-        "type": "auto_fixers_available",
-        "message": "138 issues are auto-fixable. Run `desloppify autofix clippy-warning --dry-run`.",
-        "command": "desloppify autofix clippy-warning --dry-run",
-        "priority": 2,
-        "severity": "medium"
-      },
-      {
-        "type": "zone_classification",
-        "message": "1 of 292 files classified as non-production (1 test). Override with `desloppify zone set <file> production` if any are misclassified.",
-        "command": "desloppify zone show",
-        "priority": 2,
-        "severity": "medium"
-      },
-      {
-        "type": "dry_run_first",
-        "message": "Always --dry-run first, review changes, then apply.",
-        "command": null,
-        "priority": 3,
-        "severity": "low"
       }
     ],
     "reminder_history": {
       "auto_fixers_available": 3,
       "zone_classification": 3,
       "dry_run_first": 3,
-      "report_scores": 2,
-      "review_issues_pending": 2,
+      "report_scores": 3,
+      "review_issues_pending": 3,
       "stagnant_nudge": 4,
-      "feedback_nudge": 1,
+      "feedback_nudge": 2,
       "rereview_needed": 1,
       "rescan_needed": 1
     }
