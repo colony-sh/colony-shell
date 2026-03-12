@@ -249,10 +249,7 @@ pub(crate) async fn execute_cstyle_for_loop_with_control(
             let (code, flow) = execute_statement_with_control(stmt, executor).await;
             last_exit = code;
             loop_flow = flow;
-            if !matches!(loop_flow, ControlFlow::Normal | ControlFlow::Continue) {
-                break;
-            }
-            if matches!(loop_flow, ControlFlow::Continue) {
+            if !matches!(loop_flow, ControlFlow::Normal) {
                 break;
             }
         }

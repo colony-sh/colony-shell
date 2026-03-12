@@ -34,14 +34,12 @@ fn get_cached_secure_key() -> Option<&'static [u8; 32]> {
 
 #[cfg(feature = "secure")]
 fn maybe_decrypt_value(value: String) -> String {
-    if colony_secure::is_encrypted(&value) {
-        if let Some(key) = get_cached_secure_key() {
-            if let Ok(decrypted) = colony_secure::decrypt(&value, key) {
-                return decrypted;
-            }
-        }
+    if !colony_secure::is_encrypted(&value) {
+        return value;
     }
-    value
+    get_cached_secure_key()
+        .and_then(|key| colony_secure::decrypt(&value, key).ok())
+        .unwrap_or(value)
 }
 
 /// System variables that don't change during shell execution
@@ -297,168 +295,112 @@ impl ShoptOptions {
         Self::default()
     }
 
+    /// All option names (sorted alphabetically).
+    const OPTION_NAMES: &[&str] = &[
+        "cdspell",
+        "checkjobs",
+        "checkwinsize",
+        "cmdhist",
+        "dirspell",
+        "dotglob",
+        "expand_aliases",
+        "extglob",
+        "failglob",
+        "globstar",
+        "histexpand",
+        "histreedit",
+        "hostcomplete",
+        "lastpipe",
+        "lithist",
+        "no_empty_cmd_completion",
+        "nocaseglob",
+        "nocasematch",
+        "nullglob",
+        "progcomp",
+        "promptvars",
+        "shift_verbose",
+        "sourcepath",
+        "xpg_echo",
+    ];
+
     /// Get option by name
     pub fn get(&self, name: &str) -> Option<bool> {
-        match name {
-            "extglob" => Some(self.extglob),
-            "globstar" => Some(self.globstar),
-            "nullglob" => Some(self.nullglob),
-            "dotglob" => Some(self.dotglob),
-            "failglob" => Some(self.failglob),
-            "nocaseglob" => Some(self.nocaseglob),
-            "nocasematch" => Some(self.nocasematch),
-            "lastpipe" => Some(self.lastpipe),
-            "expand_aliases" => Some(self.expand_aliases),
-            "sourcepath" => Some(self.sourcepath),
-            "checkwinsize" => Some(self.checkwinsize),
-            "histexpand" => Some(self.histexpand),
-            "progcomp" => Some(self.progcomp),
-            "cdspell" => Some(self.cdspell),
-            "checkjobs" => Some(self.checkjobs),
-            "cmdhist" => Some(self.cmdhist),
-            "dirspell" => Some(self.dirspell),
-            "histreedit" => Some(self.histreedit),
-            "hostcomplete" => Some(self.hostcomplete),
-            "lithist" => Some(self.lithist),
-            "no_empty_cmd_completion" => Some(self.no_empty_cmd_completion),
-            "promptvars" => Some(self.promptvars),
-            "shift_verbose" => Some(self.shift_verbose),
-            "xpg_echo" => Some(self.xpg_echo),
-            _ => None,
-        }
+        self.field_ref(name).copied()
     }
 
     /// Set option by name. Returns true if option exists.
     pub fn set(&mut self, name: &str, value: bool) -> bool {
-        match name {
-            "extglob" => {
-                self.extglob = value;
-                true
-            }
-            "globstar" => {
-                self.globstar = value;
-                true
-            }
-            "nullglob" => {
-                self.nullglob = value;
-                true
-            }
-            "dotglob" => {
-                self.dotglob = value;
-                true
-            }
-            "failglob" => {
-                self.failglob = value;
-                true
-            }
-            "nocaseglob" => {
-                self.nocaseglob = value;
-                true
-            }
-            "nocasematch" => {
-                self.nocasematch = value;
-                true
-            }
-            "lastpipe" => {
-                self.lastpipe = value;
-                true
-            }
-            "expand_aliases" => {
-                self.expand_aliases = value;
-                true
-            }
-            "sourcepath" => {
-                self.sourcepath = value;
-                true
-            }
-            "checkwinsize" => {
-                self.checkwinsize = value;
-                true
-            }
-            "histexpand" => {
-                self.histexpand = value;
-                true
-            }
-            "progcomp" => {
-                self.progcomp = value;
-                true
-            }
-            "cdspell" => {
-                self.cdspell = value;
-                true
-            }
-            "checkjobs" => {
-                self.checkjobs = value;
-                true
-            }
-            "cmdhist" => {
-                self.cmdhist = value;
-                true
-            }
-            "dirspell" => {
-                self.dirspell = value;
-                true
-            }
-            "histreedit" => {
-                self.histreedit = value;
-                true
-            }
-            "hostcomplete" => {
-                self.hostcomplete = value;
-                true
-            }
-            "lithist" => {
-                self.lithist = value;
-                true
-            }
-            "no_empty_cmd_completion" => {
-                self.no_empty_cmd_completion = value;
-                true
-            }
-            "promptvars" => {
-                self.promptvars = value;
-                true
-            }
-            "shift_verbose" => {
-                self.shift_verbose = value;
-                true
-            }
-            "xpg_echo" => {
-                self.xpg_echo = value;
-                true
-            }
-            _ => false,
+        if let Some(field) = self.field_mut(name) {
+            *field = value;
+            true
+        } else {
+            false
         }
     }
 
     /// Get all option names (sorted alphabetically)
     pub fn all_options() -> &'static [&'static str] {
-        &[
-            "cdspell",
-            "checkjobs",
-            "checkwinsize",
-            "cmdhist",
-            "dirspell",
-            "dotglob",
-            "expand_aliases",
-            "extglob",
-            "failglob",
-            "globstar",
-            "histexpand",
-            "histreedit",
-            "hostcomplete",
-            "lastpipe",
-            "lithist",
-            "no_empty_cmd_completion",
-            "nocaseglob",
-            "nocasematch",
-            "nullglob",
-            "progcomp",
-            "promptvars",
-            "shift_verbose",
-            "sourcepath",
-            "xpg_echo",
-        ]
+        Self::OPTION_NAMES
+    }
+
+    fn field_ref(&self, name: &str) -> Option<&bool> {
+        match name {
+            "extglob" => Some(&self.extglob),
+            "globstar" => Some(&self.globstar),
+            "nullglob" => Some(&self.nullglob),
+            "dotglob" => Some(&self.dotglob),
+            "failglob" => Some(&self.failglob),
+            "nocaseglob" => Some(&self.nocaseglob),
+            "nocasematch" => Some(&self.nocasematch),
+            "lastpipe" => Some(&self.lastpipe),
+            "expand_aliases" => Some(&self.expand_aliases),
+            "sourcepath" => Some(&self.sourcepath),
+            "checkwinsize" => Some(&self.checkwinsize),
+            "histexpand" => Some(&self.histexpand),
+            "progcomp" => Some(&self.progcomp),
+            "cdspell" => Some(&self.cdspell),
+            "checkjobs" => Some(&self.checkjobs),
+            "cmdhist" => Some(&self.cmdhist),
+            "dirspell" => Some(&self.dirspell),
+            "histreedit" => Some(&self.histreedit),
+            "hostcomplete" => Some(&self.hostcomplete),
+            "lithist" => Some(&self.lithist),
+            "no_empty_cmd_completion" => Some(&self.no_empty_cmd_completion),
+            "promptvars" => Some(&self.promptvars),
+            "shift_verbose" => Some(&self.shift_verbose),
+            "xpg_echo" => Some(&self.xpg_echo),
+            _ => None,
+        }
+    }
+
+    fn field_mut(&mut self, name: &str) -> Option<&mut bool> {
+        match name {
+            "extglob" => Some(&mut self.extglob),
+            "globstar" => Some(&mut self.globstar),
+            "nullglob" => Some(&mut self.nullglob),
+            "dotglob" => Some(&mut self.dotglob),
+            "failglob" => Some(&mut self.failglob),
+            "nocaseglob" => Some(&mut self.nocaseglob),
+            "nocasematch" => Some(&mut self.nocasematch),
+            "lastpipe" => Some(&mut self.lastpipe),
+            "expand_aliases" => Some(&mut self.expand_aliases),
+            "sourcepath" => Some(&mut self.sourcepath),
+            "checkwinsize" => Some(&mut self.checkwinsize),
+            "histexpand" => Some(&mut self.histexpand),
+            "progcomp" => Some(&mut self.progcomp),
+            "cdspell" => Some(&mut self.cdspell),
+            "checkjobs" => Some(&mut self.checkjobs),
+            "cmdhist" => Some(&mut self.cmdhist),
+            "dirspell" => Some(&mut self.dirspell),
+            "histreedit" => Some(&mut self.histreedit),
+            "hostcomplete" => Some(&mut self.hostcomplete),
+            "lithist" => Some(&mut self.lithist),
+            "no_empty_cmd_completion" => Some(&mut self.no_empty_cmd_completion),
+            "promptvars" => Some(&mut self.promptvars),
+            "shift_verbose" => Some(&mut self.shift_verbose),
+            "xpg_echo" => Some(&mut self.xpg_echo),
+            _ => None,
+        }
     }
 }
 
@@ -1169,20 +1111,22 @@ impl ExpansionContext {
             return self.get_positional_param(index).map(|s| s.to_string());
         }
 
-        if let Some(var) = self.variables.get(name) {
-            if let Variable::NameRef(_target) = var {
-                if let Some(resolved) = self.resolve_nameref(name) {
-                    if let Some(target_var) = self.variables.get(&resolved) {
-                        return Some(target_var.as_str().to_string());
-                    }
-                    return self.environment.get(&resolved).cloned();
-                }
-                return None;
-            }
-            return Some(var.as_str().to_string());
-        }
+        let Some(var) = self.variables.get(name) else {
+            return self.environment.get(name).cloned();
+        };
 
-        self.environment.get(name).cloned()
+        let Variable::NameRef(_target) = var else {
+            return Some(var.as_str().to_string());
+        };
+
+        let Some(resolved) = self.resolve_nameref(name) else {
+            return None;
+        };
+
+        self.variables
+            .get(&resolved)
+            .map(|v| v.as_str().to_string())
+            .or_else(|| self.environment.get(&resolved).cloned())
     }
 
     fn get_username_from_uid(&self) -> Option<String> {

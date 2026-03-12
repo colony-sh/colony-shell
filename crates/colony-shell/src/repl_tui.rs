@@ -35,13 +35,8 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Terminal;
 use tokio::sync::RwLock;
 
-use crate::shell::execute_shell_command;
+use crate::shell::{execute_shell_command, is_colony_terminal};
 use crate::shell::execution::handle_llm_command;
-
-/// Returns true if running inside colony-terminal (COLONY_TERMINAL env var set)
-fn is_colony_terminal() -> bool {
-    std::env::var("COLONY_TERMINAL").is_ok()
-}
 
 // --- Scrollback ---
 

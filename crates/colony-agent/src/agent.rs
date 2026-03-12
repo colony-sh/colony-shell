@@ -67,6 +67,25 @@ impl Default for AgentConfig {
     }
 }
 
+impl AgentConfig {
+    /// Apply system_prompt, max_tokens, and temperature from an `AgentDefinition`.
+    fn apply_definition(&mut self, definition: &colony_exec::special_files::AgentDefinition) {
+        if !definition.prompt_template.is_empty() {
+            self.system_prompt = definition.prompt_template.clone();
+        } else if !definition.description.is_empty() {
+            self.system_prompt = definition.description.clone();
+        }
+
+        if let Some(max_tokens) = definition.capabilities.max_tokens {
+            self.max_tokens = max_tokens;
+        }
+
+        if let Some(temperature) = definition.capabilities.temperature {
+            self.temperature = Some(temperature);
+        }
+    }
+}
+
 /// Emit a streaming text chunk to stdout, flushing immediately.
 ///
 /// Prints OSC 2337 sequences for colony-terminal when connected.
@@ -96,17 +115,7 @@ impl Agent {
         definition: &colony_exec::special_files::AgentDefinition,
     ) -> Result<Self> {
         let mut config = AgentConfig::default();
-
-        if !definition.prompt_template.is_empty() {
-            config.system_prompt = definition.prompt_template.clone();
-        } else if !definition.description.is_empty() {
-            config.system_prompt = definition.description.clone();
-        }
-
-        if let Some(max_tokens) = definition.capabilities.max_tokens {
-            config.max_tokens = max_tokens;
-        }
-        config.temperature = definition.capabilities.temperature;
+        config.apply_definition(definition);
 
         if let Some(ref model_spec) = definition.capabilities.model {
             if let Some((provider_str, model_name)) = model_spec.split_once(':') {
@@ -127,18 +136,7 @@ impl Agent {
         &mut self,
         definition: &colony_exec::special_files::AgentDefinition,
     ) -> Result<()> {
-        if !definition.prompt_template.is_empty() {
-            self.config.system_prompt = definition.prompt_template.clone();
-        } else if !definition.description.is_empty() {
-            self.config.system_prompt = definition.description.clone();
-        }
-
-        if let Some(max_tokens) = definition.capabilities.max_tokens {
-            self.config.max_tokens = max_tokens;
-        }
-        if definition.capabilities.temperature.is_some() {
-            self.config.temperature = definition.capabilities.temperature;
-        }
+        self.config.apply_definition(definition);
 
         if let Some(ref model_spec) = definition.capabilities.model {
             let (provider_type, model_name) =

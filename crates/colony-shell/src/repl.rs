@@ -23,12 +23,7 @@ use rustyline::validate::{ValidationContext, ValidationResult, Validator};
 use rustyline::{Editor, Helper};
 use tokio::sync::RwLock;
 
-use crate::shell::execute_shell_command;
-
-/// Returns true if running inside colony-terminal (COLONY_TERMINAL env var set)
-fn is_colony_terminal() -> bool {
-    std::env::var("COLONY_TERMINAL").is_ok()
-}
+use crate::shell::{execute_shell_command, is_colony_terminal};
 
 struct ColonyHelper {
     commands: Vec<String>,
