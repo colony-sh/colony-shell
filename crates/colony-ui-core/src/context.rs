@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ComponentContext {
     pub cwd: PathBuf,
     pub env: HashMap<String, String>,
@@ -46,16 +46,7 @@ mod tests {
     use super::*;
 
     fn test_ctx() -> ComponentContext {
-        ComponentContext {
-            cwd: PathBuf::from("/"),
-            env: HashMap::new(),
-            last_exit_code: 0,
-            running_jobs: 0,
-            stopped_jobs: 0,
-            model: None,
-            last_command_duration: None,
-            hostname: None,
-        }
+        ComponentContext::default()
     }
 
     #[test]

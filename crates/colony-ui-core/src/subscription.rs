@@ -72,17 +72,8 @@ mod tests {
     fn test_context() -> ComponentContext {
         ComponentContext {
             cwd: std::path::PathBuf::from("/home/test"),
-            env: {
-                let mut env = StdHashMap::new();
-                env.insert("HOME".to_string(), "/home/test".to_string());
-                env
-            },
-            last_exit_code: 0,
-            running_jobs: 0,
-            stopped_jobs: 0,
-            model: None,
-            last_command_duration: None,
-            hostname: None,
+            env: StdHashMap::from([("HOME".to_string(), "/home/test".to_string())]),
+            ..Default::default()
         }
     }
 

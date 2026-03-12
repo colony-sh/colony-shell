@@ -1119,9 +1119,7 @@ impl ExpansionContext {
             return Some(var.as_str().to_string());
         };
 
-        let Some(resolved) = self.resolve_nameref(name) else {
-            return None;
-        };
+        let resolved = self.resolve_nameref(name)?;
 
         self.variables
             .get(&resolved)

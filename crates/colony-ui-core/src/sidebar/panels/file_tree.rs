@@ -249,33 +249,20 @@ impl SidebarComponent for FileTreePanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;
 
     fn test_context() -> ComponentContext {
         ComponentContext {
             cwd: std::env::current_dir().unwrap_or_default(),
-            env: HashMap::new(),
-            last_exit_code: 0,
-            running_jobs: 0,
-            stopped_jobs: 0,
-            model: None,
-            last_command_duration: None,
-            hostname: None,
+            ..Default::default()
         }
     }
 
     fn test_context_with_dir(dir: &Path) -> ComponentContext {
         ComponentContext {
             cwd: dir.to_path_buf(),
-            env: HashMap::new(),
-            last_exit_code: 0,
-            running_jobs: 0,
-            stopped_jobs: 0,
-            model: None,
-            last_command_duration: None,
-            hostname: None,
+            ..Default::default()
         }
     }
 

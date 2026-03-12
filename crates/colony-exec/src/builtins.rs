@@ -6384,20 +6384,7 @@ fn builtin_secure_patterns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use colony_parser::{Span, Word};
-
-    fn make_simple_command(name: &str, args: Vec<&str>) -> SimpleCommand {
-        SimpleCommand {
-            name: Word::literal(name, Span::DUMMY),
-            args: args
-                .into_iter()
-                .map(|s| Word::literal(s, Span::DUMMY))
-                .collect(),
-            redirects: vec![],
-            env_assignments: vec![],
-            span: Span::DUMMY,
-        }
-    }
+    use crate::test_helpers::make_simple_command;
 
     #[test]
     fn test_is_builtin() {

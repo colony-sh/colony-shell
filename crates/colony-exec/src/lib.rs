@@ -29,6 +29,9 @@ mod redirect;
 pub mod special_files;
 mod xtrace;
 
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
 pub use alias::{expand_alias, AliasExpansionResult};
 
 pub use builtins::{execute_builtin, is_builtin, BuiltinResult};

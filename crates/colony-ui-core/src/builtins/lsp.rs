@@ -88,18 +88,11 @@ impl PromptComponent for LspComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     fn test_context() -> ComponentContext {
         ComponentContext {
             cwd: std::path::PathBuf::from("/"),
-            env: HashMap::new(),
-            last_exit_code: 0,
-            running_jobs: 0,
-            stopped_jobs: 0,
-            model: None,
-            last_command_duration: None,
-            hostname: None,
+            ..Default::default()
         }
     }
 

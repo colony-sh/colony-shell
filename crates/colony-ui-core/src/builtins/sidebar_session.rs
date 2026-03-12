@@ -153,17 +153,10 @@ mod tests {
     fn test_context() -> ComponentContext {
         ComponentContext {
             cwd: std::path::PathBuf::from("/home/test"),
-            env: {
-                let mut env = HashMap::new();
-                env.insert("SHELL".to_string(), "colony".to_string());
-                env
-            },
-            last_exit_code: 0,
-            running_jobs: 0,
-            stopped_jobs: 0,
+            env: HashMap::from([("SHELL".to_string(), "colony".to_string())]),
             model: Some("claude-3".to_string()),
-            last_command_duration: None,
             hostname: Some("myhost".to_string()),
+            ..Default::default()
         }
     }
 
