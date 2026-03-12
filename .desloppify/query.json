@@ -1,26 +1,211 @@
 {
-  "command": "resolve",
-  "patterns": [
-    "review::.::holistic::dependency_health::dep_tera_overkill"
+  "command": "next",
+  "items": [
+    {
+      "id": "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
+      "kind": "issue",
+      "confidence": "high",
+      "detector": "review",
+      "file": ".",
+      "summary": "control_flow.rs test module only checks enum variant count, not any behavioral logic",
+      "detail": {
+        "holistic": true,
+        "dimension": "test_strategy",
+        "related_files": [
+          "crates/colony-shell/src/shell/execution/control_flow.rs"
+        ],
+        "evidence": [
+          "The sole test in control_flow.rs is: let values = [ControlFlow::Normal, ControlFlow::Break, ControlFlow::Continue, ControlFlow::Exit, ControlFlow::Return]; assert_eq!(values.len(), 5);",
+          "execute_list_with_control, execute_statement_with_control, the break/continue/return propagation through nested loops, and the exit trap invocation are all untested"
+        ],
+        "suggestion": "Replace with behavioral tests using exec_program from colony-exec's test helpers: verify that `for i in 1 2 3; do break; done` exits after one iteration, that `continue` skips the remainder of the loop body, and that `return` inside a function propagates the code back to the caller.",
+        "reasoning": "",
+        "content_hash": "252e76ee"
+      },
+      "status": "open",
+      "primary_command": "desloppify plan resolve \"review::.::holistic::test_strategy::TS001_control_flow_placeholder_test\" --note \"<what you did>\" --confirm",
+      "queue_position": 1,
+      "plan_cluster": {
+        "name": "auto/review-test_strategy",
+        "description": "Address 6 test_strategy review issues",
+        "total_items": 6,
+        "action_steps": []
+      }
+    },
+    {
+      "id": "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
+      "kind": "issue",
+      "confidence": "high",
+      "detector": "review",
+      "file": ".",
+      "summary": "Shell execution entry points engine.rs and orchestrator.rs have zero tests",
+      "detail": {
+        "holistic": true,
+        "dimension": "test_strategy",
+        "related_files": [
+          "crates/colony-shell/src/shell/engine.rs",
+          "crates/colony-shell/src/shell/orchestrator.rs",
+          "crates/colony-shell/src/repl.rs"
+        ],
+        "evidence": [
+          "grep for #[cfg(test)] in engine.rs, orchestrator.rs, and repl.rs returns no matches",
+          "execute_command_with_status (the -c flag entry point) and execute_shell_command (the REPL entry point) contain parsing, trap execution, and exit-code handling that is tested only indirectly through the bats suite"
+        ],
+        "suggestion": "Add unit tests for execute_command_with_status that create a bare Executor, call the function with shell strings, and assert the returned exit code. The function is synchronous-friendly enough for tokio::test blocks. At minimum cover: successful command returns 0, parse error returns 2, exit trap runs on exit.",
+        "reasoning": "",
+        "content_hash": "1217d581"
+      },
+      "status": "open",
+      "primary_command": "desloppify plan resolve \"review::.::holistic::test_strategy::TS002_engine_orchestrator_untested\" --note \"<what you did>\" --confirm",
+      "queue_position": 2,
+      "plan_cluster": {
+        "name": "auto/review-test_strategy",
+        "description": "Address 6 test_strategy review issues",
+        "total_items": 6,
+        "action_steps": []
+      }
+    },
+    {
+      "id": "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests",
+      "kind": "issue",
+      "confidence": "high",
+      "detector": "review",
+      "file": ".",
+      "summary": "colony-mcp connection and pool modules have zero unit tests",
+      "detail": {
+        "holistic": true,
+        "dimension": "test_strategy",
+        "related_files": [
+          "crates/colony-mcp/src/connection.rs",
+          "crates/colony-mcp/src/pool.rs"
+        ],
+        "evidence": [
+          "grep for #[cfg(test)] in crates/colony-mcp/src/connection.rs returns no matches",
+          "grep for #[cfg(test)] in crates/colony-mcp/src/pool.rs returns no matches",
+          "ConnectionState transitions, ToolInfo caching, pool routing logic (all_tools(), call_tool() routing) are completely untested at the unit level"
+        ],
+        "suggestion": "Add unit tests for ConnectionState transitions (Disconnected\u2192Connected\u2192Reconnecting\u2192Failed state machine) using direct struct construction. For McpConnectionPool, test call_tool routing with a mock McpConnection that records which server received the call \u2014 or at minimum test the error path when no server provides the requested tool.",
+        "reasoning": "",
+        "content_hash": "014cfe20"
+      },
+      "status": "open",
+      "primary_command": "desloppify plan resolve \"review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests\" --note \"<what you did>\" --confirm",
+      "queue_position": 3,
+      "plan_cluster": {
+        "name": "auto/review-test_strategy",
+        "description": "Address 6 test_strategy review issues",
+        "total_items": 6,
+        "action_steps": []
+      }
+    },
+    {
+      "id": "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
+      "kind": "issue",
+      "confidence": "high",
+      "detector": "review",
+      "file": ".",
+      "summary": "Redirect tests use hardcoded /tmp paths causing parallel-run and ordering fragility",
+      "detail": {
+        "holistic": true,
+        "dimension": "test_strategy",
+        "related_files": [
+          "crates/colony-exec/src/redirect.rs"
+        ],
+        "evidence": [
+          "test_output_redirect writes to /tmp/colony_test_output.txt",
+          "test_append_redirect writes to /tmp/colony_test_append.txt",
+          "test_fd_duplication writes to /tmp/colony_test_fd_dup.txt",
+          "test_heredoc_no_expand writes to /tmp/colony_heredoc_no_expand.txt",
+          "All tests use fs::remove_file before and after but without mutual exclusion; concurrent cargo test runs will collide"
+        ],
+        "suggestion": "Replace all hardcoded /tmp paths with tempfile::NamedTempFile or tempfile::tempdir(), which are already used elsewhere in the test suite (e.g., colony-exec/src/mirror.rs). This eliminates collision risk entirely.",
+        "reasoning": "",
+        "content_hash": "b6e6957c"
+      },
+      "status": "open",
+      "primary_command": "desloppify plan resolve \"review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths\" --note \"<what you did>\" --confirm",
+      "queue_position": 4,
+      "plan_cluster": {
+        "name": "auto/review-test_strategy",
+        "description": "Address 6 test_strategy review issues",
+        "total_items": 6,
+        "action_steps": []
+      }
+    },
+    {
+      "id": "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
+      "kind": "issue",
+      "confidence": "high",
+      "detector": "review",
+      "file": ".",
+      "summary": "background.rs and serialization.rs contain placeholder-quality tests that assert constants or a single trivial case",
+      "detail": {
+        "holistic": true,
+        "dimension": "test_strategy",
+        "related_files": [
+          "crates/colony-shell/src/shell/execution/background.rs",
+          "crates/colony-shell/src/shell/execution/serialization.rs"
+        ],
+        "evidence": [
+          "background.rs sole test: assert_eq!(MAX_JOBS, 128) \u2014 does not test run_in_background",
+          "serialization.rs sole test: round-trips 'echo hello' through statement_to_shell_string \u2014 no coverage of SingleQuoted, DoubleQuoted with variables, pipeline serialization, or redirect serialization"
+        ],
+        "suggestion": "For serialization.rs, add tests for: single-quoted strings with special characters, double-quoted strings containing $VAR references, and pipelines with multiple commands. For background.rs, add a test that calls run_in_background with a trivial statement (e.g., sleep 0) and verifies a JobId and Pid are returned.",
+        "reasoning": "",
+        "content_hash": "b6663f65"
+      },
+      "status": "open",
+      "primary_command": "desloppify plan resolve \"review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests\" --note \"<what you did>\" --confirm",
+      "queue_position": 5,
+      "plan_cluster": {
+        "name": "auto/review-test_strategy",
+        "description": "Address 6 test_strategy review issues",
+        "total_items": 6,
+        "action_steps": []
+      }
+    },
+    {
+      "id": "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration",
+      "kind": "issue",
+      "confidence": "medium",
+      "detector": "review",
+      "file": ".",
+      "summary": "No Rust-level integration test connects the agent \u2192 tool execution \u2192 expansion chain",
+      "detail": {
+        "holistic": true,
+        "dimension": "test_strategy",
+        "related_files": [
+          "crates/colony-agent/src/agent.rs",
+          "crates/colony-exec/src/lib.rs",
+          "crates/colony-expand/src/lib.rs",
+          "crates/colony-reflection/tests/integration.rs"
+        ],
+        "evidence": [
+          "Only one external integration test file exists (colony-reflection/tests/integration.rs) covering the observation lifecycle",
+          "The agent.rs tests cover only pure config defaults and model inference, not process() or process_full() which involve the provider, tool registry, approval, and conversation store",
+          "The interaction between tool execution, cancellation, and persistence is exercised only in production"
+        ],
+        "suggestion": "Add a colony-agent integration test that creates an Agent with a mock provider returning a fixed StreamEvent sequence, calls process(), and asserts the response text, message count, and (if persistence is enabled) that the conversation store contains the expected messages.",
+        "reasoning": "",
+        "content_hash": "9f6865df"
+      },
+      "status": "open",
+      "primary_command": "desloppify plan resolve \"review::.::holistic::test_strategy::TS006_missing_agent_execution_integration\" --note \"<what you did>\" --confirm",
+      "queue_position": 6,
+      "plan_cluster": {
+        "name": "auto/review-test_strategy",
+        "description": "Address 6 test_strategy review issues",
+        "total_items": 6,
+        "action_steps": []
+      }
+    }
   ],
-  "status": "fixed",
-  "resolved": [
-    "review::.::holistic::dependency_health::dep_tera_overkill"
-  ],
-  "count": 1,
-  "next_command": "desloppify next",
-  "overall_score": 69.4,
-  "objective_score": 69.2,
-  "strict_score": 69.4,
-  "verified_strict_score": 69.2,
-  "prev_overall_score": 69.4,
-  "prev_objective_score": 69.2,
-  "prev_strict_score": 69.4,
-  "prev_verified_strict_score": 69.2,
-  "attestation": "I have actually Replaced tera template engine with direct string formatting via std::fmt::Write. Removed tera dependency from colony-mcp/Cargo.toml and removed unused TemplateError variant. All 11 tests pass. Eliminates a heavy transitive dependency tree (pest, globwalk, unic-segment, etc.). and I am not gaming the score.",
+  "queue": {
+    "total": 6
+  },
   "narrative": {
     "phase": "stagnation",
-    "headline": "Score plateaued at 69.4 for 5 scans. Test health (0.0%) is where the breakthrough is. 1 wontfix items may also be worth revisiting. (60 review issues \u2014 run `desloppify show review --status open`)",
+    "headline": "Score plateaued at 69.4 for 5 scans. Test health (0.0%) is where the breakthrough is. 1 wontfix items may also be worth revisiting. (36 review issues \u2014 run `desloppify show review --status open`)",
     "dimensions": {
       "lowest_dimensions": [
         {
@@ -38,7 +223,7 @@
         {
           "name": "Stale migration",
           "strict": 52.0,
-          "failing": 6,
+          "failing": 4,
           "impact": 0.0,
           "subjective": true,
           "impact_description": "re-review to improve"
@@ -73,66 +258,93 @@
         "type": "auto_fix",
         "detector": "clippy_warning",
         "count": 138,
-        "description": "138 clippy_warning issues \u2014 run `desloppify autofix clippy-warning --dry-run` to preview, then apply",
-        "command": "desloppify autofix clippy-warning --dry-run",
+        "description": "138 clippy_warning issues in 1 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Code quality",
         "priority": 1,
+        "clusters": [
+          "auto/clippy_warning"
+        ],
+        "cluster_count": 1,
         "lane": "cleanup"
       },
       {
         "type": "reorganize",
         "detector": "orphaned",
         "count": 281,
-        "description": "281 orphaned issues \u2014 delete dead files or relocate with `desloppify move`",
-        "command": "desloppify show orphaned --status open",
+        "description": "281 orphaned issues in 1 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Code quality",
         "priority": 2,
+        "clusters": [
+          "auto/orphaned"
+        ],
+        "cluster_count": 1,
         "lane": "restructure"
       },
       {
         "type": "reorganize",
         "detector": "flat_dirs",
         "count": 2,
-        "description": "2 flat_dirs issues \u2014 create subdirectories and use `desloppify move`",
-        "command": "desloppify show flat_dirs --status open",
+        "description": "2 flat_dirs issues in 1 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Code quality",
         "priority": 3,
+        "clusters": [
+          "auto/flat_dirs-overload"
+        ],
+        "cluster_count": 1,
         "lane": "restructure"
       },
       {
         "type": "refactor",
         "detector": "structural",
         "count": 65,
-        "description": "65 structural issues \u2014 review large files \u2014 split only when responsibilities are clearly separable",
-        "command": "desloppify show structural --status open",
+        "description": "65 structural issues in 3 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "File health",
         "priority": 4,
+        "clusters": [
+          "auto/structural-lib.rs",
+          "auto/structural-persistence.rs",
+          "auto/structural-protocol.rs"
+        ],
+        "cluster_count": 3,
         "lane": "refactor_0"
       },
       {
         "type": "refactor",
         "detector": "dupes",
         "count": 6,
-        "description": "6 dupes issues \u2014 extract shared utility or consolidate duplicates",
-        "command": "desloppify show dupes --status open",
+        "description": "6 dupes issues in 2 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Duplication",
         "priority": 5,
+        "clusters": [
+          "auto/dupes-exact",
+          "auto/dupes-near-duplicate"
+        ],
+        "cluster_count": 2,
         "lane": "refactor_0"
       },
       {
         "type": "refactor",
         "detector": "test_coverage",
         "count": 281,
-        "description": "281 test_coverage issues \u2014 add tests for untested production modules \u2014 prioritize by import count",
-        "command": "desloppify show test_coverage --status open",
+        "description": "281 test_coverage issues in 1 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Test health",
         "priority": 6,
+        "clusters": [
+          "auto/test_coverage"
+        ],
+        "cluster_count": 1,
         "lane": "test_coverage"
       },
       {
@@ -171,8 +383,8 @@
       {
         "type": "refactor",
         "detector": "review",
-        "count": 60,
-        "description": "60 review issues need investigation \u2014 run `desloppify show review --status open` to see them",
+        "count": 36,
+        "description": "36 review issues need investigation \u2014 run `desloppify show review --status open` to see them",
         "command": "desloppify show review --status open",
         "impact": 0.0,
         "dimension": "Unknown",
@@ -183,41 +395,53 @@
         "type": "manual_fix",
         "detector": "unused",
         "count": 948,
-        "description": "948 unused issues \u2014 inspect with `desloppify next` and fix manually",
-        "command": "desloppify show unused --status open",
+        "description": "948 unused issues in 1 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Code quality",
         "priority": 11,
+        "clusters": [
+          "auto/unused"
+        ],
+        "cluster_count": 1,
         "lane": "refactor_0"
       },
       {
         "type": "manual_fix",
         "detector": "stale_exclude",
         "count": 2,
-        "description": "2 stale_exclude issues \u2014 remove stale exclusion or verify it's still needed",
-        "command": "desloppify show stale_exclude --status open",
+        "description": "2 stale_exclude issues in 1 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Code quality",
         "priority": 12,
+        "clusters": [
+          "auto/stale_exclude"
+        ],
+        "cluster_count": 1,
         "lane": "refactor_2"
       },
       {
         "type": "manual_fix",
         "detector": "cargo_error",
         "count": 15,
-        "description": "15 cargo_error issues \u2014 review and fix cargo check issues",
-        "command": "desloppify show cargo_error --status open",
+        "description": "15 cargo_error issues in 1 cluster(s) \u2014 run `desloppify next`",
+        "command": "desloppify next",
         "impact": 0.0,
         "dimension": "Code quality",
         "priority": 13,
+        "clusters": [
+          "auto/cargo_error"
+        ],
+        "cluster_count": 1,
         "lane": "refactor_3"
       }
     ],
     "strategy": {
       "fixer_leverage": {
         "auto_fixable_count": 138,
-        "total_count": 2019,
-        "coverage": 0.068,
+        "total_count": 1947,
+        "coverage": 0.071,
         "impact_ratio": 0.0,
         "recommendation": "none"
       },
@@ -293,7 +517,7 @@
         }
       },
       "can_parallelize": true,
-      "hint": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 60 issue(s) \u2014 `desloppify show review --status open`."
+      "hint": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 36 issue(s) \u2014 `desloppify show review --status open`."
     },
     "tools": {
       "fixers": [
@@ -330,10 +554,10 @@
     },
     "milestone": null,
     "primary_action": {
-      "command": "desloppify autofix clippy-warning --dry-run",
-      "description": "138 clippy_warning issues \u2014 run `desloppify autofix clippy-warning --dry-run` to preview, then apply"
+      "command": "desloppify next",
+      "description": "138 clippy_warning issues in 1 cluster(s) \u2014 run `desloppify next`"
     },
-    "why_now": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 60 issue(s) \u2014 `desloppify show review --status open`.",
+    "why_now": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 36 issue(s) \u2014 `desloppify show review --status open`.",
     "verification_step": {
       "command": "desloppify scan",
       "reason": "revalidate after changes"
@@ -354,22 +578,8 @@
     },
     "reminders": [
       {
-        "type": "rereview_needed",
-        "message": "Subjective results may be stale after resolve. Re-run `desloppify review --prepare` to refresh, or reset with `desloppify scan --reset-subjective` before a clean rerun.",
-        "command": "desloppify review --prepare",
-        "priority": 1,
-        "severity": "high"
-      },
-      {
-        "type": "rescan_needed",
-        "message": "Rescan to verify \u2014 cascading effects may create new issues.",
-        "command": "desloppify scan",
-        "priority": 1,
-        "severity": "high"
-      },
-      {
         "type": "review_issues_pending",
-        "message": "60 review issue(s) need investigation. Run `desloppify show review --status open` to see the work queue.",
+        "message": "36 review issue(s) need investigation. Run `desloppify show review --status open` to see the work queue.",
         "command": "desloppify show review --status open",
         "priority": 1,
         "severity": "high"
@@ -382,11 +592,612 @@
       "report_scores": 3,
       "review_issues_pending": 3,
       "stagnant_nudge": 4,
-      "feedback_nudge": 2,
-      "rereview_needed": 1,
-      "rescan_needed": 1
+      "feedback_nudge": 2
     }
   },
+  "agent_notes": [
+    "Do NOT use `desloppify plan skip` unless the user explicitly asks you to skip an item.",
+    "If you cannot fix an item, report it and move to the next one.",
+    "For cluster items: if the autofix_hint finds 0 results, drill into individual issues with the primary_command."
+  ],
+  "plan": {
+    "active": true,
+    "focus": null,
+    "clusters": [
+      {
+        "name": "auto/clippy_warning",
+        "description": "Remove 138 cargo clippy issues",
+        "item_count": 138
+      },
+      {
+        "name": "auto/cargo_error",
+        "description": "Fix 15 cargo check issues",
+        "item_count": 15
+      },
+      {
+        "name": "auto/structural-lib.rs",
+        "description": "Review file size: lib.rs",
+        "item_count": 4
+      },
+      {
+        "name": "auto/structural-persistence.rs",
+        "description": "Review file size: persistence.rs",
+        "item_count": 2
+      },
+      {
+        "name": "auto/structural-protocol.rs",
+        "description": "Review file size: protocol.rs",
+        "item_count": 3
+      },
+      {
+        "name": "auto/flat_dirs-overload",
+        "description": "Fix 2 overload issues",
+        "item_count": 2
+      },
+      {
+        "name": "auto/unused",
+        "description": "Remove 948 unused issues",
+        "item_count": 948
+      },
+      {
+        "name": "auto/orphaned",
+        "description": "Fix 281 orphaned issues",
+        "item_count": 281
+      },
+      {
+        "name": "auto/test_coverage",
+        "description": "Fix 281 test coverage issues",
+        "item_count": 281
+      },
+      {
+        "name": "auto/dupes-exact",
+        "description": "Fix 4 exact issues",
+        "item_count": 4
+      },
+      {
+        "name": "auto/dupes-near-duplicate",
+        "description": "Fix 2 near-duplicate issues",
+        "item_count": 2
+      },
+      {
+        "name": "auto/stale_exclude",
+        "description": "Fix 2 stale exclude issues",
+        "item_count": 2
+      },
+      {
+        "name": "auto/review-cross_module_architecture",
+        "description": "Address 5 cross_module_architecture review issues",
+        "item_count": 5
+      },
+      {
+        "name": "auto/review-incomplete_migration",
+        "description": "Address 6 incomplete_migration review issues",
+        "item_count": 4
+      },
+      {
+        "name": "auto/review-package_organization",
+        "description": "Address 2 package_organization review issues",
+        "item_count": 2
+      },
+      {
+        "name": "auto/review-initialization_coupling",
+        "description": "Address 4 initialization_coupling review issues",
+        "item_count": 2
+      },
+      {
+        "name": "auto/review-design_coherence",
+        "description": "Address 4 design_coherence review issues",
+        "item_count": 2
+      },
+      {
+        "name": "auto/review-logic_clarity",
+        "description": "Address 4 logic_clarity review issues",
+        "item_count": 1
+      },
+      {
+        "name": "auto/review-type_safety",
+        "description": "Address 4 type_safety review issues",
+        "item_count": 4
+      },
+      {
+        "name": "auto/review-test_strategy",
+        "description": "Address 6 test_strategy review issues",
+        "item_count": 6
+      },
+      {
+        "name": "auto/review-high_level_elegance",
+        "description": "Address 3 high_level_elegance review issues",
+        "item_count": 1
+      },
+      {
+        "name": "auto/review-convention_outlier",
+        "description": "Address 2 convention_outlier review issues",
+        "item_count": 1
+      },
+      {
+        "name": "auto/review-error_consistency",
+        "description": "Address 3 error_consistency review issues",
+        "item_count": 0
+      },
+      {
+        "name": "auto/review-naming_quality",
+        "description": "Address 4 naming_quality review issues",
+        "item_count": 2
+      },
+      {
+        "name": "auto/review-dependency_health",
+        "description": "Address 8 dependency_health review issues",
+        "item_count": 0
+      },
+      {
+        "name": "auto/review-low_level_elegance",
+        "description": "Address 9 low_level_elegance review issues",
+        "item_count": 3
+      },
+      {
+        "name": "auto/review-mid_level_elegance",
+        "description": "Address 5 mid_level_elegance review issues",
+        "item_count": 3
+      },
+      {
+        "name": "auto/stale-review",
+        "description": "Re-review 7 stale subjective dimensions",
+        "item_count": 7
+      }
+    ],
+    "total_ordered": 36,
+    "total_skipped": 28,
+    "plan_overrides_narrative": true
+  },
+  "overall_score": 69.4,
+  "objective_score": 69.2,
+  "strict_score": 69.4,
+  "scorecard_dimensions": [
+    {
+      "name": "File health",
+      "score": 84.3,
+      "strict": 84.3,
+      "checks": 289,
+      "failing": 65,
+      "tier": 3,
+      "subjective": false
+    },
+    {
+      "name": "AI generated debt",
+      "score": 66.0,
+      "strict": 66.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "ai_generated_debt"
+      ]
+    },
+    {
+      "name": "API coherence",
+      "score": 72.0,
+      "strict": 72.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "api_surface_coherence"
+      ]
+    },
+    {
+      "name": "Abstraction fit",
+      "score": 72.0,
+      "strict": 72.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "abstraction_fitness"
+      ]
+    },
+    {
+      "name": "Auth consistency",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "authorization_consistency"
+      ]
+    },
+    {
+      "name": "Code quality",
+      "score": 47.9,
+      "strict": 47.5,
+      "checks": 384,
+      "failing": 286,
+      "tier": 3,
+      "subjective": false
+    },
+    {
+      "name": "Convention drift",
+      "score": 72.0,
+      "strict": 72.0,
+      "checks": 10,
+      "failing": 1,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "convention_outlier"
+      ]
+    },
+    {
+      "name": "Cross-module arch",
+      "score": 57.0,
+      "strict": 57.0,
+      "checks": 10,
+      "failing": 5,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "cross_module_architecture"
+      ]
+    },
+    {
+      "name": "Dep health",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "dependency_health"
+      ]
+    },
+    {
+      "name": "Design coherence",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "design_coherence"
+      ]
+    },
+    {
+      "name": "Duplication",
+      "score": 99.0,
+      "strict": 99.0,
+      "checks": 4816,
+      "failing": 65,
+      "tier": 3,
+      "subjective": false
+    },
+    {
+      "name": "Elegance",
+      "score": 68.3,
+      "strict": 68.3,
+      "checks": 30,
+      "failing": 7,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "high_level_elegance",
+        "low_level_elegance",
+        "mid_level_elegance"
+      ]
+    },
+    {
+      "name": "Error consistency",
+      "score": 82.0,
+      "strict": 82.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "error_consistency"
+      ]
+    },
+    {
+      "name": "Init coupling",
+      "score": 82.0,
+      "strict": 82.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "initialization_coupling"
+      ]
+    },
+    {
+      "name": "Naming quality",
+      "score": 77.0,
+      "strict": 77.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "naming_quality"
+      ]
+    },
+    {
+      "name": "Security",
+      "score": 100.0,
+      "strict": 100.0,
+      "checks": 578,
+      "failing": 0,
+      "tier": 4,
+      "subjective": false
+    },
+    {
+      "name": "Stale migration",
+      "score": 52.0,
+      "strict": 52.0,
+      "checks": 10,
+      "failing": 4,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "incomplete_migration"
+      ]
+    },
+    {
+      "name": "Structure nav",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "package_organization"
+      ]
+    },
+    {
+      "name": "Test health",
+      "score": 0.0,
+      "strict": 0.0,
+      "checks": 4630,
+      "failing": 281,
+      "tier": 4,
+      "subjective": false
+    },
+    {
+      "name": "Test strategy",
+      "score": 52.0,
+      "strict": 52.0,
+      "checks": 10,
+      "failing": 6,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "test_strategy"
+      ]
+    }
+  ],
+  "subjective_measures": [
+    {
+      "name": "AI generated debt",
+      "score": 66.0,
+      "strict": 66.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "ai_generated_debt"
+      ]
+    },
+    {
+      "name": "API coherence",
+      "score": 72.0,
+      "strict": 72.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "api_surface_coherence"
+      ]
+    },
+    {
+      "name": "Abstraction fit",
+      "score": 72.0,
+      "strict": 72.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "abstraction_fitness"
+      ]
+    },
+    {
+      "name": "Auth consistency",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "authorization_consistency"
+      ]
+    },
+    {
+      "name": "Convention drift",
+      "score": 72.0,
+      "strict": 72.0,
+      "checks": 10,
+      "failing": 1,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "convention_outlier"
+      ]
+    },
+    {
+      "name": "Cross-module arch",
+      "score": 57.0,
+      "strict": 57.0,
+      "checks": 10,
+      "failing": 5,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "cross_module_architecture"
+      ]
+    },
+    {
+      "name": "Dep health",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "dependency_health"
+      ]
+    },
+    {
+      "name": "Design coherence",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "design_coherence"
+      ]
+    },
+    {
+      "name": "Elegance",
+      "score": 68.3,
+      "strict": 68.3,
+      "checks": 30,
+      "failing": 7,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "high_level_elegance",
+        "low_level_elegance",
+        "mid_level_elegance"
+      ]
+    },
+    {
+      "name": "Error consistency",
+      "score": 82.0,
+      "strict": 82.0,
+      "checks": 10,
+      "failing": 0,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "error_consistency"
+      ]
+    },
+    {
+      "name": "Init coupling",
+      "score": 82.0,
+      "strict": 82.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "initialization_coupling"
+      ]
+    },
+    {
+      "name": "Naming quality",
+      "score": 77.0,
+      "strict": 77.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "naming_quality"
+      ]
+    },
+    {
+      "name": "Stale migration",
+      "score": 52.0,
+      "strict": 52.0,
+      "checks": 10,
+      "failing": 4,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "incomplete_migration"
+      ]
+    },
+    {
+      "name": "Structure nav",
+      "score": 62.0,
+      "strict": 62.0,
+      "checks": 10,
+      "failing": 2,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "package_organization"
+      ]
+    },
+    {
+      "name": "Test strategy",
+      "score": 52.0,
+      "strict": 52.0,
+      "checks": 10,
+      "failing": 6,
+      "tier": 4,
+      "subjective": true,
+      "placeholder": false,
+      "cli_keys": [
+        "test_strategy"
+      ]
+    }
+  ],
+  "warnings": [
+    "TRIAGE PENDING \u2014 queued and will activate after objective work is complete."
+  ],
   "config": {
     "target_strict_score": 95,
     "review_max_age_days": 30,

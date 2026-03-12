@@ -169,7 +169,7 @@ impl IpcTupleSpace {
         let sender = if config.enable_notifications {
             // For now, we'll use a simple approach:
             // Try to create server, if fails, we're a client
-            Self::setup_notification_channel(&config)?
+            Self::try_notification_channel(&config)?
         } else {
             None
         };
@@ -250,7 +250,7 @@ impl IpcTupleSpace {
 
     // --- Internal helpers ---
 
-    fn setup_notification_channel(
+    fn try_notification_channel(
         _config: &IpcConfig,
     ) -> Result<Option<IpcSender<TupleNotification>>, IpcError> {
         // For phase 1: Just create a channel but don't connect yet

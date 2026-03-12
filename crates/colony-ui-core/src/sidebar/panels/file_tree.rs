@@ -37,7 +37,7 @@ impl FileTreePanel {
     }
 
     /// Get or initialize tree state for the given root
-    fn get_tree_state(&self, root: &Path) -> Option<TreeState> {
+    fn ensure_tree_state(&self, root: &Path) -> Option<TreeState> {
         let mut current = self.current_root.write();
         let mut state = self.tree_state.write();
 
@@ -203,7 +203,7 @@ impl SidebarComponent for FileTreePanel {
         }
 
         // Get or initialize tree state
-        if let Some(tree) = self.get_tree_state(&root) {
+        if let Some(tree) = self.ensure_tree_state(&root) {
             // Get visible nodes (respects expansion state)
             for node in tree.visible_nodes() {
                 self.render_node(&node, &tree, &mut lines);
