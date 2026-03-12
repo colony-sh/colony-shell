@@ -22,7 +22,7 @@ pub fn discover_init_scripts() -> Vec<PathBuf> {
         let project = cwd.join(".colony").join("init");
         if project.is_file() {
             // Don't run the same file twice (if cwd is home)
-            if scripts.last().map_or(true, |last| last != &project) {
+            if scripts.last() != Some(&project) {
                 scripts.push(project);
             }
         }

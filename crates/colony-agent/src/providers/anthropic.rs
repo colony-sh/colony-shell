@@ -107,21 +107,13 @@ impl ModelProvider for AnthropicProvider {
     async fn complete(&mut self, request: CompletionRequest) -> Result<CompletionStream> {
         debug!("Anthropic provider completing with model: {}", self.model);
 
-        // Build conversation
         let conversation = self.build_conversation(&request);
-
-        // Convert tools
         let tools = self.convert_tools(&request.tools);
-
-        // Build SDK request
         let sdk_request = conversation
             .with_tools(tools)
             .build(&self.model, request.max_tokens);
-
-        // Send streaming request
         let stream = self.client.send_streaming(sdk_request).await?;
 
-        // Convert Claude SDK stream to our unified stream
         let unified_stream = stream.map(|event_result| {
             event_result
                 .map_err(AgentError::from)
@@ -129,10 +121,6 @@ impl ModelProvider for AnthropicProvider {
         });
 
         Ok(Box::pin(unified_stream))
-    }
-
-    fn supports_streaming(&self) -> bool {
-        true
     }
 
     fn max_context_tokens(&self) -> usize {

@@ -18,9 +18,11 @@ use lancedb::{connect, Connection, Table};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::warn;
 use uuid::Uuid;
 
 const TABLE_NAME: &str = "memories";
+const DECAY_EVICTION_THRESHOLD: f32 = 0.1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
@@ -55,7 +57,7 @@ pub struct MemoryStore {
 impl MemoryStore {
     pub async fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
-        std::fs::create_dir_all(&path)?;
+        tokio::fs::create_dir_all(&path).await?;
         let uri = path.to_string_lossy().to_string();
         let db = connect(&uri).execute().await?;
         let embedder = Arc::new(FastEmbedProvider::new()?);
@@ -75,7 +77,7 @@ impl MemoryStore {
         embedder: Arc<dyn EmbeddingProvider>,
     ) -> Result<Self> {
         let path = path.into();
-        std::fs::create_dir_all(&path)?;
+        tokio::fs::create_dir_all(&path).await?;
         let uri = path.to_string_lossy().to_string();
         let db = connect(&uri).execute().await?;
 
@@ -160,19 +162,7 @@ impl MemoryStore {
         let mut query_builder = table.query().nearest_to(query_vec.as_slice())?;
 
         if let Some(scope) = scope {
-            let filter = match scope {
-                Scope::Global => "scope_type = 'global'".to_string(),
-                Scope::Project(id) => {
-                    format!("scope_type = 'project' AND scope_id = '{}'", id)
-                }
-                Scope::Session(id) => {
-                    format!("scope_type = 'session' AND scope_id = '{}'", id)
-                }
-                Scope::Task(id) => {
-                    format!("scope_type = 'task' AND scope_id = '{}'", id)
-                }
-            };
-            query_builder = query_builder.only_if(filter);
+            query_builder = query_builder.only_if(scope_filter(scope));
         }
 
         let results = query_builder
@@ -187,7 +177,7 @@ impl MemoryStore {
 
     pub async fn get(&self, id: &str) -> Result<Option<MemoryEntry>> {
         let table = self.get_table().await?;
-        let filter = format!("id = '{}'", id);
+        let filter = format!("id = '{}'", escape_filter_value(id));
 
         let results = table
             .query()
@@ -208,24 +198,49 @@ impl MemoryStore {
 
     pub async fn delete(&self, id: &str) -> Result<()> {
         let table = self.get_table().await?;
-        table.delete(&format!("id = '{}'", id)).await?;
+        table
+            .delete(&format!("id = '{}'", escape_filter_value(id)))
+            .await?;
+        Ok(())
+    }
+
+    /// Record an access to a memory entry, updating `accessed_at` and incrementing `access_count`.
+    pub async fn record_access(&self, id: &str) -> Result<()> {
+        let table = self.get_table().await?;
+        let now = Utc::now().to_rfc3339();
+        table
+            .update()
+            .only_if(format!("id = '{}'", escape_filter_value(id)))
+            .column("access_count", "access_count + 1")
+            .column("accessed_at", format!("'{}'", escape_filter_value(&now)))
+            .execute()
+            .await?;
         Ok(())
     }
 
     pub async fn forget_scope(&self, scope: &Scope) -> Result<usize> {
         let table = self.get_table().await?;
-        let filter = match scope {
-            Scope::Global => "scope_type = 'global'".to_string(),
-            Scope::Project(id) => format!("scope_type = 'project' AND scope_id = '{}'", id),
-            Scope::Session(id) => format!("scope_type = 'session' AND scope_id = '{}'", id),
-            Scope::Task(id) => format!("scope_type = 'task' AND scope_id = '{}'", id),
-        };
+        let filter = scope_filter(scope);
 
         let count_before = table.count_rows(None).await?;
         table.delete(&filter).await?;
         let count_after = table.count_rows(None).await?;
 
         Ok(count_before - count_after)
+    }
+
+    /// List all entries in a scope without vector search.
+    pub async fn list_scope(&self, scope: &Scope) -> Result<Vec<MemoryEntry>> {
+        let table = self.get_table().await?;
+        let filter = scope_filter(scope);
+        let results = table
+            .query()
+            .only_if(filter)
+            .execute()
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?;
+        parse_record_batches(results)
     }
 
     pub async fn consolidate(&self, from_scope: &Scope, to_scope: &Scope) -> Result<usize> {
@@ -235,17 +250,16 @@ impl MemoryStore {
             ));
         }
 
-        let results = self.search_in_scope("", 1000, Some(from_scope)).await?;
+        let entries = self.list_scope(from_scope).await?;
         let mut count = 0;
 
-        for result in results {
-            if result.entry.importance >= 0.5 {
+        for entry in entries {
+            if entry.importance >= 0.5 {
                 self.store_with_importance(
-                    &result.entry.content,
+                    &entry.content,
                     to_scope.clone(),
-                    result.entry.importance * 0.8,
-                    result
-                        .entry
+                    entry.importance * 0.8,
+                    entry
                         .metadata
                         .as_ref()
                         .and_then(|m| serde_json::from_str(m).ok()),
@@ -261,25 +275,20 @@ impl MemoryStore {
 
     pub async fn decay_importance(&self, factor: f32) -> Result<usize> {
         let table = self.get_table().await?;
-        let results = table
-            .query()
+
+        // Update all importance values by the decay factor
+        let updated = table
+            .update()
+            .column("importance", format!("importance * {factor}"))
             .execute()
-            .await?
-            .try_collect::<Vec<_>>()
             .await?;
 
-        let entries = parse_record_batches(results)?;
-        let mut updated = 0;
+        // Delete entries that fell below the eviction threshold
+        table
+            .delete(&format!("importance < {DECAY_EVICTION_THRESHOLD}"))
+            .await?;
 
-        for entry in entries {
-            let new_importance = entry.importance * factor;
-            if new_importance < 0.1 {
-                self.delete(&entry.id).await?;
-            }
-            updated += 1;
-        }
-
-        Ok(updated)
+        Ok(updated as usize)
     }
 
     pub async fn count(&self) -> Result<usize> {
@@ -338,6 +347,36 @@ impl MemoryStore {
         }
 
         Ok(count)
+    }
+}
+
+/// Escape single quotes in filter values to prevent injection.
+fn escape_filter_value(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+/// Build a LanceDB filter expression for a scope.
+fn scope_filter(scope: &Scope) -> String {
+    match scope {
+        Scope::Global => "scope_type = 'global'".to_string(),
+        Scope::Project(id) => {
+            format!(
+                "scope_type = 'project' AND scope_id = '{}'",
+                escape_filter_value(id)
+            )
+        }
+        Scope::Session(id) => {
+            format!(
+                "scope_type = 'session' AND scope_id = '{}'",
+                escape_filter_value(id)
+            )
+        }
+        Scope::Task(id) => {
+            format!(
+                "scope_type = 'task' AND scope_id = '{}'",
+                escape_filter_value(id)
+            )
+        }
     }
 }
 
@@ -493,6 +532,13 @@ fn parse_record_batches(batches: Vec<RecordBatch>) -> Result<Vec<MemoryEntry>> {
                     },
                 });
             }
+        } else {
+            warn!(
+                "Failed to parse record batch: one or more columns could not be downcast \
+                 (batch had {} rows, {} columns)",
+                batch.num_rows(),
+                batch.num_columns()
+            );
         }
     }
 
@@ -632,5 +678,167 @@ mod tests {
 
         let deleted = store.forget_scope(&session).await.unwrap();
         assert_eq!(deleted, 2);
+    }
+
+    #[tokio::test]
+    async fn test_record_access() {
+        let dir = tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).await.unwrap();
+
+        let id = store
+            .store("Access tracking test", Scope::Global, None)
+            .await
+            .unwrap();
+
+        let before = store.get(&id).await.unwrap().unwrap();
+        assert_eq!(before.access_count, 0);
+
+        store.record_access(&id).await.unwrap();
+        store.record_access(&id).await.unwrap();
+
+        let after = store.get(&id).await.unwrap().unwrap();
+        assert_eq!(after.access_count, 2);
+        assert!(after.accessed_at >= before.accessed_at);
+    }
+
+    #[tokio::test]
+    async fn test_list_scope() {
+        let dir = tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).await.unwrap();
+
+        let session = Scope::Session("list-test".to_string());
+        store
+            .store("Entry 1", session.clone(), None)
+            .await
+            .unwrap();
+        store
+            .store("Entry 2", session.clone(), None)
+            .await
+            .unwrap();
+        store.store("Global entry", Scope::Global, None).await.unwrap();
+
+        let scoped = store.list_scope(&session).await.unwrap();
+        assert_eq!(scoped.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_consolidate() {
+        let dir = tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).await.unwrap();
+
+        let task = Scope::Task("t1".to_string());
+        let session = Scope::Session("s1".to_string());
+
+        // Store entries with varying importance
+        store
+            .store_with_importance("Important fact", task.clone(), 0.8, None)
+            .await
+            .unwrap();
+        store
+            .store_with_importance("Minor detail", task.clone(), 0.3, None)
+            .await
+            .unwrap();
+
+        let consolidated = store.consolidate(&task, &session).await.unwrap();
+        // Only the important one (>=0.5) should be consolidated
+        assert_eq!(consolidated, 1);
+
+        // Source scope should be cleared
+        let remaining = store.list_scope(&task).await.unwrap();
+        assert!(remaining.is_empty());
+
+        // Target scope should have the consolidated entry
+        let target = store.list_scope(&session).await.unwrap();
+        assert_eq!(target.len(), 1);
+        assert!(target[0].importance < 0.8); // reduced by 0.8 factor
+    }
+
+    #[tokio::test]
+    async fn test_decay_importance() {
+        let dir = tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).await.unwrap();
+
+        store
+            .store_with_importance("High importance", Scope::Global, 1.0, None)
+            .await
+            .unwrap();
+        store
+            .store_with_importance("Low importance", Scope::Global, 0.15, None)
+            .await
+            .unwrap();
+
+        // Decay by 0.5 — high stays (0.5), low drops below threshold (0.075)
+        store.decay_importance(0.5).await.unwrap();
+
+        let entries = store.list_all().await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!((entries[0].importance - 0.5).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_evict() {
+        let dir = tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).await.unwrap();
+
+        store.store("Entry 1", Scope::Global, None).await.unwrap();
+        store.store("Entry 2", Scope::Global, None).await.unwrap();
+        store.store("Entry 3", Scope::Global, None).await.unwrap();
+
+        let policy = crate::eviction::LruEvictionPolicy::new(1);
+        let evicted = store.evict(&policy).await.unwrap();
+        assert_eq!(evicted, 2);
+        assert_eq!(store.count().await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_search_with_metadata_filter() {
+        let dir = tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).await.unwrap();
+
+        store
+            .store(
+                "Rust memory management",
+                Scope::Global,
+                Some(serde_json::json!({"topic": "rust"})),
+            )
+            .await
+            .unwrap();
+        store
+            .store(
+                "Python memory management",
+                Scope::Global,
+                Some(serde_json::json!({"topic": "python"})),
+            )
+            .await
+            .unwrap();
+
+        let query = MetadataQuery::equals("topic", serde_json::json!("rust"));
+        let results = store
+            .search_with_metadata_filter("memory", 10, None, &query)
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].entry.content.contains("Rust"));
+    }
+
+    #[tokio::test]
+    async fn test_filter_injection_safe() {
+        let dir = tempdir().unwrap();
+        let store = MemoryStore::open(dir.path()).await.unwrap();
+
+        // Store with a scope_id containing a single quote
+        let scope = Scope::Project("O'Brien's project".to_string());
+        let id = store
+            .store("Quoted scope test", scope.clone(), None)
+            .await
+            .unwrap();
+
+        // Should be able to query it back without injection issues
+        let entry = store.get(&id).await.unwrap();
+        assert!(entry.is_some());
+
+        let scoped = store.list_scope(&scope).await.unwrap();
+        assert_eq!(scoped.len(), 1);
     }
 }

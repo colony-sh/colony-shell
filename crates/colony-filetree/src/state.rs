@@ -166,7 +166,7 @@ impl TreeState {
             }
 
             // Skip ignored patterns
-            if config.ignore_patterns.iter().any(|p| name == *p) {
+            if config.ignore_patterns.contains(&name) {
                 continue;
             }
 
@@ -241,7 +241,7 @@ impl TreeState {
         let target_id = FileNode::hash_path(path);
 
         // Build path from root to target
-        let mut current = self.root_id.read().clone();
+        let mut current = *self.root_id.read();
         let mut path_parts: Vec<_> = path
             .strip_prefix(&self.root_path)
             .unwrap_or(path)

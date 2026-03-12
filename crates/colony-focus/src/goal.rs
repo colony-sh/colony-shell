@@ -40,7 +40,7 @@ impl GoalStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> Result<Self> {
         match s {
             "active" => Ok(GoalStatus::Active),
             "completed" => Ok(GoalStatus::Completed),
@@ -51,6 +51,14 @@ impl GoalStatus {
                 to: s.to_string(),
             }),
         }
+    }
+}
+
+impl std::str::FromStr for GoalStatus {
+    type Err = FocusError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Self::parse(s)
     }
 }
 
@@ -233,20 +241,20 @@ mod tests {
 
     #[test]
     fn test_status_from_str() {
-        assert_eq!(GoalStatus::from_str("active").unwrap(), GoalStatus::Active);
+        assert_eq!(GoalStatus::parse("active").unwrap(), GoalStatus::Active);
         assert_eq!(
-            GoalStatus::from_str("completed").unwrap(),
+            GoalStatus::parse("completed").unwrap(),
             GoalStatus::Completed
         );
         assert_eq!(
-            GoalStatus::from_str("blocked").unwrap(),
+            GoalStatus::parse("blocked").unwrap(),
             GoalStatus::Blocked
         );
         assert_eq!(
-            GoalStatus::from_str("cancelled").unwrap(),
+            GoalStatus::parse("cancelled").unwrap(),
             GoalStatus::Cancelled
         );
-        assert!(GoalStatus::from_str("invalid").is_err());
+        assert!(GoalStatus::parse("invalid").is_err());
     }
 
     #[test]

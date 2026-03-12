@@ -28,7 +28,7 @@ impl PipePair {
     pub fn new() -> std::io::Result<Self> {
         // SAFETY: pipe() returns two valid fds on success
         let (read_fd, write_fd) = nix::unistd::pipe()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         Ok(Self {
             read_end: read_fd,
             write_end: write_fd,
@@ -105,14 +105,14 @@ impl ChannelPipes {
 
             // Close read end in child (belongs to parent)
             nix::unistd::close(pipe.read_raw())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(std::io::Error::other)?;
 
             // dup2 write end onto the target channel fd
             if write_fd != target_fd {
                 nix::unistd::dup2(write_fd, target_fd)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
                 nix::unistd::close(write_fd)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
             }
         }
         Ok(())
@@ -124,7 +124,7 @@ impl ChannelPipes {
     pub fn close_child_ends(&mut self) -> std::io::Result<()> {
         for pipe in self.pipes.values() {
             nix::unistd::close(pipe.write_raw())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(std::io::Error::other)?;
         }
         Ok(())
     }
@@ -155,7 +155,7 @@ pub fn read_available(fd: RawFd) -> std::io::Result<Vec<u8>> {
     loop {
         // SAFETY: fd is valid, buf is properly sized
         let n = nix::unistd::read(fd, &mut buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         if n == 0 {
             break;

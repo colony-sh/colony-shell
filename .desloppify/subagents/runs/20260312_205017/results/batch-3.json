@@ -1,0 +1,129 @@
+{
+  "batch": "convention_outlier",
+  "batch_index": 3,
+  "assessments": {"convention_outlier": 72.0},
+  "dimension_notes": {
+    "convention_outlier": {
+      "evidence": [
+        "Two parallel sets of sidebar panel implementations coexist in crates/colony-ui-core: one under src/builtins/ (FileTreeSidebarComponent, GitFilesSidebarComponent, McpSidebarComponent, SessionSidebarComponent) and one under src/sidebar/panels/ (FileTreePanel, GitFilesPanel, McpPanel, SessionPanel). The builtins variants use SidebarLine as their line type; the panels variants use ComponentLine directly.",
+        "The builtins sidebar types use the naming suffix 'SidebarComponent' (e.g. FileTreeSidebarComponent) while the panels directory uses the suffix 'Panel' (e.g. FileTreePanel) for structurally identical things.",
+        "colony-filetree-bin/src/main.rs subscribes to the tuple key 'cwd_change' (line 24, 65), while the system emits 'dir_change' everywhere else (colony-exec/src/builtins.rs, colony-ui-core/src/builtins/*.rs, etc.). The comment on line 63 of filetree-bin even reads '// React to dir_change: ...' but the match checks for 'cwd_change'.",
+        "colony-filetree-bin uses bare .unwrap() in emit_frame and emit_tuple (lines 35, 105, 118), while the structurally identical colony-env-bin uses .expect() with a message for the same serialization calls (lines 25, 111). This is a direct sibling-protocol inconsistency between two panel binaries.",
+        "The file icon mapping function exists in three separate places with diverging extension sets: colony-filetree-bin/src/main.rs (file_icon), colony-ui-core/src/builtins/sidebar_file_tree.rs (file_icon), and colony-ui-core/src/sidebar/panels/file_tree.rs (file_style on FileTreePanel). Each covers slightly different extension sets and uses different icon codepoints for the same extension."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "dimension_judgment": {
+    "convention_outlier": {
+      "strengths": [
+        "Prompt component types (PromptComponent implementors) form a consistent family: identical import headers, identical new()/default() pattern, subscriptions() returning Vec<TuplePattern>, render() returning ComponentOutput. Every file in crates/colony-ui-core/src/builtins/ for prompt components follows this without drift.",
+        "Naming is uniformly snake_case for functions and PascalCase for types throughout all seed files and their neighbors; there is no camelCase drift anywhere.",
+        "The panel binary protocol (sentinel-based stdin/stdout IPC) is coherently structured in both colony-env-bin and colony-filetree-bin, with the same event loop shape, emit_frame helper, and InputEvent matching — the protocol convention is recognizable across sibling binaries.",
+        "The tuple key naming convention ('dir_change', 'env_change', 'file_change', 'cmd_complete') is applied consistently across the shell core, ui-core builtins, and subscription modules — the drift is isolated to one binary."
+      ],
+      "issue_character": "The issues are concentrated in two structural areas: a duplicated subsystem (sidebar panels implemented twice under different directory paths with different type and suffix naming) and a single factual mismatch in a panel binary (wrong subscription key, inconsistent error handling style). They are not pervasive across the codebase but they do create real navigational confusion for anyone working in the UI layer.",
+      "score_rationale": "The codebase scores well on in-family consistency — within each area, conventions hold. The drag comes from two intersecting problems: the sidebar subsystem has forked into two locations with different naming conventions (Panel vs SidebarComponent suffix, ComponentLine vs SidebarLine usage), making the ui-core directory non-trivially confusing to navigate. The 'cwd_change' vs 'dir_change' mismatch in colony-filetree-bin means that binary silently never reacts to directory changes — a functional bug rooted in convention drift. This is enough to place the score solidly in the 70-75 range: a developer would trust patterns in one area only to find them contradicted in a nearby sibling subsystem."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "convention_outlier",
+      "identifier": "sidebar_dual_implementation",
+      "summary": "Two parallel sidebar panel implementations coexist under builtins/ and sidebar/panels/ with different type names and line types",
+      "related_files": [
+        "crates/colony-ui-core/src/builtins/sidebar_file_tree.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_git_files.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_mcp.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_session.rs",
+        "crates/colony-ui-core/src/sidebar/panels/file_tree.rs",
+        "crates/colony-ui-core/src/sidebar/panels/git_files.rs",
+        "crates/colony-ui-core/src/sidebar/panels/mcp.rs",
+        "crates/colony-ui-core/src/sidebar/panels/session.rs"
+      ],
+      "evidence": [
+        "FileTreeSidebarComponent in builtins/sidebar_file_tree.rs and FileTreePanel in sidebar/panels/file_tree.rs both implement SidebarComponent for the same 'file_tree' id, but use different line types (SidebarLine vs ComponentLine) and different class-name suffixes.",
+        "GitFilesSidebarComponent in builtins/sidebar_git_files.rs and GitFilesPanel in sidebar/panels/git_files.rs both parse git porcelain output and render git file lists independently, with diverging status type enums (GitFileStatus defined in both files with different variant sets: panels version has Staged/Conflict variants the builtins version lacks).",
+        "McpSidebarComponent and McpPanel, SessionSidebarComponent and SessionPanel: four pairs of structurally equivalent components across two directories."
+      ],
+      "suggestion": "Determine which implementation is canonical and delete the other. The builtins/ variants use SidebarLine (which has a From<SidebarLine> for ComponentLine conversion already defined) and appear more featureful; the sidebar/panels/ variants use ComponentLine directly. Pick one set, update all callers, and remove the duplicate directory. Do not add an abstraction layer to unify them — simply pick the richer implementation.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "sidebar_panel_fork"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "filetree_bin_wrong_subscription_key",
+      "summary": "colony-filetree-bin subscribes to 'cwd_change' but the system emits 'dir_change'; the binary silently never reacts to directory changes",
+      "related_files": [
+        "crates/colony-filetree-bin/src/main.rs",
+        "crates/colony-exec/src/builtins.rs",
+        "crates/colony-shell/src/repl_tui.rs"
+      ],
+      "evidence": [
+        "colony-filetree-bin/src/main.rs line 24: `subscriptions: vec![\"cwd_change\".to_string()]`",
+        "colony-filetree-bin/src/main.rs line 65: `if key == \"cwd_change\"`",
+        "colony-exec/src/builtins.rs lines 369, 4239, 4280, 4317, 4395, 6735: all emit `Value::Str(\"dir_change\".to_string())` as the tuple key for directory change events",
+        "colony-shell/src/repl_tui.rs line 830: the TUI host broadcasts key 'cwd_change' to panels specifically — this is a separate panel-protocol broadcast path. The tuple-space path uses 'dir_change'. The subscription to 'cwd_change' may be intentional for the panel host path, but the comment on line 63 of filetree-bin reads '// React to dir_change' while the code checks 'cwd_change', indicating at minimum a documentation/convention inconsistency."
+      ],
+      "suggestion": "Audit whether colony-filetree-bin is intended to receive events via the panel-host broadcast path (which does use 'cwd_change') or via the tuple space (which uses 'dir_change'). If panel-host broadcast is the intended path, fix the comment on line 63 to say 'cwd_change'. If tuple space is intended, change the subscription key and matching key from 'cwd_change' to 'dir_change'. Add a constant (e.g. `const KEY_DIR_CHANGE: &str = \"dir_change\"`) shared across the panel binaries to prevent this class of mismatch.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "tuple_key_naming_drift"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "panel_bin_unwrap_vs_expect",
+      "summary": "Sibling panel binaries use different error handling style: colony-env-bin uses .expect() with messages, colony-filetree-bin uses bare .unwrap()",
+      "related_files": [
+        "crates/colony-filetree-bin/src/main.rs",
+        "crates/colony-env-bin/src/main.rs"
+      ],
+      "evidence": [
+        "colony-env-bin/src/main.rs line 25: `serde_json::to_string(&config).expect(\"config must serialize\")`",
+        "colony-env-bin/src/main.rs line 111: `serde_json::to_string(&line).expect(\"frame line must serialize\")`",
+        "colony-filetree-bin/src/main.rs line 35: `serde_json::to_string(&config).unwrap()` — bare unwrap, no message",
+        "colony-filetree-bin/src/main.rs lines 105, 118: two more bare `.unwrap()` on serialization calls that env-bin treats with .expect()"
+      ],
+      "suggestion": "Replace the three bare `.unwrap()` calls in colony-filetree-bin/src/main.rs with `.expect(\"<msg>\")` matching the convention established in colony-env-bin: `serde_json::to_string(&config).expect(\"config must serialize\")`, `serde_json::to_string(&line).expect(\"frame line must serialize\")`, `serde_json::to_string(&emit).expect(\"tuple emit must serialize\")`.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "panel_bin_protocol_drift"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "file_icon_triplication",
+      "summary": "File extension-to-icon mapping is implemented three times independently with diverging extension sets and icon codepoints",
+      "related_files": [
+        "crates/colony-filetree-bin/src/main.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_file_tree.rs",
+        "crates/colony-ui-core/src/sidebar/panels/file_tree.rs"
+      ],
+      "evidence": [
+        "colony-filetree-bin/src/main.rs defines `fn file_icon(name: &str) -> &'static str` covering rs/toml/json/yaml/md/txt/sh/bash/zsh/py/js/ts/go/c/cpp/h",
+        "colony-ui-core/src/builtins/sidebar_file_tree.rs defines `fn file_icon(name: &str) -> (&'static str, Color)` covering rs/toml/md/json/js/ts/py/go/sh/bash/zsh/lock/yml/yaml — different icon codepoints for the same extensions, adds Color",
+        "colony-ui-core/src/sidebar/panels/file_tree.rs defines `fn file_style(&self, ext: &Option<String>) -> (&'static str, Color)` covering rs/toml/json/yaml/yml/md/txt/sh/bash/zsh/py/js/ts/jsx/tsx/go/c/cpp/h/hpp/html/htm/css/scss/sass/lock — the most complete set, but different codepoints for the same extensions vs the builtins version"
+      ],
+      "suggestion": "If the sidebar_dual_implementation issue is resolved by picking one set of sidebar components, two of these three will naturally be removed. If the panel binary is also updated to use the ui-core library's mapping, only one copy needs to exist. Short of that, move the mapping into a shared function in a crate that both the binary and the ui-core library can depend on (e.g., a small file in colony-panel or a new colony-icons helper). Do not add a dependency inversion layer — a simple `pub fn file_icon(ext: &str) -> (&'static str, Color)` in the right shared crate is sufficient.",
+      "confidence": "medium",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "sidebar_panel_fork"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "The sidebar subsystem was apparently developed twice — once as a prompt/builtin component family (builtins/sidebar_*.rs) and once as a standalone panel family (sidebar/panels/*.rs) — without consolidating the two. This is the primary source of convention drift in the ui-core crate.",
+      "The panel binary protocol (colony-*-bin crates) evolved without a shared constants file or shared protocol helper, causing subscription key strings and error handling style to drift between sibling binaries."
+    ],
+    "likely_symptoms": [
+      "filetree_bin_wrong_subscription_key is a functional symptom of the tuple_key_naming_drift root cause — it may or may not be a real bug depending on whether the panel-host broadcast path covers the use case"
+    ],
+    "possible_false_positives": []
+  }
+}

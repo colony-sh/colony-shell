@@ -183,7 +183,7 @@ pub(crate) async fn execute_for_loop_with_control(
 ) -> (i32, ControlFlow) {
     let mut expander = Expander::with_executor_and_expr(
         executor.context().clone(),
-        |stmt, ctx| colony_exec::execute_and_capture(stmt, ctx),
+        colony_exec::execute_and_capture,
         |expr, ctx| colony_exec::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
     let mut values = Vec::new();

@@ -230,7 +230,7 @@ pub fn apply_redirects(
                 ) {
                     let mut expander = Expander::with_executor_and_expr(
                         context.clone(),
-                        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+                        crate::execute_and_capture,
                         |expr, ctx| {
                             crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
                         },
@@ -261,7 +261,7 @@ pub fn apply_redirects(
                     }
                     let mut expander = Expander::with_executor_and_expr(
                         context.clone(),
-                        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+                        crate::execute_and_capture,
                         |expr, ctx| {
                             crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
                         },
@@ -326,7 +326,7 @@ fn apply_vredir_file(
 
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
-        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        crate::execute_and_capture,
         |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
     let fields = expander.expand_word(word)?;
@@ -585,7 +585,7 @@ fn apply_file_redirect(
     // Expand the filename (with command substitution support)
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
-        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        crate::execute_and_capture,
         |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
     let fields = expander.expand_word(word)?;

@@ -108,19 +108,18 @@ impl Default for FileTreeSidebarComponent {
 
 fn file_icon(name: &str) -> (&'static str, Color) {
     let ext = name.rsplit('.').next().unwrap_or("");
-    match ext {
-        "rs" => ("\u{e7a8}", Color::Red),        // Rust icon
-        "toml" => ("\u{f0669}", Color::BrightBlack), // config icon
-        "md" => ("\u{e73e}", Color::Blue),        // markdown icon
-        "json" => ("\u{e60b}", Color::Yellow),    // json icon
-        "js" | "ts" => ("\u{e74e}", Color::Yellow), // js icon
-        "py" => ("\u{e73c}", Color::Blue),        // python icon
-        "go" => ("\u{e626}", Color::Cyan),        // go icon
-        "sh" | "bash" | "zsh" => ("\u{f489}", Color::Green), // shell icon
-        "lock" => ("\u{f023}", Color::BrightBlack), // lock icon
-        "yml" | "yaml" => ("\u{f481}", Color::Magenta), // yaml icon
-        _ => ("\u{f15b}", Color::BrightBlack),    // generic file icon
-    }
+    let icon = colony_filetree::file_icon_for_ext(ext);
+    let color = match ext {
+        "rs" => Color::Red,
+        "toml" | "lock" => Color::BrightBlack,
+        "md" | "markdown" | "py" => Color::Blue,
+        "json" | "js" | "ts" | "jsx" | "tsx" => Color::Yellow,
+        "go" => Color::Cyan,
+        "sh" | "bash" | "zsh" => Color::Green,
+        "yml" | "yaml" => Color::Magenta,
+        _ => Color::BrightBlack,
+    };
+    (icon, color)
 }
 
 impl SidebarComponent for FileTreeSidebarComponent {

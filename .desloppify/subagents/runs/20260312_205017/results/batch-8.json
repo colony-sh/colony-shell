@@ -1,0 +1,219 @@
+{
+  "batch": "low_level_elegance",
+  "batch_index": 8,
+  "assessments": {"low_level_elegance": 71.0},
+  "dimension_notes": {
+    "low_level_elegance": {
+      "evidence": [
+        "crates/colony-expand/src/context.rs: ShoptOptions.get() and .set() are two separate 25-arm match statements over the same set of string literals; a single macro or a const-array-of-(&str, getter, setter) would unify them and eliminate the duplication of listing every option name three times (get, set, all_options).",
+        "crates/colony-expand/src/context.rs: maybe_decrypt_value() contains nested if-let (if colony_secure::is_encrypted && if let Some(key) = get_cached_secure_key() && if let Ok(decrypted) = ...), violating the project's own style guide rule against nested if-let pyramids.",
+        "crates/colony-shell/src/shell/execution/control_flow.rs: The error-handling block inside execute_statement_with_errexit_control is copy-pasted nearly verbatim for SimpleCommand, Try, Match, While/Until/Case, and Pipeline arms — the same pattern of 'map ExecutionError variants to (exit_code, ControlFlow), then apply errexit' appears five or more times with cosmetic differences.",
+        "crates/colony-shell/src/shell/execution/control_flow.rs: execute_cstyle_for_loop_with_control has a redundant double-check on ControlFlow::Continue: the inner for-body loop breaks on `!matches!(Normal | Continue)` and also breaks on `matches!(Continue)`, so Continue causes two breaks in succession where one suffices.",
+        "crates/colony-expand/src/arithmetic.rs: pre_expand_variables() uses a manual char-indexed loop (Vec<char>, i += 1) for variable scanning rather than iterator-based parsing, making it significantly longer than necessary and inconsistent with the rest of the codebase's iterator style.",
+        "crates/colony-expand/src/parameter.rs: expand_simple_word() duplicates the Variable lookup+push pattern once for the top-level word parts and again inside the DoubleQuoted inner loop, with the inner loop only handling a subset of the top-level cases (no Tilde branch inside DoubleQuoted), creating silent inconsistency.",
+        "crates/colony-exec/src/builtins.rs: The sidebar builtin arm is inlined directly in the large dispatch match with raw serde_json::to_string and tuple_space.out, while every other builtin delegates to a named function — breaking the consistent extraction style used throughout the file.",
+        "crates/colony-agent/src/agent.rs: from_definition() and configure_from_definition() contain identical code blocks for setting system_prompt (if/else on prompt_template vs description) and max_tokens; this logic should live in a single helper used by both.",
+        "crates/colony-shell/src/shell/execution/serialization.rs: statement_to_shell_string uses format!(\"{:?}\", expr) as a fallback for ExprSub and unknown arms, embedding a Debug representation into production shell output — the intent is unclear and the result is unparseable as shell syntax.",
+        "crates/colony-shell/src/repl.rs and crates/colony-shell/src/repl_tui.rs: is_colony_terminal() is defined identically in both files — a trivial one-liner that is duplicated rather than shared."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "sub_axes": {
+        "abstraction_leverage": 68.0,
+        "indirection_cost": 80.0,
+        "interface_honesty": 75.0,
+        "delegation_density": 82.0,
+        "definition_directness": 62.0,
+        "type_discipline": 78.0
+      }
+    }
+  },
+  "dimension_judgment": {
+    "low_level_elegance": {
+      "strengths": [
+        "Core data structures (ExpansionContext, GoalTree, RecipeRegistry) are well-bounded — state mutation is explicit and each struct manages its own persistence without leaking internals.",
+        "The ControlFlow enum and its propagation through execute_statement_with_control provide a direct, intention-revealing model for break/continue/return/exit semantics.",
+        "InputEditor.apply_action is a clean, exhaustive dispatch that delegates each KeyAction to a focused buffer method — state mutation is bounded to the buffer and mode fields.",
+        "Helper extraction is consistently used in execution-heavy modules: pipeline segments, guard splitting, and normalization are each pulled into named functions rather than inlined.",
+        "The arithmetic evaluator, despite its manual loop, clearly separates tokenisation, precedence parsing, and evaluation into distinct phases with well-named functions."
+      ],
+      "issue_character": "The primary recurring weakness is copy-paste control flow: the same error-mapping and early-exit pattern is stamped into five or more match arms in control_flow.rs, the same ShoptOptions string-dispatch is duplicated between get/set, and the same agent-config snippet is repeated across two methods — suggesting that extract-helper discipline breaks down under pressure in the larger files.",
+      "score_rationale": "The codebase sits in the 70-72 range (solid but visibly imperfect). The majority of functions are focused and directly stated, and extraction style is consistent within individual modules. However, several high-traffic files (control_flow.rs, context.rs, builtins.rs, arithmetic.rs) contain duplicated blocks or violated style rules that a reviewer would flag in any PR. The nested if-let in maybe_decrypt_value directly contradicts the project's own written style guide, and the five-times-repeated errexit error-mapping pattern in control_flow.rs is a meaningful maintenance burden. These are not minor nits — they would require real effort to fix — but they are concentrated rather than systemic, which keeps the score above the 60-65 band where issues would be pervasive."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_control_flow_errexit_duplication",
+      "summary": "Identical errexit error-handling blocks copy-pasted across 5+ match arms in execute_statement_with_errexit_control",
+      "related_files": [
+        "crates/colony-shell/src/shell/execution/control_flow.rs"
+      ],
+      "evidence": [
+        "The pattern 'match result { Ok(code) => if !errexit_exempt && errexit && code != 0 { Exit } else { Normal }, Err(Exit(c)) => Exit, Err(Errexit(c)) => Exit, Err(ref e) => { eprintln!; let exit_code = match e { CommandNotFound => 127, PermissionDenied => 126, _ => 1 }; if !errexit_exempt && errexit { Exit } else { Normal } }' appears essentially verbatim for SimpleCommand, Try, Match, While/Until/Case arms.",
+        "The execute_err_trap call is also repeated identically after the result for SimpleCommand, Try, Match, and Pipeline."
+      ],
+      "suggestion": "Extract a helper fn map_execution_result(result: Result<i32, ExecutionError>, errexit_exempt: bool, errexit: bool) -> (i32, ControlFlow) that encodes the common mapping. Each arm then becomes a one-liner that calls map_execution_result after await. The err_trap call can similarly be factored via a post-hook pattern.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "copy_paste_control_flow"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_shopt_triple_listing",
+      "summary": "ShoptOptions names listed three times independently in get(), set(), and all_options()",
+      "related_files": [
+        "crates/colony-expand/src/context.rs"
+      ],
+      "evidence": [
+        "ShoptOptions::get() is a 25-arm match over string literals returning the corresponding field.",
+        "ShoptOptions::set() is a parallel 25-arm match assigning the same field.",
+        "ShoptOptions::all_options() returns a static slice listing the same 24 names alphabetically.",
+        "Any new shopt option requires three coordinated edits that are easy to miss."
+      ],
+      "suggestion": "Define a const array of (name, getter-closure, setter-closure) or use a macro to generate get/set/all_options from a single authoritative list. Alternatively, a phf::Map from name to field offset, or even just an index into a fixed-size array if all options are bool, would reduce the maintenance surface to one place.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "copy_paste_control_flow"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_nested_if_let_decrypt",
+      "summary": "maybe_decrypt_value() uses nested if-let pyramid in direct violation of the project style guide",
+      "related_files": [
+        "crates/colony-expand/src/context.rs"
+      ],
+      "evidence": [
+        "Lines 37-44: 'if colony_secure::is_encrypted(&value) { if let Some(key) = get_cached_secure_key() { if let Ok(decrypted) = colony_secure::decrypt(&value, key) { return decrypted; } } }' — three levels of nesting.",
+        "RUST_STYLE_GUIDE.md states 'Nested if let is Always Wrong' with no exceptions."
+      ],
+      "suggestion": "Rewrite using let-else: 'let Some(key) = get_cached_secure_key() else { return value }; let Ok(decrypted) = colony_secure::decrypt(&value, key) else { return value }; decrypted' — or as a combinator chain on Option/Result.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "style_guide_violation"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_cstyle_for_double_break",
+      "summary": "execute_cstyle_for_loop_with_control breaks on Continue twice in succession — one break is unreachable",
+      "related_files": [
+        "crates/colony-shell/src/shell/execution/control_flow.rs"
+      ],
+      "evidence": [
+        "Lines 252-256: 'if !matches!(loop_flow, Normal | Continue) { break; } if matches!(loop_flow, Continue) { break; }' — when loop_flow is Continue, the first condition is false (Continue is in the exemption list), so execution falls through to the second check which then breaks. The first guard could simply be '!matches!(loop_flow, Normal)' and the second would be unreachable, or the logic restructured as a single match."
+      ],
+      "suggestion": "Replace with: 'match loop_flow { ControlFlow::Normal => {}, ControlFlow::Continue => break, _ => break, }' or more directly 'if !matches!(loop_flow, ControlFlow::Normal) { break; }' (since both Normal and Continue should proceed to the update step, but Continue should skip the rest of the body — the current code skips the update too when Continue fires via the inner for-body break).",
+      "confidence": "medium",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "copy_paste_control_flow"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_pre_expand_manual_loop",
+      "summary": "pre_expand_variables() uses a manual char-indexed loop instead of idiomatic iterator/parser patterns",
+      "related_files": [
+        "crates/colony-expand/src/arithmetic.rs"
+      ],
+      "evidence": [
+        "Lines 36-95: converts expr to Vec<char>, uses a mutable index i with while i < chars.len(), manually advances i for each character class — 60 lines of imperative scanning.",
+        "The rest of the codebase uses iterator chains and str methods; this function stands out as a style island."
+      ],
+      "suggestion": "Rewrite using str::char_indices() and a Peekable iterator, or use a small hand-rolled scanner struct that owns a Chars iterator. The core logic (skip $, read {var}, read positional, read identifier) maps naturally to a match on the next char with iterator lookahead.",
+      "confidence": "medium",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "style_island"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_sidebar_builtin_inline",
+      "summary": "sidebar builtin arm in execute_builtin dispatch is inlined with ad-hoc JSON/tuple logic while all other builtins delegate to named functions",
+      "related_files": [
+        "crates/colony-exec/src/builtins.rs"
+      ],
+      "evidence": [
+        "Lines 281-296: the sidebar arm contains serde_json::to_string, tuple_space.out, and direct error printing inline in the dispatch match, unlike every other builtin which calls a dedicated builtin_xxx function.",
+        "This breaks the consistent extraction style that makes the match table readable."
+      ],
+      "suggestion": "Extract a builtin_sidebar(args: &[String], tuple_space: &TupleSpace) -> Result<BuiltinResult> function following the same pattern as all other builtins, and replace the inline block with a single delegation call.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "style_island"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_agent_definition_duplication",
+      "summary": "from_definition() and configure_from_definition() in agent.rs duplicate identical logic for setting system_prompt and max_tokens from AgentDefinition",
+      "related_files": [
+        "crates/colony-agent/src/agent.rs"
+      ],
+      "evidence": [
+        "from_definition(): 'if !definition.prompt_template.is_empty() { config.system_prompt = ... } else if !definition.description.is_empty() { config.system_prompt = ... }'",
+        "configure_from_definition(): same if/else block on the same fields.",
+        "max_tokens assignment block also repeated."
+      ],
+      "suggestion": "Extract fn apply_definition_to_config(definition: &AgentDefinition, config: &mut AgentConfig) and call it from both methods.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "copy_paste_control_flow"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_is_colony_terminal_duplication",
+      "summary": "is_colony_terminal() helper function is defined identically in both repl.rs and repl_tui.rs",
+      "related_files": [
+        "crates/colony-shell/src/repl.rs",
+        "crates/colony-shell/src/repl_tui.rs"
+      ],
+      "evidence": [
+        "repl.rs line 29-31: 'fn is_colony_terminal() -> bool { std::env::var(\"COLONY_TERMINAL\").is_ok() }'",
+        "repl_tui.rs line 42-44: identical definition."
+      ],
+      "suggestion": "Move this function to a shared location (e.g., crate::shell or a small crate::util module) and import it from both call sites.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "copy_paste_control_flow"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "lle_debug_repr_in_shell_output",
+      "summary": "statement_to_shell_string falls back to format!(\"{:?}\", expr) for ExprSub and unknown variants, embedding a Rust Debug string in production shell output",
+      "related_files": [
+        "crates/colony-shell/src/shell/execution/serialization.rs"
+      ],
+      "evidence": [
+        "Line 49: 'WordPart::ExprSub(expr) => result.push_str(&format!(\"$[{:?}]\", expr))'",
+        "Line 51: '_ => result.push_str(&format!(\"{:?}\", p))' inside DoubleQuoted arm",
+        "Line 80: '_ => result.push_str(&format!(\"{:?}\", other))' at top level",
+        "Line 275: 'other => format!(\"{:?}\", other)' for unhandled Statement variants",
+        "Debug output (e.g., 'ExprSub { ... }') is not valid shell syntax and would cause re-parse failures if used in coproc or serialisation round-trips."
+      ],
+      "suggestion": "For ExprSub, implement a proper expression-to-string serialiser or at minimum return an empty string or a comment. For the catch-all Statement arm, consider a compile-time assertion that all variants are handled, or return an empty string with a tracing::warn rather than a Debug dump.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "incomplete_implementation"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "copy_paste_control_flow: Several high-complexity files (control_flow.rs, context.rs, agent.rs) show evidence of repeated incremental additions rather than upfront extraction — new statement types or configuration fields were added by copying existing blocks rather than extracting a reusable helper.",
+      "style_island: Two functions (pre_expand_variables, sidebar builtin) do not follow the extraction and iteration conventions used everywhere around them, suggesting they were written in a different context or ported from prototype code.",
+      "incomplete_implementation: The Debug-repr fallbacks in serialization.rs indicate the serializer was not fully implemented for all AST variants; this is a functionality gap that also harms low-level elegance."
+    ],
+    "likely_symptoms": [
+      "lle_cstyle_for_double_break: the correctness impact is subtle and the current code may accidentally work for most real cases — worth confirming actual behaviour before prioritising."
+    ],
+    "possible_false_positives": [
+      "lle_pre_expand_manual_loop: the manual loop may be intentional for performance given how frequently arithmetic expansion runs — the 'style island' observation is valid but the fix may not be worth it if it introduces overhead."
+    ]
+  }
+}

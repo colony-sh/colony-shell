@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::query::MetadataQuery;
 use crate::scope::Scope;
-use crate::store::{MemoryStore, SearchResult};
+use crate::store::{MemoryEntry, MemoryStore, SearchResult};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -74,12 +74,12 @@ impl MemoryBackedContext {
             .await
     }
 
+    /// Retrieve the most recent entries in this scope, sorted newest-first.
     pub async fn retrieve_recent(&self, limit: usize) -> Result<Vec<ConversationTurn>> {
-        let results = self
-            .store
-            .search_in_scope("", limit, Some(&self.scope))
-            .await?;
-        Ok(results_to_turns(results))
+        let mut entries = self.store.list_scope(&self.scope).await?;
+        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        entries.truncate(limit);
+        Ok(entries_to_turns(entries))
     }
 
     pub async fn retrieve_relevant(
@@ -98,22 +98,9 @@ impl MemoryBackedContext {
         limit: usize,
         query: &MetadataQuery,
     ) -> Result<Vec<SearchResult>> {
-        let over_fetch = limit * 3;
-        let results = self
-            .store
-            .search_in_scope(prompt, over_fetch, Some(&self.scope))
-            .await?;
-
-        let mut filtered = Vec::with_capacity(limit);
-        for result in results {
-            if query.matches(&result.entry)? {
-                filtered.push(result);
-                if filtered.len() >= limit {
-                    break;
-                }
-            }
-        }
-        Ok(filtered)
+        self.store
+            .search_with_metadata_filter(prompt, limit, Some(&self.scope), query)
+            .await
     }
 
     pub async fn clear(&self) -> Result<usize> {
@@ -121,12 +108,11 @@ impl MemoryBackedContext {
     }
 }
 
-fn results_to_turns(results: Vec<SearchResult>) -> Vec<ConversationTurn> {
-    results
+fn entries_to_turns(entries: Vec<MemoryEntry>) -> Vec<ConversationTurn> {
+    entries
         .into_iter()
-        .filter_map(|r| {
-            let role = r
-                .entry
+        .filter_map(|entry| {
+            let role = entry
                 .metadata
                 .as_ref()
                 .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
@@ -139,8 +125,8 @@ fn results_to_turns(results: Vec<SearchResult>) -> Vec<ConversationTurn> {
 
             role.map(|role| ConversationTurn {
                 role,
-                content: r.entry.content.clone(),
-                memory_id: r.entry.id.clone(),
+                content: entry.content.clone(),
+                memory_id: entry.id.clone(),
             })
         })
         .collect()

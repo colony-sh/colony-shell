@@ -1,0 +1,121 @@
+{
+  "batch": "design_coherence",
+  "batch_index": 15,
+  "assessments": {"design_coherence": 62.0},
+  "dimension_notes": {
+    "design_coherence": {
+      "evidence": [
+        "crates/colony-exec/src/lib.rs is 4584 lines combining: (1) a mini scripting interpreter (EvalValue type, eval_binary, eval_func_call, eval_method_call — ~1600 lines), (2) the Executor struct with 100+ methods covering simple command execution, pipeline dispatch, trap handling, function/proc call, special file loading, heartbeat polling, and reflection — all in one file",
+        "eval_func_call (lines 775-1159) and eval_method_call (lines 1162-1475) are parallel monolithic match arms implementing identical operations (len, join, split, keys, values, get, has, upper, lower, trim, replace, contains, first, last, push, pop, insert, remove, slice) with ~700 lines of near-duplicate code; the function-call and method-call surfaces are structurally the same problem solved twice in the same file",
+        "The two 'trim' and two 'replace' arms appear literally duplicated inside eval_func_call itself (lines 946-967 and 1122-1142; 953-966 and 1129-1143), a copy-paste artifact",
+        "crates/colony-exec/src/builtins.rs is 7209 lines housing every shell builtin; execute_builtin is a single dispatching function dispatching ~40 commands, each implemented as a sibling private function in the same file — the file mixes argument expansion, session_id/tuple_space management, channel management, and the entire POSIX builtin library in one module",
+        "crates/colony-shell/src/repl_tui.rs (1566 lines) combines: ANSI stripping utility, an OutputCapture pipe/thread mechanism, a Scrollback buffer implementation, TUI layout and rendering, keyboard/mouse event dispatch, command execution orchestration, and prompt-state emission — six distinct concerns in one file",
+        "crates/colony-shell/src/repl.rs duplicates is_colony_terminal() and the ColonyHelper completion logic that also appears in repl_tui.rs — the same inline helper copied between the two REPL modes",
+        "crates/colony-agent/src/{approval, cancellation, context, detector, memory_integration, planning, provider_chain, token_accounting, tuple_bridge}.rs are all individually coherent, focused modules — a strong counter-example showing the design can work well when concerns are cleanly separated",
+        "crates/colony-expand/src/arithmetic.rs and crates/colony-expand/src/parameter.rs are appropriately complex for their POSIX domains and are not mixed-concern files; complexity scores are high because the domain is intrinsically complex",
+        "crates/colony-shell/src/shell/execution/control_flow.rs (612 lines, complexity score 868) is dense but has a single coherent responsibility: translating shell control flow (if/for/while/cstyle-for/case/try) to a (i32, ControlFlow) result — justified complexity",
+        "crates/colony-shell/src/shell/execution/serialization.rs uses nested inner functions (varref_to_string, word_to_string, simple_cmd_to_string, statements_to_string) all inside statement_to_shell_string — this is idiomatic Rust for a single-entry-point serializer and is coherent",
+        "crates/colony-agent/examples/simple_agent.rs is 30 lines, a valid Cargo example, not an orphan — the mechanical signal is a false positive",
+        "crates/colony-shell/src/tutorial/explain/constructs.rs is a data-oriented concept registry; the ConceptExplainer is marked #[allow(dead_code)] throughout, suggesting this module is built but not yet wired"
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "The dominant issue is lib.rs concentrating the scripting interpreter (EvalValue + ~20 stdlib functions expressed twice as free functions and as methods) alongside the Executor type. This single file holds two unrelated design responsibilities: value computation and command execution orchestration. Splitting the value model and its operations into a dedicated module (e.g., colony-exec/src/eval.rs) would halve the file's complexity score, eliminate the literal duplicate arms inside eval_func_call, and make the Executor methods easier to navigate. The builtins.rs file is a second hotspot: at 7209 lines it is a coherent but monolithic collection that resists navigation and change isolation."
+    }
+  },
+  "dimension_judgment": {
+    "design_coherence": {
+      "strengths": [
+        "The colony-agent sub-crate decomposes cleanly: approval, cancellation, context, detector, memory_integration, planning, provider_chain, token_accounting, tuple_bridge are each single-responsibility files with focused interfaces",
+        "colony-expand sub-crates (arithmetic.rs, parameter.rs, brace.rs, field_split.rs, tilde.rs) correctly co-locate POSIX expansion logic with its domain without mixing concerns",
+        "control_flow.rs is a textbook example of coherent complexity — 612 lines all serving the single goal of mapping shell control-flow constructs to (exit_code, ControlFlow) pairs",
+        "serialization.rs uses nested functions as an appropriate scoping device for a single-entry-point converter, demonstrating that nesting is not always a design smell",
+        "Pipeline execution is decomposed into focused collaborators: execute_pipeline, execute_pipeline_basic, execute_pipeline_extended, execute_pipeline_with_guard_segments — each with a clear single role"
+      ],
+      "issue_character": "The problems are concentrated in two files (colony-exec/src/lib.rs and crates/colony-exec/src/builtins.rs) that mix value-computation logic, execution orchestration, and POSIX builtin implementations; the rest of the codebase is well-structured.",
+      "score_rationale": "A score of 62 reflects a codebase where the majority of files are coherent and well-scoped, but two high-traffic modules (lib.rs at 4584 lines and builtins.rs at 7209 lines) have genuine multi-concern accumulation and literal code duplication (the eval_func_call/eval_method_call parallel) that degrades navigability and change locality at the subsystem level. A passing score (70+) would require the eval infrastructure to be extracted from the execution module, and the literal duplicate stdlib operation arms to be collapsed. The rest of the codebase — channels, cloud-sdk, filetree, mcp, config, agent — is designed with clear boundaries and would individually score 80+."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "design_coherence",
+      "identifier": "lib_rs_mixed_concerns",
+      "summary": "colony-exec/src/lib.rs mixes a scripting value interpreter with the Executor command-execution orchestrator in 4584 lines",
+      "related_files": ["crates/colony-exec/src/lib.rs"],
+      "evidence": [
+        "Lines 78-1599: EvalValue enum, eval_binary, eval_expression_in_context, eval_func_call, eval_method_call, is_truthy, eval_value_equals — a complete mini-interpreter for the 'var' declaration language",
+        "Lines 2203-4548: Executor struct with 100+ methods covering simple command dispatch, pipeline execution, function/proc calls, trap execution, special file loading, heartbeat polling, reflection, and subshell management",
+        "eval_func_call (lines 775-1159, ~385 lines) and eval_method_call (lines 1162-1475, ~313 lines) implement the same ~20 operations (len, join, split, keys, values, get, has, upper, lower, trim, replace, contains, first, last, push, pop, insert, remove, slice) as parallel match arms — neither belongs in lib.rs alongside Executor",
+        "Mechanical scan shows lib.rs has complexity_score 1473, highest in the codebase, and is in the wide_param_bags list with 280 config_bag_mentions — both signals consistent with mixed concerns"
+      ],
+      "suggestion": "Extract the EvalValue type and all eval_* functions (eval_binary, eval_expression_in_context, eval_func_call, eval_method_call, eval_index, eval_field, is_truthy, eval_value_equals, unwrap_optional, etc.) into a dedicated crates/colony-exec/src/eval.rs module. Executor in lib.rs would shrink to its genuine responsibility: shell execution orchestration. The stdlib operation duplication between eval_func_call and eval_method_call can then be resolved by making the method form delegate to the function form.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "incremental_feature_accumulation"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "eval_func_call_internal_duplication",
+      "summary": "eval_func_call in lib.rs contains literal duplicate match arms for 'trim' and 'replace', and mirrors eval_method_call arm-for-arm",
+      "related_files": ["crates/colony-exec/src/lib.rs"],
+      "evidence": [
+        "Lines 946-951 (trim) and lines 1122-1127 (trim again) — identical implementations inside the same match statement in eval_func_call",
+        "Lines 953-967 (replace with 3 args) and lines 1129-1143 (replace again) — identical implementations, both mapped to the string 'replace'",
+        "eval_func_call and eval_method_call implement len, join, split, keys, values, get, has, upper, lower, trim, replace, contains, first, last, push, pop, insert, remove, slice independently with only the argument extraction pattern differing — method form uses 'target' instead of 'args[0]'"
+      ],
+      "suggestion": "Collapse the duplicate arms inside eval_func_call (the second 'trim' and second 'replace' entries are unreachable dead code). Then refactor eval_method_call to extract the target value, prepend it to args, and delegate to eval_func_call for operations that are logically identical regardless of call style.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "incremental_feature_accumulation"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "repl_tui_mixed_concerns",
+      "summary": "repl_tui.rs combines six distinct concerns in 1566 lines: ANSI stripping, pipe-based output capture, scrollback buffer, TUI rendering, keyboard/mouse dispatch, and command execution",
+      "related_files": ["crates/colony-shell/src/repl_tui.rs"],
+      "evidence": [
+        "strip_ansi() (lines 231-285): standalone text-processing utility with no dependency on the TUI state",
+        "OutputCapture (lines 152-226): an OS-level pipe/dup2/thread mechanism, a complete independent concern",
+        "Scrollback (lines 67-145): a pure data structure with scroll logic, completely separable from TUI rendering",
+        "The run_tui_repl function and its event loop handles keyboard events, mouse events, prompt rendering, command execution dispatch, and panel message routing all inline",
+        "is_colony_terminal() is defined identically in both repl.rs (line 29) and repl_tui.rs (line 42)"
+      ],
+      "suggestion": "Extract Scrollback and OutputCapture into repl_tui/scrollback.rs and repl_tui/capture.rs. Move strip_ansi to a shared location (colony-tui or colony-exec/buffers where ANSI stripping already exists). Hoist is_colony_terminal() to a single shared location accessible from both REPLs.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "incremental_feature_accumulation"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "constructs_explainer_dead_code",
+      "summary": "tutorial/explain/constructs.rs is built but entirely suppressed with #[allow(dead_code)], suggesting an incomplete integration",
+      "related_files": ["crates/colony-shell/src/tutorial/explain/constructs.rs"],
+      "evidence": [
+        "Lines 5, 10, 24: #[allow(dead_code)] on ConceptExplainer, Concept, and the impl block — the module compiles but is not connected to any call site",
+        "The module is declared in the tutorial crate but the ConceptExplainer is not instantiated in tutorial/runner.rs or tutorial/tui/magic_pane.rs"
+      ],
+      "suggestion": "Either wire ConceptExplainer into the magic pane (it appears the pane handles TraceEvent::Concept already via the Concept SectionStyle variant) or remove it until it is needed. Dead module-level code with suppressed warnings is a design signal that the feature was built speculatively.",
+      "confidence": "medium",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "speculative_feature_build"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "lib.rs accumulated its scripting interpreter organically as the 'var declaration' language was extended; each new built-in function was added inline rather than extracted",
+      "repl_tui.rs grew by accreting features (output capture, ANSI stripping, scrollback) into the TUI loop without restructuring"
+    ],
+    "likely_symptoms": [
+      "constructs_explainer_dead_code is symptom-level — it reveals incomplete wiring rather than a design structural defect"
+    ],
+    "possible_false_positives": [
+      "The mechanical orphan signals for colony-agent files (approval.rs, cancellation.rs, context.rs, detector.rs, lib.rs, memory_integration.rs, planning.rs) are false positives — colony-agent is a dependency of colony-shell as confirmed by Cargo.toml, and each file is a well-scoped module re-exported from lib.rs",
+      "simple_agent.rs flagged as orphaned is a Cargo example binary, not dead code"
+    ]
+  }
+}

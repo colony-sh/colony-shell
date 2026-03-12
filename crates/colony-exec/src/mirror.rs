@@ -111,8 +111,7 @@ impl ObservationRow {
 fn open_db(path: &PathBuf) -> Result<Connection> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(
         |e| {
-            ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ExecutionError::IoError(std::io::Error::other(
                 format!("mirror: failed to open database {}: {}", path.display(), e),
             ))
         },
@@ -139,8 +138,7 @@ fn query_new_observations(
              LIMIT ?2",
         )
         .map_err(|e| {
-            ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ExecutionError::IoError(std::io::Error::other(
                 format!("mirror: query prepare failed: {e}"),
             ))
         })?;
@@ -158,8 +156,7 @@ fn query_new_observations(
             },
         )
         .map_err(|e| {
-            ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ExecutionError::IoError(std::io::Error::other(
                 format!("mirror: query failed: {e}"),
             ))
         })?;
@@ -167,8 +164,7 @@ fn query_new_observations(
     let mut observations = Vec::new();
     for row in rows {
         let obs = row.map_err(|e| {
-            ExecutionError::IoError(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ExecutionError::IoError(std::io::Error::other(
                 format!("mirror: row read failed: {e}"),
             ))
         })?;

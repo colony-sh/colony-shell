@@ -23,8 +23,12 @@ pub fn expand_arithmetic(expr: &str, context: &mut ExpansionContext) -> Result<S
     Ok(result.to_string())
 }
 
-/// Immutable version for compatibility - creates a temporary mutable context
-pub fn expand_arithmetic_immut(expr: &str, context: &ExpansionContext) -> Result<String> {
+/// Evaluate an arithmetic expression without propagating side-effects.
+///
+/// Clones `context` internally so that any variable assignments inside the
+/// expression (e.g. `a=5`) are evaluated but discarded afterwards. Use
+/// [`expand_arithmetic`] when assignments must persist.
+pub fn expand_arithmetic_readonly(expr: &str, context: &ExpansionContext) -> Result<String> {
     let expanded = pre_expand_variables(expr.trim(), context);
     // For expressions without assignment, we can use a clone
     let mut temp_context = context.clone();

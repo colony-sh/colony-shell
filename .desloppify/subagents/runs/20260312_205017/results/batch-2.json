@@ -1,0 +1,123 @@
+{
+  "batch": "high_level_elegance",
+  "batch_index": 2,
+  "assessments": {"high_level_elegance": 62.0},
+  "dimension_notes": {
+    "high_level_elegance": {
+      "evidence": [
+        "Workspace has 30 crates with mostly domain-aligned names (colony-parser, colony-expand, colony-agent, colony-tuple, colony-protocol, colony-panel, colony-memory, colony-filetree) that map to distinct capabilities.",
+        "colony-exec/src/lib.rs module-level doc declares: 'Simple command execution (fork/exec), PATH resolution, Environment passing, Exit status capture, Signal handling' — but the crate publicly exports buffers/, file_tree/, flux/, goals/, mirror/, panes/, sidebar/, and special_files/, which are distinct subsystems with no natural relationship to fork/exec semantics.",
+        "colony-exec has 19,239 total LOC across 16 root-level files plus 8 subdirectories; its builtins.rs dispatch table (lines 226-297) dispatches to colony-exec internal submodules for flux, mirror, goals, tree, split, vsplit, layout, pane, secure, mirror, sidebar — all UI/feature builtins that are conceptually separate from execution.",
+        "colony-ui-core exports two competing file-tree implementations from the same crate: builtins/sidebar_file_tree.rs (FileTreeSidebarComponent) uses inline std::fs directory walking with its own depth/entry-count limits, while sidebar/panels/file_tree.rs (FileTreePanel) uses colony-filetree::TreeState. Both are pub-used from lib.rs lines 26 and 39 respectively.",
+        "DockerStatusComponent.render() calls std::process::Command::new('docker').args(['ps', '-q']).output() on every render invocation, but subscriptions() returns vec![] — the component bypasses the reactive tuple-space subscription contract that every other prompt component honors, making renders potentially slow or blocking.",
+        "colony-exec Cargo.toml depends on colony-channels, colony-tuple, colony-expand, colony-parser — the execution crate absorbs almost all of the subsystem, making it an architectural hub rather than a focused execution primitive.",
+        "The bin crates (colony-filetree-bin, colony-preview-bin, etc.) are listed as workspace members but their [[bin]] targets are compiled through colony-shell/Cargo.toml, creating a cross-referencing pattern where ../colony-filetree-bin/src/main.rs is a bin of the colony-shell package — non-standard placement that blurs ownership of binaries."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "sub_axes": {
+        "abstraction_leverage": 72.0,
+        "indirection_cost": 80.0,
+        "interface_honesty": 45.0,
+        "delegation_density": 75.0,
+        "definition_directness": 60.0,
+        "type_discipline": 80.0
+      }
+    }
+  },
+  "dimension_judgment": {
+    "high_level_elegance": {
+      "strengths": [
+        "The workspace crate split is clearly domain-driven: colony-parser, colony-expand, colony-agent, colony-tuple, colony-protocol, colony-panel, colony-memory each have a legible, well-bounded purpose that a new engineer can explain in one sentence.",
+        "colony-agent's 16 modules are each individually focused (approval.rs, cancellation.rs, context.rs, planning.rs, router.rs, token_accounting.rs) and the crate's lib.rs top comment accurately summarizes what the crate does.",
+        "The PromptComponent and SidebarComponent trait contracts are consistently applied across all 18+ builtin components in colony-ui-core/src/builtins/, giving that subsystem a uniform, predictable structure.",
+        "Focused infrastructure crates (colony-secure, colony-reflection, colony-mcp, colony-recipe, colony-focus) each address a single cross-cutting concern without leaking into others.",
+        "The separation of *-bin crates for sidebar panel processes reflects a deliberate boundary between the main shell process and long-running UI processes."
+      ],
+      "issue_character": "A small number of crates — most severely colony-exec — act as catch-all hubs that absorb subsystems (file tree watching, flux/TUI rendering, goals, mirror LLM, pane management, sidebar) that belong in separate crates or at least have no stated connection to the crate's documented purpose, while inside colony-ui-core a competing dual implementation of the same file-tree capability exists simultaneously.",
+      "score_rationale": "The project is above the mid-range: the macro workspace decomposition into 20+ named domain crates is genuinely strong and well-intentioned, and most crates honor their stated scope. However, colony-exec's scope has grown to include 8 conceptually unrelated subsystems (19K LOC, docstring gap vs. reality), the dual file-tree implementations within colony-ui-core represent a visible ownership failure, and the DockerStatusComponent's bypass of the reactive subscription contract undermines the architectural pattern the whole prompt subsystem is built on. These are not minor nits — they represent places where a new engineer will be surprised to find responsibilities, and where ripple changes are likely (moving 'mirror' or 'goals' builtins requires touching exec). This sits around 60-65, solidly below a 'well-decomposed' 75+ but well above a disorganized codebase."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "exec_scope_overload",
+      "summary": "colony-exec absorbs 8 subsystems (file_tree, flux, goals, mirror, panes, sidebar, buffers, special_files) unrelated to its stated fork/exec responsibility",
+      "related_files": [
+        "crates/colony-exec/src/lib.rs",
+        "crates/colony-exec/src/mirror.rs",
+        "crates/colony-exec/src/flux/mod.rs",
+        "crates/colony-exec/src/goals/mod.rs",
+        "crates/colony-exec/src/panes/mod.rs",
+        "crates/colony-exec/src/sidebar.rs",
+        "crates/colony-exec/src/buffers/mod.rs",
+        "crates/colony-exec/src/file_tree/mod.rs",
+        "crates/colony-exec/src/special_files/mod.rs"
+      ],
+      "evidence": [
+        "lib.rs docstring: 'Command execution with fork/exec and job control ... Simple command execution, PATH resolution, Environment passing, Exit status capture' — does not mention the 8 public submodules that are unrelated to these primitives.",
+        "pub mod file_tree, flux, goals, mirror, panes, sidebar, buffers, special_files are all publicly exported from a crate documented as an execution engine.",
+        "builtins.rs dispatch (lines 271-296) routes 'tree', 'split', 'vsplit', 'layout', 'pane', 'mirror', 'goal' builtins to colony-exec internal submodules — forcing all feature builtins to live inside the execution crate.",
+        "colony-exec/src/ has 19,239 total LOC; for comparison, colony-parser (the entire POSIX parser) is 7,962 LOC — exec has become a superset of the whole codebase."
+      ],
+      "suggestion": "Extract each distinct subsystem into its own crate or at minimum into colony-shell: colony-exec/src/mirror.rs -> colony-mirror or colony-shell/src/shell/mirror; colony-exec/src/goals/ -> use colony-focus directly; colony-exec/src/flux/ -> colony-flux or colony-shell/src/shell/flux; colony-exec/src/panes/ -> already has colony-panel, move logic there; colony-exec/src/file_tree/ -> already has colony-filetree, remove duplication; colony-exec/src/special_files/ -> colony-shell/src/shell/special_files (it reads AGENT.md, CONTEXT.md — shell startup logic, not exec primitives). Update builtins.rs to call into those crates at dispatch time. Update lib.rs docstring to match whatever remains.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "hub_crate_accumulation"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "dual_file_tree_ownership",
+      "summary": "colony-ui-core exports two competing file-tree implementations: one with inline std::fs walking and one using colony-filetree::TreeState",
+      "related_files": [
+        "crates/colony-ui-core/src/builtins/sidebar_file_tree.rs",
+        "crates/colony-ui-core/src/sidebar/panels/file_tree.rs",
+        "crates/colony-ui-core/src/lib.rs"
+      ],
+      "evidence": [
+        "builtins/sidebar_file_tree.rs (FileTreeSidebarComponent): uses std::fs::read_dir in walk_directory() with its own max_depth/max_entries limits — an inline re-implementation of file tree traversal.",
+        "sidebar/panels/file_tree.rs (FileTreePanel): uses colony_filetree::TreeState::new(root) — the proper shared library.",
+        "lib.rs line 26: pub use builtins::FileTreeSidebarComponent and lib.rs line 39: pub use sidebar::FileTreePanel — both are exported at crate root, both represent 'the file tree sidebar', with no documentation explaining which to prefer or why both exist."
+      ],
+      "suggestion": "Remove the inline std::fs walking in FileTreeSidebarComponent and have it delegate to colony-filetree::TreeState (same as FileTreePanel does), or consolidate both types into one. If FileTreeSidebarComponent implements PromptComponent and FileTreePanel implements SidebarComponent (different traits), document this distinction and remove the inline fs traversal from FileTreeSidebarComponent, replacing it with colony_filetree.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "hub_crate_accumulation"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "docker_component_bypasses_subscription_contract",
+      "summary": "DockerStatusComponent calls docker CLI synchronously at render time instead of subscribing to tuple-space events, breaking the reactive component architecture",
+      "related_files": [
+        "crates/colony-ui-core/src/builtins/docker_status.rs"
+      ],
+      "evidence": [
+        "get_running_count() calls Command::new('docker').args(['ps', '-q']).output() on every render() invocation — a blocking subprocess call inside the render path.",
+        "subscriptions() returns vec![] — this component declares no reactive dependencies, so the rendering engine has no mechanism to know when Docker state changes without calling render repeatedly.",
+        "All other seed-file components (aws_profile, duration) read from ComponentContext (pre-computed, side-effect-free) — DockerStatus is the only component that spawns a process during render.",
+        "If docker is not installed or the daemon is not running, render silently returns hidden — the component architecture has no contract for this failure mode."
+      ],
+      "suggestion": "Either: (1) add a Docker-monitoring tuple emitter (separate background task that polls docker and emits docker_status tuples to the tuple space), then update DockerStatusComponent.subscriptions() to subscribe to those tuples and read count from ComponentContext.data, matching the pattern of other components; or (2) cache the subprocess result with a TTL and document the divergence from the reactive contract. Option 1 keeps the architecture coherent.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "incomplete_reactive_adoption"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "colony-exec grew organically as each new feature (mirror, goals, flux, panes) was added as a builtin command, and the most convenient place to implement a builtin was alongside the builtin dispatch table — causing the execution crate to absorb feature logic.",
+      "The PromptComponent::subscriptions() reactive contract was likely introduced after some components (docker_status) were already written with direct process spawning, leaving the contract as aspirational rather than enforced."
+    ],
+    "likely_symptoms": [
+      "docker_component_bypasses_subscription_contract is symptom-level (the root is absence of a docker event emitter).",
+      "dual_file_tree_ownership is likely a symptom of incremental feature addition without revisiting the earlier naive implementation."
+    ],
+    "possible_false_positives": [
+      "The bin-target cross-referencing in colony-shell/Cargo.toml may be intentional Cargo workspace practice for producing a single distributable binary with all panel processes bundled — review before treating as an issue."
+    ]
+  }
+}

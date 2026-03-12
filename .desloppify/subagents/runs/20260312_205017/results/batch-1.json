@@ -1,0 +1,160 @@
+{
+  "batch": "cross_module_architecture",
+  "batch_index": 1,
+  "assessments": {"cross_module_architecture": 57.0},
+  "dimension_notes": {
+    "cross_module_architecture": {
+      "evidence": [
+        "colony-agent/Cargo.toml declares colony-exec as a mandatory workspace dependency, making the AI reasoning layer directly depend on the POSIX execution engine layer",
+        "colony-agent/src/agent.rs uses colony_exec::special_files::AgentDefinition at lines 110 and 142, pulling an execution-domain type into the agent domain",
+        "colony-exec/src/mirror.rs opens the colony-reflection SQLite database directly using raw rusqlite (line 112: Connection::open_with_flags) and re-implements query logic (lines 128-175) that already exists in colony-reflection::ObservationStore::by_session(), bypassing the published API of a crate it already depends on",
+        "mirror.rs hardcodes the DB path ~/.colony/reflection/observations.db (line 218) as a duplicate of colony-reflection::ObservationStore::default_path()",
+        "Five separate crates — colony-agent, colony-focus, colony-reflection, colony-secure, colony-tuple — each independently implement the same SQLite persistence boilerplate: open(), open_default(), open_in_memory(), initialize_schema()/init_schema(). No shared persistence substrate exists",
+        "Path resolution for ~/.colony/ is duplicated across at least six crates: colony-agent/src/persistence.rs:433 (dirs_config_path), colony-focus/src/persistence.rs:317 (default_db_path), colony-reflection/src/storage.rs:73 (default_path), colony-memory/src/store.rs:566 (dirs_config_path), colony-secure/src/lib.rs:45 (uses config_dir().join('colony')), colony-reflection/src/storage.rs:73 (uses home_dir().join('.colony')); these use different root conventions (config_dir vs home_dir)",
+        "colony-exec at 19,239 LOC across src/ plus subdirectories (buffers/, file_tree/, flux/, goals/, special_files/, panes/) is a disproportionate hub crate; it mixes POSIX execution, file tree management, flux process monitor, goal tracking, channel pipes, and special files parsing — every feature that touches execution imports this entire mass",
+        "colony-exec/Cargo.toml depends on ratatui and crossterm directly (for the flux TUI builtin), pulling UI rendering into the execution layer; UI concerns should not live inside the POSIX execution engine",
+        "colony-channels/Cargo.toml depends on colony-reflection, creating a dependency from a low-level IPC primitive crate upward into an analytics/observation layer — channel infrastructure should not import observation recording"
+      ],
+      "impact_scope": "codebase",
+      "fix_scope": "architectural_change",
+      "confidence": "high",
+      "issues_preventing_higher_score": "Three structural problems compound each other: (1) the agent→exec dependency direction violation locks AgentDefinition inside the execution layer, making it impossible to use colony-agent without pulling in the full execution engine; (2) colony-exec bypasses the colony-reflection boundary by directly querying its database, meaning colony-reflection's schema is coupled to two codebases; (3) the missing shared persistence substrate means five independent SQLite schema evolution paths exist with no coordination point — any future migration requires synchronizing across all five crates independently."
+    }
+  },
+  "dimension_judgment": {
+    "cross_module_architecture": {
+      "strengths": [
+        "colony-protocol is a correctly positioned pure-data crate with no dependencies beyond serde, serving as a stable protocol definition layer",
+        "colony-parser is a clean foundation crate with no internal dependencies, correctly positioned at the bottom of the dependency graph",
+        "The provider pattern in colony-agent/src/providers/ correctly isolates each LLM backend behind a common ModelProvider trait, preventing external API volatility from crossing into the agent core",
+        "colony-memory correctly stands alone with no dependencies on colony-exec, colony-agent, or other application-layer crates — its boundaries are respected by its consumers",
+        "Feature-gating in colony-agent/Cargo.toml (cloud, memory, tuple, focus, recipe features) shows intentional boundary thinking, making several high-level dependencies opt-in rather than mandatory"
+      ],
+      "issue_character": "The codebase has a recurring pattern of skipping the declared abstraction boundary when it is inconvenient: colony-agent imports an execution-domain type rather than moving it to a shared location, colony-exec queries a peer crate's database directly rather than using its API, and five crates each re-implement the same SQLite bootstrapping pattern rather than extracting a shared substrate — in each case the shortcut makes the boundaries progressively harder to enforce.",
+      "score_rationale": "The codebase sits in the 50-60 range (functional but with systemic architectural friction). The dependency graph has clear intentional structure — pure data crates at the bottom, execution in the middle, agent at the top — but that structure is violated in two confirmed load-bearing places (agent→exec for AgentDefinition, exec directly querying reflection's DB). The cross-package SQLite duplication is a missing-shared-boundary problem affecting five crates simultaneously. The colony-exec hub's absorption of UI dependencies (ratatui, crossterm) and analytics-upward coupling in colony-channels both widen the blast radius of common changes. These are not cosmetic issues: adding a new execution feature today requires touching colony-exec regardless of whether it is logically an execution concern, and any schema change in colony-reflection must be coordinated with the duplicate queries in colony-exec/mirror.rs."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "agent_imports_exec_type",
+      "summary": "colony-agent depends on colony-exec to obtain AgentDefinition, inverting the intended agent-over-exec layer order",
+      "related_files": [
+        "crates/colony-agent/src/agent.rs",
+        "crates/colony-agent/Cargo.toml",
+        "crates/colony-exec/src/special_files/types.rs"
+      ],
+      "evidence": [
+        "colony-agent/Cargo.toml line 13: colony-exec.workspace = true (mandatory dependency, not optional)",
+        "colony-agent/src/agent.rs line 110: pub async fn from_definition(definition: &colony_exec::special_files::AgentDefinition)",
+        "colony-agent/src/agent.rs line 142: pub async fn configure_from_definition(&mut self, definition: &colony_exec::special_files::AgentDefinition)",
+        "AgentDefinition is a parsed document type (prompt, capabilities, model spec) — it has no runtime execution semantics and does not belong inside the execution engine"
+      ],
+      "suggestion": "Move AgentDefinition (and its siblings ContextDefinition, ToolsDefinition, etc.) from colony-exec/src/special_files/types.rs into colony-protocol or a new colony-recipe-types crate that neither colony-agent nor colony-exec depends on each other to reach. Both crates can then depend on the shared types crate. This eliminates the upward dependency and unblocks using colony-agent without compiling the full execution engine.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "missing_shared_types_boundary"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "exec_bypasses_reflection_api",
+      "summary": "colony-exec/mirror.rs directly queries the colony-reflection SQLite database instead of using the published ObservationStore API",
+      "related_files": [
+        "crates/colony-exec/src/mirror.rs",
+        "crates/colony-reflection/src/storage.rs",
+        "crates/colony-exec/Cargo.toml"
+      ],
+      "evidence": [
+        "colony-exec/src/mirror.rs line 14: use rusqlite::{Connection, OpenFlags}",
+        "colony-exec/src/mirror.rs line 112: Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY) — opens reflection DB directly",
+        "colony-exec/src/mirror.rs lines 128-175: query_new_observations() re-implements a subset of ObservationStore::by_session() with raw SQL SELECT from the observations table",
+        "colony-exec/src/mirror.rs line 218: hardcodes ~/.colony/reflection/observations.db, duplicating ObservationStore::default_path()",
+        "colony-exec/Cargo.toml already lists colony-reflection as a dependency (line 17), so the API is available",
+        "The struct ObservationRow in mirror.rs is a partial re-definition of colony-reflection::Observation"
+      ],
+      "suggestion": "Replace the raw DB access in mirror.rs with calls to colony-reflection::ObservationStore. Add a query method to ObservationStore (e.g., since_timestamp(ts, limit)) if one does not exist, rather than re-implementing the query in mirror.rs. Remove the ObservationRow re-definition. This ensures that schema changes to colony-reflection break at compile time rather than silently at runtime.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "boundary_shortcut_for_convenience"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "sqlite_persistence_duplication",
+      "summary": "Five crates independently implement identical SQLite open/schema/default-path boilerplate with no shared persistence substrate",
+      "related_files": [
+        "crates/colony-agent/src/persistence.rs",
+        "crates/colony-focus/src/persistence.rs",
+        "crates/colony-reflection/src/storage.rs",
+        "crates/colony-secure/src/approvals.rs",
+        "crates/colony-tuple/src/persistent.rs"
+      ],
+      "evidence": [
+        "All five files implement the same open(path)/open_default()/open_in_memory() constructor triad",
+        "All five wrap Connection in Mutex<Connection> for synchronization with identical lock-poisoning error messages",
+        "All five call create_dir_all on the parent directory with nearly identical patterns before opening",
+        "colony-agent uses AgentError::Conversation to wrap rusqlite::Error; colony-focus uses FocusError::Database; colony-reflection defines StorageError with #[from] rusqlite::Error; colony-secure unwraps rusqlite directly through its own Result alias — four incompatible error wrapping conventions for the same underlying operation",
+        "Path conventions diverge: colony-agent and colony-focus use dirs::config_dir().join('colony'), while colony-reflection uses dirs::home_dir().join('.colony'), producing different filesystem locations on some platforms"
+      ],
+      "suggestion": "Extract a colony-storage crate (or a storage module in colony-config) providing: a SqliteStore builder with open/open_default/open_in_memory, a uniform StorageError wrapping rusqlite::Error, and a single colony_data_dir() function that all crates call for the canonical ~/.colony/ path. Each existing store becomes a thin domain wrapper around this substrate. This eliminates the config_dir vs home_dir divergence and centralises rusqlite version negotiation.",
+      "confidence": "high",
+      "impact_scope": "codebase",
+      "fix_scope": "architectural_change",
+      "root_cause_cluster": "missing_shared_persistence_boundary"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "exec_hub_absorbs_ui_layer",
+      "summary": "colony-exec depends on ratatui and crossterm for its flux TUI builtin, pulling UI rendering into the POSIX execution engine",
+      "related_files": [
+        "crates/colony-exec/Cargo.toml",
+        "crates/colony-exec/src/flux/tui.rs",
+        "crates/colony-exec/src/flux/mod.rs"
+      ],
+      "evidence": [
+        "colony-exec/Cargo.toml lines 43-44: ratatui = '0.29' and crossterm = '0.28' as direct dependencies",
+        "These are pulled in by the flux builtin (src/flux/tui.rs) which renders a process manager TUI inline within the execution engine",
+        "The directory profile shows colony-exec/src/ at 19,239 total LOC — the largest crate in the workspace — with flux/ adding 1,148 LOC of TUI code",
+        "Any crate that depends on colony-exec (colony-agent, colony-shell, and others) transitively compiles ratatui and crossterm even if they never invoke flux"
+      ],
+      "suggestion": "Extract the flux builtin into a separate colony-flux crate that depends on colony-exec for execution primitives and on ratatui/crossterm for rendering, inverting the current direction. colony-exec exposes an interface for spawning and monitoring processes; colony-flux implements the TUI on top of it. Register flux as a plugin/builtin in colony-shell rather than embedding it in the execution engine.",
+      "confidence": "medium",
+      "impact_scope": "subsystem",
+      "fix_scope": "architectural_change",
+      "root_cause_cluster": "hub_accumulation"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "channels_depends_on_reflection",
+      "summary": "colony-channels depends on colony-reflection, placing observation/analytics concerns inside a low-level IPC primitive crate",
+      "related_files": [
+        "crates/colony-channels/Cargo.toml",
+        "crates/colony-channels/src/diag.rs"
+      ],
+      "evidence": [
+        "colony-channels/Cargo.toml: colony-reflection = { path = '../colony-reflection' } is a direct dependency",
+        "colony-channels is a channel IPC primitive (pipes, buffers, LLM channels) — it should be near the bottom of the dependency graph",
+        "colony-reflection is an analytics/observation layer that records shell events — it should be at a higher level than IPC primitives",
+        "This coupling means every consumer of colony-channels also transitively depends on colony-reflection's rusqlite, async-trait, and chrono stack"
+      ],
+      "suggestion": "Invert the dependency: have colony-reflection observe channel events by subscribing to a channel event trait or callback defined in colony-channels, rather than having colony-channels import colony-reflection. Alternatively, move the diag recording logic out of colony-channels into colony-reflection or a dedicated colony-channels-reflection bridge module in a higher-level crate.",
+      "confidence": "medium",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "dependency_direction_violation"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "A missing shared types boundary: AgentDefinition and similar parsed-document types have no obvious home that is below both colony-agent and colony-exec, so they ended up inside colony-exec by accident of development order",
+      "A missing shared persistence substrate: each new stateful crate independently copied the SQLite bootstrapping pattern rather than extracting it, compounding inconsistency with each addition",
+      "Hub accumulation in colony-exec: because colony-exec is the most-imported crate, new features are added there even when they have UI or analytics character, progressively widening the blast radius"
+    ],
+    "likely_symptoms": [
+      "channels_depends_on_reflection — the actual concern may be that a specific diag.rs file records observations; the fix may be smaller than full dependency inversion",
+      "exec_hub_absorbs_ui_layer — the flux TUI is the only UI concern in colony-exec; extracting it is valuable but has lower urgency than the agent→exec boundary violation"
+    ],
+    "possible_false_positives": []
+  }
+}

@@ -250,14 +250,9 @@ impl ChannelCodec {
         self.buffer.extend_from_slice(data);
         let mut frames = Vec::new();
 
-        loop {
-            match Frame::decode(&self.buffer)? {
-                Some((frame, consumed)) => {
-                    self.buffer = self.buffer[consumed..].to_vec();
-                    frames.push(frame);
-                }
-                None => break,
-            }
+        while let Some((frame, consumed)) = Frame::decode(&self.buffer)? {
+            self.buffer = self.buffer[consumed..].to_vec();
+            frames.push(frame);
         }
 
         Ok(frames)

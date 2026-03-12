@@ -1,0 +1,112 @@
+{
+  "batch": "naming_quality",
+  "batch_index": 5,
+  "assessments": {"naming_quality": 77.0},
+  "dimension_notes": {
+    "naming_quality": {
+      "evidence": [
+        "get_tree_state (file_tree.rs:39) takes &self but acquires RwLock write guards and conditionally reinitializes both self.tree_state and self.current_root — a get_ prefix that hides mutation",
+        "process_widget_message (widget_server.rs:193) uses the generic verb 'process' for a function that parses a protocol message and dispatches to typed handlers — 'dispatch_widget_message' or 'route_widget_message' would be more intent-revealing",
+        "process_full (agent.rs:476) contrasted with process_with_cancellation — 'full' qualifies the method by what it lacks (no cancel token) rather than what it does; the distinction is implicit",
+        "setup_notification_channel (ipc.rs:253) unconditionally returns Ok(None) with a phase-1 comment; the name promises setup/registration but no channel is established",
+        "handle_and_emit (filetree/protocol.rs:376) uses an 'and' connector indicating it does two things; the component dispatch pattern in this codebase normally names these separately",
+        "handle_key used identically across colony-env-bin, colony-filetree-bin, colony-preview-bin, colony-logs-bin, colony-gitstatus-bin, colony-history-bin — established convention, not a defect",
+        "builtin_ prefix on all shell builtin functions is consistent and domain-aligned across the entire builtins.rs module",
+        "Abbreviations ctx, cwd, ttl, cmd, buf, idx are used uniformly throughout the codebase with no inconsistencies found"
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "The get_tree_state mutation mismatch is a contract-violating name in an interior-mutability context; process_full vs process_with_cancellation pair creates an asymmetric API surface; setup_notification_channel advertises behavior it does not implement"
+    }
+  },
+  "dimension_judgment": {
+    "naming_quality": {
+      "strengths": [
+        "Builtin functions in colony-exec/src/builtins.rs use a uniform builtin_ prefix throughout, making the dispatch table at line 226 immediately readable",
+        "Panel binary binaries (env-bin, filetree-bin, gitstatus-bin, etc.) share identical handle_key / emit_frame / render_lines conventions — a reader familiar with one binary can immediately navigate all others",
+        "Component interface names (id, render, subscriptions, render_block, handle_action) are consistent across PromptComponent and SidebarComponent implementations in colony-ui-core",
+        "Common abbreviations ctx, cwd, ttl, cmd are applied uniformly with no inconsistent expansions found",
+        "Domain-specific names like invalidate_cache, clear_stale_approvals, rebuild_preserving_expansion, collapse_or_up communicate intent at the right level of abstraction"
+      ],
+      "issue_character": "Naming defects are concentrated at boundary functions where a name promises one kind of behavior (pure read, initialization, setup) but the implementation does another; generic verbs (process) appear at integration seams rather than in domain-core code.",
+      "score_rationale": "The codebase scores above average for naming: domain-core functions have precise, intent-revealing names and conventions are consistent within each subsystem. The score is held back by a small cluster of boundary-function misnomers (get_ that mutates, process_ that dispatches, setup_ that does nothing) and one asymmetric API pair (process_full vs process_with_cancellation) that forces callers to understand the distinction from context rather than from the names themselves. These are module-scoped issues rather than systemic codebase-wide failures, placing the score in the upper-middle range."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "naming_quality",
+      "identifier": "NQ-01",
+      "summary": "get_tree_state mutates internal state via RwLock writes behind a get_ prefix",
+      "related_files": ["crates/colony-ui-core/src/sidebar/panels/file_tree.rs"],
+      "evidence": [
+        "fn get_tree_state(&self, root: &Path) -> Option<TreeState> acquires self.current_root.write() and self.tree_state.write() and conditionally overwrites both (lines 40-58)",
+        "Rust convention: get_ methods are expected to be read-only accessors; callers of &self methods do not expect mutation"
+      ],
+      "suggestion": "Rename to ensure_tree_state or load_or_init_tree_state to signal that it may initialize on first call or when the root changes",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "name_behavior_mismatch"
+    },
+    {
+      "dimension": "naming_quality",
+      "identifier": "NQ-02",
+      "summary": "setup_notification_channel always returns Ok(None) — name promises initialization that never happens",
+      "related_files": ["crates/colony-tuple/src/ipc.rs"],
+      "evidence": [
+        "fn setup_notification_channel(_config: &IpcConfig) -> Result<Option<IpcSender<TupleNotification>>> { Ok(None) } with comment 'For phase 1: Just create a channel but don't connect yet' (lines 253-259)",
+        "The name 'setup' implies the channel is created/registered; callers cannot distinguish 'disabled by config' from 'not yet implemented'"
+      ],
+      "suggestion": "Either rename to placeholder_notification_channel or, better, inline the phase-1 stub at the call site in IpcTupleSpace::open with a TODO comment so the unused function does not mislead future readers",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "name_behavior_mismatch"
+    },
+    {
+      "dimension": "naming_quality",
+      "identifier": "NQ-03",
+      "summary": "process_full / process_with_cancellation pair uses 'full' as a negative qualifier rather than describing what the method does",
+      "related_files": ["crates/colony-agent/src/agent.rs"],
+      "evidence": [
+        "pub async fn process_with_cancellation(...) at line 359 is the primary method with explicit cancel token",
+        "pub async fn process_full(...) at line 476 handles the streaming/tool-call path — 'full' contrasts with 'with_cancellation' but does not describe the streaming behavior",
+        "A reader must read both bodies to understand that process_full is the streaming tool-use path"
+      ],
+      "suggestion": "Rename process_full to run_turn or execute_turn to name what it does, and consider whether process_with_cancellation should be the primary public API; the current naming makes the streaming path look like an enhanced version rather than a distinct code path",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "vocabulary_divergence"
+    },
+    {
+      "dimension": "naming_quality",
+      "identifier": "NQ-04",
+      "summary": "process_widget_message uses generic 'process' verb at a dispatch boundary",
+      "related_files": ["crates/colony-shell/src/widget_server.rs"],
+      "evidence": [
+        "async fn process_widget_message(json: &str, ...) -> Option<String> at line 193 parses JSON, matches on ProtocolMessage variants, and routes to typed handlers",
+        "The function is purely a dispatcher — callers already know a message is being processed; the name adds no information about what happens to the message"
+      ],
+      "suggestion": "Rename to dispatch_widget_message or route_widget_request to communicate the routing/dispatch nature of the function",
+      "confidence": "medium",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "generic_verb"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Boundary and integration-seam functions (IPC, widget protocol, tree state initialization) received less naming attention than domain-core functions where the domain vocabulary is clearer",
+      "The get_ prefix convention is violated in one interior-mutability context where the borrow checker accepts &self but mutation still occurs through Arc<RwLock<_>>"
+    ],
+    "likely_symptoms": [
+      "NQ-03 may be symptom-level: process_full vs process_with_cancellation asymmetry may reflect an incomplete refactor rather than a naming decision"
+    ],
+    "possible_false_positives": [
+      "handle_key across panel binaries — flagged by mechanical scan but is a well-established codebase convention used identically in 6+ binaries",
+      "on_event in manager/subscription/renderer — generic observer name but used consistently as a cache-invalidation notification across all three sites"
+    ]
+  }
+}

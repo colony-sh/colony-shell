@@ -102,8 +102,7 @@ impl Editor {
         while pos > 0 {
             let prev = self.buffer[..pos]
                 .char_indices()
-                .last()
-                .map(|(i, c)| (i, c));
+                .last();
             match prev {
                 Some((i, c)) if !c.is_whitespace() => pos = i,
                 _ => break,

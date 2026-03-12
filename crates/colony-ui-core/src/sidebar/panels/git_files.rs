@@ -15,6 +15,7 @@ pub enum GitFileStatus {
     Deleted,
     Renamed,
     Untracked,
+    #[allow(dead_code)]
     Staged,
     Conflict,
 }

@@ -1,4 +1,4 @@
-use crate::{ApprovalDatabase, ProcessLineage, Result, SecureConfig, SecureError};
+use crate::{ApprovalDatabase, ApprovalScope, ProcessLineage, Result, SecureConfig, SecureError, GRANTED_BY_INTERACTIVE};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use sha2::{Digest, Sha256};
@@ -188,7 +188,8 @@ impl SecureRegistry {
                     &pending.script_path,
                     &pending.script_hash,
                     &pending.variable,
-                    "interactive",
+                    GRANTED_BY_INTERACTIVE,
+                    ApprovalScope::Global,
                 )?;
                 let value = self.get_secure_value(&pending.variable);
                 Ok(value)

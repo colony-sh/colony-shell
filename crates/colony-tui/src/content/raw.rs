@@ -117,7 +117,7 @@ impl RawContent {
                     collapsed,
                 } => {
                     // Command line with exit code indicator
-                    let indicator = if *exit_code == 0 { " " } else { " " };
+                    let indicator = if *exit_code == 0 { "\u{2714}" } else { "\u{2718}" };
                     lines.push(ContentLine::Command {
                         text: format!("{} {}", indicator, command),
                         exit_code: *exit_code,

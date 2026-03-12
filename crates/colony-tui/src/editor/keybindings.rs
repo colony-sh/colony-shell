@@ -37,7 +37,9 @@ pub enum EditorAction {
 
 /// Pending state for multi-key sequences in Normal mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default)]
 pub enum PendingKey {
+    #[default]
     None,
     /// Waiting for second key in a two-key sequence.
     /// E.g., `d` waiting for `d`/`i`/`w`, `c` waiting for `c`/`i`/`w`, `g` waiting for `g`.
@@ -46,11 +48,6 @@ pub enum PendingKey {
     OperatorInner(char),
 }
 
-impl Default for PendingKey {
-    fn default() -> Self {
-        PendingKey::None
-    }
-}
 
 /// Processes key events and produces editor actions.
 ///

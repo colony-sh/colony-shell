@@ -1615,6 +1615,7 @@ dependencies = [
 name = "colony-filetree-bin"
 version = "0.1.0"
 dependencies = [
+ "colony-filetree",
  "colony-panel",
  "serde_json",
 ]
@@ -1703,6 +1704,7 @@ dependencies = [
  "fastembed",
  "futures",
  "lancedb",
+ "parking_lot",
  "serde",
  "serde_json",
  "tempfile",
@@ -1821,6 +1823,7 @@ dependencies = [
  "colony-config",
  "colony-exec",
  "colony-expand",
+ "colony-filetree",
  "colony-panel",
  "colony-parser",
  "colony-protocol",

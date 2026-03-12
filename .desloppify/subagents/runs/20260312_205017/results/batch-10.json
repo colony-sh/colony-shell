@@ -1,0 +1,105 @@
+{
+  "batch": "authorization_consistency",
+  "batch_index": 10,
+  "assessments": {"authorization_consistency": 62.0},
+  "dimension_notes": {
+    "authorization_consistency": {
+      "evidence": [
+        "ApprovalScope enum has Global and Project variants; save_approval hardcodes 'global' SQL literal and accepts no scope parameter, so Project-scoped approvals can never be persisted through the normal API",
+        "check_approval query has no WHERE scope clause, so scope has no effect at enforcement time either",
+        "AuditConfig struct is parsed, stored in SecureConfig, and merged — but audit.enabled and audit.file are never read anywhere in the codebase; audit logging is effectively inert",
+        "granted_by is a magic string literal 'interactive' hardcoded at registry.rs line 191; no named constant exists"
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "sub_axes": {
+        "abstraction_leverage": 55.0,
+        "indirection_cost": 70.0,
+        "interface_honesty": 45.0,
+        "delegation_density": 75.0,
+        "definition_directness": 60.0,
+        "type_discipline": 55.0
+      }
+    }
+  },
+  "dimension_judgment": {
+    "authorization_consistency": {
+      "strengths": [
+        "Script-hash-based approval checking (check_approval matches on script_path + script_hash + variable_name) provides integrity against script substitution attacks",
+        "ProcessLineage correctly propagates approvals to child processes via has_inherited_approval, preventing re-prompting for child invocations",
+        "mirror.rs opens the observation database read-only (SQLITE_OPEN_READ_ONLY), correctly enforcing a trust boundary between reader and writer",
+        "SecureRegistry.check_access has a coherent decision flow: NotSecure -> Allowed (inherited) -> Allowed (db) -> Pending, with no bypass paths visible"
+      ],
+      "issue_character": "The issues are concentrated in a single subsystem (colony-secure) and share a root cause: the ApprovalScope abstraction was designed but never wired, leaving a structurally inconsistent contract between what the type system promises and what the persistence layer delivers.",
+      "score_rationale": "The codebase's authorization story is entirely contained in colony-secure, which has a well-designed outer shape (script hashing, lineage, approval DB, scope concept, audit config). However, two of these features — scope enforcement and audit logging — are architecturally wired but functionally inert: save_approval hardcodes 'global' making the Project scope dead code, check_approval ignores scope, and AuditConfig is parsed but never consulted. This means a developer reviewing security cannot trust that scope-limited approvals or audit trails work as documented. The global anchor for 60 ('auth posture is inconsistent; a developer reviewing security cannot trust that coverage is complete') fits: the core approval flow is functional, but the scope and audit contract are broken promises that a security reviewer would find alarming."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "authorization_consistency",
+      "identifier": "approval_scope_never_persisted",
+      "summary": "ApprovalScope::Project variant is defined but save_approval always writes 'global'; scope is also ignored at check time",
+      "related_files": [
+        "crates/colony-secure/src/approvals.rs"
+      ],
+      "evidence": [
+        "save_approval SQL (line 109): VALUES (?1, ?2, ?3, 'global', ?4, ?5) — scope is a literal, not a parameter",
+        "check_approval SQL (lines 87-89) has no WHERE scope clause, so a Project-scoped approval grants the same access as a Global one",
+        "ApprovalScope enum is defined with Global and Project variants, listed in SecureApproval struct, and read back from DB rows — but can never be written via the public API"
+      ],
+      "suggestion": "Add a scope parameter to save_approval(script_path, script_hash, variable, granted_by, scope: ApprovalScope) and bind it in the SQL. Add a scope parameter to check_approval and include WHERE scope = ?4 (or implement the intended semantics: Global approvals apply everywhere, Project approvals only when the script is inside the project directory). Until both read and write paths respect scope, the feature is misleading.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "approval_scope_dead_code"
+    },
+    {
+      "dimension": "authorization_consistency",
+      "identifier": "audit_config_never_consumed",
+      "summary": "AuditConfig.enabled and AuditConfig.file are parsed and merged but never read; audit logging is silently inert",
+      "related_files": [
+        "crates/colony-secure/src/config.rs",
+        "crates/colony-secure/src/registry.rs"
+      ],
+      "evidence": [
+        "AuditConfig struct defined at config.rs line 31 with enabled: bool and file: Option<PathBuf>",
+        "config.merge() propagates audit config (line 98-99)",
+        "No code in the entire codebase reads config.audit.enabled or config.audit.file after loading — confirmed by searching all .rs files for 'audit.enabled' and 'audit.file'"
+      ],
+      "suggestion": "Either wire the audit log in SecureRegistry.check_access (append to audit.file when audit.enabled is true, recording timestamp, variable, script, decision) or remove AuditConfig entirely to avoid false security expectations. The current state lets admins configure auditing in secure-vars.toml with no observable effect.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "approval_scope_dead_code"
+    },
+    {
+      "dimension": "authorization_consistency",
+      "identifier": "granted_by_magic_string",
+      "summary": "granted_by actor is always the magic string literal \"interactive\" with no named constant",
+      "related_files": [
+        "crates/colony-secure/src/registry.rs",
+        "crates/colony-secure/src/approvals.rs"
+      ],
+      "evidence": [
+        "registry.rs line 191: hardcoded \"interactive\" passed as granted_by",
+        "approvals.rs line 253 (test): also hardcodes \"interactive\"",
+        "save_approval signature accepts granted_by: &str but the single production call site never varies this value; a config-file-sourced approval would also record 'interactive'"
+      ],
+      "suggestion": "Define a const GRANTED_BY_INTERACTIVE: &str = \"interactive\" in approvals.rs and use it at all call sites. If different grant paths (interactive prompt vs. config file import) should be distinguishable, pass the actual source through the call chain rather than hardcoding.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "The ApprovalScope and AuditConfig features appear to have been designed and stubbed but never completed — the type definitions and DB schema exist but the write path and enforcement path were not implemented",
+      "No tests cover Project-scoped approval behavior or audit log output, so the gaps went undetected"
+    ],
+    "likely_symptoms": [
+      "granted_by_magic_string is a symptom of the missing completion work on the approval flow"
+    ],
+    "possible_false_positives": []
+  }
+}

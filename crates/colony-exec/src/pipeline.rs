@@ -797,7 +797,7 @@ fn execute_simple_command_in_child_blocking(
 
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
-        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        crate::execute_and_capture,
         |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
 
@@ -1102,7 +1102,7 @@ fn execute_for_in_child_blocking(
 ) -> Result<i32> {
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
-        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        crate::execute_and_capture,
         |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
 
@@ -1561,7 +1561,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
         Statement::AgentInvocation(invocation) => {
             let mut expander = Expander::with_executor_and_expr(
                 context.clone(),
-                |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+                crate::execute_and_capture,
                 |expr, ctx| {
                     crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
                 },
@@ -1596,7 +1596,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
 
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
-        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        crate::execute_and_capture,
         |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
 

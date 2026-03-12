@@ -124,6 +124,7 @@ impl PanelHost {
     }
 
     /// Spawn a panel process and add it to the layout.
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_panel(
         &mut self,
         program: &str,
@@ -420,9 +421,7 @@ impl PanelHost {
             .await?;
 
         // Auto-group panels at the same position
-        if !self.groups.contains_key(&position) {
-            self.groups.insert(position, PositionGroup::new(layout_mode));
-        }
+        self.groups.entry(position).or_insert_with(|| PositionGroup::new(layout_mode));
         let group = self.groups.get_mut(&position).unwrap();
         group.mode = layout_mode;
 
@@ -541,9 +540,7 @@ impl PanelHost {
         let position = specs[0].position;
 
         // Ensure the group exists
-        if !self.groups.contains_key(&position) {
-            self.groups.insert(position, PositionGroup::new(mode));
-        }
+        self.groups.entry(position).or_insert_with(|| PositionGroup::new(mode));
         self.groups.get_mut(&position).unwrap().mode = mode;
 
         let mut ids = Vec::new();

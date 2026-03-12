@@ -205,12 +205,12 @@ mod inner {
         }
 
         /// Get a reference to the underlying tuple space
-        pub fn space(&self) -> &TupleSpace {
+        pub(crate) fn space(&self) -> &TupleSpace {
             &self.space
         }
 
         /// Get a reference to the subscription manager
-        pub fn subscriptions(&self) -> &SubscriptionManager {
+        pub(crate) fn subscriptions(&self) -> &SubscriptionManager {
             &self.subscriptions
         }
 

@@ -25,7 +25,6 @@ pub struct Agent {
     router: ModelRouter,
     messages: Vec<Message>,
     tools: ToolRegistry,
-    protocol: ProtocolEmitter,
     config: AgentConfig,
     approval: ApprovalManager,
     token_tracker: TokenTracker,
@@ -68,35 +67,22 @@ impl Default for AgentConfig {
     }
 }
 
-/// Protocol message emitter
-pub struct ProtocolEmitter {
-    // Emits OSC 2337 sequences for colony-terminal
+/// Emit a streaming text chunk to stdout, flushing immediately.
+///
+/// Prints OSC 2337 sequences for colony-terminal when connected.
+fn emit_thought(text: &str) -> Result<()> {
+    print!("{}", text);
+    use std::io::Write;
+    std::io::stdout()
+        .flush()
+        .map_err(|e| AgentError::Protocol(format!("failed to flush stdout: {}", e)))?;
+    Ok(())
 }
 
-impl Default for ProtocolEmitter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ProtocolEmitter {
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    pub fn emit_thought(&self, text: &str) -> Result<()> {
-        print!("{}", text);
-        use std::io::Write;
-        std::io::stdout()
-            .flush()
-            .map_err(|e| AgentError::Protocol(format!("failed to flush stdout: {}", e)))?;
-        Ok(())
-    }
-
-    pub fn emit_tool_call(&self, tool_name: &str, input: &serde_json::Value) -> Result<()> {
-        debug!("Tool call: {} with input: {:?}", tool_name, input);
-        Ok(())
-    }
+/// Log a tool call for debugging; emits OSC 2337 when colony-terminal is connected.
+fn emit_tool_call(tool_name: &str, input: &serde_json::Value) -> Result<()> {
+    debug!("Tool call: {} with input: {:?}", tool_name, input);
+    Ok(())
 }
 
 impl Agent {
@@ -185,40 +171,12 @@ impl Agent {
     /// Create agent with custom configuration
     pub async fn with_config(config: AgentConfig) -> Result<Self> {
         let router = ModelRouter::auto_detect().await?;
-
         info!(
             "Agent initialized with provider: {}, model: {}",
             router.provider_name(),
             router.model_name()
         );
-
-        let mut tools = ToolRegistry::with_builtins();
-        if !config.auto_approve_patterns.is_empty() {
-            tools.set_auto_approve(config.auto_approve_patterns.clone());
-        }
-
-        let approval = ApprovalManager::new(config.approval_config.clone());
-
-        let token_tracker = match &config.token_budget {
-            Some(budget) => TokenTracker::new().with_budget(budget.clone()),
-            None => TokenTracker::new(),
-        };
-
-        let context_manager = ContextManager::new(config.context_config.clone());
-
-        Ok(Self {
-            router,
-            messages: Vec::new(),
-            tools,
-            protocol: ProtocolEmitter::new(),
-            config,
-            approval,
-            token_tracker,
-            context_manager,
-            conversation_store: None,
-            conversation_id: None,
-            observer: None,
-        })
+        Self::from_router(router, config)
     }
 
     /// Create agent with specific provider
@@ -232,13 +190,16 @@ impl Agent {
             model_name: model.into(),
         })
         .await?;
-
         info!(
             "Agent initialized with explicit provider: {}, model: {}",
             router.provider_name(),
             router.model_name()
         );
+        Self::from_router(router, config)
+    }
 
+    /// Shared constructor body: initialise an `Agent` from an already-configured router.
+    fn from_router(router: ModelRouter, config: AgentConfig) -> Result<Self> {
         let mut tools = ToolRegistry::with_builtins();
         if !config.auto_approve_patterns.is_empty() {
             tools.set_auto_approve(config.auto_approve_patterns.clone());
@@ -257,7 +218,6 @@ impl Agent {
             router,
             messages: Vec::new(),
             tools,
-            protocol: ProtocolEmitter::new(),
             config,
             approval,
             token_tracker,
@@ -349,13 +309,18 @@ impl Agent {
         self.observer = Some(observer);
     }
 
-    /// Process user input and return agent response
+    /// Process user input and return the model's text response.
+    ///
+    /// **Text-only**: this method collects text deltas but silently discards any
+    /// tool-call events the model may emit. If you need tool execution, use
+    /// [`process_full`](Self::process_full) instead.
     pub async fn process(&mut self, user_input: impl Into<String>) -> Result<String> {
         let cancel = CancellationToken::new();
         self.process_with_cancellation(user_input, &cancel).await
     }
 
-    /// Process user input with cancellation support
+    /// Process user input with cancellation support (text-only, no tool
+    /// execution — see [`process`](Self::process)).
     pub async fn process_with_cancellation(
         &mut self,
         user_input: impl Into<String>,
@@ -378,7 +343,6 @@ impl Agent {
 
         self.messages.push(user_msg);
 
-        // Apply context window management (prune if needed)
         if self.context_manager.should_prune(&self.messages) {
             self.messages = self.context_manager.prune(&self.messages);
             info!(
@@ -388,7 +352,6 @@ impl Agent {
             );
         }
 
-        // Build completion request
         let tool_defs = self.convert_tool_definitions();
 
         let mut request = CompletionRequest::new()
@@ -402,10 +365,7 @@ impl Agent {
 
         request.messages = self.messages.clone();
 
-        // Send streaming request via router
         let stream = self.router.complete(request).await?;
-
-        // Apply cancellation wrapper
         let result = cancellable_stream(stream, cancel).await?;
 
         if result.was_cancelled {
@@ -417,7 +377,6 @@ impl Agent {
 
         let response_text = result.text;
 
-        // Record token usage (estimate based on character count)
         let input_tokens_est = self
             .messages
             .iter()
@@ -450,7 +409,6 @@ impl Agent {
             BudgetWarning::None => {}
         }
 
-        // Add assistant response to conversation history
         if !response_text.is_empty() {
             let assistant_msg = Message {
                 role: MessageRole::Assistant,
@@ -466,13 +424,17 @@ impl Agent {
             self.messages.push(assistant_msg);
         }
 
-        // Update context estimate
         self.context_manager.update_estimate(&self.messages);
 
         Ok(response_text)
     }
 
-    /// Process with full streaming event handling (tool calls, etc.)
+    /// Process user input with full streaming event handling, including tool
+    /// execution.
+    ///
+    /// Unlike [`process`](Self::process), this method intercepts `ToolCallComplete`
+    /// events, runs the requested tool through the approval pipeline, and feeds
+    /// the result back into the conversation.
     pub async fn process_full(&mut self, user_input: impl Into<String>) -> Result<String> {
         let input = user_input.into();
         info!("Processing user input (full): {}", input);
@@ -482,7 +444,6 @@ impl Agent {
             content: MessageContent::Text(input),
         });
 
-        // Context pruning
         if self.context_manager.should_prune(&self.messages) {
             self.messages = self.context_manager.prune(&self.messages);
         }
@@ -507,7 +468,7 @@ impl Agent {
             match event? {
                 StreamEvent::TextDelta { text, .. } => {
                     response_text.push_str(&text);
-                    self.protocol.emit_thought(&text)?;
+                    emit_thought(&text)?;
                 }
 
                 StreamEvent::ToolCallStart { id, name } => {
@@ -581,7 +542,6 @@ impl Agent {
             .classification(&tool_name)
             .ok_or_else(|| AgentError::ToolExecution(format!("unknown tool: {}", tool_name)))?;
 
-        // Check if approval is needed
         let result = if self.approval.needs_approval(&tool_name, classification)
             && !self.tools.is_auto_approved(&tool_name)
         {
@@ -603,7 +563,7 @@ impl Agent {
                 }
             }
         } else {
-            self.protocol.emit_tool_call(&tool_name, &input)?;
+            emit_tool_call(&tool_name, &input)?;
             self.execute_tool(&tool_name, input).await?
         };
 

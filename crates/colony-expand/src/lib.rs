@@ -15,15 +15,13 @@
 
 mod arithmetic;
 mod brace;
-mod command;
 mod context;
 mod field_split;
 mod parameter;
 pub mod pathname;
-mod quote;
 mod tilde;
 
-pub use arithmetic::{expand_arithmetic, expand_arithmetic_immut};
+pub use arithmetic::{expand_arithmetic, expand_arithmetic_readonly};
 pub use brace::expand_braces;
 pub use context::{
     CompletionAction, CompletionSpec, ExpansionContext, ShellOptions, ShoptOptions, TrapAction,

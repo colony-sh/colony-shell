@@ -30,17 +30,14 @@ pub struct EditorBuffer {
 
 /// Clipboard content for yank/paste.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default)]
 pub enum Clipboard {
+    #[default]
     Empty,
     Line(String),
     Text(String),
 }
 
-impl Default for Clipboard {
-    fn default() -> Self {
-        Clipboard::Empty
-    }
-}
 
 impl Default for EditorBuffer {
     fn default() -> Self {

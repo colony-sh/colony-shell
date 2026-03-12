@@ -113,6 +113,7 @@ impl EditorHistory {
     ///
     /// Returns `Some(&str)` with the entry to display, or `None` if past the
     /// newest entry (returns to saved live input via `saved_input()`).
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<&str> {
         match self.cursor {
             None => None, // Already at live input

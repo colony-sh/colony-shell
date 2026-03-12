@@ -1,0 +1,176 @@
+{
+  "batch": "incomplete_migration",
+  "batch_index": 12,
+  "assessments": {"incomplete_migration": 52.0},
+  "dimension_notes": {
+    "incomplete_migration": {
+      "evidence": [
+        "colony-tui has two parallel renderer stacks: prompt_renderer::PromptRenderer (aliased LegacyPromptRenderer in lib.rs) and prompt/renderer::PromptRenderer; similarly sidebar_renderer::SidebarRenderer (LegacySidebarRenderer) and sidebar/renderer::SidebarRenderer — both exported and actively used",
+        "colony-shell/src/repl_tui.rs line 22: `use colony_tui::{InputEditor, LegacyPromptRenderer as PromptRenderer}` — production REPL still routes through the legacy prompt renderer",
+        "colony-exec/src/file_tree/ duplicates colony-filetree/ crate: both implement FileNode, GitFileStatus, TreeState, GitStatusCache, FileSystemWatcher, and TreeProtocol independently; colony-exec/Cargo.toml has no dependency on colony-filetree",
+        "colony-exec/src/goals/ duplicates colony-focus/ crate with a different GoalStatus enum (Pending/InProgress vs Active) and different persistence (JSON files vs SQLite); colony-exec/Cargo.toml has no dependency on colony-focus; colony-agent uses colony-focus",
+        "colony-agent/src/tool.rs line 549-551: `ToolHandler` trait declared as 'Sync wrapper for backward compatibility with existing ToolHandler trait users' but has zero implementations and zero call sites",
+        "colony-parser/src/ast.rs line 307-309: WordPart::CommandSub(Box<Statement>) marked 'pre-parsed AST (legacy)'; new variant CommandSubRaw(String) exists at line 310; builder.rs line 2499 comment says 'old approach, still here for backwards compat' — both variants still matched throughout expander and builtins",
+        "colony-expand/src/context.rs line 465-467: `pub type ShopOptions = ShoptOptions` marked `#[allow(dead_code)]` with comment 'Alias for backward compatibility' — zero usages found across the codebase"
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "dimension_judgment": {
+    "incomplete_migration": {
+      "strengths": [
+        "No deprecated Rust `#[deprecated]` attributes are left attached to called symbols — all deprecated markers are informal comments or type aliases",
+        "The OpenAI-compatible format in colony-cloud-sdk/models.rs is an intentional external-compatibility design, not an incomplete migration",
+        "Feature-flagged cloud provider (`#[cfg(feature = \"cloud\")]`) indicates deliberate, controlled API coexistence rather than accidental leftovers",
+        "Most seed-file modules (colony-channels, colony-memory, colony-mcp, colony-recipe, colony-panel) show clean single-implementation designs with no dual-stack artifacts"
+      ],
+      "issue_character": "The codebase has several stalled mid-flight migrations where a newer implementation was written alongside the old one but the old one was never removed: two parallel TUI renderer stacks (legacy vs. new), two parallel file_tree implementations (colony-exec internal vs. colony-filetree crate), and two parallel goal tracking implementations (colony-exec internal vs. colony-focus crate) — plus a dead backward-compat shim (ToolHandler) and a dead type alias (ShopOptions).",
+      "score_rationale": "The repository sits below the midpoint for this dimension. There are at least three distinct cases of old-and-new API coexistence producing real maintenance surface: the colony-tui legacy/new renderer split is actively called in production code; the colony-exec file_tree and goals modules are fully functional duplicates of standalone crates that the rest of the system has already adopted. A dead backward-compatibility trait (ToolHandler) with no implementations rounds out the picture. The WordPart::CommandSub legacy AST node being matched alongside CommandSubRaw in expander code is a smaller but active dual-path. These are not guarded behind feature flags or clearly time-boxed, which reduces confidence that they will be cleaned up organically."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "incomplete_migration",
+      "identifier": "dual_tui_renderer",
+      "summary": "Two parallel TUI renderer stacks coexist in colony-tui; legacy stack actively used in production REPL",
+      "related_files": [
+        "crates/colony-tui/src/lib.rs",
+        "crates/colony-tui/src/app.rs",
+        "crates/colony-tui/src/prompt_renderer.rs",
+        "crates/colony-tui/src/sidebar_renderer.rs",
+        "crates/colony-tui/src/prompt/renderer.rs",
+        "crates/colony-tui/src/sidebar/renderer.rs",
+        "crates/colony-shell/src/repl_tui.rs"
+      ],
+      "evidence": [
+        "lib.rs exports `PromptRenderer as LegacyPromptRenderer` (from prompt_renderer.rs) and `SidebarRenderer as LegacySidebarRenderer` (from sidebar_renderer.rs) alongside the new `prompt::PromptRenderer` and `sidebar::SidebarRenderer`",
+        "app.rs line 1109: '// === Legacy TuiApp (simpler renderer using colony-ui-core directly) ===' with full `TuiApp` struct and `LegacyPromptRenderer`/`LegacySidebarRenderer` usage through to line 1356",
+        "repl_tui.rs line 22: `use colony_tui::{InputEditor, LegacyPromptRenderer as PromptRenderer}` — production shell REPL still routes through the old renderer"
+      ],
+      "suggestion": "Migrate repl_tui.rs to use the new `prompt::PromptRenderer` and `sidebar::SidebarRenderer`. Remove `TuiApp` struct from app.rs, delete `prompt_renderer.rs` and `sidebar_renderer.rs`, and drop the Legacy re-exports from lib.rs.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "stalled_refactor"
+    },
+    {
+      "dimension": "incomplete_migration",
+      "identifier": "dual_file_tree_impl",
+      "summary": "colony-exec/src/file_tree/ duplicates the colony-filetree crate with no dependency declared",
+      "related_files": [
+        "crates/colony-exec/src/file_tree/mod.rs",
+        "crates/colony-exec/src/file_tree/tree_state.rs",
+        "crates/colony-exec/src/file_tree/git_status.rs",
+        "crates/colony-exec/src/file_tree/watcher.rs",
+        "crates/colony-exec/src/file_tree/protocol.rs",
+        "crates/colony-filetree/src/lib.rs",
+        "crates/colony-exec/Cargo.toml"
+      ],
+      "evidence": [
+        "colony-exec/src/file_tree/tree_state.rs and colony-filetree/src/node.rs both define `FileNode` and `GitFileStatus` with diverged schemas (colony-exec uses `is_dir: bool, children: Vec<FileNode>`; colony-filetree uses `file_type: FileType, children: Vec<NodeId>, id: NodeId, depth, hidden, ...`)",
+        "colony-exec/Cargo.toml has no entry for colony-filetree",
+        "colony-ui-core uses colony-filetree; colony-exec rolls its own identical subsystem"
+      ],
+      "suggestion": "Add colony-filetree as a dependency of colony-exec and replace the internal file_tree module with re-exports from colony-filetree. Reconcile the FileNode schema differences (colony-filetree's richer model is the better target).",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "stalled_refactor"
+    },
+    {
+      "dimension": "incomplete_migration",
+      "identifier": "dual_goals_impl",
+      "summary": "colony-exec/src/goals/ duplicates colony-focus/ with a different GoalStatus enum and different persistence backend",
+      "related_files": [
+        "crates/colony-exec/src/goals/mod.rs",
+        "crates/colony-exec/src/goals/types.rs",
+        "crates/colony-focus/src/lib.rs",
+        "crates/colony-focus/src/goal.rs",
+        "crates/colony-agent/src/planning.rs",
+        "crates/colony-exec/Cargo.toml"
+      ],
+      "evidence": [
+        "colony-exec/src/goals/types.rs: GoalStatus has variants Pending, InProgress, Completed, Blocked, Cancelled with JSON-file storage",
+        "colony-focus/src/goal.rs: GoalStatus has variants Active, Completed, Blocked, Cancelled with SQLite storage and enforced state transitions",
+        "colony-agent already depends on colony-focus (Cargo.toml line 18: `colony-focus = { workspace = true, optional = true }`); colony-exec has no such dependency",
+        "builtins.rs matches crate::goals::GoalStatus::{Pending, InProgress, ...} while planning.rs uses colony_focus::goal::GoalStatus::{Active, ...}"
+      ],
+      "suggestion": "Add colony-focus as a dependency of colony-exec and migrate the `goal` builtin commands (builtins.rs) to use colony_focus::GoalTree and colony_focus::GoalStatus. Reconcile the Pending/InProgress variants by deciding whether to add them to colony-focus or map them. Delete colony-exec/src/goals/.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "stalled_refactor"
+    },
+    {
+      "dimension": "incomplete_migration",
+      "identifier": "dead_toolhandler_shim",
+      "summary": "`ToolHandler` trait declared as backward-compatibility shim with zero implementations or callers",
+      "related_files": [
+        "crates/colony-agent/src/tool.rs"
+      ],
+      "evidence": [
+        "tool.rs line 549: `/// Sync wrapper for backward compatibility with existing ToolHandler trait users`",
+        "tool.rs line 550: `pub trait ToolHandler: Send + Sync { fn execute(&self, input: Value) -> Result<Value, ToolExecutionError>; }`",
+        "Codebase-wide search for `impl ToolHandler`, `dyn ToolHandler`, and `: ToolHandler` returns zero results"
+      ],
+      "suggestion": "Delete the `ToolHandler` trait entirely. If a sync execution wrapper is needed in future, it can be reintroduced at that point with a concrete use case.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "dead_compat_shim"
+    },
+    {
+      "dimension": "incomplete_migration",
+      "identifier": "legacy_commandsub_ast_node",
+      "summary": "WordPart::CommandSub (pre-parsed AST) coexists with new CommandSubRaw; both actively matched throughout the codebase",
+      "related_files": [
+        "crates/colony-parser/src/ast.rs",
+        "crates/colony-parser/src/builder.rs",
+        "crates/colony-expand/src/lib.rs",
+        "crates/colony-exec/src/builtins.rs"
+      ],
+      "evidence": [
+        "ast.rs line 307: `/// Command substitution: $(cmd) or \\`cmd\\` - pre-parsed AST (legacy)`; line 309: `/// Command substitution: $(cmd) - raw string, parsed during expansion (new)`",
+        "builder.rs line 2499: `// $(command) - old approach, still here for backwards compat` producing CommandSub(Box<Statement>)",
+        "expand/lib.rs lines 428, 432, 1007: both CommandSubRaw and CommandSub matched separately",
+        "builtins.rs line 3081: `WordPart::CommandSub(stmt) =>` matched in builtin expansion"
+      ],
+      "suggestion": "Complete the migration: update the parser to always emit CommandSubRaw, migrate the two call sites (expand/lib.rs and builtins.rs) that still handle CommandSub to use CommandSubRaw, then remove the CommandSub variant from the WordPart enum and delete command.rs's placeholder expand_command_substitution.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "stalled_refactor"
+    },
+    {
+      "dimension": "incomplete_migration",
+      "identifier": "dead_shopoptions_alias",
+      "summary": "`ShopOptions` type alias marked `#[allow(dead_code)]` with zero usages",
+      "related_files": [
+        "crates/colony-expand/src/context.rs"
+      ],
+      "evidence": [
+        "context.rs line 465: `#[allow(dead_code)]`; line 467: `pub type ShopOptions = ShoptOptions;` with comment 'Alias for backward compatibility'",
+        "Codebase-wide search for `ShopOptions` returns only the definition site"
+      ],
+      "suggestion": "Delete the `ShopOptions` type alias. The suppress `#[allow(dead_code)]` confirms the authors already knew no one uses it.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "dead_compat_shim"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Two root cause clusters: (1) stalled_refactor — new crate or module was built alongside the old one but the old path was never deleted (colony-tui renderers, file_tree, goals, CommandSub AST node); (2) dead_compat_shim — backward-compatibility declarations added speculatively but never consumed (ToolHandler trait, ShopOptions alias)",
+      "colony-exec appears to have originally developed its own file_tree and goals subsystems before dedicated standalone crates (colony-filetree, colony-focus) were extracted; once those crates existed, colony-exec was not updated to adopt them"
+    ],
+    "likely_symptoms": [
+      "dual_file_tree_impl and dual_goals_impl are likely symptoms of colony-exec being an earlier, monolithic execution layer that predates the crate extraction pattern used by the rest of the project"
+    ],
+    "possible_false_positives": [
+      "colony-cloud-sdk OpenAI-compatible format (models.rs comment 'These types follow OpenAI's API format for compatibility') is intentional external-protocol alignment, not an incomplete migration"
+    ]
+  }
+}

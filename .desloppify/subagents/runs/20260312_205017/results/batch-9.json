@@ -1,0 +1,124 @@
+{
+  "batch": "mid_level_elegance",
+  "batch_index": 9,
+  "assessments": {"mid_level_elegance": 72.0},
+  "dimension_notes": {
+    "mid_level_elegance": {
+      "evidence": [
+        "colony-ui-core PromptComponent/SidebarComponent trait provides a clean, uniform render boundary: all components receive ComponentContext and return ComponentOutput/SidebarOutput; data translation into the OSC protocol happens in the manager layer, not in individual components.",
+        "DockerStatusComponent.render() accepts a ComponentContext but ignores it entirely (receives `_ctx`), spawning an OS process inline instead. The subscription mechanism (TuplePattern) exists precisely so components can declare reactive dependencies, but docker_status subscribes to nothing and bypasses the boundary contract.",
+        "Agent.process() and Agent.process_full() are two nearly-parallel entry points that implement the same request/response loop independently. process() uses the cancellable_stream helper and does full token accounting; process_full() drives the stream manually with while-let and skips token accounting. When logic diverged (tool handling, persistence, observation recording), it was added to one path but not the other, producing an implicit dual-track contract.",
+        "Tool results are injected back into the message history as MessageRole::User with a plain-text 'Tool result: {json}' prefix (agent.rs line 614). This is a hand-rolled boundary translation that makes the messages Vec structurally inconsistent: User messages can be either genuine user input or synthetic tool results, invisible to any consumer that reads the history.",
+        "from_definition() and configure_from_definition() in agent.rs share the same model-spec parsing logic (split_once(':'), ProviderType::parse, infer_provider_from_model fallback) duplicated verbatim. The translation boundary from AgentDefinition to Agent config happens in two places with subtly different control flow (the configure variant accepts an existing model via unwrap_or_else; from_definition does not).",
+        "BuiltinRedirectGuard.apply() correctly encapsulates the fd-save/restore pattern as a seam between the builtin execution layer and the POSIX fd world; the RAII drop restores fds even on panic, making the lifecycle handoff predictable.",
+        "execute_builtin() has an inline sidebar branch (lines 281-296) that bypasses the sidebar dispatch helper used by every other builtin and reaches directly into TupleSpace with a hand-constructed tuple. This is a local glue-code island at the dispatch boundary.",
+        "ApprovalManager cleanly separates OSC-2337 and stderr approval paths behind a single request_approval() dispatch; the PendingApprovals oneshot channel wires the widget-server response back without the approval manager needing to know anything about the server."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "dimension_judgment": {
+    "mid_level_elegance": {
+      "strengths": [
+        "The PromptComponent/SidebarComponent trait boundary is clean: ComponentContext carries all shell state, ComponentOutput/SidebarOutput carry all render output, and data translation to the terminal protocol is deferred to the manager layer rather than scattered across components.",
+        "BuiltinRedirectGuard uses RAII to encapsulate the fd-save/restore lifecycle at the builtin-execution seam, making the handoff between builtin code and the POSIX fd layer predictable and panic-safe.",
+        "ApprovalManager isolates the two approval transports (OSC widget vs stderr stdin) behind a single request_approval() method; callers do not know which transport is active, and the oneshot-channel plumbing is entirely internal to the manager.",
+        "cancellable_stream is a clean composable helper: it wraps any completion stream with cancellation semantics and returns a single typed result struct, keeping the cancellation concern out of Agent's main loop.",
+        "AliasExpansionResult enum makes the alias→execution handoff explicit: the caller receives a typed case rather than a mutated command plus an out-of-band flag, keeping the seam easy to pattern-match."
+      ],
+      "issue_character": "Issues are concentrated in the agent orchestration layer and at the builtin dispatch boundary: two parallel entry points have diverged past the point where a developer can trust that both paths stay in sync, and ad-hoc boundary translations (tool-result injection, sidebar inline branch) create glue-code islands that are invisible from the seam interfaces.",
+      "score_rationale": "The ui-core component boundary and the approval/cancellation subsystems demonstrate genuinely clean seam design. However, the agent layer has two concrete structural problems that directly harm cross-boundary predictability: process() vs process_full() have silently diverged (different accounting, different observation recording, incompatible tool-result formats), and the AgentDefinition→Agent translation is duplicated with subtly different logic. The sidebar inline in execute_builtin() is a smaller but visible glue-code outlier. Against the 80-anchor ('developer regularly encounters awkward boundary translations'), the codebase sits slightly below: the divergence is in a critical path (the agent's conversation loop) and the tool-result injection is structurally misleading (user messages that are not user messages). Score 72 reflects solid foundations undercut by two subsystem-level seam failures that a developer making changes to the agent would directly encounter."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "agent_dual_process_paths",
+      "summary": "Agent.process() and Agent.process_full() implement the same loop independently with diverged accounting, persistence, and observation logic",
+      "related_files": ["crates/colony-agent/src/agent.rs"],
+      "evidence": [
+        "process() records token usage via token_tracker.record() and saves messages to ConversationStore; process_full() skips token accounting and ConversationStore persistence entirely.",
+        "process_full() emits a ReflectionObserver observation at the end; process() does not.",
+        "Both methods clone messages, build a CompletionRequest, and push an assistant response — identical orchestration logic copied rather than shared.",
+        "process() delegates to cancellable_stream (a clean composable abstraction); process_full() drives the stream directly with while-let, duplicating the Done/Error/TextDelta handling."
+      ],
+      "suggestion": "Extract a private async fn run_completion_loop(&mut self, request: CompletionRequest, cancel: &CancellationToken) -> Result<String> that drives the stream and returns the full response text. Both process_with_cancellation() and process_full() call this shared core, then apply their own post-processing (token accounting, persistence, observation) in one place. This eliminates the risk of one path receiving a fix that the other silently misses.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "agent_seam_divergence"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "tool_result_fake_user_message",
+      "summary": "Tool results are injected into message history as MessageRole::User with a plain-text prefix, making user messages structurally ambiguous",
+      "related_files": ["crates/colony-agent/src/agent.rs"],
+      "evidence": [
+        "agent.rs line 612-615: after tool execution, a Message { role: MessageRole::User, content: MessageContent::Text(format!(\"Tool result: {}\", result_str)) } is pushed to self.messages.",
+        "Any consumer that iterates self.messages cannot distinguish genuine user turns from synthetic tool-result turns without string-prefix inspection.",
+        "MessageContent already has a Blocks variant with ContentBlock::ToolResult; the provider layer understands this variant but it is not used here."
+      ],
+      "suggestion": "Use MessageContent::Blocks with a ContentBlock::ToolResult { tool_use_id, content } block to inject tool results. This keeps the message history structurally honest: consumers can match on role and content type without parsing text. The MessageRole should be User only for genuine user input; a distinct content type communicates the tool-result semantic without requiring a custom role.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "agent_seam_divergence"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "agent_definition_translation_duplicated",
+      "summary": "AgentDefinition-to-AgentConfig translation logic is duplicated between from_definition() and configure_from_definition() with diverging control flow",
+      "related_files": ["crates/colony-agent/src/agent.rs"],
+      "evidence": [
+        "Both from_definition() (lines 109-137) and configure_from_definition() (lines 140-183) contain the same model-spec parsing: split_once(':'), ProviderType::parse, infer_provider_from_model fallback.",
+        "from_definition() uses early-return Ok(Self::with_provider(...)) when a provider is parsed; configure_from_definition() uses let-binding with unwrap_or_else and calls switch_model separately.",
+        "configure_from_definition() checks temperature with is_some() before assigning, while from_definition() assigns unconditionally — a subtle behavioral difference that is not documented."
+      ],
+      "suggestion": "Extract fn apply_definition_to_config(definition: &AgentDefinition, config: &mut AgentConfig) -> Option<(ProviderType, String)> that applies all scalar fields and returns the parsed provider+model if present. Both from_definition() and configure_from_definition() call this helper, then each handles provider instantiation in its own way. This puts the translation in exactly one place.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "agent_seam_divergence"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "docker_status_bypasses_subscription_boundary",
+      "summary": "DockerStatusComponent spawns a synchronous subprocess in render() instead of using the subscription/tuple mechanism, breaking the reactive boundary contract",
+      "related_files": ["crates/colony-ui-core/src/builtins/docker_status.rs"],
+      "evidence": [
+        "DockerStatusComponent::render() calls std::process::Command::new(\"docker\").args([\"ps\",\"-q\"]).output() synchronously on every render invocation.",
+        "subscriptions() returns vec![] — the component declares no reactive dependencies, so the cache-invalidation mechanism cannot gate re-renders.",
+        "Every other builtin prompt component reads from the ComponentContext passed at the boundary (env vars, job counts, last_exit_code) without side-effectful I/O; docker_status is the only one that reaches outside the boundary."
+      ],
+      "suggestion": "Either (a) have a background poller emit a docker_status tuple to TupleSpace when container count changes, subscribe via subscriptions() to that pattern, and read the count from ComponentContext data rather than invoking docker at render time; or (b) add a poll_interval() override (e.g. 5 seconds) so the framework controls re-render frequency and make the I/O explicit. The key fix is that the render boundary should not perform blocking I/O that bypasses the subscription contract.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "sidebar_builtin_inline_glue",
+      "summary": "The 'sidebar' builtin in execute_builtin() is handled inline with a direct TupleSpace.out() call rather than through the dispatch pattern used by all other builtins",
+      "related_files": ["crates/colony-exec/src/builtins.rs"],
+      "evidence": [
+        "Lines 281-296 in the builtin match arm for 'sidebar': parse_sidebar_args is called, then serde_json::to_string and tuple_space.out() are invoked inline, bypassing the function-per-builtin pattern used by every other handler.",
+        "All other builtins (cd, export, flux, mirror, pane, etc.) are dispatched to a dedicated function: builtin_cd(), crate::flux::builtin_flux(), crate::panes::builtin_split(), etc.",
+        "The inline branch also calls unwrap_or_default() on the JSON serialization, silently swallowing serialization errors that would be surfaced as Err() in a dedicated function."
+      ],
+      "suggestion": "Move the sidebar logic into crate::sidebar::builtin_sidebar(&args, tuple_space) following the existing pattern, and replace the inline branch with a single dispatch call. This keeps the execute_builtin() dispatch table uniform and surfaces serialization errors through the Result<BuiltinResult> return type.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "agent_seam_divergence: the agent's two process paths (simple vs full) were likely added incrementally — process_full() first for tool-call support, process() as a simpler wrapper — and the shared logic was never extracted, causing each path to accumulate independent post-processing.",
+      "render_boundary_inconsistency: docker_status was likely ported from an external implementation that used subprocess polling, without being adapted to the subscription-driven context model used by all other components."
+    ],
+    "likely_symptoms": [],
+    "possible_false_positives": []
+  }
+}

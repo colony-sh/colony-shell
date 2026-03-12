@@ -1,0 +1,112 @@
+{
+  "batch": "logic_clarity",
+  "batch_index": 17,
+  "assessments": {"logic_clarity": 76.5},
+  "dimension_notes": {
+    "logic_clarity": {
+      "evidence": [
+        "control_flow.rs lines 252-257: two sequential if-blocks in execute_cstyle_for_loop_with_control are equivalent to a single check. First: `if !matches!(loop_flow, ControlFlow::Normal | ControlFlow::Continue) { break; }` breaks on Break/Exit/Return. Second: `if matches!(loop_flow, ControlFlow::Continue) { break; }` can only be reached when flow is Normal or Continue, so it only fires on Continue. Together they mean 'break if not Normal' but the split obscures this.",
+        "connection.rs lines 270-278: in reconnect(), when self.connect() fails, the state is set to `ConnectionState::Reconnecting` (line 276) even though no active reconnection is in progress. The correct state should either remain as whatever the failed connect left it, or be set to a failure state. This misleads callers about the connection's actual status.",
+        "context.rs lines 37-44: maybe_decrypt_value contains a three-level deep conditional: outer `if is_encrypted`, inner `if let Some(key)`, innermost `if let Ok(decrypted)`. The project style guide prohibits nested if-let pyramids; this could be flattened to a combinator chain.",
+        "context.rs lines 1176-1184: get_var_or_env_raw contains a nested if-let pyramid for the NameRef resolution path: `if let Some(var)` containing `if let Variable::NameRef` containing `if let Some(resolved)` containing `if let Some(target_var)`. Four nesting levels — should use let-else.",
+        "Positive: The ControlFlow enum and its use throughout control_flow.rs (for_loop, while_loop, if_stmt, list_with_control) provides clear, correct signaling. Match arms on ControlFlow are exhaustive and correctly distinguish Normal/Break/Continue/Exit/Return.",
+        "Positive: pipeline.rs split_pipeline_catch correctly validates that exactly one !> exists and that it is not the final element, with clear error messages for each invalid case.",
+        "Positive: provider_chain.rs is_available correctly handles all three cases (healthy, unhealthy without failure time, unhealthy past cooldown) with sequential let-else returns.",
+        "Positive: The history.rs, mcp_lifecycle.rs, registry.rs, and memory_integration.rs files are logically clean with no dead branches or redundant conditions found."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "The nested if-let pyramids in context.rs (two separate sites) and the misleading ConnectionState::Reconnecting assignment on failed reconnect are the primary issues. The cstyle for loop has two sequential break conditions that together mean one thing but look like two independent guards. None of these are catastrophic, but each adds cognitive overhead when auditing correctness of critical execution paths (variable expansion, shell option handling, connection management).",
+      "sub_axes": null
+    }
+  },
+  "dimension_judgment": {
+    "logic_clarity": {
+      "strengths": [
+        "The ControlFlow enum provides a clean, exhaustive signal across all statement execution paths; all match arms on it in control_flow.rs are correct and non-redundant.",
+        "Pipeline error handling (split_pipeline_catch, normalize_pipe_op) uses early returns with precise error messages for each invalid pipe topology.",
+        "provider_chain.rs is_available correctly encodes all health-state transitions with let-else, and the fallback loop is straightforward with no dead paths.",
+        "mcp_lifecycle.rs health_check correctly handles both the healthy->running and unhealthy->running transitions without redundant branches.",
+        "Boolean-returning predicates throughout (is_running, has_changes, has_model_change, is_builtin, etc.) use matches! or direct comparisons cleanly — no if x { true } else { false } patterns found."
+      ],
+      "issue_character": "Issues are concentrated in two patterns: nested if-let pyramids in the expansion context (two sites in context.rs, one in maybe_decrypt_value) that violate the project style guide, and one incorrect state assignment in McpConnection::reconnect that sets Reconnecting on failure instead of a terminal error state.",
+      "score_rationale": "The codebase earns a score in the upper-mid range. The vast majority of control flow — pipelines, job control, for/while/if statement execution, provider fallback chains, MCP lifecycle — is logically clean and provably correct with well-chosen enumerations. The score is held below 80 by: (1) a fragmented double-break in the C-style for loop body that requires two steps to understand one intent, (2) two nested if-let pyramid sites in the expansion context that the project style guide explicitly prohibits, and (3) one misleading ConnectionState::Reconnecting assignment in the failure path of reconnect(). These are real logic clarity defects, not style preferences, because they require extra reasoning to verify correctness in security-sensitive (variable decryption) and reliability-sensitive (MCP reconnection) paths."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "logic_clarity",
+      "identifier": "fragmented_cstyle_break",
+      "summary": "C-style for loop body uses two sequential if-blocks that together mean 'break unless Normal', obscuring the single intended condition",
+      "related_files": ["crates/colony-shell/src/shell/execution/control_flow.rs"],
+      "evidence": [
+        "Lines 252-257: `if !matches!(loop_flow, ControlFlow::Normal | ControlFlow::Continue) { break; }` followed immediately by `if matches!(loop_flow, ControlFlow::Continue) { break; }`. After the first check, loop_flow can only be Normal or Continue. The second check therefore fires exactly when Continue, making both together equivalent to `if loop_flow != ControlFlow::Normal { break; }`.",
+        "The intent (advance past continue-triggered iterations but break on Break/Exit/Return) is correct but requires two separate reasoning steps to verify."
+      ],
+      "suggestion": "Replace both if-blocks with a single check: `if !matches!(loop_flow, ControlFlow::Normal) { break; }`. This matches how the corresponding for-in loop handles the same cases (line 216-223 uses a match that is immediately understandable).",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "fragmented_condition"
+    },
+    {
+      "dimension": "logic_clarity",
+      "identifier": "reconnect_state_on_failure",
+      "summary": "McpConnection::reconnect sets state to Reconnecting after a failed reconnect attempt instead of retaining the failure state",
+      "related_files": ["crates/colony-mcp/src/connection.rs"],
+      "evidence": [
+        "Lines 270-278: when self.connect() fails, the Err branch logs the error and then sets `self.state = ConnectionState::Reconnecting` (line 276) before returning Err. At the time of return the connection is not reconnecting — it has failed.",
+        "Callers observing the connection state after a failed reconnect will see Reconnecting, which implies an active background process, not a terminal failure for this attempt.",
+        "By contrast, the success path (line 264) correctly sets nothing (connect() already sets state=Connected internally). The failure path should either leave state as Disconnected (set by disconnect() called on line 260) or set it to Failed."
+      ],
+      "suggestion": "Remove the `self.state = ConnectionState::Reconnecting;` assignment from the Err branch (line 276). The state was already set to Disconnected by the preceding `self.disconnect().await` call, which is the accurate state after a failed reconnect attempt. If a persistent 'reconnect in progress' state is needed, that signal belongs at the pool level, not within the failed connection.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "incorrect_state_transition"
+    },
+    {
+      "dimension": "logic_clarity",
+      "identifier": "nested_iflet_maybe_decrypt",
+      "summary": "maybe_decrypt_value uses three-level nested conditionals where a combinator chain would be clearer",
+      "related_files": ["crates/colony-expand/src/context.rs"],
+      "evidence": [
+        "Lines 37-44: `if is_encrypted { if let Some(key) = get_cached_secure_key() { if let Ok(decrypted) = decrypt(..) { return decrypted; } } }`. Three levels of nesting for a try-decrypt-else-passthrough operation.",
+        "Project RUST_STYLE_GUIDE.md explicitly prohibits nested if-let: 'Nested if let is Always Wrong. If you write if let inside another if let, stop and refactor.'",
+        "The decryption check can be expressed as a combinator: `is_encrypted(&value).then(|| get_cached_secure_key()?.and_then(|key| decrypt(&value, key).ok())).flatten().unwrap_or(value)` or via let-else."
+      ],
+      "suggestion": "Flatten using let-else: `if !colony_secure::is_encrypted(&value) { return value; }; let Some(key) = get_cached_secure_key() else { return value; }; colony_secure::decrypt(&value, key).unwrap_or(value)`. This makes each guard a single exit point and matches the project's stated style.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "nested_iflet_pyramid"
+    },
+    {
+      "dimension": "logic_clarity",
+      "identifier": "nested_iflet_nameref_resolution",
+      "summary": "get_var_or_env_raw NameRef branch uses a four-level nested if-let pyramid in violation of project style guide",
+      "related_files": ["crates/colony-expand/src/context.rs"],
+      "evidence": [
+        "Lines 1176-1184: `if let Some(var) = self.variables.get(name) { if let Variable::NameRef(_target) = var { if let Some(resolved) = self.resolve_nameref(name) { if let Some(target_var) = self.variables.get(&resolved) { return ...; } return ...; } return None; } return ...; }`. Four nesting levels.",
+        "The same NameRef resolution logic appears in get_variable (lines 1007-1013) and set_variable (lines 1256-1261) using a more direct pattern. The get_var_or_env_raw version is the most convoluted.",
+        "Project style guide: 'No exceptions. If you think you need nested if let, you don't.'"
+      ],
+      "suggestion": "Refactor using let-else at each decision point: `let Some(var) = self.variables.get(name) else { return self.environment.get(name).cloned(); }; if !matches!(var, Variable::NameRef(_)) { return Some(var.as_str().to_string()); }; let Some(resolved) = self.resolve_nameref(name) else { return None; }; if let Some(target_var) = self.variables.get(&resolved) { return Some(target_var.as_str().to_string()); }; return self.environment.get(&resolved).cloned();`",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "nested_iflet_pyramid"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "nested_iflet_pyramid: Two separate instances in context.rs suggest that the expansion context was written before the project's nested-if-let prohibition was adopted or enforced, and has not been retrofitted.",
+      "incorrect_state_transition: The reconnect() state assignment looks like a copy-paste of the pre-reconnect state set at line 251 that was not removed or updated when the failure branch was written."
+    ],
+    "likely_symptoms": [
+      "fragmented_cstyle_break is symptom-level — the behavior is correct, only the expression is fragmented."
+    ],
+    "possible_false_positives": []
+  }
+}

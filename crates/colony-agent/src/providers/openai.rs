@@ -113,10 +113,6 @@ impl ModelProvider for OpenAIProvider {
         Ok(Box::pin(stream::iter(events)))
     }
 
-    fn supports_streaming(&self) -> bool {
-        true // OpenAI supports SSE streaming
-    }
-
     fn max_context_tokens(&self) -> usize {
         // GPT-4 Turbo: 128k context
         128_000

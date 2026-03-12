@@ -1,0 +1,127 @@
+{
+  "batch": "contract_coherence",
+  "batch_index": 16,
+  "assessments": {"contract_coherence": 72.0},
+  "dimension_notes": {
+    "contract_coherence": {
+      "evidence": [
+        "McpConnection::reconnect sets state=Reconnecting on failure (line 276 of connection.rs) after the reconnect attempt is done; ConnectionState::Reconnecting is documented as 'attempting reconnect' but the state is left there after the attempt completes and fails.",
+        "GoalTree::add_blocker doc says 'Add a blocker to a goal' but also silently sets goal.status = GoalStatus::Blocked (line 158 of goals/tree.rs); the doc does not mention the status change.",
+        "BuiltinResult::is_success() (builtins.rs line 48) returns false for Source(_, _) and Eval(_), but both have exit_code() == 0 and represent successful completion; the predicate is semantically incomplete.",
+        "McpConnectionPool::connect_all returns Ok(()) even when every server with auto_start=true fails to connect (pool.rs lines 84-100); caller receives success despite zero live connections.",
+        "expand_arithmetic_immut is named 'immutable' and documented as a compatibility version (arithmetic.rs lines 26-33), but silently discards arithmetic assignment side-effects (e.g. x++, x=1) by cloning a throw-away context; callers may incorrectly assume it is equivalent to the mutable version for read-only expressions."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "Four concrete contract violations exist: a state machine that leaves a connection in 'Reconnecting' after a failed reconnect; an 'add_blocker' function with an undocumented status mutation; a success predicate that excludes valid-success variants; and a connection function returning Ok on zero connections. These are not documentation style issues — they are behavioral divergences that will mislead callers."
+    }
+  },
+  "dimension_judgment": {
+    "contract_coherence": {
+      "strengths": [
+        "Most public functions with Result return types propagate errors faithfully rather than swallowing them; McpConnection::call_tool, RecipeRegistry::register, and RecipeLoader::load all surface errors cleanly.",
+        "Getter methods across SidebarManager, McpConnection, and GoalTree are pure observers that do not mutate state — the getter-as-mutator anti-pattern is absent.",
+        "RecipeAgentConfig::merge_with_overrides has a doc comment that accurately describes the merge precedence, and the implementation matches it.",
+        "Error types (McpError, RecipeError, GoalError, ExpansionError) use thiserror and are domain-specific, so the error contract on public APIs is legible.",
+        "The AgentConfigOverrides builder methods (with_system_prompt, with_max_tokens, with_temperature) are pure and match their names."
+      ],
+      "issue_character": "The defects are concentrated in state-machine bookkeeping and predicate completeness: functions correctly compute their primary output but leave secondary invariants (connection state after failed reconnect, status field after add_blocker, is_success predicate for non-canonical success variants) in a state that contradicts what the type or name implies.",
+      "score_rationale": "The codebase shows disciplined error propagation and clean getter semantics at the 70+ level. However, four distinct contract violations exist that are not edge-case ambiguities but clear divergences between declared intent and observed behavior: a state machine stranded in Reconnecting after failure, an add_blocker silently forcing Blocked status, an is_success predicate blind to Source and Eval success variants, and a connect_all returning Ok on zero live connections. These keep the score from reaching the 80+ range where only minor or arguable gaps would remain."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "contract_coherence",
+      "identifier": "reconnect_state_after_failure",
+      "summary": "McpConnection::reconnect leaves state=Reconnecting after a failed reconnect attempt",
+      "related_files": ["crates/colony-mcp/src/connection.rs"],
+      "evidence": [
+        "On reconnection failure (line 270-278) the code logs the error then sets self.state = ConnectionState::Reconnecting and returns Err(e).",
+        "ConnectionState::Reconnecting is documented as 'Connection was lost, attempting reconnect'; setting it after the attempt is done misrepresents the state.",
+        "Callers that inspect connection_state() after a failed reconnect will see Reconnecting and may retry prematurely or not surface the failure to the user."
+      ],
+      "suggestion": "Set self.state = ConnectionState::Disconnected (or introduce a new TransientFailure variant) after a failed reconnect attempt; only use Reconnecting while the attempt is in-flight.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "state_machine_bookkeeping"
+    },
+    {
+      "dimension": "contract_coherence",
+      "identifier": "add_blocker_undocumented_status_mutation",
+      "summary": "GoalTree::add_blocker silently changes goal.status to Blocked without documenting the side-effect",
+      "related_files": ["crates/colony-exec/src/goals/tree.rs"],
+      "evidence": [
+        "Doc comment on add_blocker (line 151) says only 'Add a blocker to a goal'.",
+        "Implementation sets goal.status = GoalStatus::Blocked (line 158) and updates goal.updated_at.",
+        "A caller that calls add_blocker to record an advisory blocker without intending a status transition will have the goal's status changed under them."
+      ],
+      "suggestion": "Either update the doc comment to say 'Add a blocker and transition status to Blocked', or separate the concerns: add_note_blocker (pure append) vs. block_goal (changes status). At minimum the doc must state the status mutation.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "undocumented_side_effects"
+    },
+    {
+      "dimension": "contract_coherence",
+      "identifier": "builtin_result_is_success_incomplete",
+      "summary": "BuiltinResult::is_success returns false for Source and Eval variants even though both represent exit code 0",
+      "related_files": ["crates/colony-exec/src/builtins.rs"],
+      "evidence": [
+        "is_success (line 48) only matches BuiltinResult::Success(0); Source(_, _) and Eval(_) are not matched.",
+        "exit_code() (line 38-46) returns 0 for both Source and Eval, making them semantically successful.",
+        "A caller checking is_success() after builtin_source or builtin_eval will incorrectly conclude the command failed even on a successful run."
+      ],
+      "suggestion": "Expand is_success to include Source and Eval with exit-code 0: `matches!(self, BuiltinResult::Success(0) | BuiltinResult::Source(_, _) | BuiltinResult::Eval(_))`, or add a sub-predicate is_zero_exit() that checks exit_code() == 0 and use that where appropriate.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "predicate_completeness"
+    },
+    {
+      "dimension": "contract_coherence",
+      "identifier": "connect_all_silent_zero_connections",
+      "summary": "McpConnectionPool::connect_all returns Ok(()) even when all auto-start servers fail to connect",
+      "related_files": ["crates/colony-mcp/src/pool.rs"],
+      "evidence": [
+        "All individual server failures are caught and logged (lines 84-90) but errors are swallowed.",
+        "After the loop, Ok(()) is returned unconditionally (line 100) regardless of how many connections were established.",
+        "If all servers fail, self.connections remains empty while the caller receives a success result, violating the implicit contract that Result<()> from a 'connect' operation means at least one connection is usable."
+      ],
+      "suggestion": "After the loop, if self.connections.is_empty() return Err(McpError::AllServersFailed) or a similar error. Alternatively document explicitly that Ok(()) means 'attempted, some may have failed, check all_tools() to see what is available'.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "error_contract_divergence"
+    },
+    {
+      "dimension": "contract_coherence",
+      "identifier": "expand_arithmetic_immut_silent_side_effect_drop",
+      "summary": "expand_arithmetic_immut silently discards assignment side-effects despite being named 'immutable'",
+      "related_files": ["crates/colony-expand/src/arithmetic.rs"],
+      "evidence": [
+        "The comment on expand_arithmetic_immut (line 26) says 'Immutable version for compatibility - creates a temporary mutable context'.",
+        "It clones the context, evaluates on the clone, then discards the clone; assignments like x++ in the arithmetic expression silently have no effect on the caller's context.",
+        "A caller who uses expand_arithmetic_immut for an expression like '++i' expecting idiomatic arithmetic evaluation will get the correct return value but i will not be incremented in their context."
+      ],
+      "suggestion": "Rename the function to expand_arithmetic_no_side_effects or expand_arithmetic_read_only and update the doc to state explicitly that variable assignments are not propagated. The current name 'immut' implies immutability of the function's output, not that it discards mutation of the input context.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "undocumented_side_effects"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "State-machine bookkeeping lapses: state fields are updated for the primary transition but not corrected when the secondary outcome (failure of the reconnect, forced status Blocked) diverges from the happy path.",
+      "Predicate functions defined narrowly on the canonical variant and not revisited when new variants with equivalent semantics were added (BuiltinResult gained Source and Eval after is_success was written).",
+      "Silent error absorption in batch operations (connect_all) chosen for resilience but with an Ok return that doesn't distinguish partial-success from full-success."
+    ],
+    "likely_symptoms": [
+      "reconnect_state_after_failure — symptom-level; the root issue is state machine logic not the caller.",
+      "expand_arithmetic_immut_silent_side_effect_drop — may be intentional in all current call sites but the name creates future risk."
+    ],
+    "possible_false_positives": []
+  }
+}

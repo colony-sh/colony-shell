@@ -1,0 +1,196 @@
+{
+  "batch": "dependency_health",
+  "batch_index": 7,
+  "assessments": {"dependency_health": 62.0},
+  "dimension_notes": {
+    "dependency_health": {
+      "evidence": [
+        "colony-shell/Cargo.toml declares both `terminal_size = \"0.4\"` and `term_size = \"0.3\"`; `term_size` is never imported in any source file under crates/colony-shell/src/",
+        "`signal-hook-tokio = { version = \"0.3\", features = [\"futures-v0_3\"] }` appears in [workspace.dependencies] but is not referenced by any crate's Cargo.toml",
+        "`rmp-serde = \"1.1\"` appears in [workspace.dependencies] but is not referenced by any crate's Cargo.toml or source file",
+        "`rusqlite = { version = \"0.32\", features = [\"bundled\"] }` is declared independently in 6 crate Cargo.tomls (colony-secure, colony-focus, colony-exec, colony-agent, colony-tuple, colony-reflection) rather than in [workspace.dependencies], creating drift risk",
+        "`chrono`, `uuid`, `toml`, `sha2`+`hex`, `async-trait`, `dirs`, `glob` are all declared per-crate outside workspace deps with minor version variations (e.g. uuid versions 1, 1.6, 1.10 across 8 crates)",
+        "colony-expand declares both `rand = \"0.8\"` and `getrandom = \"0.2\"`: `rand` uses `getrandom` internally and `rand::rngs::OsRng` can serve the same purpose as the direct `getrandom::getrandom()` call in context.rs:1213",
+        "colony-mcp pulls in `tera = \"1\"` (a full Jinja2-style template engine with its own parser, context system, and many transitive deps) for a single 60-line TypeScript codegen file (codegen.rs) that could use `str::replace` or `format!`",
+        "colony-exec uses `notify = \"6\"` (default features) while colony-filetree uses `notify = { version = \"6.1\", default-features = false, features = [\"macos_fsevent\"] }`; Cargo feature union means colony-filetree's explicit `default-features = false` is effectively negated in any binary that links both crates"
+      ],
+      "impact_scope": "codebase",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "Zombie workspace deps (signal-hook-tokio, rmp-serde), two crates for terminal sizing in colony-shell, getrandom redundant alongside rand, tera overkill for trivial codegen, and 6+ high-frequency non-workspace deps (rusqlite, chrono, uuid) creating real version drift surface across 20 crates."
+    }
+  },
+  "dimension_judgment": {
+    "dependency_health": {
+      "strengths": [
+        "Core async and error-handling deps (tokio, thiserror, miette, serde/serde_json, parking_lot, tracing) are properly centralized in [workspace.dependencies] with consistent versions",
+        "Heavy optional features (lancedb, fastembed, arrow, claude-sdk) are correctly gated behind Cargo feature flags so they are not compiled into builds that don't need them",
+        "No competing HTTP clients: reqwest is used exclusively for OpenAI/Ollama providers and Colony Cloud SDK with no overlap from other HTTP abstractions",
+        "No competing async runtimes or executor libraries: tokio is the single async runtime across all crates"
+      ],
+      "issue_character": "The workspace has a split-level dependency management problem: some frequently-used deps are properly centralized while others (rusqlite, chrono, uuid, toml, sha2/hex, dirs) are copy-pasted across up to 8 crate Cargo.tomls with minor version drift, and the workspace itself carries two zombie entries (signal-hook-tokio, rmp-serde) that no crate actually pulls in.",
+      "score_rationale": "The codebase sits below the average band (65-75). Core framework deps are well-managed, but the per-crate repetition of rusqlite (6 times, with bundled SQLite compiled each time), chrono (8 times), and uuid (8 times with three different pin levels: 1, 1.6, 1.10) indicates that workspace centralization was started but not applied consistently. The two genuine problem findings — zombie workspace deps and `tera` for trivial string templating — are concrete, actionable issues that drag the score further: zombie entries mislead developers about the dependency surface, and `tera` imports a full template engine with 15+ transitive deps for a task that needs no more than `format!` macros. The `term_size`/`terminal_size` dual declaration in colony-shell is a direct two-libs-for-same-purpose violation per the rubric."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_zombie_signal_hook_tokio",
+      "summary": "signal-hook-tokio declared in workspace.dependencies but never used by any crate",
+      "related_files": ["Cargo.toml"],
+      "evidence": [
+        "`signal-hook-tokio = { version = \"0.3\", features = [\"futures-v0_3\"] }` appears in Cargo.toml [workspace.dependencies] at line 58",
+        "Grep across all crates/*/Cargo.toml and src/ finds zero references to signal-hook-tokio or signal_hook_tokio"
+      ],
+      "suggestion": "Remove the `signal-hook-tokio` entry from [workspace.dependencies] in the root Cargo.toml; if async signal handling is needed in the future, add it at that point.",
+      "confidence": "high",
+      "impact_scope": "codebase",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "workspace_dep_hygiene"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_zombie_rmp_serde",
+      "summary": "rmp-serde (MessagePack) declared in workspace.dependencies but never used by any crate",
+      "related_files": ["Cargo.toml"],
+      "evidence": [
+        "`rmp-serde = \"1.1\"` appears in Cargo.toml [workspace.dependencies]",
+        "Grep across all crates/*/Cargo.toml and src/ finds zero references to rmp-serde or rmp_serde"
+      ],
+      "suggestion": "Remove the `rmp-serde` entry from [workspace.dependencies]; if MessagePack serialization is added in the future, add it then.",
+      "confidence": "high",
+      "impact_scope": "codebase",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "workspace_dep_hygiene"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_dual_terminal_size",
+      "summary": "colony-shell declares both terminal_size and term_size for the same purpose; term_size is unused",
+      "related_files": ["crates/colony-shell/Cargo.toml", "crates/colony-shell/src/repl.rs"],
+      "evidence": [
+        "crates/colony-shell/Cargo.toml line 79: `terminal_size = \"0.4\"`",
+        "crates/colony-shell/Cargo.toml line 87: `term_size = \"0.3\"`",
+        "Only `terminal_size::terminal_size()` appears in source (repl.rs:290); `term_size` is never imported"
+      ],
+      "suggestion": "Remove `term_size = \"0.3\"` from crates/colony-shell/Cargo.toml; the crate already uses `terminal_size = \"0.4\"` for all terminal dimension queries.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "workspace_dep_hygiene"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_tera_overkill",
+      "summary": "tera (full Jinja2 template engine) pulled into colony-mcp for a single 60-line TypeScript codegen file",
+      "related_files": ["crates/colony-mcp/Cargo.toml", "crates/colony-mcp/src/codegen.rs"],
+      "evidence": [
+        "crates/colony-mcp/Cargo.toml: `tera = \"1\"` is the only non-trivial template dependency",
+        "tera is used only in codegen.rs via `use tera::{Context, Tera}` to render a single static TypeScript template string defined as a `const` in the same file",
+        "The template has 6 interpolated variables (server_name, schema_hash, timestamp, tool fields) and a simple for-loop — no filters, inheritance, or macros beyond `default()`",
+        "tera transitively brings in pest, pest_derive, globset, humansize, and ~12 other crates"
+      ],
+      "suggestion": "Replace `tera` with a simple hand-written string builder using `format!` and iterator chains; the template's logic is a for-loop over tools with string substitution, which does not justify a full template engine.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "heavy_dep_light_use"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_rand_getrandom_redundancy",
+      "summary": "colony-expand declares both rand and getrandom; getrandom is redundant since rand provides OsRng",
+      "related_files": ["crates/colony-expand/Cargo.toml", "crates/colony-expand/src/context.rs"],
+      "evidence": [
+        "crates/colony-expand/Cargo.toml: `rand = \"0.8\"` and `getrandom = \"0.2\"` both listed",
+        "context.rs:17-18: `use rand::rngs::StdRng; use rand::{Rng, SeedableRng};` for $RANDOM",
+        "context.rs:1213: `getrandom::getrandom(&mut buf)` for $SRANDOM — this can be replaced with `rand::rngs::OsRng.fill_bytes(&mut buf)` which is provided by the already-present rand crate"
+      ],
+      "suggestion": "Remove `getrandom = \"0.2\"` from crates/colony-expand/Cargo.toml and replace the `getrandom::getrandom()` call in context.rs with `rand::rngs::OsRng.fill_bytes(&mut buf)` (OsRng is re-exported from rand).",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "heavy_dep_light_use"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_rusqlite_not_workspace",
+      "summary": "rusqlite with bundled SQLite declared independently in 6 crates instead of workspace, risking version drift",
+      "related_files": [
+        "crates/colony-agent/Cargo.toml",
+        "crates/colony-exec/Cargo.toml",
+        "crates/colony-focus/Cargo.toml",
+        "crates/colony-reflection/Cargo.toml",
+        "crates/colony-secure/Cargo.toml",
+        "crates/colony-tuple/Cargo.toml",
+        "Cargo.toml"
+      ],
+      "evidence": [
+        "All six crates pin `rusqlite = { version = \"0.32\", features = [\"bundled\"] }` independently",
+        "`rusqlite` is absent from [workspace.dependencies] in root Cargo.toml, unlike tokio, serde, thiserror etc.",
+        "The `bundled` feature compiles SQLite from C source; having it duplicated across 6 Cargo.tomls rather than workspace makes it easy for one crate to drift to 0.33+ while others remain at 0.32"
+      ],
+      "suggestion": "Add `rusqlite = { version = \"0.32\", features = [\"bundled\"] }` to [workspace.dependencies] in root Cargo.toml, then replace the 6 per-crate declarations with `rusqlite.workspace = true`.",
+      "confidence": "high",
+      "impact_scope": "codebase",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "workspace_dep_hygiene"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_notify_feature_mismatch",
+      "summary": "colony-exec and colony-filetree configure notify with incompatible feature sets; colony-filetree's default-features=false optimization is negated",
+      "related_files": [
+        "crates/colony-exec/Cargo.toml",
+        "crates/colony-filetree/Cargo.toml"
+      ],
+      "evidence": [
+        "crates/colony-exec/Cargo.toml: `notify = \"6\"` (default features enabled, picks up inotify/kqueue/ReadDirectoryChanges backends)",
+        "crates/colony-filetree/Cargo.toml: `notify = { version = \"6.1\", default-features = false, features = [\"macos_fsevent\"] }` — explicitly opts out of non-macOS backends",
+        "In any binary that links both crates (e.g., the main colony shell), Cargo's feature resolver unions both sets, activating default features regardless of colony-filetree's intent"
+      ],
+      "suggestion": "Align both crates to the same notify feature set. If the project targets macOS primarily, change colony-exec to also use `default-features = false, features = [\"macos_fsevent\"]`. Otherwise, promote `notify` to [workspace.dependencies] with explicit features and have both crates reference `notify.workspace = true`.",
+      "confidence": "medium",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "workspace_dep_hygiene"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "dep_chrono_uuid_not_workspace",
+      "summary": "chrono and uuid declared per-crate 8 times each with minor version variations instead of workspace deps",
+      "related_files": [
+        "crates/colony-agent/Cargo.toml",
+        "crates/colony-channels/Cargo.toml",
+        "crates/colony-config/Cargo.toml",
+        "crates/colony-exec/Cargo.toml",
+        "crates/colony-memory/Cargo.toml",
+        "crates/colony-reflection/Cargo.toml",
+        "crates/colony-secure/Cargo.toml",
+        "crates/colony-tuple/Cargo.toml",
+        "Cargo.toml"
+      ],
+      "evidence": [
+        "uuid declared in 8 crates with three distinct pinned versions: `\"1\"`, `\"1.6\"`, and `\"1.10\"` — Cargo resolves to a common semver-compatible version but different minimum constraints mean independent upgrade decisions",
+        "colony-exec uses `chrono = \"0.4\"` (without serde feature) while the 7 other crates use `chrono = { version = \"0.4\", features = [\"serde\"] }` — inconsistent feature sets",
+        "Neither chrono nor uuid appears in [workspace.dependencies] despite tokio, serde, thiserror, tracing all being properly centralized there"
+      ],
+      "suggestion": "Add `uuid = { version = \"1.10\", features = [\"v4\"] }` and `chrono = { version = \"0.4\", features = [\"serde\"] }` to [workspace.dependencies], then replace all per-crate declarations with `.workspace = true`. Update colony-exec's chrono usage to include serde or suppress the feature there explicitly.",
+      "confidence": "high",
+      "impact_scope": "codebase",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "workspace_dep_hygiene"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Workspace dependency centralization was applied selectively at project inception (runtime, serialization, error handling) but never enforced as a policy for data utilities (uuid, chrono, rusqlite, toml), creating a two-tier pattern that persists as new crates are added",
+      "Zombie workspace deps (signal-hook-tokio, rmp-serde) suggest abandoned implementation paths whose Cargo.toml entries were not cleaned up when the design changed",
+      "The tera/getrandom/term_size issues follow a pattern of using a familiar larger library for a tiny subset of its functionality, likely from copy-paste from documentation examples"
+    ],
+    "likely_symptoms": [],
+    "possible_false_positives": [
+      "The rand+getrandom issue could be considered intentional if the author wanted to avoid the rand transitive dep for $SRANDOM specifically — but rand is already present, so it's still redundant"
+    ]
+  }
+}

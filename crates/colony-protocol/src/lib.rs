@@ -144,7 +144,7 @@ pub enum ProtocolMessage {
     },
     /// Full prompt state for reactive terminal rendering (Prompt=state)
     PromptState {
-        state: PromptStateData,
+        state: Box<PromptStateData>,
     },
     /// Signal that shell is ready for input (Prompt=ready)
     PromptReady {
@@ -580,7 +580,7 @@ pub fn emit_heartbeat(
 
 /// Emit full prompt state for reactive terminal rendering
 pub fn emit_prompt_state(state: PromptStateData) {
-    let msg = ProtocolMessage::PromptState { state };
+    let msg = ProtocolMessage::PromptState { state: Box::new(state) };
     emit_message(&msg);
 }
 
@@ -1012,7 +1012,7 @@ mod tests {
     #[test]
     fn test_prompt_state_serialization() {
         let msg = ProtocolMessage::PromptState {
-            state: PromptStateData {
+            state: Box::new(PromptStateData {
                 cwd: "/home/user/src/colony".to_string(),
                 display_path: "~/src/colony".to_string(),
                 user: Some("user".to_string()),
@@ -1035,7 +1035,7 @@ mod tests {
                 shlvl: 1,
                 in_job: false,
                 model: Some("claude-sonnet".to_string()),
-            },
+            }),
         };
 
         let json = serde_json::to_string(&msg).unwrap();

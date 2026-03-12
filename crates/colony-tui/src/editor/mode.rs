@@ -5,8 +5,10 @@
 
 /// The current editing mode of the input editor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum EditorMode {
     /// Normal mode: navigation, motions, operators.
+    #[default]
     Normal,
     /// Insert mode: typing text.
     Insert,
@@ -40,11 +42,6 @@ pub enum SearchDirection {
     Backward,
 }
 
-impl Default for EditorMode {
-    fn default() -> Self {
-        EditorMode::Normal
-    }
-}
 
 #[cfg(test)]
 mod tests {

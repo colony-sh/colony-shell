@@ -136,10 +136,6 @@ impl ModelProvider for CloudProvider {
         Ok(Box::pin(mapped))
     }
 
-    fn supports_streaming(&self) -> bool {
-        true
-    }
-
     fn max_context_tokens(&self) -> usize {
         200_000
     }

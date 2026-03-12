@@ -133,11 +133,10 @@ impl HeartbeatWatcher {
 
         // Drain all pending events
         while let Ok(Ok(event)) = self.rx.try_recv() {
-            if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
-                if event.paths.iter().any(|p| p.ends_with("HEARTBEAT.md")) {
+            if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_))
+                && event.paths.iter().any(|p| p.ends_with("HEARTBEAT.md")) {
                     had_modify = true;
                 }
-            }
         }
 
         if had_modify {

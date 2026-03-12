@@ -21,7 +21,7 @@ fn main() {
         let mut out = stdout.lock();
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
-            subscriptions: vec!["cwd_change".to_string()],
+            subscriptions: vec!["dir_change".to_string()],
             help: vec![
                 "j/↓  Move down".to_string(),
                 "k/↑  Move up".to_string(),
@@ -32,7 +32,7 @@ fn main() {
                 "Esc  Return to prompt".to_string(),
             ],
         };
-        writeln!(out, "{}", serde_json::to_string(&config).unwrap()).ok();
+        writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
         out.flush().ok();
     }
 
@@ -60,9 +60,9 @@ fn main() {
                 }
             }
             InputEvent::Tuple { ref data } => {
-                // React to dir_change: {"key": "dir_change", "value": {"new": "/path"}}
+                // React to dir_change: {"key": "dir_change", "value": {"cwd": "/path"}}
                 if let Some(key) = data.get("key").and_then(|k| k.as_str()) {
-                    if key == "cwd_change" {
+                    if key == "dir_change" {
                         if let Some(new_dir) = data
                             .get("value")
                             .and_then(|v| v.get("cwd"))
@@ -102,7 +102,7 @@ fn emit_frame(stdout: &io::Stdout, state: &TreeState) {
     let mut out = stdout.lock();
     writeln!(out, "{SENTINEL_FRAME}").ok();
     for line in state.render_lines() {
-        writeln!(out, "{}", serde_json::to_string(&line).unwrap()).ok();
+        writeln!(out, "{}", serde_json::to_string(&line).expect("frame line must serialize")).ok();
     }
     writeln!(out, "{SENTINEL_FRAME}").ok();
     out.flush().ok();
@@ -115,7 +115,7 @@ fn emit_tuple(stdout: &io::Stdout, key: &str, path: &Path) {
         key: key.to_string(),
         value: serde_json::json!(path.display().to_string()),
     };
-    writeln!(out, "{}", serde_json::to_string(&emit).unwrap()).ok();
+    writeln!(out, "{}", serde_json::to_string(&emit).expect("tuple emit must serialize")).ok();
     out.flush().ok();
 }
 
@@ -262,9 +262,9 @@ impl TreeState {
         for entry in &self.entries {
             let (icon, style) = if entry.is_dir {
                 let icon = if entry.expanded {
-                    "\u{f024b}"
+                    "\u{f07c}"
                 } else {
-                    "\u{f024b}"
+                    "\u{f07b}"
                 };
                 (icon, "bold,blue")
             } else {
@@ -389,15 +389,5 @@ impl TreeState {
 
 fn file_icon(name: &str) -> &'static str {
     let ext = name.rsplit('.').next().unwrap_or("");
-    match ext {
-        "rs" => "\u{e7a8}",
-        "toml" | "json" | "yaml" | "yml" => "\u{e60b}",
-        "md" | "txt" => "\u{f0219}",
-        "sh" | "bash" | "zsh" => "\u{e795}",
-        "py" => "\u{e606}",
-        "js" | "ts" => "\u{e781}",
-        "go" => "\u{e627}",
-        "c" | "cpp" | "h" => "\u{e61e}",
-        _ => "\u{f0214}",
-    }
+    colony_filetree::file_icon_for_ext(ext)
 }

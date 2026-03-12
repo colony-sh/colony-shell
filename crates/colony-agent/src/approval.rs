@@ -24,20 +24,12 @@ pub enum ApprovalResponse {
 }
 
 /// Configuration for auto-approve patterns
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ApprovalConfig {
     pub auto_approve_patterns: Vec<String>,
     pub colony_terminal: bool,
 }
 
-impl Default for ApprovalConfig {
-    fn default() -> Self {
-        Self {
-            auto_approve_patterns: Vec::new(),
-            colony_terminal: false,
-        }
-    }
-}
 
 impl ApprovalConfig {
     pub fn with_auto_approve(mut self, patterns: Vec<String>) -> Self {

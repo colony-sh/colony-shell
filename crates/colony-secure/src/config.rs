@@ -27,10 +27,27 @@ pub struct VariableConfig {
     pub secure: Vec<String>,
 }
 
+/// Configuration for audit logging of secure variable access events.
+///
+/// These fields are parsed from the user's config file and stored, but the audit
+/// logger itself is not yet implemented. When wired up, `enabled` should gate
+/// whether access events are written, and `file` should specify the log path
+/// (defaulting to a standard location under the colony config directory when
+/// `None`).
+///
+/// TODO: Implement an `AuditLogger` that opens `file` (or a default path) on
+/// `SecureRegistry` construction when `enabled` is `true`, and writes a
+/// structured log entry for every `check_access` call and every grant/revoke.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuditConfig {
+    /// Whether audit logging is active. Parsed from config but not yet used.
+    // TODO: Wire up to an AuditLogger in SecureRegistry when audit logging is implemented.
+    #[allow(dead_code)]
     #[serde(default)]
     pub enabled: bool,
+    /// Path to the audit log file. `None` means use the default colony log directory.
+    // TODO: Wire up to an AuditLogger in SecureRegistry when audit logging is implemented.
+    #[allow(dead_code)]
     #[serde(default)]
     pub file: Option<PathBuf>,
 }

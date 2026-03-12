@@ -122,13 +122,8 @@ impl FileSystemWatcher {
         let mut events = Vec::new();
         
         // Collect events with a small timeout for batching
-        loop {
-            match tokio::time::timeout(Duration::from_millis(50), self.rx.recv()).await {
-                Ok(Some(event)) => {
-                    events.push(event);
-                }
-                _ => break,
-            }
+        while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(50), self.rx.recv()).await {
+            events.push(event);
         }
 
         if events.is_empty() {
@@ -226,12 +221,14 @@ impl FileSystemWatcher {
 }
 
 /// Builder for FileSystemWatcher with configuration
+#[allow(dead_code)]
 pub struct WatcherBuilder {
     tree: TreeState,
     debounce: Duration,
     ignore_patterns: Vec<String>,
 }
 
+#[allow(dead_code)]
 impl WatcherBuilder {
     /// Create a new builder
     pub fn new(tree: TreeState) -> Self {

@@ -780,6 +780,7 @@ fn render_content(frame: &mut Frame, area: Rect, visible_lines: &[ContentLine]) 
     frame.render_widget(content, area);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_input(
     frame: &mut Frame,
     area: Rect,

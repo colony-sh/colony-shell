@@ -87,6 +87,12 @@ pub struct McpLifecycleManager {
     servers: HashMap<String, ManagedServer>,
 }
 
+impl Default for McpLifecycleManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl McpLifecycleManager {
     pub fn new() -> Self {
         Self {
@@ -190,11 +196,10 @@ impl McpLifecycleManager {
 
         if !healthy && server.is_running() {
             server.mark_unhealthy();
-        } else if healthy && server.status == ServerStatus::Unhealthy {
-            if server.pid.is_some() {
+        } else if healthy && server.status == ServerStatus::Unhealthy
+            && server.pid.is_some() {
                 server.status = ServerStatus::Running;
             }
-        }
 
         Ok(())
     }

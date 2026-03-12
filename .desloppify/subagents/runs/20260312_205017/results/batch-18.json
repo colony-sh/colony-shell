@@ -1,0 +1,129 @@
+{
+  "batch": "type_safety",
+  "batch_index": 18,
+  "assessments": {"type_safety": 78.5},
+  "dimension_notes": {
+    "type_safety": {
+      "evidence": [
+        "Enum types are used consistently and correctly throughout: GoalStatus, ProviderType, ConnectionState, ServerStatus, RecipeSource, SidebarPosition all appear in domain comparisons rather than raw string/int literals",
+        "ProviderType::parse() returns Option<ProviderType> and is called with .and_then() — correct use of the type system at the string-to-enum boundary",
+        "InstalledRecipe::installed_at (registry.rs:20) and Goal::created_at/updated_at (goals/types.rs:53-55) are typed as String but carry ISO-8601 semantic contracts — weaker than using chrono::DateTime<Utc>",
+        "GoalTree::storage_path uses .expect(\"home directory must exist\") in production code (goals/tree.rs:73) — panics instead of returning Result, breaking the error contract implied by the caller path",
+        "Multiple #[allow(dead_code)] suppressions on public API structs/fns in tutorial/tracer.rs, tutorial/explain/constructs.rs, tutorial/explain/commands.rs without explanation — suppresses legitimate type visibility signals",
+        "McpToolInfo (colony-recipe/mcp_lifecycle.rs:33-37) and ToolInfo (colony-mcp/connection.rs:56-61) are parallel type definitions for the same concept with slightly different shapes; callers must manually map between them",
+        "SidebarConfig::panels and collapsed_panels are Vec<String> panel ID lists (ui-core/sidebar/manager.rs:15-16); a newtype PanelId or enum would prevent mixing with arbitrary strings",
+        "Public API functions across seed files are generally well-annotated with specific types; no dict[str, Any] equivalent or untyped public parameters observed",
+        "No type: ignore equivalent comments found in production code paths of the seed files"
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "Timestamp fields typed as String across multiple structs (registry, goals) represent a systematic weak-typing pattern. The GoalTree::storage_path panic in production code violates the error contract. Parallel ToolInfo definitions across crates require manual mapping and risk shape divergence.",
+      "sub_axes": {
+        "abstraction_leverage": 80.0,
+        "indirection_cost": 75.0,
+        "interface_honesty": 72.0,
+        "delegation_density": 82.0,
+        "definition_directness": 75.0,
+        "type_discipline": 77.0
+      }
+    }
+  },
+  "dimension_judgment": {
+    "type_safety": {
+      "strengths": [
+        "Enum-first design is consistent: GoalStatus, ProviderType, ConnectionState, ServerStatus, RecipeSource, and SidebarPosition are all used at comparison sites rather than bypassed with raw strings or integers",
+        "Option/Result types are used correctly at fallible boundaries — ProviderType::parse returns Option, file I/O returns Result, and combinators (and_then, ok_or) are used idiomatically",
+        "Public API functions across the seed files are consistently typed with concrete types; no untyped generic parameters or dict-like escape hatches were observed",
+        "Feature-gated modules (recipe_config, tuple_bridge, memory_integration) use cfg-guarded inner modules with well-typed public stubs, avoiding type holes in alternate compilation paths"
+      ],
+      "issue_character": "The issues are concentrated in two patterns: semantic contracts carried by String (timestamps that should be DateTime, panel IDs that should be newtypes) and structural duplication of tool-info types across crate boundaries that forces manual mapping.",
+      "score_rationale": "The codebase demonstrates disciplined Rust type use in the domain model layer — enums are not bypassed, public APIs are annotated, and the Option/Result vocabulary is used correctly. The score is held below 80 by a recurring weak-typing pattern for timestamp and identifier fields (String used where a structured type would enforce the contract), one production .expect() that breaks the error surface of GoalTree, and a parallel ToolInfo definition that forces callers to map between identical shapes. These are real maintenance liabilities but are isolated rather than systemic, placing the codebase in the high-competent range rather than excellent."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "type_safety",
+      "identifier": "ts_timestamp_strings",
+      "summary": "Timestamp fields typed as String carry ISO-8601 semantic contracts not enforced by the type",
+      "related_files": [
+        "crates/colony-recipe/src/registry.rs",
+        "crates/colony-exec/src/goals/types.rs"
+      ],
+      "evidence": [
+        "InstalledRecipe::installed_at: String (registry.rs:20) — populated by callers with RFC-3339 strings but nothing prevents arbitrary non-date strings",
+        "Goal::created_at: String, updated_at: String (goals/types.rs:53-55) — set via chrono::Utc::now().to_rfc3339() but stored and compared as bare strings throughout the tree"
+      ],
+      "suggestion": "Replace String timestamp fields with chrono::DateTime<Utc>; serde's built-in support handles serialization. This makes the contract machine-verifiable and eliminates silent format mismatches.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "weak_typing_for_semantic_strings"
+    },
+    {
+      "dimension": "type_safety",
+      "identifier": "ts_goal_tree_panic",
+      "summary": "GoalTree::storage_path panics instead of returning Result when home directory is missing",
+      "related_files": [
+        "crates/colony-exec/src/goals/tree.rs"
+      ],
+      "evidence": [
+        "tree.rs:72-76: dirs::home_dir().expect(\"home directory must exist\") inside the private storage_path helper — this is called from the public GoalTree::load which returns Result<Self>, so the error contract is broken before the ? operator can propagate it"
+      ],
+      "suggestion": "Change storage_path to return Result<PathBuf, GoalError> and propagate the missing-home-dir case as GoalError::InvalidOperation, allowing callers to handle it rather than crashing.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "expect_in_production_path"
+    },
+    {
+      "dimension": "type_safety",
+      "identifier": "ts_parallel_tool_info",
+      "summary": "McpToolInfo in colony-recipe and ToolInfo in colony-mcp are parallel type definitions for the same concept",
+      "related_files": [
+        "crates/colony-recipe/src/mcp_lifecycle.rs",
+        "crates/colony-mcp/src/connection.rs"
+      ],
+      "evidence": [
+        "McpToolInfo (mcp_lifecycle.rs:33-37): name: String, description: Option<String>, server_name: String",
+        "ToolInfo (connection.rs:56-61): tool: Tool (rmcp type embedding name/description), server_name: String",
+        "Any cross-subsystem code that needs both shapes must manually map between them, and the shapes can diverge silently"
+      ],
+      "suggestion": "Either unify into a single canonical ToolInfo in a shared crate (colony-config or a new colony-mcp-types), or make McpToolInfo a view over ToolInfo. The divergence risks future schema drift.",
+      "confidence": "medium",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "parallel_type_definitions"
+    },
+    {
+      "dimension": "type_safety",
+      "identifier": "ts_panel_id_strings",
+      "summary": "SidebarConfig panel lists use Vec<String> where a PanelId newtype or enum would enforce validity",
+      "related_files": [
+        "crates/colony-ui-core/src/sidebar/manager.rs"
+      ],
+      "evidence": [
+        "SidebarConfig::panels: Vec<String> and collapsed_panels: Vec<String> (manager.rs:15-16) are populated with literal panel names like \"file_tree\", \"session\", \"mcp\", \"git_files\"",
+        "The SidebarManager::on_event method matches against subscribed strings (manager.rs:158-165), creating a stringly-typed event dispatch",
+        "A typo in a panel name string silently produces a missing panel rather than a compile-time error"
+      ],
+      "suggestion": "Define a PanelId enum with all known panel variants, or at minimum a newtype wrapper with an exhaustive from_str. This would surface panel name mismatches at compile time or at startup rather than silently.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "weak_typing_for_semantic_strings"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "String used for semantic values that have narrower contracts (timestamps, identifiers, panel names) — a pattern visible across 3-4 independent subsystems, suggesting it was a deliberate early simplification that was never revisited",
+      "Parallel type definitions at crate boundaries without a shared types crate, causing ToolInfo to be re-defined independently in colony-recipe and colony-mcp"
+    ],
+    "likely_symptoms": [
+      "ts_panel_id_strings is likely a symptom of the broader weak-typing-for-identifiers root cause rather than an independent design decision"
+    ],
+    "possible_false_positives": [
+      "The #[allow(dead_code)] suppressions in tutorial sub-modules are likely intentional — the tutorial subsystem is under construction and these suppress premature cleanup warnings, not type-safety suppressions"
+    ]
+  }
+}

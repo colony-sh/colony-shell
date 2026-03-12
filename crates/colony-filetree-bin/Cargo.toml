@@ -8,5 +8,6 @@ name = "filetree"
 path = "src/main.rs"
 
 [dependencies]
+colony-filetree = { workspace = true }
 colony-panel = { path = "../colony-panel" }
 serde_json = { workspace = true }

@@ -1,0 +1,96 @@
+{
+  "batch": "error_consistency",
+  "batch_index": 4,
+  "assessments": {"error_consistency": 82.0},
+  "dimension_notes": {
+    "error_consistency": {
+      "evidence": [
+        "Codebase-wide scan shows 3286 result_type uses in src/ vs only 20 returns_null and 4 try_catch — overwhelmingly Result-based",
+        "approvals.rs lines 162-164 and 204-206: DateTime::parse_from_rfc3339(..).unwrap_or_else(|_| Utc::now()) silently substitutes current time for corrupt stored timestamps",
+        "file_tree.rs get_tree_state(): 'if new_state.load().is_ok()' — load failure is silently ignored, returns None with no log or diagnostic",
+        "colony-filetree-bin uses bare .unwrap() for serde_json::to_string; colony-env-bin uses .expect(\"..must serialize\") for the same pattern — sibling bin crates treat serialization panics inconsistently",
+        "Both panel bin crates use .ok() on all writeln!/flush calls — stdout write errors are silently swallowed",
+        "diag.rs write(): non-JSON input falls back to Info entry — intentional and well-documented degraded mode, not a defect"
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "Two localized but real defects: silent timestamp corruption in approvals.rs and inconsistent serialization-panic treatment across sibling bin crates. The core library layer is very consistent; the friction is at persistence boundaries and binary entry points."
+    }
+  },
+  "dimension_judgment": {
+    "error_consistency": {
+      "strengths": [
+        "The library/core layer is overwhelmingly Result-based: 3286 result_type uses vs 20 returns_null across src/ — virtually no mixed strategy in the core crates",
+        "Custom error types with thiserror are used consistently in the main crates (IpcError, StorageError, ExecutionError, ApprovalError) — no bare strings as error values in library APIs",
+        "approvals.rs, ipc.rs, and diag.rs all propagate errors through ? rather than swallowing them at the DB or IPC layer",
+        "execute_builtin in builtins.rs converts expansion errors to ExecutionError and propagates them consistently — error strategy is preserved across the builtin dispatch boundary",
+        "git_branch and git_status components use a coherent Option return for 'not in a git repo' vs Result for actual failures — a sensible layered strategy"
+      ],
+      "issue_character": "The issues are localized and boundary-specific: silent error swallowing appears at persistence-deserialization boundaries (approvals.rs timestamp parse) and at binary I/O entry points (panel bin crates), not in the core library layer where the strategy is very consistent.",
+      "score_rationale": "The core library layer is genuinely strong on this dimension — close to 90-level consistency — but two patterns pull the score down. The approvals.rs timestamp silent-substitution could produce misleading security audit data without any log entry, which is a meaningful failure in a security-sensitive context. The inconsistency between sibling bin crates (unwrap vs expect for the same serialization operation) is minor but visible friction that a developer would notice. These issues are not pervasive enough to reach 80-level 'recurring friction', but they are concrete enough to hold the score below 85."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "error_consistency",
+      "identifier": "approvals_silent_timestamp_corruption",
+      "summary": "Silent timestamp substitution on invalid RFC3339 data masks corrupt approval records",
+      "related_files": ["crates/colony-secure/src/approvals.rs"],
+      "evidence": [
+        "Lines 162-164 and 204-206: DateTime::parse_from_rfc3339(&granted_at_str).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()) — a parse failure silently substitutes the current time",
+        "This pattern appears identically in both list_approvals() and list_all_approvals()",
+        "In a security-audit context (approval records for sensitive variable access), silently replacing a corrupt timestamp with the current time produces misleading results with no diagnostic"
+      ],
+      "suggestion": "Propagate the parse error instead: use DateTime::parse_from_rfc3339(&granted_at_str).map_err(|e| rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e)))? inside the query_map closure, or define a SecureError variant for database integrity failures and use map_err(|_| SecureError::CorruptTimestamp(granted_at_str.clone())). At minimum, log a warning with the raw value before substituting.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "persistence_boundary_silent_fail"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "file_tree_load_silent_discard",
+      "summary": "TreeState::load() failure in get_tree_state() is silently discarded with no log or error propagation",
+      "related_files": ["crates/colony-ui-core/src/sidebar/panels/file_tree.rs"],
+      "evidence": [
+        "Lines 50-55: 'if new_state.load().is_ok()' — the Err variant is discarded with no tracing::warn! or debug! call",
+        "The fallback path (lines 204-217) renders '(failed to load)' in the UI, but the underlying error reason is never recorded",
+        "Contrast: handle_action() on line 230 uses tracing::debug! for toggle events — the tracing infrastructure is available and used elsewhere in this file"
+      ],
+      "suggestion": "Replace 'if new_state.load().is_ok()' with 'match new_state.load() { Ok(()) => { ... } Err(e) => { tracing::warn!(\"FileTreePanel: failed to load tree for {}: {}\", root.display(), e); } }' to record why the tree failed to load while preserving the existing graceful-degradation UI behavior.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "persistence_boundary_silent_fail"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "bin_serialization_panic_inconsistency",
+      "summary": "Sibling panel binaries treat serde_json serialization panics inconsistently: unwrap() vs expect(\"msg\")",
+      "related_files": [
+        "crates/colony-filetree-bin/src/main.rs",
+        "crates/colony-env-bin/src/main.rs"
+      ],
+      "evidence": [
+        "colony-filetree-bin line 35: serde_json::to_string(&config).unwrap() — no message on panic",
+        "colony-filetree-bin lines 105, 118: serde_json::to_string(&line).unwrap() and serde_json::to_string(&emit).unwrap()",
+        "colony-env-bin line 25: serde_json::to_string(&config).expect(\"config must serialize\") — has context message",
+        "colony-env-bin line 111: serde_json::to_string(&line).expect(\"frame line must serialize\") — has context message",
+        "Both binaries implement the same panel protocol pattern; one has diagnostic context, the other does not"
+      ],
+      "suggestion": "Apply the colony-env-bin pattern to colony-filetree-bin: replace each .unwrap() with a matching .expect(\"<what> must serialize\") call. E.g., serde_json::to_string(&config).expect(\"PanelConfig must serialize\"), serde_json::to_string(&line).expect(\"FrameLine must serialize\"), serde_json::to_string(&emit).expect(\"TupleEmit must serialize\").",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Persistence-layer deserialization receives less error-handling discipline than the core library layer — the two approvals.rs silent-substitutions and the file_tree load discard share a pattern of 'degrade gracefully but quietly' that loses diagnostic information",
+      "Binary crates (panel protocol implementations) appear to have been authored independently with different attention to panic quality — a shared emit_frame helper abstraction in a colony-panel crate would enforce consistency"
+    ],
+    "likely_symptoms": ["bin_serialization_panic_inconsistency"],
+    "possible_false_positives": []
+  }
+}

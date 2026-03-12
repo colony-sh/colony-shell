@@ -1,0 +1,94 @@
+{
+  "batch": "package_organization",
+  "batch_index": 13,
+  "assessments": {"package_organization": 62.0},
+  "dimension_notes": {
+    "package_organization": {
+      "evidence": [
+        "colony-ui-core/src/builtins/ contains 20 files (directory_profiles confirms file_count: 20) mixing two distinct component types: 15 PromptComponent implementations (aws_profile, docker_status, duration, exit_status, git_branch, git_status, hostname, jobs, kube_context, lsp, model, node_version, pwd, python_version, rust_version) and 4 SidebarComponent implementations (sidebar_file_tree, sidebar_git_files, sidebar_mcp, sidebar_session). These implement different traits (PromptComponent vs SidebarComponent defined in component.rs lines 299 and 319) and serve different UI surfaces.",
+        "The 4 sidebar-concern files in the builtins/ directory use a redundant sidebar_ prefix specifically to avoid name collision with the prompt-concern siblings — a clear sign that the folder conflates two distinct ownership domains.",
+        "colony-ui-core/src/sidebar/panels/ already exists as a separate subdirectory (file_count: 5) containing file_tree.rs, git_files.rs, mcp.rs, session.rs — these have parallel responsibility to the sidebar_*.rs files in builtins/. The scan_evidence duplicate_clusters flagged crates/colony-ui-core/src/sidebar/panels/file_tree.rs as an exact duplicate, indicating the split was started but the builtins/ sidebar_* variants were not migrated.",
+        "colony-exec/src/ has 16 flat files (directory_profiles file_count: 16, total_loc: 19239) with mixed concerns: core POSIX execution primitives (alias.rs, builtin_redirect.rs, builtins.rs, command.rs, command_sub.rs, pipeline.rs, redirect.rs, process.rs, path.rs, jobs.rs, xtrace.rs) sit alongside UI/feature files (sidebar.rs, mirror.rs) and already-extracted subdirectory concerns (buffers/, file_tree/, flux/, goals/, panes/). The crate's own doc comment says it 'handles: Simple command execution, PATH resolution, Environment passing, Exit status capture, Signal handling' — sidebar.rs and mirror.rs are outside that stated scope.",
+        "colony-exec/src/mirror.rs implements a long-running 'tail reflection database' command; it cross-references colony-reflection directly. Its ownership is observation/reflection, not execution. It lives in colony-exec only because it's wired as a builtin.",
+        "colony-exec/src/sidebar.rs parses the sidebar builtin command (LayoutMode, SidebarCommand structs). This is UI configuration parsing, not shell execution. It lives in colony-exec because the sidebar builtin dispatch is there, but its logical home is closer to colony-ui-core or colony-panel.",
+        "colony-agent/src/ has 16 flat files (directory_profiles file_count: 16) with no subdivisions beyond providers/. Files covering distinctly different concerns — persistence.rs, planning.rs, token_accounting.rs, recipe_config.rs, tuple_bridge.rs, memory_integration.rs, context.rs, detector.rs — are all at the same level as agent.rs, approval.rs, and cancellation.rs. The providers/ subdirectory demonstrates the pattern is known; the remaining 11 non-provider files could benefit from similar grouping.",
+        "Most crates with 5-11 files are well-organized and cohesive (colony-channels, colony-filetree, colony-focus, colony-mcp, colony-memory, colony-panel, colony-recipe, colony-reflection, colony-secure). The workspace-level crate decomposition itself is sound."
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "The two concrete issues (builtins/ containing mixed PromptComponent and SidebarComponent implementations, and colony-exec accumulating non-execution concerns) are measurable boundary failures. The builtins/ issue is directly evidenced by the sidebar_* prefix workaround and the partially-completed migration to sidebar/panels/. The colony-exec issue is evidenced by the mismatch between the crate's stated responsibility and the presence of sidebar.rs and mirror.rs. Both increase navigation cost for developers trying to locate sidebar vs. prompt component code."
+    }
+  },
+  "dimension_judgment": {
+    "package_organization": {
+      "strengths": [
+        "Workspace-level crate decomposition is domain-aligned: colony-parser, colony-expand, colony-exec, colony-agent, colony-protocol, colony-memory, colony-recipe each have clear stated ownership that matches most of their content.",
+        "Most crates with 5-11 files are flat and coherent, avoiding unnecessary nesting (colony-channels, colony-filetree, colony-focus, colony-mcp, colony-memory, colony-panel, colony-recipe, colony-reflection, colony-secure).",
+        "colony-agent correctly extracts a providers/ subdirectory for its multi-provider implementations, demonstrating awareness of the grouping pattern.",
+        "colony-exec correctly extracts buffers/, file_tree/, flux/, goals/, panes/, special_files/ as subdirectories — the principle of subfolder extraction for cohesive subconcerns is applied consistently within that crate."
+      ],
+      "issue_character": "Two directories have grown beyond their stated scope through accumulation: colony-ui-core/src/builtins/ conflates two distinct component interfaces (PromptComponent vs SidebarComponent) into one folder that is nominally prompt-only, and colony-exec/src/ has absorbed sidebar and mirror concerns that are outside the crate's documented execution responsibility.",
+      "score_rationale": "The codebase scores above the mid-range because workspace-level decomposition is sound and most crates are well-sized. It cannot reach the high range because two measurable placement failures reduce navigability: a developer looking for sidebar components must search both colony-ui-core/src/builtins/ (sidebar_*.rs files) and colony-ui-core/src/sidebar/panels/ (the partially-completed migration target), and a developer looking for all colony-exec execution primitives must mentally filter out sidebar.rs and mirror.rs which do not belong there. The sidebar_* prefix kludge in builtins/ is direct evidence that the directory boundary is wrong."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "package_organization",
+      "identifier": "ui_builtins_mixed_component_types",
+      "summary": "colony-ui-core/src/builtins/ conflates PromptComponent and SidebarComponent implementations; sidebar_*.rs files use a prefix kludge to avoid collision and should move to an already-existing sidebar/panels/ home",
+      "related_files": [
+        "crates/colony-ui-core/src/builtins/mod.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_file_tree.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_git_files.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_mcp.rs",
+        "crates/colony-ui-core/src/builtins/sidebar_session.rs",
+        "crates/colony-ui-core/src/sidebar/panels/mod.rs",
+        "crates/colony-ui-core/src/sidebar/panels/file_tree.rs",
+        "crates/colony-ui-core/src/sidebar/panels/git_files.rs",
+        "crates/colony-ui-core/src/sidebar/panels/mcp.rs",
+        "crates/colony-ui-core/src/sidebar/panels/session.rs"
+      ],
+      "evidence": [
+        "builtins/mod.rs exports both PromptComponent implementations (15 files) and SidebarComponent implementations (sidebar_file_tree, sidebar_git_files, sidebar_mcp, sidebar_session) from the same directory.",
+        "The SidebarComponent trait and PromptComponent trait are defined separately in component.rs (lines 299 and 319) — they are distinct interfaces serving different UI surfaces (prompt bar vs. sidebar panel).",
+        "sidebar_file_tree.rs implements SidebarComponent; the sidebar/ directory already has a panels/ subdirectory with file_tree.rs, git_files.rs, mcp.rs, session.rs implementing the same SidebarComponent trait. scan_evidence marks crates/colony-ui-core/src/sidebar/panels/file_tree.rs as an exact duplicate — the migration was started but not completed for the builtins/ copies.",
+        "The sidebar_ prefix in builtins/ is a workaround to avoid filename collisions with the prompt-component siblings (git_branch vs sidebar_git_files), which is a direct symptom of a mis-scoped directory."
+      ],
+      "suggestion": "Complete the partially-started migration. Stage 1: confirm that sidebar/panels/ already contains up-to-date equivalents of the four sidebar_*.rs files — given the exact-duplicate flag on file_tree.rs, audit the others for drift. Stage 2: remove the four sidebar_*.rs files from builtins/ and their pub use entries from builtins/mod.rs. Stage 3: ensure sidebar/mod.rs re-exports the panel types that consumers need. Stage 4: update any callers that reference crate::builtins::FileTreeSidebarComponent to reference crate::sidebar::panels::FileTreePanel (or the canonical name). Validation: `cargo build --workspace` must pass; run `grep -r 'sidebar_file_tree\\|sidebar_git_files\\|sidebar_mcp\\|sidebar_session' crates/colony-ui-core/src/` to confirm no remaining references in builtins/.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "incremental_feature_growth"
+    },
+    {
+      "dimension": "package_organization",
+      "identifier": "colony_exec_non_execution_concerns",
+      "summary": "colony-exec/src/ contains sidebar.rs and mirror.rs whose concerns (sidebar builtin parsing, reflection database tailing) are outside the crate's stated execution responsibility",
+      "related_files": [
+        "crates/colony-exec/src/sidebar.rs",
+        "crates/colony-exec/src/mirror.rs",
+        "crates/colony-exec/src/lib.rs"
+      ],
+      "evidence": [
+        "colony-exec/src/lib.rs doc comment: 'This crate handles: Simple command execution, PATH resolution, Environment passing, Exit status capture, Signal handling' — sidebar parsing and reflection database polling are not in this list.",
+        "sidebar.rs defines LayoutMode and SidebarCommand (sidebar panel configuration data types and parser). It depends on colony-panel::PanelPosition. Its conceptual home is colony-panel or colony-ui-core, not the execution engine.",
+        "mirror.rs opens ~/.colony/reflection/observations.db read-only and polls for new observations — it depends on colony-reflection indirectly. It is a long-running observation consumer, not a process execution primitive.",
+        "Both files are present as flat peers to command.rs, pipeline.rs, redirect.rs — execution primitives — increasing the cognitive load of navigating colony-exec/src/."
+      ],
+      "suggestion": "Stage 1: move sidebar.rs to colony-panel/src/ (it already imports colony_panel::PanelPosition) and update colony-exec/src/lib.rs to pub use colony_panel::sidebar::SidebarCommand instead of the local module. Stage 2: move mirror.rs to a new crate (e.g., colony-mirror) or to colony-reflection/src/ as a builtin handler, then re-export it as colony_mirror::run_mirror. Stage 3: update crates/colony-exec/src/builtins.rs callers that dispatch to crate::sidebar and crate::mirror to reference the new paths. Stage 4: update Cargo.toml dependency lists accordingly. Validation: `cargo build --workspace` passes; `grep -r 'crate::sidebar\\|crate::mirror' crates/colony-exec/src/` returns only the re-export aliases if any.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "incremental_feature_growth"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Incremental feature growth without directory-boundary enforcement: as new builtins and features were added, they were placed in the nearest convenient module (colony-exec for any builtin dispatch, colony-ui-core/builtins for any component) rather than in directories that match their ownership boundary.",
+      "Incomplete migration: a directory refactor (builtins/ sidebar_* -> sidebar/panels/) was started but only half-completed, leaving both the old and new locations active and creating a confusing dual-home for sidebar panel components."
+    ],
+    "likely_symptoms": [],
+    "possible_false_positives": []
+  }
+}

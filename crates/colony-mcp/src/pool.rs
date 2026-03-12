@@ -55,6 +55,10 @@ impl McpConnectionPool {
     ///
     /// Attempts to connect to each server in the config. Failures for
     /// individual servers are logged but don't prevent other connections.
+    ///
+    /// Returns `Ok(())` even if some (or all) auto-start servers fail to
+    /// connect. Callers should check [`all_tools()`](Self::all_tools) to see
+    /// which servers are actually available.
     pub async fn connect_all(&mut self, config: &McpConfig) -> Result<()> {
         if config.servers.is_empty() {
             return Err(McpError::NoServersConfigured);

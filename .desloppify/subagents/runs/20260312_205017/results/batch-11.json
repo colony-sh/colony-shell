@@ -1,0 +1,137 @@
+{
+  "batch": "ai_generated_debt",
+  "batch_index": 11,
+  "assessments": {"ai_generated_debt": 66.0},
+  "dimension_notes": {
+    "ai_generated_debt": {
+      "evidence": [
+        "agent.rs process_with_cancellation() contains eight consecutive step-narrating inline comments (lines 372-469): '// Persist user message', '// Apply context window management (prune if needed)', '// Build completion request', '// Send streaming request via router', '// Apply cancellation wrapper', '// Record token usage (estimate based on character count)', '// Add assistant response to conversation history', '// Update context estimate' — each comment only restates what the immediately following code does",
+        "anthropic.rs complete() method contains five step-narrating comments: '// Build conversation', '// Convert tools', '// Build SDK request', '// Send streaming request', '// Convert Claude SDK stream to our unified stream' — all pure code narration",
+        "router.rs list_available_providers() contains four consecutive '// Check <Provider>' comments for identical blocks that just test for env-var presence",
+        "ModelRouter implements ModelProvider by delegating every method (complete, supports_streaming, max_context_tokens, provider_name, model_name, health_check) directly to self.provider with zero added logic — textbook pass-through wrapper",
+        "colony-expand/src/quote.rs: remove_quotes() is #[allow(dead_code)], returns text.to_string() unchanged, has a 9-line docstring explaining why no work is done — purely structural placeholder",
+        "colony-expand/src/command.rs: expand_command_substitution() is #[allow(dead_code)], returns String::new(), docstring + inline comment both describe the TODO — a second dead placeholder exported as public API",
+        "Agent::with_config (lines 195-222) and Agent::with_provider (lines 243-269) contain verbatim-duplicated construction of tools, approval, token_tracker, and context_manager; the only difference is how router is built — copy-paste boilerplate",
+        "AnthropicProvider::supports_streaming() and OpenAIProvider::supports_streaming() both override the trait default of `true` and return `true` — redundant overrides that do nothing",
+        "agent.rs process_with_cancellation line 365: info!(\"Processing user input: {}\", input) logs the full user message on every call; process_full line 478 repeats the same log with a '(full)' suffix — near-identical entry logs on sibling methods"
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high"
+    }
+  },
+  "dimension_judgment": {
+    "ai_generated_debt": {
+      "strengths": [
+        "Module-level doc comments (//!) across all seed crates are genuinely informative — they document architecture, phase plans, and integration points rather than restating the module name",
+        "Error enums (AgentError, ChannelError, CloudError, ExecutionError) are concise thiserror definitions with no docstring bloat — each variant is one well-named line",
+        "Token accounting, context management, and provider chain logic are substantive: non-trivial state machines with real behavior, not thin wrappers",
+        "Tests are targeted and meaningful — they test observable behavior (budget thresholds, per-conversation accumulation, scope filtering) rather than trivially asserting constructor outcomes",
+        "The memory integration module (memory_integration.rs) shows genuine domain heuristics (assess_importance keyword scoring, summarize_exchange truncation) that reflect real design decisions"
+      ],
+      "issue_character": "The debt is concentrated in code-narrating inline comments and structural placeholders in the agent crate: comments that say '// Build conversation' above a call to build_conversation(), stubs exported as #[allow(dead_code)] with multi-line explanations of why they do nothing, and two near-identical constructors where the duplicated body was never extracted.",
+      "score_rationale": "The codebase sits in a moderate band. The module documentation and core business logic are clean and free of AI hallmark patterns. However, the agent implementation layer — especially agent.rs and the provider implementations — shows a recognizable LLM-generation signature: every logical step is annotated with a label that mirrors the code below it, and two dead placeholder functions are retained in public modules with apologetic docstrings. The pass-through ModelProvider impl on ModelRouter adds no logic yet duplicates all six trait methods. These are not catastrophic but they appear in the most read path of the codebase, pulling the score below the 70s range for a project otherwise exhibiting good Rust discipline."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "AIDEBT-01",
+      "summary": "Eight step-narrating inline comments in process_with_cancellation() narrate code without adding insight",
+      "related_files": ["crates/colony-agent/src/agent.rs"],
+      "evidence": [
+        "Lines 372-469 of agent.rs contain: '// Persist user message', '// Apply context window management (prune if needed)', '// Build completion request', '// Send streaming request via router', '// Apply cancellation wrapper', '// Record token usage (estimate based on character count)', '// Add assistant response to conversation history', '// Update context estimate' — each is a label above an obvious call"
+      ],
+      "suggestion": "Remove the inline narration comments. The method is short enough to read without labels; any non-obvious constraint (why token estimation uses /4, why pruning precedes request building) deserves a WHY comment, not a WHAT label.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "AIDEBT-02",
+      "summary": "Dead placeholder functions remove_quotes() and expand_command_substitution() retained as exported public API with apology docstrings",
+      "related_files": [
+        "crates/colony-expand/src/quote.rs",
+        "crates/colony-expand/src/command.rs"
+      ],
+      "evidence": [
+        "quote.rs: remove_quotes() annotated #[allow(dead_code)], returns text.to_string() unchanged, has a 9-line docstring explaining why it does nothing",
+        "command.rs: expand_command_substitution() annotated #[allow(dead_code)], has a TODO docstring, returns String::new(); both are module-pub"
+      ],
+      "suggestion": "Delete both functions. The architectural reasoning in their docstrings belongs in a module-level comment or ADR. A function that does nothing except justify its own existence is worse than no function at all — callers cannot depend on it and future engineers must re-evaluate the decision every time they encounter it.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "AIDEBT-03",
+      "summary": "Agent::with_config and Agent::with_provider contain verbatim-duplicated constructor bodies",
+      "related_files": ["crates/colony-agent/src/agent.rs"],
+      "evidence": [
+        "with_config (lines 186-222) and with_provider (lines 224-269) both contain identical blocks for constructing tools (with auto_approve check), approval, token_tracker (with budget check), and context_manager; the Ok(Self{...}) struct literal is identical in both"
+      ],
+      "suggestion": "Extract the shared initialization into a private fn finish_init(router: ModelRouter, config: AgentConfig) -> Result<Self> and call it from both public constructors. This is the obvious refactor that an AI that generated both methods in sequence failed to perform.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "AIDEBT-04",
+      "summary": "ModelRouter's ModelProvider impl is a pure pass-through wrapper with six delegating methods and no added behavior",
+      "related_files": ["crates/colony-agent/src/router.rs"],
+      "evidence": [
+        "Lines 310-334: complete, supports_streaming, max_context_tokens, provider_name, model_name, health_check all forward directly to self.provider.*() with zero logic"
+      ],
+      "suggestion": "The ModelProvider impl on ModelRouter is necessary for callers that hold a Box<dyn ModelProvider> pointing to a router — that use case should be documented. If ModelRouter is never used as a trait object and callers always call router.complete() directly, remove the impl and collapse the delegation. If the impl is load-bearing, add a comment explaining why (e.g. ProviderChain accepts Box<dyn ModelProvider> and is given a ModelRouter).",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "AIDEBT-05",
+      "summary": "AnthropicProvider and OpenAIProvider both override supports_streaming() to return the same true as the trait default",
+      "related_files": [
+        "crates/colony-agent/src/providers/anthropic.rs",
+        "crates/colony-agent/src/providers/openai.rs"
+      ],
+      "evidence": [
+        "anthropic.rs line 134-136: fn supports_streaming(&self) -> bool { true } — trait default is already true",
+        "openai.rs line 116-118: fn supports_streaming(&self) -> bool { true // OpenAI supports SSE streaming } — same redundant override with a comment"
+      ],
+      "suggestion": "Delete both overrides. The trait default documents the general case; only providers that return false need to override it. The comment on the OpenAI override ('OpenAI supports SSE streaming') is actually misleading — the implementation does not yet use SSE streaming (it uses a blocking non-streaming request per the adjacent TODO comment).",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "AIDEBT-06",
+      "summary": "anthropic.rs complete() annotates every step of a four-statement method with narrating comments",
+      "related_files": ["crates/colony-agent/src/providers/anthropic.rs"],
+      "evidence": [
+        "Lines 110-131: '// Build conversation', '// Convert tools', '// Build SDK request', '// Send streaming request', '// Convert Claude SDK stream to our unified stream' precede each line of a function where the variable names and called methods already communicate the intent"
+      ],
+      "suggestion": "Remove the inline labels. The method names (build_conversation, convert_tools, send_streaming) are self-documenting. If the caching branch in build_conversation needs explanation, a targeted comment on that branch is appropriate — not a label on every line of the method.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "The agent crate appears to have been generated in a single pass: constructors were duplicated instead of extracted, method-level step comments were left from a scaffolding phase, and placeholder stubs were written to satisfy a planned API before the implementation existed",
+      "The expand crate has two dead-code stubs that were architecturally justified at generation time but never removed when the 'real work happens elsewhere' design was finalized"
+    ],
+    "likely_symptoms": [
+      "AIDEBT-05 (redundant supports_streaming overrides) is symptom-level — the underlying issue is that provider implementations are copy-paste scaffolded from a template",
+      "AIDEBT-04 (pass-through ModelProvider on ModelRouter) may be an intentional design choice that simply lacks a comment explaining the use case"
+    ],
+    "possible_false_positives": [
+      "AIDEBT-04: if ModelRouter is genuinely used as a Box<dyn ModelProvider> in ProviderChain::from_configs (which it is, line 95), the pass-through impl is load-bearing and not debt — only the lack of documentation is the issue"
+    ]
+  }
+}

@@ -150,9 +150,9 @@ impl FileNode {
         match self.file_type {
             FileType::Directory => {
                 if self.expanded {
-                    ""
+                    "\u{f07c}"
                 } else {
-                    ""
+                    "\u{f07b}"
                 }
             }
             FileType::Symlink => "",
@@ -163,48 +163,7 @@ impl FileNode {
 
     /// Get icon for file based on extension
     fn file_icon(&self) -> &'static str {
-        match self.extension.as_deref() {
-            // Rust
-            Some("rs") => "",
-            // JavaScript/TypeScript
-            Some("js") => "",
-            Some("ts") => "",
-            Some("jsx" | "tsx") => "",
-            // Web
-            Some("html" | "htm") => "",
-            Some("css" | "scss" | "sass") => "",
-            // Python
-            Some("py") => "",
-            // Go
-            Some("go") => "",
-            // C/C++
-            Some("c" | "h") => "",
-            Some("cpp" | "hpp" | "cc" | "cxx") => "",
-            // Java/Kotlin
-            Some("java") => "",
-            Some("kt" | "kts") => "",
-            // Shell
-            Some("sh" | "bash" | "zsh") => "",
-            // Config
-            Some("json") => "",
-            Some("yaml" | "yml") => "",
-            Some("toml") => "",
-            Some("xml") => "",
-            // Docs
-            Some("md" | "markdown") => "",
-            Some("txt") => "",
-            Some("pdf") => "",
-            // Git
-            Some("gitignore") => "",
-            // Images
-            Some("png" | "jpg" | "jpeg" | "gif" | "svg" | "webp") => "",
-            // Archives
-            Some("zip" | "tar" | "gz" | "rar" | "7z") => "",
-            // Lock files
-            Some("lock") => "",
-            // Default
-            _ => "",
-        }
+        file_icon_for_ext(self.extension.as_deref().unwrap_or(""))
     }
 
     /// Format file size for display
@@ -218,6 +177,55 @@ impl FileNode {
             Some(bytes) => format!("{:.1}G", bytes as f64 / (1024.0 * 1024.0 * 1024.0)),
             None => String::new(),
         }
+    }
+}
+
+/// Map a file extension to a Nerd Font icon codepoint.
+///
+/// This is the single canonical source of file-extension-to-icon mappings
+/// used across colony-filetree, colony-filetree-bin, and colony-ui-core.
+pub fn file_icon_for_ext(ext: &str) -> &'static str {
+    match ext {
+        // Rust
+        "rs" => "\u{e7a8}",
+        // JavaScript/TypeScript
+        "js" => "\u{e74e}",
+        "ts" => "\u{e628}",
+        "jsx" | "tsx" => "\u{e7ba}",
+        // Web
+        "html" | "htm" => "\u{e736}",
+        "css" | "scss" | "sass" => "\u{e749}",
+        // Python
+        "py" => "\u{e73c}",
+        // Go
+        "go" => "\u{e626}",
+        // C/C++
+        "c" | "h" => "\u{e61e}",
+        "cpp" | "hpp" | "cc" | "cxx" => "\u{e61d}",
+        // Java/Kotlin
+        "java" => "\u{e738}",
+        "kt" | "kts" => "\u{e634}",
+        // Shell
+        "sh" | "bash" | "zsh" => "\u{f489}",
+        // Config
+        "json" => "\u{e60b}",
+        "yaml" | "yml" => "\u{f481}",
+        "toml" => "\u{f0669}",
+        "xml" => "\u{f05c0}",
+        // Docs
+        "md" | "markdown" => "\u{e73e}",
+        "txt" => "\u{f0219}",
+        "pdf" => "\u{f1c1}",
+        // Git
+        "gitignore" => "\u{e702}",
+        // Images
+        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" => "\u{f1c5}",
+        // Archives
+        "zip" | "tar" | "gz" | "rar" | "7z" => "\u{f1c6}",
+        // Lock files
+        "lock" => "\u{f023}",
+        // Default
+        _ => "\u{f15b}",
     }
 }
 

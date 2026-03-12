@@ -161,12 +161,12 @@ impl OutputCapture {
         // SAFETY: dup/dup2/pipe/close are safe to call with valid fds.
         // fd 1 (stdout) and fd 2 (stderr) are always valid in a running process.
         let saved_stdout = nix::unistd::dup(1)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         let saved_stderr = nix::unistd::dup(2)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         let (read_owned, write_owned) = nix::unistd::pipe()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         let read_fd = read_owned.as_raw_fd();
         let write_fd = write_owned.as_raw_fd();
 
@@ -176,9 +176,9 @@ impl OutputCapture {
 
         // Redirect stdout and stderr to the pipe write end
         nix::unistd::dup2(write_fd, 1)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         nix::unistd::dup2(write_fd, 2)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         // Close the extra write fd (stdout/stderr ARE the write end now)
         let _ = nix::unistd::close(write_fd);
@@ -209,9 +209,9 @@ impl OutputCapture {
         // Restore original stdout and stderr (this closes the pipe write end,
         // which signals EOF to the reader thread)
         nix::unistd::dup2(self.saved_stdout, 1)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         nix::unistd::dup2(self.saved_stderr, 2)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         let _ = nix::unistd::close(self.saved_stdout);
         let _ = nix::unistd::close(self.saved_stderr);
 
@@ -219,7 +219,7 @@ impl OutputCapture {
         let output = self
             .reader_handle
             .join()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "reader thread panicked"))?;
+            .map_err(|_| io::Error::other("reader thread panicked"))?;
 
         Ok(output)
     }
@@ -396,8 +396,8 @@ fn render_panel_frame(
     let rendered_lines: Vec<Line> = lines
         .iter()
         .take(inner.height as usize)
-        .enumerate()
-        .map(|(_i, fl)| {
+        
+        .map(|fl| {
             let indent = fl.indent.unwrap_or(0) as usize;
             let is_selected = fl.selected.unwrap_or(false);
 
@@ -822,12 +822,12 @@ async fn run_repl_loop(
         // Process sidebar_command tuples emitted by builtins
         process_sidebar_commands(executor, panel_host, scrollback).await;
 
-        // Broadcast cwd change to panels if directory changed
+        // Broadcast dir change to panels if directory changed
         let new_cwd = std::env::current_dir().unwrap_or_default();
         if new_cwd != ctx.cwd {
             panel_host
                 .broadcast_tuple(
-                    "cwd_change",
+                    "dir_change",
                     &serde_json::json!({ "cwd": new_cwd.display().to_string() }),
                 )
                 .await;
@@ -841,6 +841,7 @@ async fn run_repl_loop(
 
 /// Execute a command, capturing its output into the scrollback buffer.
 /// Activity messages (e.g. "Directory: /path") are placed in `status_message`.
+#[allow(clippy::too_many_arguments)]
 async fn execute_with_capture(
     line: &str,
     executor: &mut Executor,
@@ -998,6 +999,7 @@ async fn execute_with_capture(
 // --- Drawing ---
 
 /// Draw the complete TUI: panels + scrollback + prompt + status bar.
+#[allow(clippy::too_many_arguments)]
 fn draw_tui(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     prompt_manager: &PromptManager,
@@ -1229,6 +1231,7 @@ fn render_help_modal(frame: &mut ratatui::Frame, area: Rect, panel_host: &PanelH
 }
 
 /// Redraw helper that combines layout resolution and draw call.
+#[allow(clippy::too_many_arguments)]
 fn redraw(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     prompt_manager: &PromptManager,
@@ -1460,7 +1463,7 @@ async fn read_input_line(
                             .collect();
 
                             let history_entries: Vec<String> =
-                                history.entries().iter().cloned().collect();
+                                history.entries().to_vec();
 
                             let comp_ctx =
                                 CompletionContext::from_env(builtins, history_entries);

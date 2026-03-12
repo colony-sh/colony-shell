@@ -13,6 +13,7 @@ pub struct SidebarConfig {
     pub width: u16,
     pub visible: bool,
     pub panels: Vec<String>,
+    #[allow(dead_code)]
     pub collapsed_panels: Vec<String>,
 }
 

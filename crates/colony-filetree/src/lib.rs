@@ -31,7 +31,7 @@ mod state;
 mod watcher;
 
 pub use git::{GitFileStatus, GitStatusCache};
-pub use node::{FileNode, FileType, NodeId};
+pub use node::{file_icon_for_ext, FileNode, FileType, NodeId};
 pub use protocol::TreeProtocol;
 pub use state::{TreeEvent, TreeState};
 pub use watcher::{FileSystemWatcher, WatchEvent};

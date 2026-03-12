@@ -231,7 +231,7 @@ impl EnvState {
             let text = format!("{name}={truncated_value}");
 
             let style = if vi == self.cursor {
-                "bold,cyan"
+                "bold,yellow"
             } else {
                 "bold,cyan"
             };

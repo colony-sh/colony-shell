@@ -5,7 +5,7 @@ mod keychain;
 mod lineage;
 mod registry;
 
-pub use approvals::{ApprovalDatabase, ApprovalScope, SecureApproval};
+pub use approvals::{ApprovalDatabase, ApprovalScope, SecureApproval, GRANTED_BY_INTERACTIVE};
 pub use config::SecureConfig;
 pub use encrypt::{decrypt, encrypt, generate_key, is_encrypted};
 pub use keychain::Keychain;

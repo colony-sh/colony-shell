@@ -46,7 +46,10 @@ impl BuiltinResult {
     }
 
     pub fn is_success(&self) -> bool {
-        matches!(self, BuiltinResult::Success(0))
+        matches!(
+            self,
+            BuiltinResult::Success(0) | BuiltinResult::Source(_, _) | BuiltinResult::Eval(_)
+        )
     }
 
     pub fn is_exit(&self) -> bool {
@@ -159,7 +162,7 @@ pub fn execute_builtin(
 ) -> Option<Result<BuiltinResult>> {
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
-        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        crate::execute_and_capture,
         |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
     let name_fields = match expander.expand_word(&cmd.name) {
@@ -5363,11 +5366,11 @@ fn builtin_path(
 
 fn expand_tilde(path: &str) -> String {
     if path.starts_with("~/") {
-        if let Some(home) = env::var("HOME").ok() {
+        if let Ok(home) = env::var("HOME") {
             return format!("{}{}", home, &path[1..]);
         }
     } else if path == "~" {
-        if let Some(home) = env::var("HOME").ok() {
+        if let Ok(home) = env::var("HOME") {
             return home;
         }
     }
@@ -5529,11 +5532,10 @@ fn colony_install(args: &[String]) -> Result<BuiltinResult> {
 
     let found = search_dirs.iter().find_map(|dir| {
         let candidate_dir = dir.join(&name);
-        if candidate_dir.is_dir() {
-            if colony_recipe::validate_recipe_dir(&candidate_dir).is_ok() {
+        if candidate_dir.is_dir()
+            && colony_recipe::validate_recipe_dir(&candidate_dir).is_ok() {
                 return Some(candidate_dir);
             }
-        }
         let candidate_file = dir.join(format!("{}.toml", name));
         if candidate_file.exists() {
             return Some(candidate_file);
@@ -6244,7 +6246,7 @@ fn builtin_secure_list(
         return Ok(BuiltinResult::Success(0));
     }
 
-    println!("{:<30} {:<15} {}", "VARIABLE", "SOURCE", "HAS VALUE");
+    println!("{:<30} {:<15} HAS VALUE", "VARIABLE", "SOURCE");
     println!("{}", "-".repeat(55));
 
     for (name, source, has_value) in &vars {
@@ -6300,8 +6302,8 @@ fn builtin_secure_approvals(
     }
 
     println!(
-        "{:<25} {:<30} {:<12} {}",
-        "VARIABLE", "SCRIPT", "SCOPE", "GRANTED"
+        "{:<25} {:<30} {:<12} GRANTED",
+        "VARIABLE", "SCRIPT", "SCOPE"
     );
     println!("{}", "-".repeat(80));
 

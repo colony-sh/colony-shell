@@ -19,21 +19,18 @@ use std::path::Path;
 
 pub fn handle_widget_request(json: &str, cwd: &Path) -> bool {
     if let Some((widget, _component_id, _context)) = parse_widget_request(json) {
-        match widget.as_str() {
-            "branch_picker" => {
-                if let Some(data) = gather_branch_data(cwd) {
-                    emit_widget_data("branch_picker", serde_json::to_value(data).unwrap());
-                } else {
-                    emit_widget_result(
-                        "branch_picker",
-                        false,
-                        None,
-                        Some("Not in a git repository"),
-                    );
-                }
-                return true;
+        if widget.as_str() == "branch_picker" {
+            if let Some(data) = gather_branch_data(cwd) {
+                emit_widget_data("branch_picker", serde_json::to_value(data).unwrap());
+            } else {
+                emit_widget_result(
+                    "branch_picker",
+                    false,
+                    None,
+                    Some("Not in a git repository"),
+                );
             }
-            _ => {}
+            return true;
         }
     }
     false
@@ -81,6 +78,7 @@ pub fn handle_widget_action(json: &str, cwd: &Path) -> bool {
     false
 }
 
+#[allow(dead_code)]
 pub fn try_handle_osc_message(json: &str, cwd: &Path) -> bool {
     handle_widget_request(json, cwd) || handle_widget_action(json, cwd)
 }

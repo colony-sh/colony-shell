@@ -1,6 +1,7 @@
 use crate::error::{MemoryError, Result};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub const EMBEDDING_DIM: usize = 384;
 
@@ -38,10 +39,7 @@ impl FastEmbedProvider {
 
 impl EmbeddingProvider for FastEmbedProvider {
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let model = self
-            .model
-            .lock()
-            .map_err(|e| MemoryError::Embedding(format!("Lock poisoned: {}", e)))?;
+        let model = self.model.lock();
         let texts_owned: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
         model
             .embed(texts_owned, None)
@@ -50,12 +48,6 @@ impl EmbeddingProvider for FastEmbedProvider {
 
     fn dimension(&self) -> usize {
         EMBEDDING_DIM
-    }
-}
-
-impl Default for FastEmbedProvider {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize FastEmbed model")
     }
 }
 

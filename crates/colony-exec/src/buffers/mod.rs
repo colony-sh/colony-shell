@@ -14,7 +14,8 @@ mod search;
 mod span;
 mod view;
 
+pub use ansi::{parse_ansi, parse_ansi_line};
 pub use buffer::StyledBuffer;
-pub use search::SearchResult;
+pub use search::{search_buffer, search_buffer_case_insensitive, SearchResult};
 pub use span::{Color, StyledSpan};
 pub use view::BufferView;

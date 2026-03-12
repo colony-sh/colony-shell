@@ -197,7 +197,7 @@ impl GoalStore {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    status: GoalStatus::from_str(&status_str)
+                    status: GoalStatus::parse(&status_str)
                         .unwrap_or(GoalStatus::Active),
                     parent_id: row.get(4)?,
                     children,
@@ -228,7 +228,7 @@ impl GoalStore {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    status: GoalStatus::from_str(&status_str)
+                    status: GoalStatus::parse(&status_str)
                         .unwrap_or(GoalStatus::Active),
                     parent_id: row.get(4)?,
                     children: Vec::new(),
@@ -282,7 +282,7 @@ impl GoalStore {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    status: GoalStatus::from_str(&status_str)
+                    status: GoalStatus::parse(&status_str)
                         .unwrap_or(GoalStatus::Active),
                     parent_id: row.get(4)?,
                     children: Vec::new(),

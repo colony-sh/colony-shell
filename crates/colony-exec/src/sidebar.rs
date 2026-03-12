@@ -175,7 +175,7 @@ pub fn parse_sidebar_args(args: &[String]) -> Result<SidebarCommand, String> {
 /// Accepts both `-` and `+` as separators (normalized to `-` internally).
 pub fn parse_hotkey_str(s: &str) -> Result<(Vec<&str>, &str), String> {
     // Normalize: split on either - or +
-    let parts: Vec<&str> = s.split(|c| c == '-' || c == '+').collect();
+    let parts: Vec<&str> = s.split(['-', '+']).collect();
     if parts.is_empty() {
         return Err("empty hotkey".to_string());
     }

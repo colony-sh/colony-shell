@@ -1,0 +1,120 @@
+{
+  "batch": "initialization_coupling",
+  "batch_index": 14,
+  "assessments": {"initialization_coupling": 82.0},
+  "dimension_notes": {
+    "initialization_coupling": {
+      "evidence": [
+        "SECURE_KEY_CACHE: OnceLock<Option<[u8; 32]>> in crates/colony-expand/src/context.rs (line 23) is a process-wide global keyed to the OS keychain. The first call to get_cached_secure_key() triggers colony_secure::Keychain::new() and keyring I/O; this result is then frozen forever for the process lifetime. Tests that manipulate ANTHROPIC_API_KEY or COLONY_API_KEY cannot reset this state between test runs.",
+        "ApprovalManager::default() (crates/colony-agent/src/approval.rs lines 216-226) reads std::env::var('COLONY_TERMINAL') at construction time and bakes the value into the struct. Any test or tool that creates an ApprovalManager via Default::default() will snapshot the env var at that moment; later env changes have no effect on the already-created manager.",
+        "ModelRouter::auto_detect() (crates/colony-agent/src/router.rs lines 81-177) reads COLONY_MODEL_PROVIDER, COLONY_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, and COLONY_MODEL_NAME eagerly, then instantiates and permanently wires in one provider. The test 'test_auto_detect_fallback_to_ollama' (line 371) explicitly notes it 'assumes no ANTHROPIC_API_KEY or OPENAI_API_KEY in test env', revealing that tests are environment-sensitive.",
+        "FastEmbedProvider::new() in crates/colony-memory/src/embedding.rs (line 19) calls TextEmbedding::try_new() which loads a 22 MB ONNX model from disk (or downloads it). MemoryStore::open() (store.rs line 58-67) calls FastEmbedProvider::new() synchronously inside the async open() constructor, meaning every MemoryStore creation causes heavy I/O. No singleton or shared embedder is passed down from a higher level; each MemoryStore independently initializes its own embedder Arc<Mutex<TextEmbedding>>.",
+        "CloudConfig::with_key() (crates/colony-cloud-sdk/src/config.rs lines 36-43) reads COLONY_CLOUD_URL from the environment every time a client is created rather than only when from_env() is called. This is not a test-time concern but is inconsistent: with_key() is documented as 'create with explicit key' yet still silently consults env for the base_url.",
+        "init_job_control() (crates/colony-exec/src/jobs.rs lines 151-175) installs process-wide POSIX signal handlers (SIGINT, SIGTSTP, SIGTTOU) via sigaction. This is a one-way global mutation; once called, the signal disposition cannot be restored without a second explicit call. No guard or RAII wrapper is used to restore original handlers.",
+        "All environment-variable reads in router.rs, cloud/config.rs, and approval.rs happen inside named async fns (auto_detect, from_env, detect_colony_terminal), not at module scope. No module-level side effects exist outside the SECURE_KEY_CACHE OnceLock, which is gated behind #[cfg(feature = 'secure')].",
+        "No lazy_static! or once_cell::sync::Lazy usages were found; the single OnceLock is the only true process-global mutable singleton."
+      ],
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "issues_preventing_higher_score": "SECURE_KEY_CACHE freezes the keychain result for the entire process lifetime with no way to invalidate or override it in tests. FastEmbedProvider is independently re-initialized per MemoryStore rather than being shared, causing redundant heavy I/O. ApprovalManager::default() bakes an env-var snapshot into the struct, making Default calls environment-sensitive in subtle ways."
+    }
+  },
+  "dimension_judgment": {
+    "initialization_coupling": {
+      "strengths": [
+        "No module-level I/O side effects: database connections, network calls, and file reads all happen inside named constructor functions (MemoryStore::open, ColonyClient::from_env, TrustManager::new), not at module load time.",
+        "Feature flags (#[cfg(feature = 'secure')], #[cfg(feature = 'memory')], #[cfg(feature = 'focus')]) cleanly gate optional subsystems, preventing initialization coupling when those features are disabled.",
+        "Providers are constructed on demand via async factory functions (ModelRouter::auto_detect, ProviderChain::from_configs) rather than as module-level globals, keeping startup order explicit.",
+        "No lazy_static! or once_cell::sync::Lazy globals were found outside the single SECURE_KEY_CACHE OnceLock, indicating deliberate restraint with global state.",
+        "init_job_control() is a named, single-purpose function rather than a hidden module initializer, making the signal-handler installation visible and auditable."
+      ],
+      "issue_character": "The codebase largely avoids import-time coupling but has a small cluster of construction-time env-var snapshots and one process-global OnceLock that freeze values which should remain overridable, creating test-environment sensitivity and one redundant heavy initialization per MemoryStore.",
+      "score_rationale": "The codebase scores well above the midpoint because there are no module-level side effects, no circular init dependencies, and feature flags cleanly isolate optional subsystems. The primary issues — SECURE_KEY_CACHE permanently caching a keychain result, ApprovalManager::default() baking in COLONY_TERMINAL at construction, and FastEmbedProvider being independently re-initialized per MemoryStore — are real but localized; they affect testability and resource efficiency without creating cross-module boot-order dependencies. Compared to codebases with widespread lazy_static DB connections or import-time network calls, this rates as a well-disciplined codebase with a few fixable rough edges."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "initialization_coupling",
+      "identifier": "secure_key_cache_frozen",
+      "summary": "SECURE_KEY_CACHE OnceLock freezes keychain result permanently, making it unresettable between tests and unfazed by subsequent env changes",
+      "related_files": ["crates/colony-expand/src/context.rs"],
+      "evidence": [
+        "static SECURE_KEY_CACHE: OnceLock<Option<[u8; 32]>> = OnceLock::new(); at line 23",
+        "get_or_init closure calls colony_secure::Keychain::new() which performs OS keychain I/O (keyring crate) on first use",
+        "OnceLock never resets; any subsequent change to the keychain or test environment cannot affect the cached value"
+      ],
+      "suggestion": "Remove the process-global OnceLock. Instead, accept an optional Arc<Mutex<Option<[u8; 32]>>> key cache in ExpansionContext's constructor so tests can inject a test key and production code can share one instance. If a singleton is truly needed, scope it to a struct held by the Shell rather than a module-level static.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "global_singleton_baking"
+    },
+    {
+      "dimension": "initialization_coupling",
+      "identifier": "approval_manager_env_snapshot",
+      "summary": "ApprovalManager::default() reads COLONY_TERMINAL at construction time and permanently bakes the result into the struct",
+      "related_files": ["crates/colony-agent/src/approval.rs"],
+      "evidence": [
+        "impl Default for ApprovalManager calls Self::detect_colony_terminal() at lines 217-218",
+        "detect_colony_terminal() does std::env::var('COLONY_TERMINAL').is_ok() — a live env read captured into a bool",
+        "Any code that calls ApprovalManager::default() without having set the env var will silently get a non-colony-terminal manager; tests cannot override this after construction"
+      ],
+      "suggestion": "Remove the env-var read from Default::default(). Either always default colony_terminal to false and require callers to call ApprovalManager::new(ApprovalConfig::default().with_colony_terminal(detected)), or provide a named constructor ApprovalManager::from_env() that explicitly reads the env var so callers know they are doing so.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "env_read_at_construction"
+    },
+    {
+      "dimension": "initialization_coupling",
+      "identifier": "fastembed_per_store_init",
+      "summary": "FastEmbedProvider is independently initialized per MemoryStore::open() call, causing repeated heavy ONNX model loads",
+      "related_files": [
+        "crates/colony-memory/src/store.rs",
+        "crates/colony-memory/src/embedding.rs"
+      ],
+      "evidence": [
+        "MemoryStore::open() at line 63 calls Arc::new(FastEmbedProvider::new()?) unconditionally — no sharing or caching",
+        "FastEmbedProvider::new() calls TextEmbedding::try_new() which loads a 22+ MB ONNX model and runs initialization",
+        "MemoryStore::open_with_embedder() exists (line 76) but is not used by the standard open() path; the caller cannot easily inject a shared embedder"
+      ],
+      "suggestion": "Make the shared embedder the standard path: change MemoryStore::open() to accept an Arc<dyn EmbeddingProvider> parameter (or a factory), and provide MemoryStore::open_with_fastembed() as a convenience that creates one. The application-level code that boots colony-memory should create one shared Arc<FastEmbedProvider> and pass it to all MemoryStore instances.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "redundant_heavy_initialization"
+    },
+    {
+      "dimension": "initialization_coupling",
+      "identifier": "cloud_config_with_key_env_read",
+      "summary": "CloudConfig::with_key() silently reads COLONY_CLOUD_URL from the environment even when called as an explicit-key constructor",
+      "related_files": ["crates/colony-cloud-sdk/src/config.rs"],
+      "evidence": [
+        "CloudConfig::with_key() at lines 36-43 reads std::env::var(ENV_BASE_URL) inside its body",
+        "The function is documented as 'Create config with an explicit API key' — callers do not expect env reads here",
+        "Tests using with_key() will silently pick up COLONY_CLOUD_URL if set in the test environment"
+      ],
+      "suggestion": "Remove the env read from with_key(). Add a const DEFAULT_BASE_URL value and use it directly. Provide CloudConfig::from_env_url(api_key) if callers explicitly want the env-var URL. This makes the env dependency visible at the call site rather than hidden inside a 'pass explicit key' constructor.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "env_read_at_construction"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "global_singleton_baking: One OnceLock (SECURE_KEY_CACHE) freezes a resource handle for the process lifetime; a common pattern when performance is prioritized but testability is not considered.",
+      "env_read_at_construction: Multiple constructors (ApprovalManager::default, CloudConfig::with_key) read environment variables inside what appear to be ordinary constructors, making them secretly environment-sensitive.",
+      "redundant_heavy_initialization: FastEmbedProvider creation is not memoized or shared at the application level, causing the expensive ONNX model load to repeat for each MemoryStore instance."
+    ],
+    "likely_symptoms": [
+      "Tests that set ANTHROPIC_API_KEY or COLONY_TERMINAL in one test case may unexpectedly affect ApprovalManager behavior in a later test if managers are shared or constructed eagerly.",
+      "MemoryStore-heavy integration tests will be slow due to repeated model loading."
+    ],
+    "possible_false_positives": [
+      "init_job_control() signal handler installation: while it is a one-way global mutation, it is an expected POSIX shell pattern and is explicitly named and documented — not a hidden coupling.",
+      "ModelRouter::auto_detect() env reads: these happen inside an explicitly async factory function, not at module scope or Default::default() time, so they are considered acceptable (callers know auto_detect reads the environment)."
+    ]
+  }
+}

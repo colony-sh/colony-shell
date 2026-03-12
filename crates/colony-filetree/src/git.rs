@@ -191,7 +191,7 @@ impl GitStatusCache {
         let relative = path
             .strip_prefix(&self.repo_root)
             .ok()
-            .or_else(|| Some(path));
+            .or(Some(path));
 
         relative.and_then(|rel| self.statuses.get(rel).copied())
     }

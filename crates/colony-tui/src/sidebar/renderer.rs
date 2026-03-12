@@ -96,7 +96,7 @@ impl SidebarRenderer {
         }
 
         // Panel header
-        let collapse_icon = if panel.collapsed { " " } else { " " };
+        let collapse_icon = if panel.collapsed { "\u{25b6} " } else { "\u{25bc} " };
         let header = Line::from(vec![
             Span::styled(collapse_icon, Style::default().fg(Color::DarkGray)),
             Span::styled(
@@ -179,7 +179,7 @@ impl SidebarRenderer {
 
         // Expand/collapse indicator for tree nodes
         if line.expandable {
-            let indicator = if line.expanded { " " } else { " " };
+            let indicator = if line.expanded { "\u{25bc} " } else { "\u{25b6} " };
             spans.push(Span::styled(
                 indicator,
                 Style::default().fg(Color::DarkGray),
@@ -290,7 +290,7 @@ impl SidebarRenderer {
             }
 
             // Calculate the visible slice of this span
-            let slice_start = if offset > pos { offset - pos } else { 0 };
+            let slice_start = offset.saturating_sub(pos);
             let slice_end = if visible_end < span_end {
                 visible_end - pos
             } else {

@@ -14,11 +14,6 @@ struct StyleState {
     flags: StyleFlags,
 }
 
-impl Default for Color {
-    fn default() -> Self {
-        Color::Default
-    }
-}
 
 impl StyleState {
     fn reset(&mut self) {
@@ -179,7 +174,7 @@ pub fn parse_ansi_line(input: &str) -> BufferLine {
 
 /// Parse multiple lines of ANSI-encoded text
 pub fn parse_ansi(input: &str) -> Vec<BufferLine> {
-    input.split('\n').map(|line| parse_ansi_line(line)).collect()
+    input.split('\n').map(parse_ansi_line).collect()
 }
 
 #[cfg(test)]

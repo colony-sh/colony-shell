@@ -108,6 +108,12 @@ pub struct SkillEngine {
     skills: Vec<ResolvedSkill>,
 }
 
+impl Default for SkillEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SkillEngine {
     pub fn new() -> Self {
         Self {
@@ -127,7 +133,7 @@ impl SkillEngine {
         let trigger_str = def
             .trigger
             .as_deref()
-            .unwrap_or_else(|| name);
+            .unwrap_or(name);
         let trigger_kind = TriggerKind::parse(trigger_str);
 
         self.skills.push(ResolvedSkill {

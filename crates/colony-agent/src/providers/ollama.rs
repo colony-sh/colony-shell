@@ -44,16 +44,6 @@ impl OllamaProvider {
         self
     }
 
-    /// Check if Ollama server is running
-    pub async fn is_available(&self) -> bool {
-        self.client
-            .get(format!("{}/api/tags", self.base_url))
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
-    }
-
     /// List available models
     pub async fn list_models(&self) -> Result<Vec<String>> {
         #[derive(Deserialize)]
@@ -148,7 +138,7 @@ impl ModelProvider for OllamaProvider {
     }
 
     fn supports_streaming(&self) -> bool {
-        true // Ollama supports streaming via newline-delimited JSON
+        false // Sends stream:false; emits a single synthetic event per response
     }
 
     fn max_context_tokens(&self) -> usize {
@@ -268,7 +258,7 @@ mod tests {
         let provider = OllamaProvider::new("llama3");
         assert_eq!(provider.provider_name(), "ollama");
         assert_eq!(provider.model_name(), "llama3");
-        assert!(provider.supports_streaming());
+        assert!(!provider.supports_streaming());
     }
 
     #[tokio::test]

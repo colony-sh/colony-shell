@@ -239,15 +239,11 @@ impl GhostCompletion {
         // Only suggest paths if input looks like a path or command with path arg
         let path_input = self.extract_path_context(input);
 
-        if let Some((prefix, path_part)) = path_input {
+        if let Some((_prefix, path_part)) = path_input {
             if let Some(suggestions) = self.suggest_paths(&path_part) {
                 for (suffix, is_dir) in suggestions {
                     // Build the full suggestion (everything after current input)
-                    let full_suffix = if prefix.is_empty() {
-                        suffix.clone()
-                    } else {
-                        suffix.clone()
-                    };
+                    let full_suffix = suffix.clone();
 
                     self.suggestions.push(GhostSuggestion {
                         text: full_suffix,

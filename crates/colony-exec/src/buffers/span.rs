@@ -5,9 +5,10 @@
 use serde::{Deserialize, Serialize};
 
 /// Terminal color
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Color {
+    #[default]
     Default,
     Black,
     Red,

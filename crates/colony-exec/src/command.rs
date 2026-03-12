@@ -41,7 +41,7 @@ fn execute_command_blocking(
     // Create expander with command substitution support
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
-        |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+        crate::execute_and_capture,
         |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
     );
 

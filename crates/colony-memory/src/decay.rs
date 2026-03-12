@@ -79,7 +79,7 @@ impl ImportanceDecayScheduler {
     pub fn is_running(&self) -> bool {
         self.handle
             .as_ref()
-            .map_or(false, |h| !h.is_finished())
+            .is_some_and(|h| !h.is_finished())
     }
 
     pub fn config(&self) -> &DecayConfig {

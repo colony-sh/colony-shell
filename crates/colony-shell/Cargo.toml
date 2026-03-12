@@ -63,6 +63,7 @@ colony-exec.workspace = true
 colony-protocol.workspace = true
 colony-agent = { path = "../colony-agent" }
 colony-config = { path = "../colony-config" }
+colony-filetree = { workspace = true }
 colony-tree-sitter = { path = "../colony-tree-sitter" }
 colony-tuple = { path = "../colony-tuple" }
 colony-ui-core = { path = "../colony-ui-core" }

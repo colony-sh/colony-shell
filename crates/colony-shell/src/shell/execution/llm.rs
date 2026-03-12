@@ -158,7 +158,7 @@ async fn handle_ask(prompt: &str, agent: &mut Option<Agent>) {
 
     match agent.process(prompt).await {
         Ok(_response) => {
-            // Response was already streamed to stdout via ProtocolEmitter
+            // Response was already streamed to stdout via emit_thought()
             println!();
         }
         Err(e) => {

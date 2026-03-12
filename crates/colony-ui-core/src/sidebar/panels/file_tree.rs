@@ -41,10 +41,7 @@ impl FileTreePanel {
         let mut state = self.tree_state.write();
 
         // Check if we need to reinitialize (root changed)
-        let needs_init = match current.as_ref() {
-            Some(curr) if curr == root => false,
-            _ => true,
-        };
+        let needs_init = !matches!(current.as_ref(), Some(curr) if curr == root);
 
         if needs_init {
             let new_state = TreeState::new(root);
@@ -61,7 +58,7 @@ impl FileTreePanel {
     /// Render a node from tree state
     fn render_node(&self, node: &FileNode, tree: &TreeState, lines: &mut Vec<ComponentLine>) {
         let (icon, style) = if node.is_dir() {
-            let dir_icon = if node.expanded { " " } else { " " };
+            let dir_icon = if node.expanded { "\u{f07c} " } else { "\u{f07b} " };
             (dir_icon, Style::default().fg(Color::Blue).bold())
         } else {
             let (icon, color) = self.file_style(&node.extension);

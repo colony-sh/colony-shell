@@ -74,6 +74,15 @@ impl RecipeLoader {
         }
     }
 
+}
+
+impl Default for RecipeLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RecipeLoader {
     /// Discover all available recipes across search paths.
     ///
     /// Returns recipes in priority order (project > user > config > registry).

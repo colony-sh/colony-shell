@@ -1123,10 +1123,7 @@ impl ExpansionContext {
         };
 
         let registry = registry_arc.lock();
-        match registry.handle_approval_response(request_id, decision) {
-            Ok(value) => value,
-            Err(_) => None,
-        }
+        registry.handle_approval_response(request_id, decision).unwrap_or_default()
     }
 
     fn get_var_or_env_raw(&self, name: &str) -> Option<String> {
@@ -1795,7 +1792,7 @@ impl ExpansionContext {
 
         let resolved = self.resolve_arithmetic_variables(expr);
 
-        match crate::expand_arithmetic_immut(&resolved, self) {
+        match crate::expand_arithmetic_readonly(&resolved, self) {
             Ok(result) => result,
             Err(_) => "0".to_string(),
         }

@@ -1,0 +1,184 @@
+{
+  "batch": "api_surface_coherence",
+  "batch_index": 20,
+  "assessments": {"api_surface_coherence": 72.0},
+  "dimension_notes": {
+    "api_surface_coherence": {
+      "evidence": [
+        "Persistence stores split across sync/async with no consistent naming signal: ConversationStore::open is sync, MemoryStore::open is async, GoalStore::open is sync, PersistentTupleSpace::open is async, ObservationStore::open is sync, ApprovalDatabase::open is sync — a caller cannot predict which protocol applies without reading implementation",
+        "ConversationStore::open takes impl Into<PathBuf>, GoalStore::open takes impl Into<PathBuf>, but ApprovalDatabase::open takes &Path and ObservationStore::open takes &Path — inconsistent parameter type for the same conceptual operation across sibling stores",
+        "OllamaProvider exposes both is_available(&self) -> bool (async, returns bool) and health_check(&self) -> Result<ProviderHealth> (async) for overlapping purpose; is_available is not part of the ModelProvider trait but duplicates a subset of health_check behaviour, creating two paths for the same check",
+        "OllamaProvider::supports_streaming() returns true but internally sets stream: Some(false) in complete() and emits a single-event non-streaming response — the declared capability and the actual implementation contract are misaligned",
+        "Agent has two public entry points for processing user input: process() which uses cancellation internally but discards tool events, and process_full() which handles full streaming with tool calls — the distinction is not captured in the type or the name; a caller choosing process() silently loses tool call handling",
+        "ModelProvider trait method complete() takes &mut self but health_check() takes &self — the split means ProviderChain implements health_check by iterating immutably while complete() requires a mutable borrow, but the asymmetry is not documented and surprises implementors",
+        "MemoryStore exposes store() and store_with_importance() as two separate methods where store() delegates to store_with_importance() with importance=1.0 — a common factory/default pattern but the naming suggests they are peers rather than one being a convenience for the other",
+        "Agent::new() and Agent::with_config() are both async constructors creating identical struct states (router, tools, approval, token_tracker, context_manager) with duplicated initialization code; with_provider() is a third constructor that duplicates the same setup — no builder or shared init helper",
+        "MemoryStore::open_with_embedder has a different parameter ordering convention: (path, embedder) while all other open variants take only path — not inconsistent enough to be a bug but adds mental overhead",
+        "ApprovalManager in colony-agent and ApprovalDatabase in colony-secure both manage approval state and both are named 'Approval*', but they address entirely different domains (tool approval vs script variable access approval) with no disambiguation in the module path visible at use sites"
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "sub_axes": {
+        "abstraction_leverage": 68.0,
+        "indirection_cost": 74.0,
+        "interface_honesty": 65.0,
+        "delegation_density": 78.0,
+        "definition_directness": 70.0,
+        "type_discipline": 72.0
+      }
+    }
+  },
+  "dimension_judgment": {
+    "api_surface_coherence": {
+      "strengths": [
+        "The ModelProvider trait provides a uniform async interface across Anthropic, OpenAI, Ollama, Colony Cloud, ModelRouter, and ProviderChain — all providers expose the same complete/health_check/provider_name/model_name surface with no deviations in signature",
+        "Builder-style configuration structs (AgentConfig, MemoryConfig, ApprovalConfig, ProviderChainConfig) are consistently used across the codebase, each providing a Default impl and chainable with_* methods",
+        "Error types are domain-local and consistently typed: each crate exposes its own typed error and a crate-level Result<T> alias, avoiding raw strings at public boundaries",
+        "The channel trait hierarchy (Channel, ChannelId, named constants) is coherent — all channel types implement the same write/read/flush/clear contract and all constants are co-located",
+        "Persistence stores follow a consistent three-constructor pattern (open(path), open_default(), open_in_memory()) within each individual crate, making them locally predictable even if the sync/async choice differs cross-crate"
+      ],
+      "issue_character": "The dominant issue pattern is async/sync inconsistency in the persistence layer and a structural split in the Agent's public processing interface that cannot be communicated by types, combined with minor but repeated parameter-convention drift across otherwise similar APIs.",
+      "score_rationale": "The codebase scores solidly above the midpoint. Within each individual subsystem (providers, channels, errors) the API shapes are highly coherent and the trait-driven provider abstraction is cleanly designed. The score is held back below the 80s by two structural problems: the persistence layer has no rule about when open() is sync vs async, so a developer integrating three stores will need to examine each one; and the Agent's process()/process_full() split presents two non-obviously-different entry points where the difference — full tool handling — is load-bearing but invisible in the type system. These are subsystem-scope issues, not local nits, and together they create real friction at integration time."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "persist_sync_async_split",
+      "summary": "Persistence stores split between sync open() and async open() with no naming convention to signal which applies",
+      "related_files": [
+        "crates/colony-agent/src/persistence.rs",
+        "crates/colony-memory/src/store.rs",
+        "crates/colony-focus/src/persistence.rs",
+        "crates/colony-tuple/src/persistent.rs",
+        "crates/colony-reflection/src/storage.rs",
+        "crates/colony-secure/src/approvals.rs"
+      ],
+      "evidence": [
+        "ConversationStore::open, GoalStore::open, ObservationStore::open, and ApprovalDatabase::open are all synchronous",
+        "MemoryStore::open, PersistentTupleSpace::open, colony-tuple ipc::TupleIpc::open are all async",
+        "No naming distinguishes these families — both groups are called 'open' with no 'async_open', 'open_async', or 'connect' prefix to warn callers",
+        "A developer wiring three stores into an init function must inspect each implementation to know whether .await is required"
+      ],
+      "suggestion": "Establish and document a crate-level convention: synchronous stores keep open(), async stores use async fn open() but also provide a synchronous blocking::open() that wraps spawn_blocking, or alternatively rename async openers to connect() or open_async() to make the contract visible at the call site.",
+      "confidence": "high",
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "incremental_growth_without_convention"
+    },
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "agent_process_split",
+      "summary": "Agent::process() and Agent::process_full() are two public entry points with invisible behavioural difference: tool call handling",
+      "related_files": [
+        "crates/colony-agent/src/agent.rs"
+      ],
+      "evidence": [
+        "process() at line 353 builds a completion stream, wraps it in cancellable_stream, and collects text — tool events in the stream are silently dropped by the StreamEvent::_ arm in cancellable_stream",
+        "process_full() at line 476 performs explicit stream polling including StreamEvent::ToolCallStart and StreamEvent::ToolCallComplete dispatch to handle_tool_use()",
+        "The name 'full' communicates the difference only loosely; there is no type-level distinction (both return Result<String>) and no doc comment on process() warning that tool calls are not executed",
+        "A caller choosing process() for an agent configured with tools will silently receive no tool execution"
+      ],
+      "suggestion": "Either merge into a single process() that always handles tool calls (making tool handling the default, not opt-in), or introduce a type-level distinction such as returning a ProcessHandle enum so callers cannot accidentally choose the wrong mode. At minimum, add a doc comment on process() that explicitly states tool calls are ignored.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "incremental_growth_without_convention"
+    },
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "ollama_supports_streaming_lie",
+      "summary": "OllamaProvider::supports_streaming() returns true but the implementation sends stream:false and emits a single synthetic event",
+      "related_files": [
+        "crates/colony-agent/src/providers/ollama.rs"
+      ],
+      "evidence": [
+        "supports_streaming() at line 150 returns true with comment 'Ollama supports streaming via newline-delimited JSON'",
+        "complete() at line 85 sets stream: Some(false) in OllamaRequest at line 104 with comment '// Non-streaming for initial implementation'",
+        "The response is a single OllamaResponse struct parsed as JSON, then wrapped in two fake stream events (TextDelta + Done) at lines 142-145",
+        "A downstream consumer relying on supports_streaming() to choose a rendering strategy will receive batch behaviour despite the declared capability"
+      ],
+      "suggestion": "Either implement real Ollama NDJSON streaming (iterate the streaming API) or change supports_streaming() to return false until the implementation is complete. The comment 'Ollama supports streaming' is correct about the server capability but misrepresents the current client implementation.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "incomplete_implementation"
+    },
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "ollama_is_available_redundant",
+      "summary": "OllamaProvider::is_available() duplicates a subset of health_check() as a separate async bool method not part of the trait",
+      "related_files": [
+        "crates/colony-agent/src/providers/ollama.rs"
+      ],
+      "evidence": [
+        "is_available() at line 48 performs an HTTP GET /api/tags and returns bool",
+        "health_check() at line 168 also starts with an HTTP GET /api/tags and additionally checks model availability",
+        "is_available() is not part of the ModelProvider trait and thus not available through trait objects — it can only be called on concrete OllamaProvider",
+        "Callers have two paths: one that returns a structured ProviderHealth (with latency, error detail) and one that returns a bare bool from essentially the same request"
+      ],
+      "suggestion": "Remove is_available() from the public surface and make health_check() the single availability oracle. If callers need a quick bool, they can check health_check().available. Alternatively, promote is_available to the ModelProvider trait if fast bool checks are needed across all providers.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "incremental_growth_without_convention"
+    },
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "open_path_param_inconsistency",
+      "summary": "Sibling persistence stores accept either &Path or impl Into<PathBuf> for the path parameter with no consistent rule",
+      "related_files": [
+        "crates/colony-agent/src/persistence.rs",
+        "crates/colony-focus/src/persistence.rs",
+        "crates/colony-secure/src/approvals.rs",
+        "crates/colony-reflection/src/storage.rs"
+      ],
+      "evidence": [
+        "ConversationStore::open takes impl Into<PathBuf> (line 42 in persistence.rs)",
+        "GoalStore::open takes impl Into<PathBuf> (line 22 in focus/persistence.rs)",
+        "ApprovalDatabase::open takes &Path (line 28 in approvals.rs)",
+        "ObservationStore::open takes &Path (line 46 in storage.rs)",
+        "Both forms are valid Rust, but the inconsistency adds cognitive overhead when wiring stores — a developer must check each open() signature to know whether to pass path.as_path() or just path"
+      ],
+      "suggestion": "Standardize on impl AsRef<Path> across all persistence stores, which accepts both &Path and &PathBuf without requiring the caller to convert, and is more general than impl Into<PathBuf>.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "incremental_growth_without_convention"
+    },
+    {
+      "dimension": "api_surface_coherence",
+      "identifier": "agent_constructor_duplication",
+      "summary": "Agent::new(), with_config(), and with_provider() duplicate the same struct initialization block, inflating the API with three async constructors",
+      "related_files": [
+        "crates/colony-agent/src/agent.rs"
+      ],
+      "evidence": [
+        "new() at line 104 calls with_config(AgentConfig::default())",
+        "with_config() at lines 186-222 builds router, tools, approval, token_tracker, context_manager and returns Self",
+        "with_provider() at lines 225-269 builds router differently but repeats the identical tools/approval/token_tracker/context_manager initialization verbatim",
+        "Any change to the initialization logic (e.g. adding a new field) must be applied in two places"
+      ],
+      "suggestion": "Extract a private new_from_router(router, config) constructor used by both with_config() and with_provider(), eliminating the duplicated initialization block. This also makes future fields added to Agent easier to maintain.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "incremental_growth_without_convention"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Crate-level conventions for persistence store construction (sync vs async, path parameter type) were not established before multiple stores were authored, leading to drift across sibling stores that all look similar but diverge on details",
+      "Agent processing entry points grew incrementally (process then process_full) without a unifying design that makes the capability difference type-safe or naming-visible",
+      "Provider implementation completeness was not enforced against trait capability declarations (supports_streaming), allowing advertised capabilities to drift from actual behaviour"
+    ],
+    "likely_symptoms": [
+      "ollama_supports_streaming_lie",
+      "ollama_is_available_redundant"
+    ],
+    "possible_false_positives": [
+      "agent_constructor_duplication — the duplication is real but the constructors serve distinct call sites (auto-detect vs explicit provider) and the refactor is mechanical; calling it an API coherence issue is borderline, it may belong more to low_level_elegance"
+    ]
+  }
+}

@@ -775,7 +775,7 @@ fn eval_field(target: EvalValue, field: &str) -> Result<EvalValue> {
 fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
     match name {
         "len" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("len() expects 1 argument".to_string())
             })?;
             let arg = unwrap_optional(arg.clone());
@@ -791,7 +791,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "upper" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("upper() expects 1 argument".to_string())
             })?;
             Ok(EvalValue::Str(
@@ -799,7 +799,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             ))
         }
         "lower" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("lower() expects 1 argument".to_string())
             })?;
             Ok(EvalValue::Str(
@@ -807,7 +807,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             ))
         }
         "int" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("int() expects 1 argument".to_string())
             })?;
             let s = eval_value_to_string(unwrap_optional(arg.clone()));
@@ -818,7 +818,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             Ok(EvalValue::Int(parsed))
         }
         "float" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("float() expects 1 argument".to_string())
             })?;
             let s = eval_value_to_string(unwrap_optional(arg.clone()));
@@ -829,7 +829,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             Ok(EvalValue::Float(parsed))
         }
         "str" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("str() expects 1 argument".to_string())
             })?;
             Ok(EvalValue::Str(eval_value_to_string(unwrap_optional(
@@ -837,13 +837,13 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             ))))
         }
         "bool" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("bool() expects 1 argument".to_string())
             })?;
             Ok(EvalValue::Bool(is_truthy(&unwrap_optional(arg.clone()))))
         }
         "join" => {
-            let sep = args.get(0).ok_or_else(|| {
+            let sep = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("join() expects 2 arguments".to_string())
             })?;
             let items = args.get(1).ok_or_else(|| {
@@ -863,7 +863,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "split" => {
-            let sep = args.get(0).ok_or_else(|| {
+            let sep = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("split() expects 2 arguments".to_string())
             })?;
             let input = args.get(1).ok_or_else(|| {
@@ -881,7 +881,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             ))
         }
         "keys" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("keys() expects 1 argument".to_string())
             })?;
             let arg = unwrap_optional(arg.clone());
@@ -896,7 +896,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "values" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("values() expects 1 argument".to_string())
             })?;
             let arg = unwrap_optional(arg.clone());
@@ -911,7 +911,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "get" => {
-            let dict = args.get(0).ok_or_else(|| {
+            let dict = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("get() expects at least 2 arguments".to_string())
             })?;
             let key = args.get(1).ok_or_else(|| {
@@ -928,7 +928,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "has" => {
-            let dict = args.get(0).ok_or_else(|| {
+            let dict = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("has() expects 2 arguments".to_string())
             })?;
             let key = args.get(1).ok_or_else(|| {
@@ -944,14 +944,14 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "trim" => {
-            let arg = args.get(0).ok_or_else(|| {
+            let arg = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("trim() expects 1 argument".to_string())
             })?;
             let s = eval_value_to_string(unwrap_optional(arg.clone()));
             Ok(EvalValue::Str(s.trim().to_string()))
         }
         "replace" => {
-            let input = args.get(0).ok_or_else(|| {
+            let input = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("replace() expects 3 arguments".to_string())
             })?;
             let old = args.get(1).ok_or_else(|| {
@@ -966,7 +966,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             Ok(EvalValue::Str(input.replace(&old, &new)))
         }
         "contains" => {
-            let input = args.get(0).ok_or_else(|| {
+            let input = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("contains() expects 2 arguments".to_string())
             })?;
             let needle = args.get(1).ok_or_else(|| {
@@ -977,7 +977,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             Ok(EvalValue::Bool(input.contains(&needle)))
         }
         "first" => {
-            let list = args.get(0).ok_or_else(|| {
+            let list = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("first() expects 1 argument".to_string())
             })?;
             let list = unwrap_optional(list.clone());
@@ -991,7 +991,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "last" => {
-            let list = args.get(0).ok_or_else(|| {
+            let list = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("last() expects 1 argument".to_string())
             })?;
             let list = unwrap_optional(list.clone());
@@ -1005,7 +1005,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "push" => {
-            let list = args.get(0).ok_or_else(|| {
+            let list = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("push() expects 2 arguments".to_string())
             })?;
             let item = args.get(1).ok_or_else(|| {
@@ -1024,7 +1024,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "pop" => {
-            let list = args.get(0).ok_or_else(|| {
+            let list = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("pop() expects 1 argument".to_string())
             })?;
             let list = unwrap_optional(list.clone());
@@ -1039,7 +1039,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "insert" => {
-            let list = args.get(0).ok_or_else(|| {
+            let list = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("insert() expects 3 arguments".to_string())
             })?;
             let index = args.get(1).ok_or_else(|| {
@@ -1064,7 +1064,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "remove" => {
-            let list = args.get(0).ok_or_else(|| {
+            let list = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("remove() expects 2 arguments".to_string())
             })?;
             let index = args.get(1).ok_or_else(|| {
@@ -1088,7 +1088,7 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
             }
         }
         "slice" => {
-            let list = args.get(0).ok_or_else(|| {
+            let list = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("slice() expects 2 or 3 arguments".to_string())
             })?;
             let start = args.get(1).ok_or_else(|| {
@@ -1119,30 +1119,8 @@ fn eval_func_call(name: &str, args: &[EvalValue]) -> Result<EvalValue> {
                 )),
             }
         }
-        "trim" => {
-            let arg = args.get(0).ok_or_else(|| {
-                ExecutionError::InvalidVarDecl("trim() expects 1 argument".to_string())
-            })?;
-            let s = eval_value_to_string(unwrap_optional(arg.clone()));
-            Ok(EvalValue::Str(s.trim().to_string()))
-        }
-        "replace" => {
-            let input = args.get(0).ok_or_else(|| {
-                ExecutionError::InvalidVarDecl("replace() expects 3 arguments".to_string())
-            })?;
-            let old = args.get(1).ok_or_else(|| {
-                ExecutionError::InvalidVarDecl("replace() expects 3 arguments".to_string())
-            })?;
-            let new = args.get(2).ok_or_else(|| {
-                ExecutionError::InvalidVarDecl("replace() expects 3 arguments".to_string())
-            })?;
-            let input = eval_value_to_string(unwrap_optional(input.clone()));
-            let old = eval_value_to_string(unwrap_optional(old.clone()));
-            let new = eval_value_to_string(unwrap_optional(new.clone()));
-            Ok(EvalValue::Str(input.replace(&old, &new)))
-        }
         "contains_str" => {
-            let input = args.get(0).ok_or_else(|| {
+            let input = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("contains_str() expects 2 arguments".to_string())
             })?;
             let needle = args.get(1).ok_or_else(|| {
@@ -1186,7 +1164,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "join" => {
-            let sep = args.get(0).ok_or_else(|| {
+            let sep = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("join() expects 1 argument".to_string())
             })?;
             let sep_str = eval_value_to_string(sep.clone());
@@ -1201,7 +1179,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "split" => {
-            let sep = args.get(0).ok_or_else(|| {
+            let sep = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("split() expects 1 argument".to_string())
             })?;
             let sep_str = eval_value_to_string(sep.clone());
@@ -1248,7 +1226,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "get" => {
-            let key = args.get(0).ok_or_else(|| {
+            let key = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("get() expects 1 or 2 arguments".to_string())
             })?;
             let default = args.get(1).cloned().unwrap_or(EvalValue::Null);
@@ -1261,7 +1239,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "has" => {
-            let key = args.get(0).ok_or_else(|| {
+            let key = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("has() expects 1 argument".to_string())
             })?;
             let key = unwrap_optional(key.clone());
@@ -1299,7 +1277,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             ))
         }
         "replace" => {
-            let old = args.get(0).ok_or_else(|| {
+            let old = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("replace() expects 2 arguments".to_string())
             })?;
             let new = args.get(1).ok_or_else(|| {
@@ -1311,7 +1289,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             Ok(EvalValue::Str(input.replace(&old, &new)))
         }
         "contains" => {
-            let needle = args.get(0).ok_or_else(|| {
+            let needle = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("contains() expects 1 argument".to_string())
             })?;
             let input = eval_value_to_string(target);
@@ -1349,7 +1327,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "push" => {
-            let item = args.get(0).ok_or_else(|| {
+            let item = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("push() expects 1 argument".to_string())
             })?;
             let item = unwrap_optional(item.clone());
@@ -1380,7 +1358,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "insert" => {
-            let index = args.get(0).ok_or_else(|| {
+            let index = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("insert() expects 2 arguments".to_string())
             })?;
             let value = args.get(1).ok_or_else(|| {
@@ -1401,7 +1379,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "remove" => {
-            let index = args.get(0).ok_or_else(|| {
+            let index = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("remove() expects 1 argument".to_string())
             })?;
             let index = unwrap_optional(index.clone());
@@ -1421,7 +1399,7 @@ fn eval_method_call(target: EvalValue, name: &str, args: &[EvalValue]) -> Result
             }
         }
         "slice" => {
-            let start = args.get(0).ok_or_else(|| {
+            let start = args.first().ok_or_else(|| {
                 ExecutionError::InvalidVarDecl("slice() expects 1 or 2 arguments".to_string())
             })?;
             let end = args.get(1).cloned();
@@ -2307,7 +2285,7 @@ impl Executor {
                 // Seed context channel with CONTEXT.md entries
                 for entry in &state.context_entries {
                     if let Some(ctx) = self.channels.context() {
-                        ctx.add_text(&format!("[{}] {}", entry.section, entry.content));
+                        ctx.add_text(format!("[{}] {}", entry.section, entry.content));
                     }
                 }
 
@@ -2630,7 +2608,7 @@ impl Executor {
         // BUT if this is an assignment-accepting builtin, skip processing and pass as args
         let mut expander = Expander::with_executor_and_expr(
             self.context.clone(),
-            |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+            crate::execute_and_capture,
             |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
         );
 
@@ -3129,7 +3107,7 @@ impl Executor {
             // Create expander with command substitution support
             let mut expander = Expander::with_executor_and_expr(
                 context_clone.clone(),
-                |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+                crate::execute_and_capture,
                 |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
             );
 
@@ -3254,7 +3232,7 @@ impl Executor {
 
         let mut expander = Expander::with_executor_and_expr(
             self.context.clone(),
-            |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+            crate::execute_and_capture,
             |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
         );
 
@@ -3786,7 +3764,7 @@ impl Executor {
 
         let mut expander = Expander::with_executor_and_expr(
             self.context.clone(),
-            |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+            crate::execute_and_capture,
             |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
         );
 
@@ -3971,7 +3949,7 @@ impl Executor {
 
         let mut expander = Expander::with_executor_and_expr(
             self.context.clone(),
-            |stmt, ctx| crate::execute_and_capture(stmt, ctx),
+            crate::execute_and_capture,
             |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
         );
 

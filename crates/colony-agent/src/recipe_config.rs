@@ -53,7 +53,17 @@ mod inner {
         pub fn merge_with_overrides(&self, user_overrides: &AgentConfigOverrides) -> AgentConfig {
             let mut config = AgentConfig::default();
 
-            // Recipe values first
+            // Apply recipe values via the shared helper
+            self.apply_to(&mut config);
+
+            // User overrides win
+            user_overrides.apply_to(&mut config);
+
+            config
+        }
+
+        /// Apply this recipe config's values onto an existing `AgentConfig`
+        fn apply_to(&self, config: &mut AgentConfig) {
             if let Some(ref prompt) = self.system_prompt {
                 config.system_prompt = prompt.clone();
             }
@@ -63,31 +73,6 @@ mod inner {
             if !self.auto_approve_patterns.is_empty() {
                 config.auto_approve_patterns = self.auto_approve_patterns.clone();
             }
-
-            // User overrides win
-            if let Some(ref prompt) = user_overrides.system_prompt {
-                config.system_prompt = prompt.clone();
-            }
-            if let Some(max_tokens) = user_overrides.max_tokens {
-                config.max_tokens = max_tokens;
-            }
-            if user_overrides.temperature.is_some() {
-                config.temperature = user_overrides.temperature;
-            }
-            if let Some(caching) = user_overrides.use_caching {
-                config.use_caching = caching;
-            }
-            if let Some(persistence) = user_overrides.persistence_enabled {
-                config.persistence_enabled = persistence;
-            }
-            if let Some(memory) = user_overrides.memory_enabled {
-                config.memory_enabled = memory;
-            }
-            if let Some(ref patterns) = user_overrides.auto_approve_patterns {
-                config.auto_approve_patterns = patterns.clone();
-            }
-
-            config
         }
 
         /// Check if this recipe config specifies a model change
@@ -119,6 +104,31 @@ mod inner {
     }
 
     impl AgentConfigOverrides {
+        /// Apply overrides onto an existing `AgentConfig`
+        fn apply_to(&self, config: &mut AgentConfig) {
+            if let Some(ref prompt) = self.system_prompt {
+                config.system_prompt = prompt.clone();
+            }
+            if let Some(max_tokens) = self.max_tokens {
+                config.max_tokens = max_tokens;
+            }
+            if self.temperature.is_some() {
+                config.temperature = self.temperature;
+            }
+            if let Some(caching) = self.use_caching {
+                config.use_caching = caching;
+            }
+            if let Some(persistence) = self.persistence_enabled {
+                config.persistence_enabled = persistence;
+            }
+            if let Some(memory) = self.memory_enabled {
+                config.memory_enabled = memory;
+            }
+            if let Some(ref patterns) = self.auto_approve_patterns {
+                config.auto_approve_patterns = patterns.clone();
+            }
+        }
+
         pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
             self.system_prompt = Some(prompt.into());
             self

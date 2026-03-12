@@ -4,6 +4,10 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Actor string used when the shell user manually grants an approval through
+/// an interactive prompt (as opposed to a programmatic or scripted grant).
+pub const GRANTED_BY_INTERACTIVE: &str = "interactive";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApprovalScope {
     Global,
@@ -75,6 +79,11 @@ impl ApprovalDatabase {
         Ok(())
     }
 
+    /// Check if an approval exists for the given script, hash, and variable.
+    ///
+    /// Scope is **not** filtered: a matching approval grants access regardless
+    /// of whether it was saved as `Global` or `Project`. Scope is recorded as
+    /// metadata for auditing, not as a check-time predicate.
     pub fn check_approval(
         &self,
         script_path: &Path,
@@ -99,18 +108,24 @@ impl ApprovalDatabase {
         script_hash: &str,
         variable: &str,
         granted_by: &str,
+        scope: ApprovalScope,
     ) -> Result<()> {
         let script_path_str = script_path.to_string_lossy();
         let granted_at = Utc::now().to_rfc3339();
+        let scope_str = match scope {
+            ApprovalScope::Global => "global",
+            ApprovalScope::Project => "project",
+        };
 
         self.conn.execute(
-            "INSERT OR REPLACE INTO approvals 
+            "INSERT OR REPLACE INTO approvals
              (script_path, script_hash, variable_name, scope, granted_at, granted_by)
-             VALUES (?1, ?2, ?3, 'global', ?4, ?5)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 script_path_str,
                 script_hash,
                 variable,
+                scope_str,
                 granted_at,
                 granted_by
             ],
@@ -250,8 +265,14 @@ mod tests {
             .check_approval(&script_path, script_hash, variable)
             .unwrap());
 
-        db.save_approval(&script_path, script_hash, variable, "interactive")
-            .unwrap();
+        db.save_approval(
+            &script_path,
+            script_hash,
+            variable,
+            GRANTED_BY_INTERACTIVE,
+            ApprovalScope::Global,
+        )
+        .unwrap();
         assert!(db
             .check_approval(&script_path, script_hash, variable)
             .unwrap());
@@ -264,7 +285,7 @@ mod tests {
         let approvals = db.list_approvals(variable).unwrap();
         assert_eq!(approvals.len(), 1);
         assert_eq!(approvals[0].script_path, script_path);
-        assert_eq!(approvals[0].granted_by, "interactive");
+        assert_eq!(approvals[0].granted_by, GRANTED_BY_INTERACTIVE);
 
         db.revoke_approval(&script_path, variable).unwrap();
         assert!(!db
@@ -282,6 +303,7 @@ mod tests {
             "sha256:hash1",
             variable,
             "user1",
+            ApprovalScope::Global,
         )
         .unwrap();
         db.save_approval(
@@ -289,6 +311,7 @@ mod tests {
             "sha256:hash2",
             variable,
             "user2",
+            ApprovalScope::Global,
         )
         .unwrap();
 
@@ -307,9 +330,9 @@ mod tests {
         let script_path = PathBuf::from("/deploy.sh");
         let variable = "SECRET";
 
-        db.save_approval(&script_path, "sha256:old", variable, "user")
+        db.save_approval(&script_path, "sha256:old", variable, "user", ApprovalScope::Global)
             .unwrap();
-        db.save_approval(&script_path, "sha256:new", variable, "user")
+        db.save_approval(&script_path, "sha256:new", variable, "user", ApprovalScope::Global)
             .unwrap();
 
         let cleared = db
@@ -323,5 +346,39 @@ mod tests {
         assert!(!db
             .check_approval(&script_path, "sha256:old", variable)
             .unwrap());
+    }
+
+    #[test]
+    fn test_scope_is_persisted() {
+        let db = ApprovalDatabase::open_in_memory().unwrap();
+        let global_path = PathBuf::from("/home/user/global-script.sh");
+        let project_path = PathBuf::from("/home/user/project-script.sh");
+        let variable = "DB_PASSWORD";
+
+        db.save_approval(&global_path, "sha256:g1", variable, "user", ApprovalScope::Global)
+            .unwrap();
+        db.save_approval(
+            &project_path,
+            "sha256:p1",
+            variable,
+            "user",
+            ApprovalScope::Project,
+        )
+        .unwrap();
+
+        let approvals = db.list_approvals(variable).unwrap();
+        assert_eq!(approvals.len(), 2);
+
+        let global_approval = approvals
+            .iter()
+            .find(|a| a.script_path == global_path)
+            .expect("global approval should be present");
+        assert_eq!(global_approval.scope, ApprovalScope::Global);
+
+        let project_approval = approvals
+            .iter()
+            .find(|a| a.script_path == project_path)
+            .expect("project approval should be present");
+        assert_eq!(project_approval.scope, ApprovalScope::Project);
     }
 }

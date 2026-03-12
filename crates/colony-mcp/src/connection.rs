@@ -273,7 +273,7 @@ impl McpConnection {
                     error = %e,
                     "reconnection failed"
                 );
-                self.state = ConnectionState::Reconnecting;
+                self.state = ConnectionState::Disconnected;
                 Err(e)
             }
         }

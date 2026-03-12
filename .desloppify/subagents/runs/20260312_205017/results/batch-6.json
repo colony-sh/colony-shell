@@ -1,0 +1,143 @@
+{
+  "batch": "abstraction_fitness",
+  "batch_index": 6,
+  "assessments": {"abstraction_fitness": 72.0},
+  "dimension_notes": {
+    "abstraction_fitness": {
+      "evidence": [
+        "ShoptOptions in crates/colony-expand/src/context.rs implements get(name: &str) -> Option<bool> and set(name: &str, value: bool) -> bool via exhaustive string-match dispatch (~25 fields each), duplicating what could be a typed struct with direct property access since the caller already knows the field name at call sites",
+        "The indirection hotspot scanner found 182 method-chain calls in colony-expand/src/context.rs with max_chain_depth 3, reflecting that ExpansionContext is accessed as a wide context bag by every expansion module (arithmetic, parameter, lib, pipeline, builtins, redirect, command_sub) through a uniform &mut ExpansionContext parameter",
+        "ProtocolEmitter in crates/colony-agent/src/agent.rs is a zero-field struct (Self {}) that wraps two trivial operations: emit_thought flushes stdout and emit_tool_call logs debug; it provides no protocol abstraction since the agent directly prints to stdout and the 'protocol' framing is unused",
+        "TreeProtocol in crates/colony-filetree/src/protocol.rs wraps a single TreeState field and exposes tree() / tree_mut() pass-through accessors alongside convert/emit methods; callers who need tree state could work with TreeState directly — the wrapper adds a thin translation layer but also leaks the inner via tree_mut()",
+        "McpConnectionPool.connection_state(), connected_servers(), server_names(), connected_count(), tool_count() in crates/colony-mcp/src/pool.rs each delegate directly to the inner connections HashMap with one-line bodies; these are read-only computed projections that add no policy — they are accessor forwarding",
+        "RecipeAgentConfig.merge_with_overrides() and apply_recipe_to_config() in crates/colony-agent/src/recipe_config.rs perform nearly identical field-by-field assignment from recipe fields to AgentConfig fields — two parallel paths that both flatten the same Recipe->AgentConfig translation, suggesting one could be eliminated",
+        "MemoryIntegration.is_enabled() in crates/colony-agent/src/memory_integration.rs returns self.config.enabled — a single-line getter that exposes a sub-field of a private config, adding a layer without added behavior",
+        "AgentTupleBridge.space() and .subscriptions() in crates/colony-agent/src/tuple_bridge.rs are pass-through accessors returning &self.space and &self.subscriptions respectively — callers receive the raw inner type and can use it directly, making the wrapper leaky",
+        "SidebarManager in crates/colony-ui-core/src/sidebar/manager.rs has several single-expression methods that route by SidebarPosition enum to left or right config fields (toggle, set_visible, is_visible, width) — these are justified by the two-sidebar design but the pattern repeats rather than generalizing",
+        "ProviderChain in crates/colony-agent/src/provider_chain.rs implements the ModelProvider trait by delegating all trait methods (supports_streaming, max_context_tokens, provider_name, model_name) to self.providers[active_index] — this is meaningful delegation since the chain adds fallback logic, but the non-complete trait methods do pure forwarding to active index without any chain reasoning"
+      ],
+      "impact_scope": "subsystem",
+      "fix_scope": "multi_file_refactor",
+      "confidence": "high",
+      "sub_axes": {
+        "abstraction_leverage": 72.0,
+        "indirection_cost": 68.0,
+        "interface_honesty": 78.0,
+        "delegation_density": 75.0,
+        "definition_directness": 70.0,
+        "type_discipline": 82.0
+      }
+    }
+  },
+  "dimension_judgment": {
+    "abstraction_fitness": {
+      "strengths": [
+        "The feature-gated inner/stub pattern (recipe_config.rs, memory_integration.rs, tuple_bridge.rs) is a legitimate abstraction that isolates optional subsystems behind clean compile-time boundaries without leaking conditional logic into callers",
+        "ProviderChain correctly earns its abstraction — it implements the ModelProvider trait and adds meaningful fallback, health-tracking, and cooldown logic that callers genuinely benefit from rather than merely forwarding calls",
+        "RecipeLoader and RecipeRegistry are cohesive, focused types with no pass-through inflation: each method performs real work (filesystem traversal, manifest serialization, priority resolution) that would otherwise be scattered",
+        "The MCP connection pool (McpConnectionPool) adds genuine value: it routes tool calls to the right server, performs reconnection on failure, and aggregates tools across servers — not a thin wrapper",
+        "The expansion pipeline modules (arithmetic, parameter, lib) all accept &ExpansionContext directly and perform real work; the shared context is a necessary carrier for shell state, not gratuitous indirection"
+      ],
+      "issue_character": "The codebase has a recurring pattern of thin accessor methods (is_enabled, space(), subscriptions(), connection_state() etc.) that expose inner-type fields or trivially delegate to sub-fields without adding policy, combined with a ShoptOptions string-dispatch get/set that mirrors what typed struct access already provides.",
+      "score_rationale": "The codebase scores above the midpoint because its major subsystem abstractions (ProviderChain, McpConnectionPool, RecipeLoader, feature-gated bridges) are genuine and pay for themselves. The score does not reach 80+ because there are several recurring thin-accessor and pass-through patterns — ProtocolEmitter as a zero-behavior wrapper, ShoptOptions string-keyed get/set duplicating struct field access, and multiple one-liner delegation methods that expose inner types — which add indirection without leverage. These are concentrated in a handful of files rather than systemic, keeping the score in the mid-70s rather than below 60."
+    }
+  },
+  "issues": [
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "shoptoptions_string_dispatch",
+      "summary": "ShoptOptions.get() and .set() implement string-keyed dispatch over struct fields that are already typeable by name",
+      "related_files": ["crates/colony-expand/src/context.rs"],
+      "evidence": [
+        "ShoptOptions::get(name: &str) -> Option<bool> contains a 25-arm match that maps string literals to struct field reads; the caller already knows the field by name at compile time in almost all call sites",
+        "ShoptOptions::set(name: &str, value: bool) -> bool is a parallel 25-arm match for writes; any typo or missing case is a silent None/false rather than a compile error",
+        "The only justification for string-keyed access is the shopt builtin which receives runtime strings from user input — that specific call site could receive the dispatch while all internal callers use direct field access"
+      ],
+      "suggestion": "Keep the string dispatch methods only for the shopt builtin handler that receives runtime user strings. All internal callers that currently pass a string literal should access the struct fields directly (e.g., context.shopt.extglob instead of context.shopt.get(\"extglob\")). This eliminates the runtime dispatch overhead and makes typos compile errors.",
+      "confidence": "high",
+      "impact_scope": "module",
+      "fix_scope": "multi_file_refactor",
+      "root_cause_cluster": "string_keyed_struct_dispatch"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "protocol_emitter_zero_behavior",
+      "summary": "ProtocolEmitter is a zero-field struct whose two methods provide no protocol abstraction over raw stdout/debug",
+      "related_files": ["crates/colony-agent/src/agent.rs"],
+      "evidence": [
+        "ProtocolEmitter is defined as `pub struct ProtocolEmitter {}` with no fields",
+        "emit_thought() calls print!() then flush() — the caller could do this directly",
+        "emit_tool_call() calls debug!() and returns Ok(()) — effectively a no-op wrapper over a logging call",
+        "The comment '// Emits OSC 2337 sequences for colony-terminal' suggests intended future behavior that was never implemented, leaving a placeholder abstraction in place"
+      ],
+      "suggestion": "Either remove ProtocolEmitter and have Agent call stdout/tracing directly for the two call sites, or implement the OSC 2337 protocol it promises and make the abstraction earn its keep. As-is, it costs an indirection level for zero behavioral value.",
+      "confidence": "high",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "placeholder_abstraction"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "recipe_config_dual_translation_paths",
+      "summary": "RecipeAgentConfig.merge_with_overrides() and apply_recipe_to_config() both translate Recipe fields to AgentConfig fields with nearly identical logic",
+      "related_files": ["crates/colony-agent/src/recipe_config.rs"],
+      "evidence": [
+        "merge_with_overrides() builds an AgentConfig by first copying recipe values then overriding with user values — a two-pass field copy",
+        "apply_recipe_to_config() also copies recipe.prompt.system, recipe.model.temperature, and recipe.tools.approval.auto_approve into an existing AgentConfig — the same three fields, the same conditional logic",
+        "Both functions exist in the same module and handle the same translation domain; callers must decide which path to use without a clear protocol boundary"
+      ],
+      "suggestion": "Consolidate to a single translation function. apply_recipe_to_config is the simpler form (in-place mutation); merge_with_overrides can call it internally, then apply overrides on top. This collapses two nearly-identical translation paths into one and makes the override semantics explicit rather than duplicated.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "duplicate_translation"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "agent_tuple_bridge_leaky_accessors",
+      "summary": "AgentTupleBridge.space() and .subscriptions() return references to inner types, making the wrapper leaky",
+      "related_files": ["crates/colony-agent/src/tuple_bridge.rs"],
+      "evidence": [
+        "space() -> &TupleSpace returns a plain reference to the inner TupleSpace; callers can call any TupleSpace method directly, bypassing the bridge's subscription notification logic",
+        "subscriptions() -> &SubscriptionManager similarly exposes the raw manager",
+        "write_tuple() and write_tool_result() both call self.space.out() AND self.subscriptions.notify() together — the bridge's value is that it keeps these two calls in sync; the accessors allow callers to call space.out() without notify(), breaking the invariant"
+      ],
+      "suggestion": "Remove space() and subscriptions() from the public API or make them crate-private. Callers that need to read from the tuple space should use a dedicated read method on the bridge itself. If external callers genuinely need the full TupleSpace API, consider whether the bridge abstraction is appropriate at all.",
+      "confidence": "medium",
+      "impact_scope": "module",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "leaky_abstraction"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "memory_integration_trivial_getter",
+      "summary": "MemoryIntegration.is_enabled() and .config() are single-field accessors over a private config struct",
+      "related_files": ["crates/colony-agent/src/memory_integration.rs"],
+      "evidence": [
+        "is_enabled() returns self.config.enabled — a one-liner that adds one indirection level for no policy",
+        "config() -> &MemoryConfig returns &self.config — a raw reference to the full config struct, exposing all config fields to callers anyway",
+        "If config() is public, callers can check config().enabled directly, making is_enabled() redundant"
+      ],
+      "suggestion": "Remove is_enabled(); callers that already receive a &MemoryIntegration reference can call .config().enabled if needed, or check before constructing. Alternatively make the config field pub directly on MemoryIntegration since config() already exposes it.",
+      "confidence": "medium",
+      "impact_scope": "local",
+      "fix_scope": "single_edit",
+      "root_cause_cluster": "trivial_getter"
+    }
+  ],
+  "retrospective": {
+    "root_causes": [
+      "Several placeholder abstractions were created for future protocol work (ProtocolEmitter) that never materialized, leaving zero-behavior wrappers in production code",
+      "The ShoptOptions string-dispatch pattern was likely extracted from the bash builtin handler and generalized to all callers even when compile-time field access would be simpler and safer",
+      "Thin accessor methods (is_enabled, space, subscriptions) reflect a defensive encapsulation style where every private field gets a getter regardless of whether the getter adds behavior"
+    ],
+    "likely_symptoms": [
+      "trivial_getter",
+      "placeholder_abstraction"
+    ],
+    "possible_false_positives": [
+      "SidebarManager.toggle/set_visible/is_visible position-routing methods — these repeat but the two-sidebar design makes them structurally necessary",
+      "ProviderChain delegation of supports_streaming/max_context_tokens to active provider — this is justified delegation within a fallback chain abstraction"
+    ]
+  }
+}

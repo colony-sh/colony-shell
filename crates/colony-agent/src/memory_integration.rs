@@ -196,12 +196,12 @@ mod inner {
         }
 
         /// Check if memory is enabled
-        pub fn is_enabled(&self) -> bool {
+        pub(crate) fn is_enabled(&self) -> bool {
             self.config.enabled
         }
 
         /// Get the memory config
-        pub fn config(&self) -> &MemoryConfig {
+        pub(crate) fn config(&self) -> &MemoryConfig {
             &self.config
         }
     }

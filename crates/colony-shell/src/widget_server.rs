@@ -60,6 +60,7 @@ impl WidgetServer {
     ///
     /// The `ApprovalManager` inserts oneshot senders here; the widget server
     /// completes them when a `WidgetResponse` arrives from the terminal.
+    #[allow(dead_code)]
     pub fn pending_approvals(&self) -> PendingApprovals {
         self.pending_approvals.clone()
     }
@@ -68,6 +69,7 @@ impl WidgetServer {
         &self.socket_path
     }
 
+    #[allow(dead_code)]
     pub async fn set_cwd(&self, cwd: PathBuf) {
         *self.cwd.write().await = cwd;
     }

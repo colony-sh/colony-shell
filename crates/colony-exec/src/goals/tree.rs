@@ -148,7 +148,12 @@ impl GoalTree {
         self.update_status(id, GoalStatus::Completed)
     }
 
-    /// Add a blocker to a goal
+    /// Add a blocker to a goal.
+    ///
+    /// **Side-effect:** This method unconditionally sets `goal.status` to
+    /// [`GoalStatus::Blocked`], overwriting whatever status the goal previously
+    /// held (e.g. `InProgress`). Callers that want to preserve the existing
+    /// status must save and restore it themselves.
     pub fn add_blocker(&mut self, id: GoalId, blocker: impl Into<String>) -> Result<()> {
         let goal = self
             .find_goal_mut(id)
