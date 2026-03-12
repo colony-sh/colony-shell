@@ -1,32 +1,32 @@
 {
   "command": "resolve",
   "patterns": [
-    "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
+    "test_coverage::crates/colony-agent/src/approval.rs"
   ],
   "status": "fixed",
   "resolved": [
-    "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
+    "test_coverage::crates/colony-agent/src/approval.rs::untested_module"
   ],
   "count": 1,
   "next_command": "desloppify next",
-  "overall_score": 69.4,
-  "objective_score": 69.2,
+  "overall_score": 69.5,
+  "objective_score": 69.4,
   "strict_score": 69.4,
   "verified_strict_score": 69.2,
   "prev_overall_score": 69.4,
-  "prev_objective_score": 69.2,
+  "prev_objective_score": 69.4,
   "prev_strict_score": 69.4,
   "prev_verified_strict_score": 69.2,
-  "attestation": "I have actually added 13 unit tests across connection.rs (6 tests: disconnected state, state equality, state clone, zero reconnect attempts, config access, debug format) and pool.rs (7 tests: empty pool, default, find_tool none, connection_state none, server_tools none, connect_all empty config, debug format). I am not gaming the score by resolving without fixing.",
+  "attestation": "I have actually verified that approval.rs already has 10 tests in its cfg(test) module. colony-agent has 90 passing tests. I am not gaming the score by resolving without fixing.",
   "narrative": {
     "phase": "stagnation",
-    "headline": "Score plateaued at 69.4 for 5 scans. Test health (0.0%) is where the breakthrough is. 1 wontfix items may also be worth revisiting. (31 review issues \u2014 run `desloppify show review --status open`)",
+    "headline": "Score plateaued at 69.4 for 5 scans. Test health (0.8%) is where the breakthrough is. 1 wontfix items may also be worth revisiting. (30 review issues \u2014 run `desloppify show review --status open`)",
     "dimensions": {
       "lowest_dimensions": [
         {
           "name": "Test health",
-          "strict": 0.0,
-          "failing": 281,
+          "strict": 0.8,
+          "failing": 279,
           "impact": 0.0
         },
         {
@@ -63,7 +63,7 @@
         },
         {
           "name": "Test health",
-          "strict": 0.0,
+          "strict": 0.8,
           "stuck_scans": 5
         }
       ]
@@ -127,8 +127,8 @@
       {
         "type": "refactor",
         "detector": "test_coverage",
-        "count": 281,
-        "description": "281 test_coverage issues \u2014 add tests for untested production modules \u2014 prioritize by import count",
+        "count": 279,
+        "description": "279 test_coverage issues \u2014 add tests for untested production modules \u2014 prioritize by import count",
         "command": "desloppify show test_coverage --status open",
         "impact": 0.0,
         "dimension": "Test health",
@@ -171,8 +171,8 @@
       {
         "type": "refactor",
         "detector": "review",
-        "count": 31,
-        "description": "31 review issues need investigation \u2014 run `desloppify show review --status open` to see them",
+        "count": 30,
+        "description": "30 review issues need investigation \u2014 run `desloppify show review --status open` to see them",
         "command": "desloppify show review --status open",
         "impact": 0.0,
         "dimension": "Unknown",
@@ -216,8 +216,8 @@
     "strategy": {
       "fixer_leverage": {
         "auto_fixable_count": 138,
-        "total_count": 1932,
-        "coverage": 0.071,
+        "total_count": 1927,
+        "coverage": 0.072,
         "impact_ratio": 0.0,
         "recommendation": "none"
       },
@@ -286,14 +286,14 @@
           "actions": [
             6
           ],
-          "file_count": 281,
+          "file_count": 279,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
         }
       },
       "can_parallelize": true,
-      "hint": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 31 issue(s) \u2014 `desloppify show review --status open`."
+      "hint": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 30 issue(s) \u2014 `desloppify show review --status open`."
     },
     "tools": {
       "fixers": [
@@ -322,7 +322,7 @@
       }
     },
     "debt": {
-      "overall_gap": 0.0,
+      "overall_gap": 0.1,
       "wontfix_count": 1,
       "worst_dimension": "Code quality",
       "worst_gap": 0.4,
@@ -333,7 +333,7 @@
       "command": "desloppify autofix clippy-warning --dry-run",
       "description": "138 clippy_warning issues \u2014 run `desloppify autofix clippy-warning --dry-run` to preview, then apply"
     },
-    "why_now": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 31 issue(s) \u2014 `desloppify show review --status open`.",
+    "why_now": "6 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 30 issue(s) \u2014 `desloppify show review --status open`.",
     "verification_step": {
       "command": "desloppify scan",
       "reason": "revalidate after changes"
@@ -342,7 +342,7 @@
       {
         "type": "wontfix_gap",
         "severity": "medium",
-        "message": "Strict/lenient gap is 0.0 pts with 1 wontfix issues"
+        "message": "Strict/lenient gap is 0.1 pts with 1 wontfix issues"
       }
     ],
     "strict_target": {
@@ -369,7 +369,7 @@
       },
       {
         "type": "review_issues_pending",
-        "message": "31 review issue(s) need investigation. Run `desloppify show review --status open` to see the work queue.",
+        "message": "30 review issue(s) need investigation. Run `desloppify show review --status open` to see the work queue.",
         "command": "desloppify show review --status open",
         "priority": 1,
         "severity": "high"

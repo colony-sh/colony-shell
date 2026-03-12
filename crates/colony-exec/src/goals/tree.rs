@@ -45,7 +45,7 @@ pub struct GoalTree {
 impl GoalTree {
     /// Load or create a goal tree for the given project directory
     pub fn load(project_path: &Path) -> Result<Self> {
-        let file_path = Self::storage_path(project_path);
+        let file_path = Self::storage_path(project_path)?;
         let data = if file_path.exists() {
             let content = std::fs::read_to_string(&file_path)?;
             serde_json::from_str(&content)?
@@ -67,14 +67,13 @@ impl GoalTree {
     }
 
     /// Get the storage file path for a project
-    fn storage_path(project_path: &Path) -> PathBuf {
+    fn storage_path(project_path: &Path) -> Result<PathBuf> {
         let hash = Self::project_hash(project_path);
-        let goals_dir = dirs::home_dir()
-            .expect("home directory must exist")
-            .join(".colony")
-            .join("goals");
-
-        goals_dir.join(format!("{}.json", hash))
+        let home = dirs::home_dir().ok_or_else(|| {
+            GoalError::InvalidOperation("home directory not available".to_string())
+        })?;
+        let goals_dir = home.join(".colony").join("goals");
+        Ok(goals_dir.join(format!("{}.json", hash)))
     }
 
     /// SHA-256 hash of the project path (first 16 hex chars)

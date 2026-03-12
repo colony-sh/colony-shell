@@ -1,13 +1,8 @@
 {
   "version": 8,
   "created": "2026-03-12T20:49:23+00:00",
-  "updated": "2026-03-12T23:06:15+00:00",
+  "updated": "2026-03-12T23:11:28+00:00",
   "queue_order": [
-    "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration",
-    "review::.::holistic::type_safety::ts_goal_tree_panic",
-    "review::.::holistic::type_safety::ts_panel_id_strings",
-    "review::.::holistic::type_safety::ts_parallel_tool_info",
-    "review::.::holistic::type_safety::ts_timestamp_strings",
     "subjective::abstraction_fitness",
     "subjective::ai_generated_debt",
     "subjective::api_surface_coherence",
@@ -314,6 +309,46 @@
       "note": null,
       "attestation": null,
       "created_at": "2026-03-12T22:42:15+00:00",
+      "review_after": null,
+      "skipped_at_scan": 5
+    },
+    "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration": {
+      "issue_id": "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration",
+      "kind": "temporary",
+      "reason": null,
+      "note": "Cross-crate integration test connecting agent \u2192 tool \u2192 expansion requires dedicated session: needs mock agent config, tool registry setup, expansion context wiring. Not worth rushing.",
+      "attestation": null,
+      "created_at": "2026-03-12T23:06:24+00:00",
+      "review_after": null,
+      "skipped_at_scan": 5
+    },
+    "review::.::holistic::type_safety::ts_parallel_tool_info": {
+      "issue_id": "review::.::holistic::type_safety::ts_parallel_tool_info",
+      "kind": "temporary",
+      "reason": null,
+      "note": "McpToolInfo in colony-recipe vs ToolInfo in colony-mcp deduplication requires cross-crate dependency changes and API redesign.",
+      "attestation": null,
+      "created_at": "2026-03-12T23:09:49+00:00",
+      "review_after": null,
+      "skipped_at_scan": 5
+    },
+    "review::.::holistic::type_safety::ts_panel_id_strings": {
+      "issue_id": "review::.::holistic::type_safety::ts_panel_id_strings",
+      "kind": "temporary",
+      "reason": null,
+      "note": "PanelId newtype requires changing SidebarConfig API, all panel registration sites, config file parsing. Architectural refactor for dedicated session.",
+      "attestation": null,
+      "created_at": "2026-03-12T23:09:59+00:00",
+      "review_after": null,
+      "skipped_at_scan": 5
+    },
+    "review::.::holistic::type_safety::ts_timestamp_strings": {
+      "issue_id": "review::.::holistic::type_safety::ts_timestamp_strings",
+      "kind": "temporary",
+      "reason": null,
+      "note": "Converting String timestamps to chrono::DateTime<Utc> would break serialized JSON files on disk. Requires migration planning.",
+      "attestation": null,
+      "created_at": "2026-03-12T23:09:59+00:00",
       "review_after": null,
       "skipped_at_scan": 5
     }
@@ -8891,8 +8926,8 @@
     "test_coverage::crates/colony-agent/src/agent.rs::untested_critical": {
       "issue_id": "test_coverage::crates/colony-agent/src/agent.rs::untested_critical",
       "created_at": "2026-03-12T20:49:23+00:00",
-      "cluster": "auto/test_coverage",
-      "updated_at": "2026-03-12T22:12:40+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-12T23:11:10+00:00"
     },
     "test_coverage::crates/colony-agent/src/context.rs::untested_module": {
       "issue_id": "test_coverage::crates/colony-agent/src/context.rs::untested_module",
@@ -11105,8 +11140,8 @@
     "review::.::holistic::type_safety::ts_goal_tree_panic": {
       "issue_id": "review::.::holistic::type_safety::ts_goal_tree_panic",
       "created_at": "2026-03-12T22:12:40+00:00",
-      "cluster": "auto/review-type_safety",
-      "updated_at": "2026-03-12T22:12:40+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-12T23:09:40+00:00"
     },
     "review::.::holistic::type_safety::ts_parallel_tool_info": {
       "issue_id": "review::.::holistic::type_safety::ts_parallel_tool_info",
@@ -12889,7 +12924,6 @@
         "test_coverage::crates/colony-tui/src/content_area.rs::untested_module",
         "test_coverage::crates/colony-exec/src/panes/layout.rs::untested_module",
         "test_coverage::crates/colony-tuple/src/subscription.rs::untested_module",
-        "test_coverage::crates/colony-agent/src/agent.rs::untested_critical",
         "test_coverage::crates/colony-agent/src/context.rs::untested_module",
         "test_coverage::crates/colony-focus/src/persistence.rs::untested_module",
         "test_coverage::crates/colony-parser/src/arith_preprocess.rs::untested_module",
@@ -13281,7 +13315,6 @@
       "description": "Address 4 type_safety review issues",
       "issue_ids": [
         "review::.::holistic::type_safety::ts_timestamp_strings",
-        "review::.::holistic::type_safety::ts_goal_tree_panic",
         "review::.::holistic::type_safety::ts_parallel_tool_info",
         "review::.::holistic::type_safety::ts_panel_id_strings"
       ],
@@ -17101,6 +17134,141 @@
         "status": "fixed",
         "attestation": "I have actually added 13 unit tests across connection.rs (6 tests: disconnected state, state equality, state clone, zero reconnect attempts, config access, debug format) and pool.rs (7 tests: empty pool, default, find_tool none, connection_state none, server_tools none, connect_all empty config, debug format). I am not gaming the score by resolving without fixing."
       }
+    },
+    {
+      "timestamp": "2026-03-12T23:06:24+00:00",
+      "action": "skip",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Cross-crate integration test connecting agent \u2192 tool \u2192 expansion requires dedicated session: needs mock agent config, tool registry setup, expansion context wiring. Not worth rushing.",
+      "detail": {
+        "kind": "temporary",
+        "reason": null
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:07:07+00:00",
+      "action": "commit_record",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
+        "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
+        "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
+        "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
+        "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "sha": "352a66fb607d",
+        "branch": "main"
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:09:40+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::type_safety::ts_goal_tree_panic"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Changed storage_path to return Result<PathBuf> instead of panicking. Missing home dir now returns GoalError::InvalidOperation. load() propagates via ?. Compiles clean.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T23:09:40+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::type_safety::ts_goal_tree_panic"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Changed storage_path to return Result<PathBuf> instead of panicking. Missing home dir now returns GoalError::InvalidOperation. load() propagates via ?. Compiles clean.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually changed GoalTree::storage_path from panicking via expect() to returning Result<PathBuf, GoalError> with InvalidOperation variant for missing home directory, and updated the caller in load() to propagate the error. I am not gaming the score by resolving without fixing."
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:09:49+00:00",
+      "action": "skip",
+      "issue_ids": [
+        "review::.::holistic::type_safety::ts_parallel_tool_info"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "McpToolInfo in colony-recipe vs ToolInfo in colony-mcp deduplication requires cross-crate dependency changes and API redesign.",
+      "detail": {
+        "kind": "temporary",
+        "reason": null
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:09:59+00:00",
+      "action": "skip",
+      "issue_ids": [
+        "review::.::holistic::type_safety::ts_panel_id_strings"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "PanelId newtype requires changing SidebarConfig API, all panel registration sites, config file parsing. Architectural refactor for dedicated session.",
+      "detail": {
+        "kind": "temporary",
+        "reason": null
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:09:59+00:00",
+      "action": "skip",
+      "issue_ids": [
+        "review::.::holistic::type_safety::ts_timestamp_strings"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Converting String timestamps to chrono::DateTime<Utc> would break serialized JSON files on disk. Requires migration planning.",
+      "detail": {
+        "kind": "temporary",
+        "reason": null
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:11:10+00:00",
+      "action": "done",
+      "issue_ids": [
+        "test_coverage::crates/colony-agent/src/agent.rs"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Module already has 8 tests in its cfg(test) module. colony-agent has 90 total passing tests.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T23:11:10+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "test_coverage::crates/colony-agent/src/agent.rs::untested_critical"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Module already has 8 tests in its cfg(test) module. colony-agent has 90 total passing tests.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually verified that agent.rs already has 8 tests in its cfg(test) module and colony-agent has 90 total passing tests. The untested flag is a false positive. I am not gaming the score by resolving without fixing."
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:11:28+00:00",
+      "action": "done",
+      "issue_ids": [
+        "test_coverage::crates/colony-agent/src/approval.rs"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Module already has 10 tests in its cfg(test) module. This is a false positive from the untested detection.",
+      "detail": {}
     }
   ],
   "epic_triage_meta": {},
@@ -17208,14 +17376,25 @@
       "recorded_at": "2026-03-12T22:44:36+00:00",
       "note": null,
       "cluster_name": null
+    },
+    {
+      "sha": "352a66fb607d",
+      "branch": "main",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
+        "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
+        "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
+        "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
+        "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
+      ],
+      "recorded_at": "2026-03-12T23:07:07+00:00",
+      "note": null,
+      "cluster_name": null
     }
   ],
   "uncommitted_issues": [
-    "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
-    "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
-    "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
-    "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
-    "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
+    "review::.::holistic::type_safety::ts_goal_tree_panic",
+    "test_coverage::crates/colony-agent/src/agent.rs::untested_critical"
   ],
   "commit_tracking_branch": null,
   "scan_count_at_plan_start": 5
