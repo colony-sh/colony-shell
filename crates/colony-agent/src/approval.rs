@@ -206,6 +206,15 @@ impl ApprovalManager {
         }
     }
 
+    /// Create an `ApprovalManager` that auto-detects the terminal environment.
+    ///
+    /// Reads `COLONY_TERMINAL` at call time. Prefer this over `Default` when
+    /// the runtime environment is meaningful (i.e. not tests).
+    pub fn from_env() -> Self {
+        let config = ApprovalConfig::default().with_colony_terminal(Self::detect_colony_terminal());
+        Self::new(config)
+    }
+
     /// Detect if the terminal is a colony terminal (supports OSC 2337)
     pub fn detect_colony_terminal() -> bool {
         std::env::var("COLONY_TERMINAL").is_ok()
@@ -214,14 +223,7 @@ impl ApprovalManager {
 
 impl Default for ApprovalManager {
     fn default() -> Self {
-        let colony_terminal = Self::detect_colony_terminal();
-        Self {
-            config: ApprovalConfig {
-                auto_approve_patterns: Vec::new(),
-                colony_terminal,
-            },
-            pending_approvals: None,
-        }
+        Self::new(ApprovalConfig::default())
     }
 }
 

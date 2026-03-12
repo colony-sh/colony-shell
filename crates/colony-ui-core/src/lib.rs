@@ -23,9 +23,9 @@ pub mod subscription;
 pub mod widgets;
 
 pub use builtins::{
-    ExitStatusComponent, FileTreeSidebarComponent, GitBranchComponent, GitFilesSidebarComponent,
-    GitStatusComponent, JobsComponent, LspComponent, McpSidebarComponent, ModelComponent,
-    PwdComponent, SessionSidebarComponent,
+    ExitStatusComponent, GitBranchComponent, GitFilesSidebarComponent, GitStatusComponent,
+    JobsComponent, LspComponent, McpSidebarComponent, ModelComponent, PwdComponent,
+    SessionSidebarComponent,
 };
 pub use component::{
     Color, ComponentLine, ComponentOutput, InteractiveConfig, PromptComponent, SidebarComponent,

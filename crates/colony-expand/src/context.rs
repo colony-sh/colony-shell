@@ -462,10 +462,6 @@ impl ShoptOptions {
     }
 }
 
-#[allow(dead_code)]
-/// Alias for backward compatibility
-pub type ShopOptions = ShoptOptions;
-
 /// Variable attributes (bash-compatible)
 /// These flags control variable behavior on assignment
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

@@ -9,6 +9,7 @@ use colony_tuple::Value;
 use parking_lot::RwLock;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing::warn;
 
 /// File tree sidebar panel showing directory structure
 /// Uses colony-filetree's TreeState for efficient state management
@@ -45,10 +46,19 @@ impl FileTreePanel {
 
         if needs_init {
             let new_state = TreeState::new(root);
-            if new_state.load().is_ok() {
-                *state = Some(new_state.clone());
-                *current = Some(root.to_path_buf());
-                return Some(new_state);
+            match new_state.load() {
+                Ok(()) => {
+                    *state = Some(new_state.clone());
+                    *current = Some(root.to_path_buf());
+                    return Some(new_state);
+                }
+                Err(e) => {
+                    warn!(
+                        root = %root.display(),
+                        error = %e,
+                        "failed to load file tree state"
+                    );
+                }
             }
         }
 

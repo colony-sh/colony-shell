@@ -24,21 +24,38 @@ impl CloudConfig {
     /// Resolve configuration from environment and config file.
     ///
     /// Tries `COLONY_API_KEY` env var first, then `~/.colony/config.toml`.
+    /// Base URL comes from `COLONY_CLOUD_URL` env var, falling back to the
+    /// production default.
     pub fn from_env() -> Result<Self> {
         let api_key = Self::resolve_api_key()?;
-        let base_url = std::env::var(ENV_BASE_URL).unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+        let base_url = Self::resolve_base_url();
 
         Ok(Self { api_key, base_url })
     }
 
     /// Create config with an explicit API key.
+    ///
+    /// The base URL is still resolved from `COLONY_CLOUD_URL` (falling back
+    /// to the production default). Use [`with_key_and_url`](Self::with_key_and_url)
+    /// to supply both explicitly.
     pub fn with_key(api_key: impl Into<String>) -> Self {
-        let base_url = std::env::var(ENV_BASE_URL).unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
-
+        let base_url = Self::resolve_base_url();
         Self {
             api_key: api_key.into(),
             base_url,
         }
+    }
+
+    /// Create config with an explicit API key and base URL.
+    pub fn with_key_and_url(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            base_url: base_url.into(),
+        }
+    }
+
+    fn resolve_base_url() -> String {
+        std::env::var(ENV_BASE_URL).unwrap_or_else(|_| DEFAULT_BASE_URL.to_string())
     }
 
     fn resolve_api_key() -> Result<String> {

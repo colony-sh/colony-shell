@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// Actor string used when the shell user manually grants an approval through
 /// an interactive prompt (as opposed to a programmatic or scripted grant).
@@ -176,7 +177,14 @@ impl ApprovalDatabase {
 
             let granted_at = DateTime::parse_from_rfc3339(&granted_at_str)
                 .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now());
+                .unwrap_or_else(|e| {
+                    warn!(
+                        timestamp = %granted_at_str,
+                        error = %e,
+                        "corrupt RFC3339 timestamp in approvals DB, substituting now()"
+                    );
+                    Utc::now()
+                });
 
             Ok(SecureApproval {
                 script_path: PathBuf::from(script_path),
@@ -218,7 +226,14 @@ impl ApprovalDatabase {
 
             let granted_at = DateTime::parse_from_rfc3339(&granted_at_str)
                 .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now());
+                .unwrap_or_else(|e| {
+                    warn!(
+                        timestamp = %granted_at_str,
+                        error = %e,
+                        "corrupt RFC3339 timestamp in approvals DB, substituting now()"
+                    );
+                    Utc::now()
+                });
 
             Ok(SecureApproval {
                 script_path: PathBuf::from(script_path),

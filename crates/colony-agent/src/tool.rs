@@ -546,11 +546,6 @@ pub mod builtins {
     }
 }
 
-/// Sync wrapper for backward compatibility with existing ToolHandler trait users
-pub trait ToolHandler: Send + Sync {
-    fn execute(&self, input: Value) -> Result<Value, ToolExecutionError>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
