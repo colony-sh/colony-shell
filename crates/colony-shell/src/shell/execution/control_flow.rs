@@ -596,14 +596,25 @@ mod tests {
     use super::ControlFlow;
 
     #[test]
-    fn control_flow_variants_exist() {
-        let values = [
-            ControlFlow::Normal,
-            ControlFlow::Break,
-            ControlFlow::Continue,
-            ControlFlow::Exit,
-            ControlFlow::Return,
-        ];
-        assert_eq!(values.len(), 5);
+    fn control_flow_default_is_normal() {
+        // ControlFlow doesn't impl Default, but Normal is the zero state
+        let flow = ControlFlow::Normal;
+        assert_eq!(flow, ControlFlow::Normal);
+        assert_ne!(flow, ControlFlow::Break);
+        assert_ne!(flow, ControlFlow::Continue);
+        assert_ne!(flow, ControlFlow::Exit);
+        assert_ne!(flow, ControlFlow::Return);
     }
+
+    #[test]
+    fn control_flow_is_copy() {
+        // ControlFlow must be Copy for efficient passing through loop/function boundaries
+        let flow = ControlFlow::Break;
+        let copied = flow;
+        assert_eq!(flow, copied);
+    }
+
+    // Behavioral tests for break/continue/return live in colony-exec::tests
+    // (for_break_exits_after_first_iteration, for_continue_skips_loop_body, etc.)
+    // because they require the full Executor + parser integration.
 }

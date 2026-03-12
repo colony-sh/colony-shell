@@ -1,14 +1,8 @@
 {
   "version": 8,
   "created": "2026-03-12T20:49:23+00:00",
-  "updated": "2026-03-12T22:42:15+00:00",
+  "updated": "2026-03-12T23:06:24+00:00",
   "queue_order": [
-    "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
-    "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
-    "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests",
-    "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
-    "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
-    "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration",
     "review::.::holistic::type_safety::ts_goal_tree_panic",
     "review::.::holistic::type_safety::ts_panel_id_strings",
     "review::.::holistic::type_safety::ts_parallel_tool_info",
@@ -319,6 +313,16 @@
       "note": null,
       "attestation": null,
       "created_at": "2026-03-12T22:42:15+00:00",
+      "review_after": null,
+      "skipped_at_scan": 5
+    },
+    "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration": {
+      "issue_id": "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration",
+      "kind": "temporary",
+      "reason": null,
+      "note": "Cross-crate integration test connecting agent \u2192 tool \u2192 expansion requires dedicated session: needs mock agent config, tool registry setup, expansion context wiring. Not worth rushing.",
+      "attestation": null,
+      "created_at": "2026-03-12T23:06:24+00:00",
       "review_after": null,
       "skipped_at_scan": 5
     }
@@ -11128,32 +11132,32 @@
     "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test": {
       "issue_id": "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
       "created_at": "2026-03-12T22:12:40+00:00",
-      "cluster": "auto/review-test_strategy",
-      "updated_at": "2026-03-12T22:12:40+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-12T22:50:18+00:00"
     },
     "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested": {
       "issue_id": "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
       "created_at": "2026-03-12T22:12:40+00:00",
-      "cluster": "auto/review-test_strategy",
-      "updated_at": "2026-03-12T22:12:40+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-12T23:02:07+00:00"
     },
     "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests": {
       "issue_id": "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests",
       "created_at": "2026-03-12T22:12:40+00:00",
-      "cluster": "auto/review-test_strategy",
-      "updated_at": "2026-03-12T22:12:40+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-12T23:06:15+00:00"
     },
     "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths": {
       "issue_id": "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
       "created_at": "2026-03-12T22:12:40+00:00",
-      "cluster": "auto/review-test_strategy",
-      "updated_at": "2026-03-12T22:12:40+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-12T22:57:30+00:00"
     },
     "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests": {
       "issue_id": "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
       "created_at": "2026-03-12T22:12:40+00:00",
-      "cluster": "auto/review-test_strategy",
-      "updated_at": "2026-03-12T22:12:40+00:00"
+      "cluster": null,
+      "updated_at": "2026-03-12T23:02:14+00:00"
     },
     "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration": {
       "issue_id": "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration",
@@ -13301,11 +13305,6 @@
       "name": "auto/review-test_strategy",
       "description": "Address 6 test_strategy review issues",
       "issue_ids": [
-        "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
-        "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
-        "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests",
-        "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
-        "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
         "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration"
       ],
       "created_at": "2026-03-12T22:12:40+00:00",
@@ -16947,6 +16946,184 @@
         "kind": "temporary",
         "reason": null
       }
+    },
+    {
+      "timestamp": "2026-03-12T22:44:36+00:00",
+      "action": "commit_record",
+      "issue_ids": [
+        "review::.::holistic::mid_level_elegance::agent_definition_translation_duplicated",
+        "review::.::holistic::mid_level_elegance::docker_status_bypasses_subscription_boundary",
+        "review::.::holistic::naming_quality::NQ-01",
+        "review::.::holistic::naming_quality::NQ-02"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": null,
+      "detail": {
+        "sha": "0c65e9c506c7",
+        "branch": "main"
+      }
+    },
+    {
+      "timestamp": "2026-03-12T22:50:18+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Replaced placeholder enum-variant-count test with 8 behavioral tests in colony-exec (for_loop_iterates_all_words, for_loop_sets_variable_each_iteration, while_loop_terminates_on_condition, while_false_body_never_runs, function_return_propagates_exit_code, function_return_zero_on_success, if_true_branch_executes, if_false_takes_else_branch). Updated control_flow.rs tests to verify ControlFlow is Copy and equality semantics.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T22:50:18+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Replaced placeholder enum-variant-count test with 8 behavioral tests in colony-exec (for_loop_iterates_all_words, for_loop_sets_variable_each_iteration, while_loop_terminates_on_condition, while_false_body_never_runs, function_return_propagates_exit_code, function_return_zero_on_success, if_true_branch_executes, if_false_takes_else_branch). Updated control_flow.rs tests to verify ControlFlow is Copy and equality semantics.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually replaced the placeholder variant-count test with behavioral tests (for loop iteration, while loop condition, function return, if/else branching) in colony-exec and improved the control_flow.rs tests to verify Copy semantics. I am not gaming the score by resolving without fixing."
+      }
+    },
+    {
+      "timestamp": "2026-03-12T22:50:23+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS004_redirect_hardcoded_tmp_paths"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Replaced all hardcoded /tmp/colony_test_*.txt paths in redirect tests (test_output_redirect, test_input_redirect, test_append_redirect, test_fd_duplication) with tempfile::TempDir. Added temp_test_file helper. Files are auto-cleaned by TempDir drop. All 6 redirect tests pass.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T22:50:42+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS004_redirect_hardcoded_tmp"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Replaced all hardcoded /tmp/colony_test_*.txt paths in redirect tests with tempfile::TempDir. Added temp_test_file helper. All 6 redirect tests pass.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T22:57:30+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Replaced all hardcoded /tmp/colony_test_*.txt paths in redirect tests (output, input, append, fd_duplication) with tempfile::TempDir. Added temp_test_file helper. Auto-cleanup on drop. All 6 redirect tests pass.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T22:57:30+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Replaced all hardcoded /tmp/colony_test_*.txt paths in redirect tests (output, input, append, fd_duplication) with tempfile::TempDir. Added temp_test_file helper. Auto-cleanup on drop. All 6 redirect tests pass.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually replaced all 4 hardcoded /tmp paths in redirect.rs tests with tempfile::TempDir for parallel-safe isolated test directories. I am not gaming the score by resolving without fixing."
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:02:07+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Added 7 tests to engine.rs: execute_command_true_returns_zero, execute_command_false_returns_one, execute_command_parse_error_returns_two, execute_command_sets_last_exit_status, arithmetic_basic_addition, arithmetic_multiplication, arithmetic_invalid_returns_zero. Orchestrator functions use std::process::exit so are not unit-testable.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T23:02:07+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Added 7 tests to engine.rs: execute_command_true_returns_zero, execute_command_false_returns_one, execute_command_parse_error_returns_two, execute_command_sets_last_exit_status, arithmetic_basic_addition, arithmetic_multiplication, arithmetic_invalid_returns_zero. Orchestrator functions use std::process::exit so are not unit-testable.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually added 7 unit tests to engine.rs covering execute_command_with_status (success, failure, parse error, exit status propagation) and evaluate_arithmetic_command (addition, multiplication, invalid input). Orchestrator is untestable due to never-return types. I am not gaming the score by resolving without fixing."
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:02:14+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "background.rs: replaced constant-assert with power-of-two validation and async test that fills JobTable to MAX_JOBS then verifies rejection. serialization.rs: added round_trip helper and 8 tests for simple_command, command_with_multiple_args, pipeline, if_then_else, for_loop, while_loop, function_definition, subshell.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T23:02:14+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "background.rs: replaced constant-assert with power-of-two validation and async test that fills JobTable to MAX_JOBS then verifies rejection. serialization.rs: added round_trip helper and 8 tests for simple_command, command_with_multiple_args, pipeline, if_then_else, for_loop, while_loop, function_definition, subshell.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually replaced placeholder tests in both files: background.rs now tests MAX_JOBS power-of-two constraint and verifies job-table-full rejection with a real Executor; serialization.rs now has 8 tests covering simple commands, multi-arg, pipeline, if/else, for, while, function def, and subshell round-trips. I am not gaming the score by resolving without fixing."
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:06:15+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Added 6 tests to connection.rs and 7 tests to pool.rs. Tests cover state management, initialization invariants, empty-pool edge cases, and connect_all error path. All 24 colony-mcp tests pass.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-03-12T23:06:15+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Added 6 tests to connection.rs and 7 tests to pool.rs. Tests cover state management, initialization invariants, empty-pool edge cases, and connect_all error path. All 24 colony-mcp tests pass.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually added 13 unit tests across connection.rs (6 tests: disconnected state, state equality, state clone, zero reconnect attempts, config access, debug format) and pool.rs (7 tests: empty pool, default, find_tool none, connection_state none, server_tools none, connect_all empty config, debug format). I am not gaming the score by resolving without fixing."
+      }
+    },
+    {
+      "timestamp": "2026-03-12T23:06:24+00:00",
+      "action": "skip",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Cross-crate integration test connecting agent \u2192 tool \u2192 expansion requires dedicated session: needs mock agent config, tool registry setup, expansion context wiring. Not worth rushing.",
+      "detail": {
+        "kind": "temporary",
+        "reason": null
+      }
     }
   ],
   "epic_triage_meta": {},
@@ -17041,13 +17218,27 @@
       "recorded_at": "2026-03-12T22:40:48+00:00",
       "note": null,
       "cluster_name": null
+    },
+    {
+      "sha": "0c65e9c506c7",
+      "branch": "main",
+      "issue_ids": [
+        "review::.::holistic::mid_level_elegance::agent_definition_translation_duplicated",
+        "review::.::holistic::mid_level_elegance::docker_status_bypasses_subscription_boundary",
+        "review::.::holistic::naming_quality::NQ-01",
+        "review::.::holistic::naming_quality::NQ-02"
+      ],
+      "recorded_at": "2026-03-12T22:44:36+00:00",
+      "note": null,
+      "cluster_name": null
     }
   ],
   "uncommitted_issues": [
-    "review::.::holistic::mid_level_elegance::agent_definition_translation_duplicated",
-    "review::.::holistic::mid_level_elegance::docker_status_bypasses_subscription_boundary",
-    "review::.::holistic::naming_quality::NQ-01",
-    "review::.::holistic::naming_quality::NQ-02"
+    "review::.::holistic::test_strategy::TS001_control_flow_placeholder_test",
+    "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
+    "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
+    "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
+    "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests"
   ],
   "commit_tracking_branch": null,
   "scan_count_at_plan_start": 5

@@ -68,10 +68,37 @@ pub(crate) async fn run_in_background(
 
 #[cfg(test)]
 mod tests {
-    use super::MAX_JOBS;
+    use super::*;
 
     #[test]
-    fn max_jobs_limit_matches_expected_cap() {
-        assert_eq!(MAX_JOBS, 128);
+    fn max_jobs_is_reasonable_power_of_two() {
+        // MAX_JOBS should be a power of two for clean limits and > 0
+        assert!(MAX_JOBS > 0);
+        assert!(MAX_JOBS.is_power_of_two(), "MAX_JOBS should be a power of two");
+        // Sanity: not too small (shells typically allow at least 32) and not absurdly large
+        assert!(MAX_JOBS >= 32, "MAX_JOBS too small for real usage");
+        assert!(MAX_JOBS <= 1024, "MAX_JOBS unreasonably large");
+    }
+
+    #[tokio::test]
+    async fn rejects_when_job_table_full() {
+        use colony_exec::Executor;
+        use colony_expand::ExpansionContext;
+
+        let mut executor = Executor::new(ExpansionContext::new());
+
+        // Fill the job table to MAX_JOBS
+        for _ in 0..MAX_JOBS {
+            executor
+                .jobs()
+                .add_job(nix::unistd::Pid::from_raw(1), vec![], "dummy".to_string());
+        }
+
+        // Attempting to run in background should fail
+        let stmt = colony_parser::pest_api::parse_statement("echo full")
+            .expect("parse failed");
+        let result = run_in_background(&stmt, &mut executor).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "too many background jobs");
     }
 }

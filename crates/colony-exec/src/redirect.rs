@@ -832,24 +832,27 @@ mod tests {
     use colony_parser::{Redirect, RedirectKind, RedirectTarget, Span, Word};
     use std::fs;
     use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    /// Create a temp dir and return (dir, path_string) for redirect test files
+    fn temp_test_file(dir: &TempDir, name: &str) -> String {
+        dir.path().join(name).to_string_lossy().into_owned()
+    }
 
     #[test]
     fn test_output_redirect() {
-        // Test: echo hello > /tmp/colony_test_output.txt
-        let test_file = "/tmp/colony_test_output.txt";
-        let _ = fs::remove_file(test_file); // Clean up if exists
+        let tmp = TempDir::new().unwrap();
+        let test_file = temp_test_file(&tmp, "output.txt");
 
         let redirects = vec![Redirect {
             fd: None,
             fd_var: None,
             kind: RedirectKind::Output,
-            target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
+            target: RedirectTarget::File(Word::literal(&test_file, Span::DUMMY)),
             span: Span::DUMMY,
         }];
 
         let mut context = ExpansionContext::new();
-
-        // This test spawns a real process with redirect
         let program = PathBuf::from("/bin/echo");
         let args = vec!["echo".to_string(), "hello".to_string()];
         let env = vec![];
@@ -860,30 +863,25 @@ mod tests {
 
         assert!(status.is_success());
 
-        // Verify file was created and contains output
-        let content = fs::read_to_string(test_file).unwrap();
+        let content = fs::read_to_string(&test_file).unwrap();
         assert_eq!(content.trim(), "hello");
-
-        // Clean up
-        fs::remove_file(test_file).ok();
     }
 
     #[test]
     fn test_input_redirect() {
-        // Test: cat < /tmp/colony_test_input.txt
-        let test_file = "/tmp/colony_test_input.txt";
-        fs::write(test_file, "test input\n").unwrap();
+        let tmp = TempDir::new().unwrap();
+        let test_file = temp_test_file(&tmp, "input.txt");
+        fs::write(&test_file, "test input\n").unwrap();
 
         let redirects = vec![Redirect {
             fd: None,
             fd_var: None,
             kind: RedirectKind::Input,
-            target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
+            target: RedirectTarget::File(Word::literal(&test_file, Span::DUMMY)),
             span: Span::DUMMY,
         }];
 
         let mut context = ExpansionContext::new();
-
         let program = PathBuf::from("/bin/cat");
         let args = vec!["cat".to_string()];
         let env = vec![];
@@ -893,23 +891,19 @@ mod tests {
         let status = handle.wait().unwrap();
 
         assert!(status.is_success());
-
-        // Clean up
-        fs::remove_file(test_file).ok();
     }
 
     #[test]
     fn test_append_redirect() {
-        // Test: echo line1 > file && echo line2 >> file
-        let test_file = "/tmp/colony_test_append.txt";
-        let _ = fs::remove_file(test_file);
+        let tmp = TempDir::new().unwrap();
+        let test_file = temp_test_file(&tmp, "append.txt");
 
         // First: echo line1 > file
         let redirect1 = vec![Redirect {
             fd: None,
             fd_var: None,
             kind: RedirectKind::Output,
-            target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
+            target: RedirectTarget::File(Word::literal(&test_file, Span::DUMMY)),
             span: Span::DUMMY,
         }];
 
@@ -928,7 +922,7 @@ mod tests {
             fd: None,
             fd_var: None,
             kind: RedirectKind::Append,
-            target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
+            target: RedirectTarget::File(Word::literal(&test_file, Span::DUMMY)),
             span: Span::DUMMY,
         }];
 
@@ -938,29 +932,24 @@ mod tests {
                 .unwrap();
         handle.wait().unwrap();
 
-        // Verify both lines are in file
-        let content = fs::read_to_string(test_file).unwrap();
+        let content = fs::read_to_string(&test_file).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0], "line1");
         assert_eq!(lines[1], "line2");
-
-        // Clean up
-        fs::remove_file(test_file).ok();
     }
 
     #[test]
     fn test_fd_duplication() {
-        // Test: cmd 2>&1 (redirect stderr to stdout)
-        let test_file = "/tmp/colony_test_fd_dup.txt";
-        let _ = fs::remove_file(test_file);
+        let tmp = TempDir::new().unwrap();
+        let test_file = temp_test_file(&tmp, "fd_dup.txt");
 
         let redirects = vec![
             Redirect {
                 fd: Some(1),
                 fd_var: None,
                 kind: RedirectKind::Output,
-                target: RedirectTarget::File(Word::literal(test_file, Span::DUMMY)),
+                target: RedirectTarget::File(Word::literal(&test_file, Span::DUMMY)),
                 span: Span::DUMMY,
             },
             Redirect {
@@ -973,7 +962,6 @@ mod tests {
         ];
 
         let mut context = ExpansionContext::new();
-        // Use a command that writes to both stdout and stderr
         let program = PathBuf::from("/bin/sh");
         let args = vec![
             "sh".to_string(),
@@ -988,13 +976,9 @@ mod tests {
 
         assert!(status.is_success());
 
-        // Both stdout and stderr should be in the file
-        let content = fs::read_to_string(test_file).unwrap();
+        let content = fs::read_to_string(&test_file).unwrap();
         assert!(content.contains("stdout"));
         assert!(content.contains("stderr"));
-
-        // Clean up
-        fs::remove_file(test_file).ok();
     }
 
     #[test]

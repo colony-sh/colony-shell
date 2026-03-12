@@ -289,6 +289,74 @@ impl Default for McpConnectionPool {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use colony_config::McpServer;
+
+    fn test_server(name: &str) -> McpServer {
+        McpServer {
+            name: name.to_string(),
+            command: "echo".to_string(),
+            args: vec![],
+            env: Default::default(),
+            auto_start: true,
+        }
+    }
+
+    #[test]
+    fn new_pool_is_empty() {
+        let pool = McpConnectionPool::new();
+        assert_eq!(pool.connected_count(), 0);
+        assert_eq!(pool.tool_count(), 0);
+        assert!(pool.all_tools().is_empty());
+        assert!(pool.server_names().is_empty());
+    }
+
+    #[test]
+    fn default_is_same_as_new() {
+        let pool = McpConnectionPool::default();
+        assert_eq!(pool.connected_count(), 0);
+    }
+
+    #[test]
+    fn find_tool_returns_none_on_empty_pool() {
+        let pool = McpConnectionPool::new();
+        assert!(pool.find_tool("nonexistent").is_none());
+        assert!(pool.find_tool_server("nonexistent").is_none());
+    }
+
+    #[test]
+    fn connection_state_returns_none_for_unknown_server() {
+        let pool = McpConnectionPool::new();
+        assert!(pool.connection_state("unknown").is_none());
+    }
+
+    #[test]
+    fn server_tools_returns_none_for_unknown_server() {
+        let pool = McpConnectionPool::new();
+        assert!(pool.server_tools("unknown").is_none());
+    }
+
+    #[tokio::test]
+    async fn connect_all_errors_on_empty_config() {
+        let mut pool = McpConnectionPool::new();
+        let config = McpConfig::default();
+        let result = pool.connect_all(&config).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn debug_format_shows_pool_state() {
+        let pool = McpConnectionPool::new();
+        let debug = format!("{:?}", pool);
+        assert!(debug.contains("McpConnectionPool"));
+        assert!(debug.contains("servers"));
+        assert!(debug.contains("connected"));
+        assert!(debug.contains("tools"));
+    }
+}
+
 impl std::fmt::Debug for McpConnectionPool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("McpConnectionPool")

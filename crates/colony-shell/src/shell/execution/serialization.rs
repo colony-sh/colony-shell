@@ -599,10 +599,58 @@ mod tests {
     use super::statement_to_shell_string;
     use colony_parser::pest_api::parse_statement;
 
+    fn round_trip(input: &str) -> String {
+        let stmt = parse_statement(input).unwrap_or_else(|e| panic!("parse failed for {input:?}: {e}"));
+        statement_to_shell_string(&stmt)
+    }
+
     #[test]
-    fn round_trips_simple_command_to_shell_string() {
-        let stmt = parse_statement("echo hello").expect("parse simple command");
-        let rendered = statement_to_shell_string(&stmt);
-        assert_eq!(rendered, "echo hello");
+    fn simple_command() {
+        assert_eq!(round_trip("echo hello"), "echo hello");
+    }
+
+    #[test]
+    fn command_with_multiple_args() {
+        assert_eq!(round_trip("ls -la /tmp"), "ls -la /tmp");
+    }
+
+    #[test]
+    fn pipeline() {
+        assert_eq!(round_trip("cat file | grep pattern"), "cat file | grep pattern");
+    }
+
+    #[test]
+    fn if_then_else() {
+        let rendered = round_trip("if true; then echo yes; else echo no; fi");
+        assert!(rendered.contains("if"), "should contain 'if': {rendered}");
+        assert!(rendered.contains("echo yes"), "should contain true branch: {rendered}");
+        assert!(rendered.contains("echo no"), "should contain else branch: {rendered}");
+    }
+
+    #[test]
+    fn for_loop() {
+        let rendered = round_trip("for i in 1 2 3; do echo $i; done");
+        assert!(rendered.contains("for"), "should contain 'for': {rendered}");
+        assert!(rendered.contains("1 2 3"), "should contain iteration words: {rendered}");
+    }
+
+    #[test]
+    fn while_loop() {
+        let rendered = round_trip("while true; do echo loop; done");
+        assert!(rendered.contains("while"), "should contain 'while': {rendered}");
+        assert!(rendered.contains("echo loop"), "should contain body: {rendered}");
+    }
+
+    #[test]
+    fn function_definition() {
+        let rendered = round_trip("myfunc() { echo inside; }");
+        assert!(rendered.contains("myfunc"), "should contain function name: {rendered}");
+        assert!(rendered.contains("echo inside"), "should contain body: {rendered}");
+    }
+
+    #[test]
+    fn subshell() {
+        let rendered = round_trip("(echo sub)");
+        assert!(rendered.contains("echo sub"), "should contain subshell body: {rendered}");
     }
 }

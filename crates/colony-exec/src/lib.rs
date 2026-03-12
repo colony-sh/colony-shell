@@ -2175,6 +2175,79 @@ mod tests {
         let second = expander.expand_word(&cmd.args[1]).unwrap();
         assert_eq!(second[0].text, "ab");
     }
+
+    // --- Control flow behavioral tests ---
+    // Note: break/continue as shell keywords are handled by colony-shell's
+    // control_flow module, not colony-exec. Tests here cover what colony-exec
+    // handles directly: for iteration, while conditions, and function return.
+
+    #[test]
+    fn for_loop_iterates_all_words() {
+        let exec = exec_program("x=0; for i in 1 2 3; do x=$i; done");
+        assert_eq!(
+            exec.context().get_var_or_env("x"),
+            Some("3".to_string()),
+            "for loop should iterate through all words, x ends at last value"
+        );
+    }
+
+    #[test]
+    fn for_loop_sets_variable_each_iteration() {
+        // Accumulate values to prove each iteration runs
+        let exec = exec_program("result=''; for i in a b c; do result=\"${result}${i}\"; done");
+        assert_eq!(
+            exec.context().get_var_or_env("result"),
+            Some("abc".to_string()),
+        );
+    }
+
+    #[test]
+    fn while_loop_terminates_on_condition() {
+        let exec = exec_program("i=0; while [ $i -lt 3 ]; do i=$((i+1)); done");
+        assert_eq!(
+            exec.context().get_var_or_env("i"),
+            Some("3".to_string()),
+        );
+    }
+
+    #[test]
+    fn while_false_body_never_runs() {
+        let exec = exec_program("x=untouched; while false; do x=changed; done");
+        assert_eq!(
+            exec.context().get_var_or_env("x"),
+            Some("untouched".to_string()),
+        );
+    }
+
+    #[test]
+    fn function_return_propagates_exit_code() {
+        let exec = exec_program("myfunc() { return 42; }; myfunc");
+        assert_eq!(exec.context().last_exit_status(), 42);
+    }
+
+    #[test]
+    fn function_return_zero_on_success() {
+        let exec = exec_program("myfunc() { return 0; }; myfunc");
+        assert_eq!(exec.context().last_exit_status(), 0);
+    }
+
+    #[test]
+    fn if_true_branch_executes() {
+        let exec = exec_program("if true; then x=yes; else x=no; fi");
+        assert_eq!(
+            exec.context().get_var_or_env("x"),
+            Some("yes".to_string()),
+        );
+    }
+
+    #[test]
+    fn if_false_takes_else_branch() {
+        let exec = exec_program("if false; then x=yes; else x=no; fi");
+        assert_eq!(
+            exec.context().get_var_or_env("x"),
+            Some("no".to_string()),
+        );
+    }
 }
 
 /// Main executor for shell commands

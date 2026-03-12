@@ -1015,3 +1015,59 @@ fn get_var_as_i64(var: &str, executor: &Executor) -> i64 {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use colony_expand::ExpansionContext;
+
+    #[tokio::test]
+    async fn execute_command_true_returns_zero() {
+        let mut executor = Executor::new(ExpansionContext::new());
+        let code = execute_command_with_status("true", &mut executor).await;
+        assert_eq!(code, 0);
+    }
+
+    #[tokio::test]
+    async fn execute_command_false_returns_one() {
+        let mut executor = Executor::new(ExpansionContext::new());
+        let code = execute_command_with_status("false", &mut executor).await;
+        assert_eq!(code, 1);
+    }
+
+    #[tokio::test]
+    async fn execute_command_parse_error_returns_two() {
+        let mut executor = Executor::new(ExpansionContext::new());
+        // Unmatched quote causes parse error
+        let code = execute_command_with_status("echo 'unterminated", &mut executor).await;
+        assert_eq!(code, 2);
+    }
+
+    #[tokio::test]
+    async fn execute_command_sets_last_exit_status() {
+        let mut executor = Executor::new(ExpansionContext::new());
+        execute_command_with_status("true", &mut executor).await;
+        assert_eq!(executor.context().last_exit_status(), 0);
+
+        execute_command_with_status("false", &mut executor).await;
+        assert_eq!(executor.context().last_exit_status(), 1);
+    }
+
+    #[test]
+    fn arithmetic_basic_addition() {
+        let mut executor = Executor::new(ExpansionContext::new());
+        assert_eq!(evaluate_arithmetic_command("2 + 3", &mut executor), 5);
+    }
+
+    #[test]
+    fn arithmetic_multiplication() {
+        let mut executor = Executor::new(ExpansionContext::new());
+        assert_eq!(evaluate_arithmetic_command("4 * 7", &mut executor), 28);
+    }
+
+    #[test]
+    fn arithmetic_invalid_returns_zero() {
+        let mut executor = Executor::new(ExpansionContext::new());
+        assert_eq!(evaluate_arithmetic_command("not a number", &mut executor), 0);
+    }
+}

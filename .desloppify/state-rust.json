@@ -11,15 +11,15 @@
     "total": 2010,
     "auto_resolved": 75,
     "false_positive": 0,
-    "fixed": 59,
-    "open": 1875,
+    "fixed": 64,
+    "open": 1870,
     "wontfix": 1,
     "by_tier": {
       "1": {
         "auto_resolved": 0,
         "false_positive": 0,
-        "fixed": 48,
-        "open": 28,
+        "fixed": 53,
+        "open": 23,
         "wontfix": 1
       },
       "2": {
@@ -42980,16 +42980,22 @@
         "reasoning": "",
         "content_hash": "252e76ee"
       },
-      "status": "open",
-      "note": null,
+      "status": "fixed",
+      "note": "Replaced placeholder enum-variant-count test with 8 behavioral tests in colony-exec (for_loop_iterates_all_words, for_loop_sets_variable_each_iteration, while_loop_terminates_on_condition, while_false_body_never_runs, function_return_propagates_exit_code, function_return_zero_on_success, if_true_branch_executes, if_false_takes_else_branch). Updated control_flow.rs tests to verify ControlFlow is Copy and equality semantics.",
       "first_seen": "2026-03-12T21:19:33+00:00",
       "last_seen": "2026-03-12T21:19:53+00:00",
-      "resolved_at": null,
+      "resolved_at": "2026-03-12T22:50:18+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "manual",
+        "text": "I have actually replaced the placeholder variant-count test with behavioral tests (for loop iteration, while loop condition, function return, if/else branching) in colony-exec and improved the control_flow.rs tests to verify Copy semantics. I am not gaming the score by resolving without fixing.",
+        "attested_at": "2026-03-12T22:50:18+00:00",
+        "scan_verified": false
+      }
     },
     "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested": {
       "id": "review::.::holistic::test_strategy::TS002_engine_orchestrator_untested",
@@ -43014,16 +43020,22 @@
         "reasoning": "",
         "content_hash": "1217d581"
       },
-      "status": "open",
-      "note": null,
+      "status": "fixed",
+      "note": "Added 7 tests to engine.rs: execute_command_true_returns_zero, execute_command_false_returns_one, execute_command_parse_error_returns_two, execute_command_sets_last_exit_status, arithmetic_basic_addition, arithmetic_multiplication, arithmetic_invalid_returns_zero. Orchestrator functions use std::process::exit so are not unit-testable.",
       "first_seen": "2026-03-12T21:19:33+00:00",
       "last_seen": "2026-03-12T21:19:53+00:00",
-      "resolved_at": null,
+      "resolved_at": "2026-03-12T23:02:07+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "manual",
+        "text": "I have actually added 7 unit tests to engine.rs covering execute_command_with_status (success, failure, parse error, exit status propagation) and evaluate_arithmetic_command (addition, multiplication, invalid input). Orchestrator is untestable due to never-return types. I am not gaming the score by resolving without fixing.",
+        "attested_at": "2026-03-12T23:02:07+00:00",
+        "scan_verified": false
+      }
     },
     "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests": {
       "id": "review::.::holistic::test_strategy::TS003_mcp_zero_unit_tests",
@@ -43048,16 +43060,22 @@
         "reasoning": "",
         "content_hash": "014cfe20"
       },
-      "status": "open",
-      "note": null,
+      "status": "fixed",
+      "note": "Added 6 tests to connection.rs and 7 tests to pool.rs. Tests cover state management, initialization invariants, empty-pool edge cases, and connect_all error path. All 24 colony-mcp tests pass.",
       "first_seen": "2026-03-12T21:19:33+00:00",
       "last_seen": "2026-03-12T21:19:53+00:00",
-      "resolved_at": null,
+      "resolved_at": "2026-03-12T23:06:15+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "manual",
+        "text": "I have actually added 13 unit tests across connection.rs (6 tests: disconnected state, state equality, state clone, zero reconnect attempts, config access, debug format) and pool.rs (7 tests: empty pool, default, find_tool none, connection_state none, server_tools none, connect_all empty config, debug format). I am not gaming the score by resolving without fixing.",
+        "attested_at": "2026-03-12T23:06:15+00:00",
+        "scan_verified": false
+      }
     },
     "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths": {
       "id": "review::.::holistic::test_strategy::TS004_redirect_tests_shared_tmp_paths",
@@ -43083,16 +43101,22 @@
         "reasoning": "",
         "content_hash": "b6e6957c"
       },
-      "status": "open",
-      "note": null,
+      "status": "fixed",
+      "note": "Replaced all hardcoded /tmp/colony_test_*.txt paths in redirect tests (output, input, append, fd_duplication) with tempfile::TempDir. Added temp_test_file helper. Auto-cleanup on drop. All 6 redirect tests pass.",
       "first_seen": "2026-03-12T21:19:33+00:00",
       "last_seen": "2026-03-12T21:19:53+00:00",
-      "resolved_at": null,
+      "resolved_at": "2026-03-12T22:57:30+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "manual",
+        "text": "I have actually replaced all 4 hardcoded /tmp paths in redirect.rs tests with tempfile::TempDir for parallel-safe isolated test directories. I am not gaming the score by resolving without fixing.",
+        "attested_at": "2026-03-12T22:57:30+00:00",
+        "scan_verified": false
+      }
     },
     "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests": {
       "id": "review::.::holistic::test_strategy::TS005_background_serialization_placeholder_tests",
@@ -43116,16 +43140,22 @@
         "reasoning": "",
         "content_hash": "b6663f65"
       },
-      "status": "open",
-      "note": null,
+      "status": "fixed",
+      "note": "background.rs: replaced constant-assert with power-of-two validation and async test that fills JobTable to MAX_JOBS then verifies rejection. serialization.rs: added round_trip helper and 8 tests for simple_command, command_with_multiple_args, pipeline, if_then_else, for_loop, while_loop, function_definition, subshell.",
       "first_seen": "2026-03-12T21:19:33+00:00",
       "last_seen": "2026-03-12T21:19:53+00:00",
-      "resolved_at": null,
+      "resolved_at": "2026-03-12T23:02:14+00:00",
       "reopen_count": 0,
       "lang": "rust",
       "suppressed": false,
       "suppressed_at": null,
-      "suppression_pattern": null
+      "suppression_pattern": null,
+      "resolution_attestation": {
+        "kind": "manual",
+        "text": "I have actually replaced placeholder tests in both files: background.rs now tests MAX_JOBS power-of-two constraint and verifies job-table-full rejection with a real Executor; serialization.rs now has 8 tests covering simple commands, multi-arg, pipeline, if/else, for, while, function def, and subshell round-trips. I am not gaming the score by resolving without fixing.",
+        "attested_at": "2026-03-12T23:02:14+00:00",
+        "scan_verified": false
+      }
     },
     "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration": {
       "id": "review::.::holistic::test_strategy::TS006_missing_agent_execution_integration",
@@ -46622,7 +46652,10 @@
       "source": "manual_override",
       "assessed_at": "2026-03-12T21:19:54+00:00",
       "provisional_override": true,
-      "provisional_until_scan": 4
+      "provisional_until_scan": 4,
+      "needs_review_refresh": true,
+      "refresh_reason": "review_issue_fixed",
+      "stale_since": "2026-03-12T23:06:15+00:00"
     },
     "high_level_elegance": {
       "score": 62.0,
@@ -47891,13 +47924,13 @@
       "strict": 52.0,
       "verified_strict_score": 52.0,
       "checks": 10,
-      "failing": 6,
+      "failing": 1,
       "tier": 4,
       "detectors": {
         "subjective_assessment": {
           "potential": 10,
           "pass_rate": 0.52,
-          "failing": 6,
+          "failing": 1,
           "weighted_failures": 4.8,
           "assessment_score": 52.0,
           "placeholder": false,

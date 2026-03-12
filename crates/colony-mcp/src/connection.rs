@@ -324,6 +324,76 @@ impl McpConnection {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_server(name: &str) -> McpServer {
+        McpServer {
+            name: name.to_string(),
+            command: "echo".to_string(),
+            args: vec![],
+            env: Default::default(),
+            auto_start: true,
+        }
+    }
+
+    #[test]
+    fn new_connection_is_disconnected() {
+        let conn = McpConnection::new(test_server("test"));
+        assert_eq!(*conn.state(), ConnectionState::Disconnected);
+        assert!(conn.tools().is_empty());
+        assert_eq!(conn.name(), "test");
+    }
+
+    #[test]
+    fn connection_state_equality() {
+        assert_eq!(ConnectionState::Disconnected, ConnectionState::Disconnected);
+        assert_eq!(ConnectionState::Connected, ConnectionState::Connected);
+        assert_ne!(ConnectionState::Connected, ConnectionState::Disconnected);
+        assert_eq!(
+            ConnectionState::Failed("err".to_string()),
+            ConnectionState::Failed("err".to_string()),
+        );
+        assert_ne!(
+            ConnectionState::Failed("a".to_string()),
+            ConnectionState::Failed("b".to_string()),
+        );
+    }
+
+    #[test]
+    fn connection_state_clone() {
+        let state = ConnectionState::Failed("timeout".to_string());
+        let cloned = state.clone();
+        assert_eq!(state, cloned);
+    }
+
+    #[test]
+    fn new_connection_has_zero_reconnect_attempts() {
+        let conn = McpConnection::new(test_server("test"));
+        // reconnect_attempts is private but we can verify via debug output
+        let debug = format!("{:?}", conn);
+        assert!(debug.contains("reconnect_attempts: 0"));
+    }
+
+    #[test]
+    fn config_accessible_after_creation() {
+        let server = test_server("myserver");
+        let conn = McpConnection::new(server.clone());
+        assert_eq!(conn.config().name, "myserver");
+        assert_eq!(conn.config().command, "echo");
+    }
+
+    #[test]
+    fn debug_format_shows_connection_info() {
+        let conn = McpConnection::new(test_server("debug-test"));
+        let debug = format!("{:?}", conn);
+        assert!(debug.contains("McpConnection"));
+        assert!(debug.contains("debug-test"));
+        assert!(debug.contains("Disconnected"));
+    }
+}
+
 impl std::fmt::Debug for McpConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("McpConnection")
