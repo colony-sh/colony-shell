@@ -254,14 +254,226 @@ enum ResponseMeta {
 
 The server thread collects all `ResponseMeta` messages from the channel after the handler function completes, applies them to the HTTP response, then sends stdout as the body.
 
+## Rack Application Server
+
+Colony replaces Puma/Unicorn as the application server for Ruby/Rack apps (including Rails). No intermediary Ruby server — colony manages Ruby worker processes directly.
+
+### Architecture
+
+```
+colony serve (Rust/axum)
+  │
+  ├─ HTTP request arrives at Rack route
+  │
+  ├─ Pick available worker from pool (round-robin)
+  │
+  ├─ Send request as JSON line to worker stdin
+  │     {"method":"GET","path":"/users","query":"page=1",
+  │      "headers":{"Accept":"text/html"},"body":""}
+  │
+  ├─ Worker (Ruby process) calls app.call(env)
+  │
+  ├─ Read response JSON line from worker stdout
+  │     {"status":200,"headers":{"Content-Type":"text/html"},"body":"<html>..."}
+  │
+  └─ Return HTTP response to client
+```
+
+Same pattern as colony panel binaries: managed child processes communicating via JSON-over-stdio.
+
+### Builtin Interface
+
+```bash
+# Serve a Rails app (auto-detects config.ru)
+serve rack / ./my-rails-app --workers 4
+
+# Rack app at a subpath
+serve rack /api ./sinatra-app --workers 2
+
+# Worker management
+serve workers                  # show PIDs, requests handled, status, memory
+serve workers scale 8          # increase pool size
+serve workers restart          # graceful: finish in-flight, spawn new workers
+
+# Mix with everything else
+serve static /assets ./public
+serve endpoint /api/deploy deploy_handler
+serve webhook /hooks/github handle_push --secret $GH_SECRET
+```
+
+### Worker Pool
+
+```rust
+struct RackWorkerPool {
+    workers: Vec<RackWorker>,
+    app_dir: PathBuf,
+    config_ru: PathBuf,
+    next_worker: AtomicUsize,  // round-robin index
+}
+
+struct RackWorker {
+    pid: u32,
+    stdin: ChildStdin,           // send requests
+    stdout: BufReader<ChildStdout>,  // read responses
+    status: WorkerStatus,        // Idle, Busy, Dead
+    requests_handled: u64,
+    spawned_at: Instant,
+}
+
+enum WorkerStatus {
+    Idle,
+    Busy(Instant),  // start time of current request
+    Dead,
+}
+```
+
+### Worker Script
+
+Colony bundles a small Ruby worker script (`~/.colony/lib/rack_worker.rb`) that loads the Rack app and enters a request loop:
+
+```ruby
+require 'rack'
+require 'json'
+
+app, _ = Rack::Builder.parse_file(ARGV[0] || 'config.ru')
+STDOUT.sync = true
+
+STDIN.each_line do |line|
+  req = JSON.parse(line)
+
+  rack_env = {
+    'REQUEST_METHOD'  => req['method'],
+    'PATH_INFO'       => req['path'],
+    'QUERY_STRING'    => req['query'] || '',
+    'SERVER_NAME'     => req['host'] || 'localhost',
+    'SERVER_PORT'     => req['port'] || '8080',
+    'SCRIPT_NAME'     => '',
+    'rack.version'    => [1, 6],
+    'rack.input'      => StringIO.new(req['body'] || ''),
+    'rack.errors'     => STDERR,
+    'rack.url_scheme'  => 'http',
+    'rack.multithread' => false,
+    'rack.multiprocess' => true,
+    'rack.run_once'   => false,
+    'SERVER_SOFTWARE'  => 'colony-shell',
+  }
+
+  (req['headers'] || {}).each do |k, v|
+    if k.downcase == 'content-type'
+      rack_env['CONTENT_TYPE'] = v
+    elsif k.downcase == 'content-length'
+      rack_env['CONTENT_LENGTH'] = v
+    else
+      rack_env["HTTP_#{k.upcase.tr('-', '_')}"] = v
+    end
+  end
+
+  status, headers, body = app.call(rack_env)
+  chunks = []
+  body.each { |chunk| chunks << chunk }
+  body.close if body.respond_to?(:close)
+
+  STDOUT.puts({ status: status, headers: headers, body: chunks.join }.to_json)
+rescue => e
+  STDOUT.puts({ status: 500, headers: { 'Content-Type' => 'text/plain' }, body: "Internal Server Error: #{e.message}" }.to_json)
+end
+```
+
+### Request/Response Protocol
+
+**Request** (colony → worker, one JSON line on stdin):
+```json
+{
+  "method": "POST",
+  "path": "/users",
+  "query": "format=json",
+  "host": "localhost",
+  "port": "8080",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Authorization": "Bearer token123"
+  },
+  "body": "{\"name\":\"Alice\"}"
+}
+```
+
+**Response** (worker → colony, one JSON line on stdout):
+```json
+{
+  "status": 201,
+  "headers": {
+    "Content-Type": "application/json",
+    "Location": "/users/42"
+  },
+  "body": "{\"id\":42,\"name\":\"Alice\"}"
+}
+```
+
+One JSON line per request, one per response. Worker stderr goes to colony's log. If a worker's stdout produces invalid JSON or the worker crashes, colony returns 502 Bad Gateway and respawns the worker.
+
+### Worker Lifecycle
+
+**Spawning:**
+```bash
+cd <app_dir> && bundle exec ruby ~/.colony/lib/rack_worker.rb config.ru
+```
+Each worker is a child process managed by colony. Colony sets the working directory to the app root so Bundler and Rails find their gems.
+
+**Health monitoring:**
+- If a worker doesn't respond within 30 seconds (configurable), colony kills it and spawns a replacement
+- If a worker crashes (process exits), colony logs the event, emits a tuple, and respawns
+- `serve workers` shows per-worker stats: PID, requests handled, uptime, current status
+
+**Graceful restart (`serve workers restart`):**
+1. Spawn N new workers (they load the app fresh — picks up code changes)
+2. Drain in-flight requests from old workers (wait up to 30s)
+3. Kill old workers
+4. Zero-downtime deployment — like Unicorn's USR2
+
+**Scaling (`serve workers scale N`):**
+- Increase: spawn additional workers immediately
+- Decrease: drain and kill excess workers (newest first)
+
+### What Colony Provides Over Puma
+
+| Capability | Puma | Colony |
+|-----------|------|--------|
+| Rack serving | Yes | Yes |
+| Static files | No (Rails handles) | Yes (tower-http, bypasses Ruby) |
+| Shell endpoints alongside | No | Yes |
+| Webhook handlers | No (needs Rails routes) | Yes (shell functions) |
+| Request monitoring panel | No (external tools) | Built-in (serve-monitor panel) |
+| Heartbeat health checks | No | Yes (HEARTBEAT.md) |
+| Tuple emission per request | No | Yes (event workers react) |
+| Worker management | CLI flags only | `serve workers` interactive |
+| Mixed routing | No | Rack + static + endpoint + webhook on one port |
+| Process supervision | Self-managed | Colony manages (crash restart, scaling) |
+
+### CGI Route Type
+
+For simpler cases (one-off scripts, non-Rack apps), colony also supports CGI-style execution:
+
+```bash
+# Execute any script as a CGI handler
+serve cgi /report ./generate_report.rb
+serve cgi /legacy ./cgi-bin/
+```
+
+CGI routes spawn the executable per-request with standard CGI environment variables (`REQUEST_METHOD`, `PATH_INFO`, `QUERY_STRING`, `HTTP_*`, `CONTENT_TYPE`, `CONTENT_LENGTH`). Request body on stdin, response on stdout. Headers parsed from stdout before the first blank line (standard CGI response format).
+
+This works with any language — Ruby, Python, Perl, shell scripts. Higher latency than Rack workers (process spawn per request) but zero setup.
+
 ## Out of Scope (Future)
 
 - TLS/HTTPS (use a reverse proxy for now)
 - WebSocket support
 - HTTP/2
-- Request body size limits / streaming upload
-- Authentication middleware (handle in shell functions)
+- Streaming request bodies (multipart upload)
+- Authentication middleware (handle in shell functions or Rails)
 - Response compression (gzip/brotli)
 - Config file loading (`serve load config.toml`)
 - Virtual hosts
 - Rate limiting per-route
+- WSGI/ASGI support (Python equivalent of Rack)
+- PHP-FPM protocol support
