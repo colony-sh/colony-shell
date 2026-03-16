@@ -37,7 +37,7 @@ pub use registry::ComponentRegistry;
 pub use render::ansi::{render_outputs, render_prompt, strip_ansi};
 pub use sidebar::{
     ContextPanel, FileTreePanel, GitFilesPanel, LlmPanel, McpPanel, SessionPanel, SidebarData,
-    SidebarManager, SidebarPanelData,
+    SidebarManager, SidebarPanelData, ToolPanel,
 };
 pub use subscription::SubscriptionManager;
 pub use widgets::{
