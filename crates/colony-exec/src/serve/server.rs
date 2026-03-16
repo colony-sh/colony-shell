@@ -22,6 +22,7 @@ pub(crate) fn build_router(
     context: &colony_expand::ExpansionContext,
     tuple_space: &TupleSpace,
     session_id: &str,
+    rack_pool: Arc<tokio::sync::RwLock<Option<super::rack_pool::RackWorkerPool>>>,
 ) -> Router {
     let mut router = Router::new();
 
@@ -57,6 +58,18 @@ pub(crate) fn build_router(
                     session_id.to_string(),
                     stats.clone(),
                 );
+            }
+            Route::Rack { path, .. } => {
+                router = super::rack_handler::add_rack_route(
+                    router,
+                    path,
+                    rack_pool.clone(),
+                    &config.host,
+                    config.port,
+                );
+            }
+            Route::Cgi { path, executable } => {
+                router = super::cgi_handler::add_cgi_route(router, path, executable);
             }
         }
     }
@@ -111,8 +124,9 @@ pub(crate) fn spawn_server(
     context: &colony_expand::ExpansionContext,
     tuple_space: &TupleSpace,
     session_id: &str,
+    rack_pool: Arc<tokio::sync::RwLock<Option<super::rack_pool::RackWorkerPool>>>,
 ) -> std::result::Result<ServeRuntime, String> {
-    let initial_router = build_router(config, stats, context, tuple_space, session_id);
+    let initial_router = build_router(config, stats, context, tuple_space, session_id, rack_pool);
     let router_swap = Arc::new(ArcSwap::new(Arc::new(initial_router)));
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
 
@@ -185,7 +199,14 @@ pub(crate) fn hot_swap_router(
         .config
         .read()
         .expect("serve config lock poisoned");
-    let new_router = build_router(&config, serve_state.stats.clone(), context, tuple_space, session_id);
+    let new_router = build_router(
+        &config,
+        serve_state.stats.clone(),
+        context,
+        tuple_space,
+        session_id,
+        serve_state.rack_pool.clone(),
+    );
 
     let runtime = serve_state
         .runtime_handle
@@ -197,7 +218,22 @@ pub(crate) fn hot_swap_router(
 }
 
 /// Stop the server gracefully: signal shutdown, wait up to 5s for in-flight requests.
+///
+/// Also shuts down the rack worker pool if one is active.
 pub(crate) fn stop_server(serve_state: &ServeState) -> std::result::Result<(), String> {
+    // Shutdown rack workers first
+    let shutdown_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("failed to create shutdown runtime: {e}"))?;
+
+    shutdown_rt.block_on(async {
+        let pool_guard = serve_state.rack_pool.read().await;
+        if let Some(ref pool) = *pool_guard {
+            pool.shutdown().await;
+        }
+    });
+
     let mut runtime = serve_state
         .runtime_handle
         .write()

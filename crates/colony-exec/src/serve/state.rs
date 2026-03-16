@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
+use super::rack_pool::RackWorkerPool;
+
 /// HTTP method filter for endpoint routes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MethodFilter {
@@ -29,6 +31,16 @@ pub enum Route {
         func: String,
         secret: Option<String>,
     },
+    Rack {
+        path: String,
+        app_dir: PathBuf,
+        workers: usize,
+        timeout_secs: u64,
+    },
+    Cgi {
+        path: String,
+        executable: PathBuf,
+    },
 }
 
 impl Route {
@@ -36,7 +48,9 @@ impl Route {
         match self {
             Route::Static { path, .. }
             | Route::Endpoint { path, .. }
-            | Route::Webhook { path, .. } => path,
+            | Route::Webhook { path, .. }
+            | Route::Rack { path, .. }
+            | Route::Cgi { path, .. } => path,
         }
     }
 
@@ -45,6 +59,8 @@ impl Route {
             Route::Static { .. } => "static",
             Route::Endpoint { .. } => "endpoint",
             Route::Webhook { .. } => "webhook",
+            Route::Rack { .. } => "rack",
+            Route::Cgi { .. } => "cgi",
         }
     }
 }
@@ -116,6 +132,9 @@ pub struct ServeState {
     pub stats: Arc<RequestStats>,
     /// Handle to the running server runtime (None if stopped).
     pub(crate) runtime_handle: RwLock<Option<ServeRuntime>>,
+    /// Rack worker pool (None if no rack routes registered).
+    /// Uses `tokio::sync::RwLock` because worker dispatch is async.
+    pub(crate) rack_pool: Arc<tokio::sync::RwLock<Option<RackWorkerPool>>>,
 }
 
 impl ServeState {
@@ -124,6 +143,7 @@ impl ServeState {
             config: RwLock::new(ServeConfig::default()),
             stats: Arc::new(RequestStats::default()),
             runtime_handle: RwLock::new(None),
+            rack_pool: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -196,5 +216,27 @@ mod tests {
         };
         assert_eq!(r.path(), "/hooks");
         assert_eq!(r.kind(), "webhook");
+    }
+
+    #[test]
+    fn route_rack_path_and_kind() {
+        let r = Route::Rack {
+            path: "/".to_string(),
+            app_dir: PathBuf::from("./myapp"),
+            workers: 4,
+            timeout_secs: 30,
+        };
+        assert_eq!(r.path(), "/");
+        assert_eq!(r.kind(), "rack");
+    }
+
+    #[test]
+    fn route_cgi_path_and_kind() {
+        let r = Route::Cgi {
+            path: "/report".to_string(),
+            executable: PathBuf::from("./generate_report.rb"),
+        };
+        assert_eq!(r.path(), "/report");
+        assert_eq!(r.kind(), "cgi");
     }
 }

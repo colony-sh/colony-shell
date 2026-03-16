@@ -46,7 +46,9 @@ pub fn add_webhook_route(
     };
 
     let handler = |axum::extract::State(state): axum::extract::State<WebhookState>,
-                   req: Request| async move { handle_webhook_request(state, req).await };
+                   req: Request| async move {
+        handle_webhook_request(state, req).await
+    };
 
     // Webhooks accept any method (typically POST, but we don't restrict)
     let route = axum::routing::any(handler);
@@ -162,8 +164,7 @@ async fn handle_webhook_request(state: WebhookState, req: Request) -> Response {
             .build()
             .expect("failed to create handler tokio runtime");
 
-        let exit_status =
-            rt.block_on(async { executor.execute_function(&func_def, vec![]).await });
+        let exit_status = rt.block_on(async { executor.execute_function(&func_def, vec![]).await });
 
         use std::io::Write;
         let _ = std::io::stdout().flush();

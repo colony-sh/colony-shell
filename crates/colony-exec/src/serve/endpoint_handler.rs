@@ -80,7 +80,9 @@ pub fn add_endpoint_route(
     };
 
     let handler = |axum::extract::State(state): axum::extract::State<EndpointState>,
-                   req: Request| async move { handle_endpoint_request(state, req).await };
+                   req: Request| async move {
+        handle_endpoint_request(state, req).await
+    };
 
     let route = match method {
         MethodFilter::Any => axum::routing::any(handler),
@@ -135,10 +137,9 @@ async fn handle_endpoint_request(state: EndpointState, req: Request) -> Response
     let func_name = state.func_name.clone();
 
     // Execute handler on a blocking thread (shell execution is synchronous)
-    let result = tokio::task::spawn_blocking(move || {
-        execute_handler_function(ctx, &func_name, meta_tx)
-    })
-    .await;
+    let result =
+        tokio::task::spawn_blocking(move || execute_handler_function(ctx, &func_name, meta_tx))
+            .await;
 
     let (handler_status, handler_body) = match result {
         Ok(r) => r,
@@ -314,18 +315,9 @@ pub(crate) fn inject_request_vars(
         "REQ_METHOD".to_string(),
         Variable::String(method.to_string()),
     );
-    ctx.set_variable(
-        "REQ_PATH".to_string(),
-        Variable::String(path.to_string()),
-    );
-    ctx.set_variable(
-        "REQ_QUERY".to_string(),
-        Variable::String(query.to_string()),
-    );
-    ctx.set_variable(
-        "REQ_BODY".to_string(),
-        Variable::String(body.to_string()),
-    );
+    ctx.set_variable("REQ_PATH".to_string(), Variable::String(path.to_string()));
+    ctx.set_variable("REQ_QUERY".to_string(), Variable::String(query.to_string()));
+    ctx.set_variable("REQ_BODY".to_string(), Variable::String(body.to_string()));
     ctx.set_variable(
         "REQ_REMOTE_ADDR".to_string(),
         Variable::String(String::new()),
@@ -441,6 +433,8 @@ mod tests {
         assert!(matches!(meta1, ResponseMeta::Status(201)));
 
         let meta2 = rx.try_recv().unwrap();
-        assert!(matches!(meta2, ResponseMeta::Header(ref n, ref v) if n == "X-Custom" && v == "value"));
+        assert!(
+            matches!(meta2, ResponseMeta::Header(ref n, ref v) if n == "X-Custom" && v == "value")
+        );
     }
 }
