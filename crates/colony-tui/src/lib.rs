@@ -29,6 +29,7 @@ pub mod prompt_renderer;
 pub mod sidebar;
 pub mod sidebar_renderer;
 pub mod theme;
+pub mod widgets;
 
 pub use app::{App, AppState};
 pub use content_area::ContentArea;

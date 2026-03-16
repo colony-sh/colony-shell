@@ -87,4 +87,10 @@ pub enum Action {
     CommandPaletteCancel,
     CommandPaletteNext,
     CommandPalettePrev,
+
+    // Prompt widgets (file picker, confirm, branch picker, tool approval)
+    PromptWidgetAccept,
+    PromptWidgetCancel,
+    PromptWidgetNext,
+    PromptWidgetPrev,
 }

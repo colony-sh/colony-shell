@@ -29,6 +29,7 @@ use crate::keybindings::{Action, KeyMapper, Mode};
 use crate::prompt::PromptRenderer;
 use crate::sidebar::SidebarRenderer;
 use crate::theme::Theme;
+use crate::widgets::PromptWidgetState;
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
 use colony_ui_core::{
@@ -73,6 +74,8 @@ pub struct App {
     history_search: HistorySearch,
     /// Command palette
     command_palette: CommandPalette,
+    /// Prompt widget state (file picker, confirm, branch picker, tool approval)
+    prompt_widget: PromptWidgetState,
     /// Content area
     content: RawContent,
     /// Prompt renderer
@@ -128,6 +131,7 @@ impl App {
             ghost: GhostCompletion::new(),
             history_search: HistorySearch::new(),
             command_palette: CommandPalette::new(),
+            prompt_widget: PromptWidgetState::default(),
             content: RawContent::new(),
             prompt: PromptRenderer::new(),
             sidebars,
@@ -414,6 +418,7 @@ impl App {
                 Mode::Search => self.search_buffer.push(c),
                 Mode::HistorySearch => self.history_search.insert_char(c),
                 Mode::CommandPalette => self.command_palette.insert_char(c),
+                Mode::PromptWidget => self.prompt_widget.insert_char(c),
                 _ => {}
             },
             Action::DeleteChar => self.editor.delete_char(),
@@ -430,6 +435,9 @@ impl App {
                 }
                 Mode::CommandPalette => {
                     self.command_palette.delete_char();
+                }
+                Mode::PromptWidget => {
+                    self.prompt_widget.delete_char();
                 }
                 _ => {}
             },
@@ -572,6 +580,21 @@ impl App {
                     self.focus = Focus::Content;
                 }
             }
+
+            // Prompt widgets
+            Action::PromptWidgetAccept => {
+                if let Some(_result) = self.prompt_widget.accept() {
+                    self.keys.set_mode(Mode::Insert);
+                } else {
+                    self.keys.set_mode(Mode::Insert);
+                }
+            }
+            Action::PromptWidgetCancel => {
+                self.prompt_widget.dismiss();
+                self.keys.set_mode(Mode::Insert);
+            }
+            Action::PromptWidgetNext => self.prompt_widget.next(),
+            Action::PromptWidgetPrev => self.prompt_widget.prev(),
         }
         Ok(())
     }

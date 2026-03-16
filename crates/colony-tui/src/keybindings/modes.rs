@@ -16,6 +16,8 @@ pub enum Mode {
     HistorySearch,
     /// Command palette mode - quick action search (Shift+Cmd+P)
     CommandPalette,
+    /// Prompt widget mode - interactive popup (file picker, confirm, etc.)
+    PromptWidget,
 }
 
 impl Mode {
@@ -28,6 +30,7 @@ impl Mode {
             Mode::Search => "SEARCH",
             Mode::HistorySearch => "HISTORY",
             Mode::CommandPalette => "PALETTE",
+            Mode::PromptWidget => "PROMPT",
         }
     }
 
@@ -40,6 +43,7 @@ impl Mode {
             Mode::Search => "/",
             Mode::HistorySearch => "?",
             Mode::CommandPalette => ">",
+            Mode::PromptWidget => "W",
         }
     }
 }
