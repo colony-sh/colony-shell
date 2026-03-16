@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 colony-config = { path = "../colony-config" }
+colony-channels.workspace = true
 colony-tuple.workspace = true
 
 tokio.workspace = true
@@ -19,6 +20,8 @@ parking_lot.workspace = true
 
 rmcp = { version = "0.15", features = ["client", "transport-child-process", "transport-io"] }
 
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4"] }
 sha2 = "0.10"
 hex = "0.4"
 dirs = "5.0"

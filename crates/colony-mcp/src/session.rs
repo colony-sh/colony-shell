@@ -5,8 +5,11 @@
 
 use std::path::PathBuf;
 
+use chrono::Utc;
+use colony_channels::ToolMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::mpsc;
 use tracing::{debug, error};
 
 use colony_tuple::TupleSpace;
@@ -71,6 +74,8 @@ pub struct McpSession {
     tuple_space: TupleSpace,
     /// Tool classification overrides from config
     classifications: std::collections::HashMap<String, ToolClassification>,
+    /// Channel writer for tool call logging (fd 5 / stdtool)
+    tool_channel_tx: Option<mpsc::UnboundedSender<ToolMessage>>,
 }
 
 impl McpSession {
@@ -85,6 +90,23 @@ impl McpSession {
             codegen,
             tuple_space,
             classifications: std::collections::HashMap::new(),
+            tool_channel_tx: None,
+        }
+    }
+
+    /// Set the tool channel writer for forwarding tool calls to fd 5 (stdtool).
+    ///
+    /// Returns the receiving end so the caller can drain messages into a `ChannelManager`.
+    pub fn set_tool_channel(&mut self) -> mpsc::UnboundedReceiver<ToolMessage> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.tool_channel_tx = Some(tx);
+        rx
+    }
+
+    /// Send a tool message to the tool channel if a writer is configured.
+    fn emit_to_tool_channel(&self, msg: ToolMessage) {
+        if let Some(ref tx) = self.tool_channel_tx {
+            let _ = tx.send(msg);
         }
     }
 
@@ -134,7 +156,16 @@ impl McpSession {
             "executing tool call"
         );
 
-        match self
+        // Emit tool request to ToolChannel (fd 5)
+        let request_start = std::time::Instant::now();
+        self.emit_to_tool_channel(ToolMessage::Request(colony_channels::ToolRequest {
+            id: request.id.clone(),
+            tool_name: request.tool.clone(),
+            arguments: serde_json::to_value(&request.arguments).unwrap_or(Value::Null),
+            timestamp: Utc::now(),
+        }));
+
+        let response = match self
             .pool
             .call_tool(&request.tool, request.arguments.clone())
             .await
@@ -177,7 +208,21 @@ impl McpSession {
                     error: Some(e.to_string()),
                 }
             }
-        }
+        };
+
+        // Emit tool result to ToolChannel (fd 5)
+        let duration_ms = request_start.elapsed().as_millis() as u64;
+        self.emit_to_tool_channel(ToolMessage::Result(colony_channels::ToolResult {
+            id: uuid::Uuid::new_v4().to_string(),
+            request_id: request.id.clone(),
+            output: response.content.clone(),
+            success: response.success,
+            error: response.error.clone(),
+            duration_ms,
+            timestamp: Utc::now(),
+        }));
+
+        response
     }
 
     /// Generate TypeScript client for a server

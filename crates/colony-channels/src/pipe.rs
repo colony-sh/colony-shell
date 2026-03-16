@@ -7,12 +7,12 @@
 //!
 //! When spawning an external command that needs channel access:
 //!
-//! 1. Create OS pipes for each channel fd (4, 5, 6)
-//! 2. In the child, dup2 the pipe ends onto fd 4/5/6
+//! 1. Create OS pipes for each channel fd (3, 4, 5, 6)
+//! 2. In the child, dup2 the pipe ends onto fd 3/4/5/6
 //! 3. In the parent, read from the pipe and feed into the Channel
 //! 4. On process exit, close pipe FDs and flush remaining data
 
-use crate::{ChannelId, STDDIAG, STDLLM, STDTOOL};
+use crate::{ChannelId, STDCONTEXT, STDDIAG, STDLLM, STDTOOL};
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 
@@ -56,10 +56,10 @@ pub struct ChannelPipes {
 }
 
 impl ChannelPipes {
-    /// Create pipes for the standard channel FDs (4, 5, 6)
+    /// Create pipes for the standard channel FDs (3, 4, 5, 6)
     pub fn new_standard() -> std::io::Result<Self> {
         let mut pipes = HashMap::new();
-        for &fd in &[STDLLM, STDTOOL, STDDIAG] {
+        for &fd in &[STDCONTEXT, STDLLM, STDTOOL, STDDIAG] {
             pipes.insert(fd, PipePair::new()?);
         }
         Ok(Self { pipes })
@@ -200,6 +200,7 @@ mod tests {
         let pipes = ChannelPipes::new_standard().unwrap();
         let ids = pipes.channel_ids();
 
+        assert!(ids.contains(&STDCONTEXT));
         assert!(ids.contains(&STDLLM));
         assert!(ids.contains(&STDTOOL));
         assert!(ids.contains(&STDDIAG));

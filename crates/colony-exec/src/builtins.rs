@@ -128,6 +128,9 @@ fn is_builtin_base(name: &str) -> bool {
             | "serve"
             | "heartbeat"
             | "on"
+            | "llm"
+            | "tool"
+            | "diag"
     )
 }
 
@@ -367,6 +370,9 @@ pub fn execute_builtin(
             }
         }
         "on" => crate::events::builtin_on(&args),
+        "llm" => builtin_llm(&args, channels),
+        "tool" => builtin_tool(&args, channels),
+        "diag" => builtin_diag(&args, channels),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -2081,6 +2087,312 @@ fn builtin_context(args: &[String], channels: &mut ChannelManager) -> Result<Bui
             eprintln!("context: {msg}");
             Ok(BuiltinResult::Failure(1))
         }
+    }
+}
+
+/// llm - Show, export, or clear LLM conversation history (fd 4)
+///
+/// Usage:
+///   llm show              Pretty-print recent conversation
+///   llm show --last N     Show last N messages
+///   llm export            JSON export to stdout
+///   llm clear             Clear conversation history
+fn builtin_llm(args: &[String], channels: &mut ChannelManager) -> Result<BuiltinResult> {
+    use colony_channels::Channel;
+
+    if args.is_empty() {
+        eprintln!("llm: missing subcommand");
+        eprintln!("Usage: llm <show|export|clear> [args...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let subcommand = &args[0];
+
+    match subcommand.as_str() {
+        "show" => {
+            let count_limit = if args.len() >= 3 && args[1] == "--last" {
+                args[2].parse::<usize>().ok()
+            } else {
+                None
+            };
+
+            let Some(llm_ch) = channels.llm() else {
+                eprintln!("llm: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            let messages = match count_limit {
+                Some(n) => llm_ch.last_messages(n),
+                None => llm_ch.messages(),
+            };
+
+            if messages.is_empty() {
+                println!("(no conversation history)");
+            } else {
+                for msg in messages {
+                    let role_label = match msg.role {
+                        colony_channels::LlmRole::System => "\x1b[35m[system]\x1b[0m",
+                        colony_channels::LlmRole::User => "\x1b[34m[user]\x1b[0m",
+                        colony_channels::LlmRole::Assistant => "\x1b[32m[assistant]\x1b[0m",
+                        colony_channels::LlmRole::Tool => "\x1b[33m[tool]\x1b[0m",
+                    };
+                    println!("{} {}", role_label, msg.content);
+                }
+            }
+
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "export" => {
+            let Some(llm_ch) = channels.llm() else {
+                eprintln!("llm: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+            println!("{}", llm_ch.export_json());
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "clear" => {
+            let Some(llm_ch) = channels.llm() else {
+                eprintln!("llm: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+            llm_ch.clear();
+            println!("LLM conversation history cleared");
+            Ok(BuiltinResult::Success(0))
+        }
+
+        _ => {
+            eprintln!("llm: unknown subcommand: {}", subcommand);
+            eprintln!("Usage: llm <show|export|clear> [args...]");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+/// tool - Show, export, or clear tool call log (fd 5)
+///
+/// Usage:
+///   tool show             Show recent tool calls with results
+///   tool show --pending   Show unanswered requests
+///   tool export           JSON export to stdout
+///   tool clear            Clear tool log
+fn builtin_tool(args: &[String], channels: &mut ChannelManager) -> Result<BuiltinResult> {
+    use colony_channels::Channel;
+
+    if args.is_empty() {
+        eprintln!("tool: missing subcommand");
+        eprintln!("Usage: tool <show|export|clear> [args...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let subcommand = &args[0];
+
+    match subcommand.as_str() {
+        "show" => {
+            let show_pending = args.get(1).is_some_and(|a| a == "--pending");
+
+            let Some(tool_ch) = channels.tool() else {
+                eprintln!("tool: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            if show_pending {
+                let pending = tool_ch.pending_requests();
+                if pending.is_empty() {
+                    println!("(no pending tool requests)");
+                } else {
+                    for req in pending {
+                        println!(
+                            "\x1b[33m[pending]\x1b[0m {} (id: {})",
+                            req.tool_name, req.id
+                        );
+                    }
+                }
+            } else {
+                let entries = tool_ch.entries();
+                if entries.is_empty() {
+                    println!("(no tool calls recorded)");
+                } else {
+                    for entry in entries {
+                        let status = match &entry.result {
+                            Some(r) if r.success => format!(
+                                "\x1b[32mok\x1b[0m ({}ms)",
+                                r.duration_ms,
+                            ),
+                            Some(r) => format!(
+                                "\x1b[31mfail\x1b[0m: {}",
+                                r.error.as_deref().unwrap_or("unknown"),
+                            ),
+                            None => "\x1b[33mpending\x1b[0m".to_string(),
+                        };
+                        println!(
+                            "{} {} [{}]",
+                            entry.request.tool_name, entry.request.id, status
+                        );
+                    }
+                }
+            }
+
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "export" => {
+            let Some(tool_ch) = channels.tool() else {
+                eprintln!("tool: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+            println!("{}", tool_ch.export_json());
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "clear" => {
+            let Some(tool_ch) = channels.tool() else {
+                eprintln!("tool: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+            tool_ch.clear();
+            println!("Tool call log cleared");
+            Ok(BuiltinResult::Success(0))
+        }
+
+        _ => {
+            eprintln!("tool: unknown subcommand: {}", subcommand);
+            eprintln!("Usage: tool <show|export|clear> [args...]");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+/// diag - Show, export, or clear diagnostics (fd 6)
+///
+/// Usage:
+///   diag show                   Show recent diagnostics
+///   diag show --level <level>   Filter by severity (trace|debug|info|warn|error)
+///   diag show --source <src>    Filter by source
+///   diag export                 JSON export to stdout
+///   diag clear                  Clear diagnostics
+fn builtin_diag(args: &[String], channels: &mut ChannelManager) -> Result<BuiltinResult> {
+    use colony_channels::Channel;
+
+    if args.is_empty() {
+        eprintln!("diag: missing subcommand");
+        eprintln!("Usage: diag <show|export|clear> [args...]");
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    let subcommand = &args[0];
+
+    match subcommand.as_str() {
+        "show" => {
+            let Some(diag_ch) = channels.diag() else {
+                eprintln!("diag: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            // Parse filter options
+            let mut level_filter: Option<colony_channels::Severity> = None;
+            let mut source_filter: Option<&str> = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--level" => {
+                        if let Some(lvl) = args.get(i + 1) {
+                            level_filter = parse_severity(lvl);
+                            if level_filter.is_none() {
+                                eprintln!("diag: unknown level: {}", lvl);
+                                return Ok(BuiltinResult::Failure(1));
+                            }
+                            i += 2;
+                        } else {
+                            eprintln!("diag show --level: missing level");
+                            return Ok(BuiltinResult::Failure(1));
+                        }
+                    }
+                    "--source" => {
+                        if let Some(src) = args.get(i + 1) {
+                            source_filter = Some(src.as_str());
+                            i += 2;
+                        } else {
+                            eprintln!("diag show --source: missing source name");
+                            return Ok(BuiltinResult::Failure(1));
+                        }
+                    }
+                    _ => {
+                        i += 1;
+                    }
+                }
+            }
+
+            let entries: Vec<_> = match (level_filter, source_filter) {
+                (Some(level), Some(source)) => diag_ch
+                    .entries_at_level(level)
+                    .into_iter()
+                    .filter(|e| e.source.as_deref() == Some(source))
+                    .collect(),
+                (Some(level), None) => diag_ch.entries_at_level(level),
+                (None, Some(source)) => diag_ch.entries_from_source(source),
+                (None, None) => diag_ch.entries().iter().collect(),
+            };
+
+            if entries.is_empty() {
+                println!("(no diagnostics)");
+            } else {
+                for entry in entries {
+                    let severity_label = match entry.severity {
+                        colony_channels::Severity::Trace => "\x1b[90m[trace]\x1b[0m",
+                        colony_channels::Severity::Debug => "\x1b[36m[debug]\x1b[0m",
+                        colony_channels::Severity::Info => "\x1b[34m[info]\x1b[0m",
+                        colony_channels::Severity::Warn => "\x1b[33m[warn]\x1b[0m",
+                        colony_channels::Severity::Error => "\x1b[31m[error]\x1b[0m",
+                    };
+                    let source_label = entry
+                        .source
+                        .as_deref()
+                        .map_or(String::new(), |s| format!(" ({})", s));
+                    println!("{}{} {}", severity_label, source_label, entry.message);
+                }
+            }
+
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "export" => {
+            let Some(diag_ch) = channels.diag() else {
+                eprintln!("diag: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+            println!("{}", diag_ch.export_json());
+            Ok(BuiltinResult::Success(0))
+        }
+
+        "clear" => {
+            let Some(diag_ch) = channels.diag() else {
+                eprintln!("diag: channel not available");
+                return Ok(BuiltinResult::Failure(1));
+            };
+            diag_ch.clear();
+            println!("Diagnostics cleared");
+            Ok(BuiltinResult::Success(0))
+        }
+
+        _ => {
+            eprintln!("diag: unknown subcommand: {}", subcommand);
+            eprintln!("Usage: diag <show|export|clear> [args...]");
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+/// Parse a severity level string to a Severity enum value.
+fn parse_severity(s: &str) -> Option<colony_channels::Severity> {
+    match s.to_lowercase().as_str() {
+        "trace" => Some(colony_channels::Severity::Trace),
+        "debug" => Some(colony_channels::Severity::Debug),
+        "info" => Some(colony_channels::Severity::Info),
+        "warn" | "warning" => Some(colony_channels::Severity::Warn),
+        "error" => Some(colony_channels::Severity::Error),
+        _ => None,
     }
 }
 

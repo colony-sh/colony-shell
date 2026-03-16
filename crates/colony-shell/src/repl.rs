@@ -266,6 +266,19 @@ impl Validator for ColonyHelper {
 
 impl Helper for ColonyHelper {}
 
+/// Drain pending LLM messages from the agent's channel and write to the executor's ChannelManager.
+fn drain_llm_channel(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<colony_channels::LlmMessage>,
+    executor: &mut Executor,
+) {
+    while let Ok(msg) = rx.try_recv() {
+        let Some(llm_ch) = executor.channels_mut().llm() else {
+            break;
+        };
+        llm_ch.add_message(msg);
+    }
+}
+
 pub(crate) async fn run_repl(
     mut agent: Option<Agent>,
     mut executor: Executor,
@@ -273,6 +286,9 @@ pub(crate) async fn run_repl(
     _history_writer: Option<HistoryWriter>,
     _history_store: Option<Arc<HistoryStore>>,
 ) -> Result<()> {
+    // Set up LLM channel bridge: agent -> mpsc -> ChannelManager
+    let mut llm_channel_rx = agent.as_mut().map(|a| a.set_llm_channel());
+
     let helper = ColonyHelper::new();
     let mut rl = Editor::new().map_err(|e| miette::miette!("failed to create readline: {}", e))?;
     rl.set_helper(Some(helper));
@@ -343,8 +359,16 @@ pub(crate) async fn run_repl(
                 }
 
                 if line.starts_with("llm ") {
-                    handle_llm_command(line, &mut agent).await;
-                    continue;
+                    // Channel builtins (show/export/clear) fall through to the executor
+                    let sub = line.split_whitespace().nth(1).unwrap_or("");
+                    if !matches!(sub, "show" | "export" | "clear") {
+                        handle_llm_command(line, &mut agent).await;
+                        // Drain LLM channel messages after agent interaction
+                        if let Some(ref mut rx) = llm_channel_rx {
+                            drain_llm_channel(rx, &mut executor);
+                        }
+                        continue;
+                    }
                 }
 
                 if let Some(ref mut agent) = agent {
@@ -356,6 +380,10 @@ pub(crate) async fn run_repl(
                             Err(e) => {
                                 eprintln!("Agent error: {}", e);
                             }
+                        }
+                        // Drain LLM channel messages into the executor's ChannelManager
+                        if let Some(ref mut rx) = llm_channel_rx {
+                            drain_llm_channel(rx, &mut executor);
                         }
                         continue;
                     }
@@ -400,6 +428,13 @@ pub(crate) async fn run_repl(
                             &mut agent,
                         )
                         .await;
+
+                        // Wire LLM channel if a new agent was created during tuple processing
+                        if agent.is_some() && llm_channel_rx.is_none() {
+                            if let Some(ref mut a) = agent {
+                                llm_channel_rx = Some(a.set_llm_channel());
+                            }
+                        }
 
                         // Emit Prompt=ready after command completes
                         if use_osc {

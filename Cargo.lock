@@ -1474,6 +1474,7 @@ dependencies = [
  "bytes",
  "chrono",
  "claude-sdk",
+ "colony-channels",
  "colony-cloud-sdk",
  "colony-exec",
  "colony-focus",
@@ -1799,6 +1800,8 @@ dependencies = [
 name = "colony-mcp"
 version = "0.4.1"
 dependencies = [
+ "chrono",
+ "colony-channels",
  "colony-config",
  "colony-tuple",
  "dirs 5.0.1",
@@ -1812,6 +1815,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1960,6 +1964,7 @@ version = "0.4.1"
 dependencies = [
  "clap",
  "colony-agent",
+ "colony-channels",
  "colony-config",
  "colony-debug",
  "colony-exec",
