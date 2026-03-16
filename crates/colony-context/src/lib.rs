@@ -10,3 +10,4 @@ pub mod project;
 pub mod store;
 
 pub use entry::{ContextEntry, ContextFile, ContextKind, EntryMetadata, Priority};
+pub use store::{ContextStore, StoreError};
