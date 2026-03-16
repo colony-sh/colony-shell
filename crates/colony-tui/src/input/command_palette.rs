@@ -79,6 +79,10 @@ pub enum PaletteAction {
     FocusInput,
     FocusContent,
 
+    // Prompt widgets
+    ShowFilePicker,
+    ShowBranchPicker,
+
     // Custom command (for extensibility)
     RunCommand(String),
 }
@@ -232,6 +236,21 @@ impl CommandPalette {
                 shortcut: None,
                 category: PaletteCategory::Git,
                 action: PaletteAction::RunCommand("git branch -a".to_string()),
+            },
+            // Prompt widgets
+            PaletteEntry {
+                label: "Open File Picker".to_string(),
+                description: Some("Browse and select files in the current directory".to_string()),
+                shortcut: Some(":files".to_string()),
+                category: PaletteCategory::File,
+                action: PaletteAction::ShowFilePicker,
+            },
+            PaletteEntry {
+                label: "Switch Branch".to_string(),
+                description: Some("Pick a git branch to switch to".to_string()),
+                shortcut: Some(":branches".to_string()),
+                category: PaletteCategory::Git,
+                action: PaletteAction::ShowBranchPicker,
             },
         ]
     }

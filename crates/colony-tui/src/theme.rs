@@ -70,6 +70,7 @@ impl Theme {
             crate::keybindings::Mode::Search => self.info,
             crate::keybindings::Mode::HistorySearch => Color::Cyan,
             crate::keybindings::Mode::CommandPalette => Color::Magenta,
+            crate::keybindings::Mode::PromptWidget => Color::Yellow,
         };
         Style::default()
             .fg(Color::Black)

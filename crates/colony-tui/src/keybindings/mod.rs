@@ -70,6 +70,7 @@ impl KeyMapper {
             Mode::Search => self.map_search(key),
             Mode::HistorySearch => self.map_history_search(key),
             Mode::CommandPalette => self.map_command_palette(key),
+            Mode::PromptWidget => self.map_prompt_widget(key),
         }
     }
 
@@ -245,6 +246,40 @@ impl KeyMapper {
             | (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::CommandPaletteNext),
 
             // Text input
+            (KeyModifiers::NONE, KeyCode::Char(c)) | (KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                Some(Action::InsertChar(c))
+            }
+            (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::DeleteCharBackward),
+
+            _ => None,
+        }
+    }
+
+    fn map_prompt_widget(&self, key: KeyEvent) -> Option<Action> {
+        match (key.modifiers, key.code) {
+            // Cancel
+            (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::PromptWidgetCancel),
+            (KeyModifiers::CONTROL, KeyCode::Char('g')) => Some(Action::PromptWidgetCancel),
+
+            // Accept
+            (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::PromptWidgetAccept),
+
+            // Navigation
+            (KeyModifiers::NONE, KeyCode::Up) | (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
+                Some(Action::PromptWidgetPrev)
+            }
+            (KeyModifiers::NONE, KeyCode::Down)
+            | (KeyModifiers::CONTROL, KeyCode::Char('n'))
+            | (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::PromptWidgetNext),
+
+            // Left/Right also toggle for confirm/approval widgets
+            (KeyModifiers::NONE, KeyCode::Left) => Some(Action::PromptWidgetPrev),
+            (KeyModifiers::NONE, KeyCode::Right) => Some(Action::PromptWidgetNext),
+
+            // Shift+Tab goes backwards
+            (KeyModifiers::SHIFT, KeyCode::BackTab) => Some(Action::PromptWidgetPrev),
+
+            // Text input (for file picker / branch picker search)
             (KeyModifiers::NONE, KeyCode::Char(c)) | (KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 Some(Action::InsertChar(c))
             }
