@@ -2153,3 +2153,27 @@
 [2025-01-26 03:05] IMPLEMENTED: File operations (create, delete, rename, copy, move)
 [2025-01-26 03:10] VALIDATED: 24 tests passing in colony-filetree
 [2025-01-26 03:15] MILESTONE: F029 (File Tree Protocol) COMPLETE!
+[2026-03-16 00:00] START: Beginning work on F030 (Special Files System)
+[2026-03-16 00:10] PROGRESS: Read existing parsers (agent_md, context_md, tools_md, prompt_md, heartbeat) and types
+[2026-03-16 00:15] PROGRESS: Added SpecialFileType enum with filename() and merges_up_tree() methods
+[2026-03-16 00:20] PROGRESS: Added LoadedSpecialFile struct with file_type, path, content, last_modified
+[2026-03-16 00:25] PROGRESS: Extended SpecialFilesState with loaded_files, empty(), loaded_types(), files_of_type(), summary()
+[2026-03-16 00:30] PROGRESS: Implemented load_with_hierarchy() - parent dir walk + ~/.colony/ fallback
+[2026-03-16 00:32] DECISION: CONTEXT.md and HEARTBEAT.md merge up tree; Agent/Tools/Prompt/Config first-wins
+[2026-03-16 00:35] PROGRESS: Added has_special_files_in_hierarchy() for hierarchy-aware detection
+[2026-03-16 00:40] PROGRESS: Updated Executor.load_special_files() to use hierarchy + session-scoped tuples
+[2026-03-16 00:42] PROGRESS: Updated REPL to use has_special_files_in_hierarchy()
+[2026-03-16 00:45] VALIDATED: 49 special_files tests passing
+[2026-03-16 00:50] MILESTONE: F030 (Special Files System) COMPLETE!
+
+[2026-03-16 01:00] START: Beginning work on F068 (Agent Provider Streaming)
+[2026-03-16 01:05] PROGRESS: Analyzed existing provider architecture (Anthropic streams via claude-sdk, OpenAI/Ollama buffer full response)
+[2026-03-16 01:10] PROGRESS: Studied colony-cloud-sdk parse_sse_stream and StreamAssembler patterns
+[2026-03-16 01:15] PROGRESS: Implemented OpenAI SSE streaming with parse_openai_sse_stream()
+[2026-03-16 01:20] PROGRESS: Implemented tool call accumulation across SSE chunks (ToolCallAccumulator + flush_tool_calls)
+[2026-03-16 01:25] PROGRESS: Implemented Ollama NDJSON streaming with parse_ollama_ndjson_stream()
+[2026-03-16 01:30] PROGRESS: Added partial TCP chunk buffering for both SSE and NDJSON parsers
+[2026-03-16 01:35] PROGRESS: Built mock reqwest::Response test helpers (bytes + http dev-deps)
+[2026-03-16 01:40] PROGRESS: Ollama now reports supports_streaming() = true (removed false override)
+[2026-03-16 01:45] VALIDATED: 109 tests passing in colony-agent (15 new streaming tests)
+[2026-03-16 01:50] MILESTONE: F068 (Agent Provider Streaming) COMPLETE!

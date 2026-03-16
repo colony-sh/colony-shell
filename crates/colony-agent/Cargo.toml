@@ -53,6 +53,10 @@ dirs.workspace = true
 tracing-subscriber.workspace = true
 tempfile = "3.10"
 
+# For mock reqwest::Response in streaming tests
+bytes = "1"
+http = "1"
+
 [features]
 default = []
 cloud = ["colony-cloud-sdk"]

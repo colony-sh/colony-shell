@@ -919,13 +919,20 @@
     {
       "id": "F030",
       "name": "Special Files System (AGENT.md, CONTEXT.md, etc.)",
-      "description": "Parse and load special files: AGENT.md (agent definitions), CONTEXT.md (seed context), TOOLS.md (tool configs), PROMPT.md (templates), .colony/config.toml. SpecialFilesLoader auto-loads on directory change. AgentMdParser for Markdown agent definitions.",
-      "status": "new",
+      "description": "Parse and load special files: AGENT.md (agent definitions), CONTEXT.md (seed context), TOOLS.md (tool configs), PROMPT.md (templates), .colony/config.toml, HEARTBEAT.md. SpecialFilesLoader auto-loads on directory change with hierarchy walk. AgentMdParser for Markdown agent definitions.",
+      "status": "complete",
       "priority": 5,
       "dependencies": [
         "F020"
       ],
-      "notes": []
+      "notes": [
+        "2026-03-16: COMPLETE: SpecialFileType enum, LoadedSpecialFile struct, SpecialFilesState query API",
+        "2026-03-16: COMPLETE: load_with_hierarchy() for parent directory walking + ~/.colony/ fallback",
+        "2026-03-16: COMPLETE: CONTEXT.md and HEARTBEAT.md merge from all levels; other types first-wins",
+        "2026-03-16: COMPLETE: Session-scoped per-file-type tuple emission in Executor",
+        "2026-03-16: COMPLETE: REPL updated to use has_special_files_in_hierarchy()",
+        "2026-03-16: TESTED: 49 special_files tests passing (parsers + hierarchy + metadata + query API)"
+      ]
     },
     {
       "id": "F039",
@@ -1547,15 +1554,16 @@
       "id": "F068",
       "name": "Agent Provider Streaming",
       "description": "Implement proper streaming responses for OpenAI and Ollama providers. Currently responses are collected in full before returning. Need SSE parsing for OpenAI and NDJSON parsing for Ollama streaming endpoints.",
-      "status": "new",
+      "status": "complete",
       "priority": 4,
       "dependencies": ["F014"],
       "notes": [
         "2025-12-17: Provider trait defined with stream_chat method",
         "2025-12-17: Anthropic streaming works via claude-sdk",
-        "TODO: OpenAI SSE streaming implementation",
-        "TODO: Ollama NDJSON streaming implementation",
-        "TODO: Handle streaming tool use responses"
+        "2026-03-16: OpenAI SSE streaming implemented with tool call assembly",
+        "2026-03-16: Ollama NDJSON streaming implemented",
+        "2026-03-16: Partial TCP chunk handling for both providers",
+        "2026-03-16: 15 new tests, 109 total passing in colony-agent"
       ]
     },
     {
