@@ -58,6 +58,8 @@ pub enum TraceOutput {
     File(std::fs::File),
     /// Send to a channel (for TUI)
     Channel(Sender<TraceEvent>),
+    /// Send to a DiagChannel via mpsc (for channel integration)
+    DiagSender(tokio::sync::mpsc::UnboundedSender<colony_channels::DiagEntry>),
     /// Write to a Vec (for testing)
     Buffer(Vec<TraceEvent>),
 }
@@ -194,6 +196,13 @@ impl TraceEmitter {
             }
             TraceOutput::Channel(sender) => {
                 let _ = sender.send(event);
+            }
+            TraceOutput::DiagSender(sender) => {
+                let summary = event.summary();
+                let severity = event.severity();
+                let entry = colony_channels::DiagEntry::new(severity, summary)
+                    .with_source("tracer");
+                let _ = sender.send(entry);
             }
             TraceOutput::Buffer(events) => {
                 events.push(event);

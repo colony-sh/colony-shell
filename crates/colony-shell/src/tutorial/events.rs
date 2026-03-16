@@ -273,6 +273,83 @@ pub enum ComplexityLevel {
     High,
 }
 
+impl TraceEvent {
+    /// Human-readable one-line summary of this event.
+    pub fn summary(&self) -> String {
+        match self {
+            Self::ScriptStart { path, lines } => {
+                format!("script start: {} ({} lines)", path.display(), lines)
+            }
+            Self::LineEnter { line, source } => format!("L{}: {}", line, source),
+            Self::Parse { line, ast_summary, .. } => format!("L{} parse: {}", line, ast_summary),
+            Self::Expand { line, phase, input, output, .. } => {
+                format!("L{} {} expand: {} -> {}", line, phase.name(), input, output)
+            }
+            Self::Assign { line, name, value, .. } => {
+                format!("L{} assign: {}={}", line, name, value)
+            }
+            Self::Resolve { line, command, resolved } => {
+                format!("L{} resolve: {} -> {}", line, command, resolved.display())
+            }
+            Self::Execute { line, command, args, .. } => {
+                format!("L{} exec: {} {}", line, command, args.join(" "))
+            }
+            Self::Builtin { line, name, args } => {
+                format!("L{} builtin: {} {}", line, name, args.join(" "))
+            }
+            Self::Redirect { line, description, .. } => {
+                format!("L{} redirect: {}", line, description)
+            }
+            Self::PipelineStage { line, stage, total_stages, command } => {
+                format!("L{} pipe {}/{}: {}", line, stage, total_stages, command)
+            }
+            Self::LoopEnter { line, loop_type, .. } => {
+                format!("L{} loop enter: {:?}", line, loop_type)
+            }
+            Self::LoopIteration { line, iteration, .. } => {
+                format!("L{} loop iter #{}", line, iteration)
+            }
+            Self::LoopExit { line, iterations } => {
+                format!("L{} loop exit after {} iters", line, iterations)
+            }
+            Self::Branch { line, branch_type, taken, .. } => {
+                format!("L{} branch {:?}: {}", line, branch_type, taken)
+            }
+            Self::FunctionCall { line, name, .. } => format!("L{} call: {}()", line, name),
+            Self::FunctionReturn { line, name, exit_code } => {
+                format!("L{} return: {}() -> {}", line, name, exit_code)
+            }
+            Self::ExitStatus { line, code, signal } => match signal {
+                Some(sig) => format!("L{} exit: {} ({})", line, code, sig),
+                None => format!("L{} exit: {}", line, code),
+            },
+            Self::Concept { name, .. } => format!("concept: {}", name),
+            Self::CommandHint { command, hint, .. } => format!("hint: {} - {}", command, hint),
+            Self::LineExit { line, duration_us } => {
+                format!("L{} done ({}us)", line, duration_us)
+            }
+            Self::ScriptEnd { exit_code, duration_ms } => {
+                format!("script end: exit={} ({}ms)", exit_code, duration_ms)
+            }
+            Self::Error { line, message } => format!("L{} ERROR: {}", line, message),
+            Self::Output { line, text } => format!("L{} output: {}", line, text),
+            Self::Environment { line, changed, .. } => {
+                format!("L{} env changed: {}", line, changed.join(", "))
+            }
+        }
+    }
+
+    /// Map trace event to a diagnostic severity level.
+    pub fn severity(&self) -> colony_channels::Severity {
+        match self {
+            Self::Error { .. } => colony_channels::Severity::Error,
+            Self::ScriptStart { .. } | Self::ScriptEnd { .. } => colony_channels::Severity::Info,
+            Self::ExitStatus { code, .. } if *code != 0 => colony_channels::Severity::Warn,
+            _ => colony_channels::Severity::Trace,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

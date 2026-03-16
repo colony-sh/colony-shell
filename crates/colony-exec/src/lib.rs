@@ -2268,6 +2268,15 @@ impl Executor {
         &mut self.channels
     }
 
+    /// Write a diagnostic entry to the DiagChannel (fd 6).
+    ///
+    /// Silently drops the entry if the channel is unavailable.
+    pub fn emit_diag(&mut self, entry: colony_channels::DiagEntry) {
+        if let Some(diag) = self.channels.diag() {
+            diag.add_entry(entry);
+        }
+    }
+
     /// Set the reflection observer
     pub fn set_observer(&mut self, observer: Arc<dyn ReflectionObserver>) {
         self.observer = observer;
@@ -2573,6 +2582,21 @@ impl Executor {
             format!("{} {}", cmd_name, cmd_args.join(" "))
         };
 
+        // Emit command execution diagnostic to DiagChannel (fd 6)
+        self.emit_diag(
+            colony_channels::DiagEntry::new(
+                colony_channels::Severity::Trace,
+                format!("cmd exit={} dur={}ms: {}", exit_code, duration_ms, input),
+            )
+            .with_source("executor")
+            .with_metadata(serde_json::json!({
+                "command": cmd_name,
+                "args": cmd_args,
+                "exit_code": exit_code,
+                "duration_ms": duration_ms,
+            })),
+        );
+
         self.observer
             .observe_command(colony_reflection::CommandData {
                 input,
@@ -2591,6 +2615,16 @@ impl Executor {
                     | ExecutionError::Exit(_)
                     | ExecutionError::Errexit(_)
             ) {
+                // Emit error diagnostic to DiagChannel (fd 6)
+                self.emit_diag(
+                    colony_channels::DiagEntry::new(
+                        colony_channels::Severity::Error,
+                        format!("{}: {}", error_kind_str(e), e),
+                    )
+                    .with_source("executor")
+                    .with_code(error_kind_str(e).to_string()),
+                );
+
                 self.observer
                     .observe_error(colony_reflection::ErrorData {
                         kind: error_kind_str(e),
