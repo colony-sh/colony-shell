@@ -1645,15 +1645,17 @@
       "id": "F075",
       "name": "Context Management System",
       "description": "First-class AI interaction context management. Context windows, automatic summarization, context sharing between agents, context persistence across sessions. Builds on extended channels (fd 3) for context tracking.",
-      "status": "new",
+      "status": "in_progress",
       "priority": 5,
       "dependencies": ["F024", "F013"],
       "notes": [
         "Spec: docs/spec/16-context.md",
         "Context channel (fd 3) infrastructure exists via F024",
+        "2026-03-16: Phase 1 complete - colony-context crate with entry types, ContextStore (MessagePack), ProjectContext, ContextComposer, builtin command, and colony-exec integration",
         "TODO: Context window management",
         "TODO: Automatic summarization",
-        "TODO: Cross-agent context sharing"
+        "TODO: Cross-agent context sharing",
+        "TODO: Wire into colony-agent ContextManager before LLM calls"
       ]
     },
     {
