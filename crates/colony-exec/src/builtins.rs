@@ -127,6 +127,7 @@ fn is_builtin_base(name: &str) -> bool {
             | "sidebar"
             | "serve"
             | "heartbeat"
+            | "on"
     )
 }
 
@@ -284,22 +285,20 @@ pub fn execute_builtin(
         "pane" => crate::panes::builtin_pane(&args),
         "secure" => builtin_secure(&args, context),
         "mirror" => crate::mirror::builtin_mirror(&args),
-        "sidebar" => {
-            match crate::sidebar::parse_sidebar_args(&args) {
-                Ok(cmd) => {
-                    let json = serde_json::to_string(&cmd).unwrap_or_default();
-                    tuple_space.out(colony_tuple::Tuple::new(vec![
-                        colony_tuple::Value::Str("sidebar_command".to_string()),
-                        colony_tuple::Value::Str(json),
-                    ]));
-                    Ok(BuiltinResult::Success(0))
-                }
-                Err(e) => {
-                    eprintln!("sidebar: {e}");
-                    Ok(BuiltinResult::Failure(1))
-                }
+        "sidebar" => match crate::sidebar::parse_sidebar_args(&args) {
+            Ok(cmd) => {
+                let json = serde_json::to_string(&cmd).unwrap_or_default();
+                tuple_space.out(colony_tuple::Tuple::new(vec![
+                    colony_tuple::Value::Str("sidebar_command".to_string()),
+                    colony_tuple::Value::Str(json),
+                ]));
+                Ok(BuiltinResult::Success(0))
             }
-        }
+            Err(e) => {
+                eprintln!("sidebar: {e}");
+                Ok(BuiltinResult::Failure(1))
+            }
+        },
         "serve" => {
             // Namespaced builtins: serve:status and serve:header use the
             // thread-local response meta channel for per-request metadata.
@@ -367,6 +366,7 @@ pub fn execute_builtin(
                 Ok(BuiltinResult::Failure(1))
             }
         }
+        "on" => crate::events::builtin_on(&args),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
@@ -490,8 +490,7 @@ pub(crate) fn builtin_export(
     if export_functions {
         if names.is_empty() || print_mode {
             // Collect and sort for deterministic output
-            let mut func_names: Vec<String> =
-                context.exported_function_names().cloned().collect();
+            let mut func_names: Vec<String> = context.exported_function_names().cloned().collect();
             func_names.sort();
             for name in &func_names {
                 if let Some(func) = context.get_function(name) {
@@ -1969,94 +1968,117 @@ fn builtin_false() -> Result<BuiltinResult> {
     Ok(BuiltinResult::Failure(1))
 }
 
-/// context - Manage context channel (fd 3)
+/// context - Manage AI interaction context (persistent store + fd 3 channel)
 ///
 /// Usage:
-/// - context add <text>     - Append text to context channel
-/// - context show           - Display all context entries
-/// - context show --last N  - Show last N entries
-/// - context clear          - Clear context channel
+/// - context show [--tokens]     - Show persistent context summary
+/// - context add <text>          - Add knowledge entry (persisted + channel)
+/// - context add --file <path>   - Add file content to persistent context
+/// - context remove <id>         - Remove entry by ID prefix
+/// - context clear [--all]       - Clear non-pinned entries (--all for everything)
+/// - context pin <id>            - Pin an entry (survives prune)
+/// - context prune [max_tokens]  - Prune to fit token budget
+/// - context channel [show|clear|add] - Direct fd 3 channel operations
 ///
-/// **F024:** Extended channels system - writes to stdcontext (fd 3)
+/// **F024 + F075:** Combines channel system (fd 3) with persistent context store
 fn builtin_context(args: &[String], channels: &mut ChannelManager) -> Result<BuiltinResult> {
     use colony_channels::Channel;
+    use sha2::{Digest, Sha256};
 
-    if args.is_empty() {
-        eprintln!("context: missing subcommand");
-        eprintln!("Usage: context <add|show|clear> [args...]");
-        return Ok(BuiltinResult::Failure(1));
+    // Derive project_id from cwd hash
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(cwd.to_string_lossy().as_bytes());
+    let hash = hex::encode(hasher.finalize());
+    let project_id = &hash[..16];
+
+    let store = colony_context::ContextStore::default_store();
+
+    // Handle "context channel" subcommand for direct fd 3 operations
+    if args.first().map(String::as_str) == Some("channel") {
+        let sub_args = if args.len() > 1 { &args[1..] } else { &[] };
+        let sub = sub_args.first().map(String::as_str).unwrap_or("show");
+
+        return match sub {
+            "add" => {
+                if sub_args.len() < 2 {
+                    eprintln!("context channel add: missing text");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                let text = sub_args[1..].join(" ");
+                if let Some(ctx_channel) = channels.context() {
+                    ctx_channel.add_text(&text);
+                    println!("Added to channel: {}", text);
+                    Ok(BuiltinResult::Success(0))
+                } else {
+                    eprintln!("context: channel not available");
+                    Ok(BuiltinResult::Failure(1))
+                }
+            }
+            "show" => {
+                let count_limit = if sub_args.len() >= 3 && sub_args[1] == "--last" {
+                    sub_args[2].parse::<usize>().ok()
+                } else {
+                    None
+                };
+                if let Some(ctx_channel) = channels.context() {
+                    let entries = if let Some(limit) = count_limit {
+                        ctx_channel.last(limit)
+                    } else {
+                        ctx_channel.lines()
+                    };
+                    if entries.is_empty() {
+                        println!("(channel context is empty)");
+                    } else {
+                        for entry in entries {
+                            println!("{}", entry);
+                        }
+                    }
+                    Ok(BuiltinResult::Success(0))
+                } else {
+                    eprintln!("context: channel not available");
+                    Ok(BuiltinResult::Failure(1))
+                }
+            }
+            "clear" => {
+                if let Some(ctx_channel) = channels.context() {
+                    ctx_channel.clear();
+                    println!("Channel context cleared");
+                    Ok(BuiltinResult::Success(0))
+                } else {
+                    eprintln!("context: channel not available");
+                    Ok(BuiltinResult::Failure(1))
+                }
+            }
+            _ => {
+                eprintln!("context channel: unknown subcommand: {}", sub);
+                Ok(BuiltinResult::Failure(1))
+            }
+        };
     }
 
-    let subcommand = &args[0];
+    // Persistent store operations via colony-context builtin
+    let str_args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = colony_context::builtin::execute(&str_args, &store, project_id);
 
-    match subcommand.as_str() {
-        "add" => {
-            if args.len() < 2 {
-                eprintln!("context add: missing text");
-                return Ok(BuiltinResult::Failure(1));
-            }
-
-            // Join all remaining args as the text to add
-            let text = args[1..].join(" ");
-
-            // Get mutable reference to context channel
-            if let Some(ctx_channel) = channels.context() {
-                // Use ContextChannel's add_text method
-                ctx_channel.add_text(&text);
-                println!("Added to context: {}", text);
-                Ok(BuiltinResult::Success(0))
-            } else {
-                eprintln!("context: channel not available");
-                Ok(BuiltinResult::Failure(1))
-            }
+    // For "add" subcommand, also write to channel as side-effect
+    if args.first().map(String::as_str) == Some("add")
+        && args.len() >= 2
+        && args[1] != "--file"
+    {
+        let text = args[1..].join(" ");
+        if let Some(ctx_channel) = channels.context() {
+            ctx_channel.add_text(&text);
         }
+    }
 
-        "show" => {
-            // Check for --last N option
-            let count_limit = if args.len() >= 3 && args[1] == "--last" {
-                args[2].parse::<usize>().ok()
-            } else {
-                None
-            };
-
-            // Get context channel
-            if let Some(ctx_channel) = channels.context() {
-                let entries = if let Some(limit) = count_limit {
-                    ctx_channel.last(limit)
-                } else {
-                    ctx_channel.lines()
-                };
-
-                if entries.is_empty() {
-                    println!("(context is empty)");
-                } else {
-                    for entry in entries {
-                        println!("{}", entry);
-                    }
-                }
-
-                Ok(BuiltinResult::Success(0))
-            } else {
-                eprintln!("context: channel not available");
-                Ok(BuiltinResult::Failure(1))
-            }
+    match result {
+        colony_context::builtin::BuiltinResult::Output(msg) => {
+            println!("{msg}");
+            Ok(BuiltinResult::Success(0))
         }
-
-        "clear" => {
-            if let Some(ctx_channel) = channels.context() {
-                // Call clear through Channel trait
-                ctx_channel.clear();
-                println!("Context cleared");
-                Ok(BuiltinResult::Success(0))
-            } else {
-                eprintln!("context: channel not available");
-                Ok(BuiltinResult::Failure(1))
-            }
-        }
-
-        _ => {
-            eprintln!("context: unknown subcommand: {}", subcommand);
-            eprintln!("Usage: context <add|show|clear> [args...]");
+        colony_context::builtin::BuiltinResult::Error(msg) => {
+            eprintln!("context: {msg}");
             Ok(BuiltinResult::Failure(1))
         }
     }
@@ -5376,10 +5398,7 @@ fn builtin_history(
                             .and_then(|ts| chrono::DateTime::from_timestamp_millis(ts))
                             .map(|dt| dt.format("%Y-%m-%d").to_string())
                             .unwrap_or_else(|| "N/A".to_string());
-                        println!(
-                            "Commands: {} (since {})",
-                            stats.total_commands, since
-                        );
+                        println!("Commands: {} (since {})", stats.total_commands, since);
                         println!(
                             "Today: {}  |  This week: {}  |  This month: {}",
                             stats.today_count, stats.week_count, stats.month_count
@@ -5394,10 +5413,7 @@ fn builtin_history(
                                 } else {
                                     0.0
                                 };
-                                println!(
-                                    "  {:<16} {:>6} ({:.1}%)",
-                                    executor, count, pct
-                                );
+                                println!("  {:<16} {:>6} ({:.1}%)", executor, count, pct);
                             }
                             println!();
                         }
@@ -5516,10 +5532,7 @@ fn builtin_history(
                             println!("No agent commands recorded.");
                         } else {
                             for summary in &summaries {
-                                println!(
-                                    "{}: {} commands",
-                                    summary.executor, summary.total
-                                );
+                                println!("{}: {} commands", summary.executor, summary.total);
                                 for (risk, count) in &summary.risk_breakdown {
                                     println!("  {}: {}", risk, count);
                                 }
@@ -5565,9 +5578,7 @@ fn builtin_history(
                     }
                     Some("--pattern") => {
                         let Some(pattern) = args.get(2) else {
-                            eprintln!(
-                                "history delete: --pattern requires a regex argument"
-                            );
+                            eprintln!("history delete: --pattern requires a regex argument");
                             return Ok(BuiltinResult::Failure(1));
                         };
                         match store.delete_by_pattern(pattern) {
@@ -5992,7 +6003,10 @@ fn colony_install(args: &[String]) -> Result<BuiltinResult> {
     let (name, source_url) = if source.starts_with("http://") || source.starts_with("https://") {
         let name = extract_recipe_name_from_url(source);
         let Some(name) = name else {
-            eprintln!("colony install: could not extract recipe name from URL: {}", source);
+            eprintln!(
+                "colony install: could not extract recipe name from URL: {}",
+                source
+            );
             return Ok(BuiltinResult::Failure(1));
         };
         (name, Some(source.clone()))
@@ -6025,8 +6039,14 @@ fn colony_install(args: &[String]) -> Result<BuiltinResult> {
     }
 
     if let Some(url) = &source_url {
-        eprintln!("colony install: downloading from URL is not yet supported: {}", url);
-        eprintln!("  To install a local recipe, copy files to: {}", install_dir.display());
+        eprintln!(
+            "colony install: downloading from URL is not yet supported: {}",
+            url
+        );
+        eprintln!(
+            "  To install a local recipe, copy files to: {}",
+            install_dir.display()
+        );
         return Ok(BuiltinResult::Failure(1));
     }
 
@@ -6034,10 +6054,9 @@ fn colony_install(args: &[String]) -> Result<BuiltinResult> {
 
     let found = search_dirs.iter().find_map(|dir| {
         let candidate_dir = dir.join(&name);
-        if candidate_dir.is_dir()
-            && colony_recipe::validate_recipe_dir(&candidate_dir).is_ok() {
-                return Some(candidate_dir);
-            }
+        if candidate_dir.is_dir() && colony_recipe::validate_recipe_dir(&candidate_dir).is_ok() {
+            return Some(candidate_dir);
+        }
         let candidate_file = dir.join(format!("{}.toml", name));
         if candidate_file.exists() {
             return Some(candidate_file);
@@ -6055,21 +6074,30 @@ fn colony_install(args: &[String]) -> Result<BuiltinResult> {
     };
 
     if let Err(e) = std::fs::create_dir_all(&install_dir) {
-        eprintln!("colony install: failed to create {}: {}", install_dir.display(), e);
+        eprintln!(
+            "colony install: failed to create {}: {}",
+            install_dir.display(),
+            e
+        );
         return Ok(BuiltinResult::Failure(1));
     }
 
     if source_path.is_dir() {
         let files = colony_recipe::recipe_package_files(&source_path);
         if files.is_empty() {
-            eprintln!("colony install: no recipe files found in {}", source_path.display());
+            eprintln!(
+                "colony install: no recipe files found in {}",
+                source_path.display()
+            );
             return Ok(BuiltinResult::Failure(1));
         }
         for file in &files {
             let file_name = match file.strip_prefix(&source_path) {
                 Ok(rel) => rel.to_path_buf(),
                 Err(_) => {
-                    let Some(fname) = file.file_name() else { continue };
+                    let Some(fname) = file.file_name() else {
+                        continue;
+                    };
                     PathBuf::from(fname)
                 }
             };
@@ -6082,18 +6110,29 @@ fn colony_install(args: &[String]) -> Result<BuiltinResult> {
                 return Ok(BuiltinResult::Failure(1));
             }
         }
-        println!("Installed {} files to {}", files.len(), install_dir.display());
+        println!(
+            "Installed {} files to {}",
+            files.len(),
+            install_dir.display()
+        );
     } else {
         let dest = install_dir.join("recipe.toml");
         if let Err(e) = std::fs::copy(&source_path, &dest) {
-            eprintln!("colony install: failed to copy {}: {}", source_path.display(), e);
+            eprintln!(
+                "colony install: failed to copy {}: {}",
+                source_path.display(),
+                e
+            );
             return Ok(BuiltinResult::Failure(1));
         }
         println!("Installed recipe.toml to {}", install_dir.display());
     }
 
     if let Err(e) = colony_recipe::validate_recipe_dir(&install_dir) {
-        eprintln!("colony install: warning: installed recipe has validation issues: {}", e);
+        eprintln!(
+            "colony install: warning: installed recipe has validation issues: {}",
+            e
+        );
     }
 
     let version = read_recipe_version(&install_dir);
@@ -6123,9 +6162,7 @@ fn colony_publish(args: &[String]) -> Result<BuiltinResult> {
     let dir = if let Some(path) = args.first() {
         PathBuf::from(path)
     } else {
-        std::env::current_dir().map_err(|e| {
-            ExecutionError::IoError(e)
-        })?
+        std::env::current_dir().map_err(|e| ExecutionError::IoError(e))?
     };
 
     if let Err(e) = colony_recipe::validate_recipe_dir(&dir) {
@@ -6140,13 +6177,15 @@ fn colony_publish(args: &[String]) -> Result<BuiltinResult> {
         return Ok(BuiltinResult::Failure(1));
     }
 
-    let api_key = std::env::var("COLONY_API_KEY").ok().or_else(|| {
-        read_config_api_key()
-    });
+    let api_key = std::env::var("COLONY_API_KEY")
+        .ok()
+        .or_else(|| read_config_api_key());
 
     let Some(_api_key) = api_key else {
         eprintln!("colony publish: authentication required");
-        eprintln!("  Set COLONY_API_KEY environment variable or add api_key to ~/.colony/config.toml");
+        eprintln!(
+            "  Set COLONY_API_KEY environment variable or add api_key to ~/.colony/config.toml"
+        );
         return Ok(BuiltinResult::Failure(1));
     };
 
@@ -6503,10 +6542,7 @@ fn goal_list(tree: &crate::goals::GoalTree) -> Result<BuiltinResult> {
     Ok(BuiltinResult::Success(0))
 }
 
-fn goal_update(
-    tree: &mut crate::goals::GoalTree,
-    args: &[String],
-) -> Result<BuiltinResult> {
+fn goal_update(tree: &mut crate::goals::GoalTree, args: &[String]) -> Result<BuiltinResult> {
     if args.len() < 2 {
         eprintln!("goal update: missing arguments");
         eprintln!("Usage: goal update <id> <pending|in_progress|completed|blocked|cancelled>");
@@ -6546,10 +6582,7 @@ fn goal_update(
     }
 }
 
-fn goal_complete(
-    tree: &mut crate::goals::GoalTree,
-    args: &[String],
-) -> Result<BuiltinResult> {
+fn goal_complete(tree: &mut crate::goals::GoalTree, args: &[String]) -> Result<BuiltinResult> {
     if args.is_empty() {
         eprintln!("goal complete: missing goal ID");
         eprintln!("Usage: goal complete <id>");
@@ -6576,10 +6609,7 @@ fn goal_complete(
     }
 }
 
-fn goal_block(
-    tree: &mut crate::goals::GoalTree,
-    args: &[String],
-) -> Result<BuiltinResult> {
+fn goal_block(tree: &mut crate::goals::GoalTree, args: &[String]) -> Result<BuiltinResult> {
     if args.len() < 2 {
         eprintln!("goal block: missing arguments");
         eprintln!("Usage: goal block <id> <reason>");
@@ -6607,10 +6637,7 @@ fn goal_block(
     }
 }
 
-fn goal_checkpoint(
-    tree: &mut crate::goals::GoalTree,
-    args: &[String],
-) -> Result<BuiltinResult> {
+fn goal_checkpoint(tree: &mut crate::goals::GoalTree, args: &[String]) -> Result<BuiltinResult> {
     let label = if args.is_empty() {
         chrono::Utc::now().format("%Y-%m-%d %H:%M").to_string()
     } else {
@@ -6738,9 +6765,7 @@ fn builtin_secure_export(
 }
 
 /// secure list — list all registered secure variables
-fn builtin_secure_list(
-    registry: &colony_secure::SecureRegistry,
-) -> Result<BuiltinResult> {
+fn builtin_secure_list(registry: &colony_secure::SecureRegistry) -> Result<BuiltinResult> {
     let vars = registry.list_secure_vars();
 
     if vars.is_empty() {
@@ -6849,9 +6874,7 @@ fn builtin_secure_revoke(
 }
 
 /// secure patterns — show configured auto-detection patterns
-fn builtin_secure_patterns(
-    _registry: &colony_secure::SecureRegistry,
-) -> Result<BuiltinResult> {
+fn builtin_secure_patterns(_registry: &colony_secure::SecureRegistry) -> Result<BuiltinResult> {
     // Load config to display patterns
     let config = match colony_secure::SecureConfig::load_or_default() {
         Ok(c) => c,
@@ -7703,10 +7726,7 @@ mod tests {
         let registry = std::sync::Arc::new(parking_lot::Mutex::new(registry));
         context.set_secure_registry(registry);
 
-        let result = builtin_secure(
-            &["export".to_string(), "=value".to_string()],
-            &mut context,
-        );
+        let result = builtin_secure(&["export".to_string(), "=value".to_string()], &mut context);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 1);
     }
