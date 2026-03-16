@@ -1264,8 +1264,8 @@
     {
       "id": "F054",
       "name": "Colony Cloud (Managed LLM Service)",
-      "description": "Managed LLM service wrapping AWS Bedrock. REST API (OpenAI-compatible) + native Rust SDK. Tiered subscriptions (Free/Pro/Enterprise), usage tracking, rate limiting, prompt caching. Includes Recipe Registry for sharing recipes/plugins/skills/bundles.",
-      "status": "in_progress",
+      "description": "Managed LLM service wrapping AWS Bedrock. REST API (OpenAI-compatible) + native Rust SDK. Tiered subscriptions (Free/Pro/Enterprise), usage tracking, rate limiting, prompt caching. Includes Recipe Registry for sharing recipes/plugins/skills/bundles. SDK complete — server deferred.",
+      "status": "paused",
       "priority": 6,
       "dependencies": [
         "F014"
