@@ -9,5 +9,7 @@ pub mod entry;
 pub mod project;
 pub mod store;
 
+pub use composer::{ComposedContext, ContextComposer, ContextSection};
 pub use entry::{ContextEntry, ContextFile, ContextKind, EntryMetadata, Priority};
+pub use project::ProjectContext;
 pub use store::{ContextStore, StoreError};
