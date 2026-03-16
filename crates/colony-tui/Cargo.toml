@@ -21,6 +21,7 @@ colony-tuple = { workspace = true }
 colony-parser = { workspace = true }
 colony-protocol = { path = "../colony-protocol" }
 colony-tree-sitter = { workspace = true }
+colony-recommend = { workspace = true }
 
 # Parser
 tree-sitter = { workspace = true }

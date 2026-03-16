@@ -37,6 +37,8 @@ members = [
     "crates/colony-serve-bin",
     "crates/colony-heartbeat-bin",
     "crates/colony-recommend",
+    "crates/colony-events",
+    "crates/colony-events-bin",
 ]
 
 [workspace.package]

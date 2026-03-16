@@ -31,6 +31,7 @@ use crate::sidebar::SidebarRenderer;
 use crate::theme::Theme;
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
+use colony_recommend::RecommendationEngine;
 use colony_ui_core::{
     ComponentContext, FileTreePanel, GitFilesPanel, McpPanel, SessionPanel, SidebarManager,
     SidebarPosition,
@@ -69,6 +70,8 @@ pub struct App {
     highlighter: Highlighter,
     /// Ghost completions
     ghost: GhostCompletion,
+    /// Recommendation engine (command, path, git sources)
+    recommend_engine: RecommendationEngine,
     /// History search
     history_search: HistorySearch,
     /// Command palette
@@ -126,6 +129,7 @@ impl App {
             editor: Editor::new(),
             highlighter: Highlighter::new(),
             ghost: GhostCompletion::new(),
+            recommend_engine: RecommendationEngine::with_defaults(),
             history_search: HistorySearch::new(),
             command_palette: CommandPalette::new(),
             content: RawContent::new(),
@@ -171,9 +175,16 @@ impl App {
         let visible_lines = self.content.visible_lines();
         let focus = self.focus;
 
-        // Update ghost completions based on current input
-        self.ghost.update(&buffer);
-        let ghost_text = self.ghost.ghost_text().map(|s| s.to_string());
+        // Update ghost completions: try recommendation engine first, fall back to
+        // the existing GhostCompletion (which handles history matching).
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let ghost_text = self
+            .recommend_engine
+            .ghost_text(&buffer, buffer.len(), cwd)
+            .or_else(|| {
+                self.ghost.update(&buffer);
+                self.ghost.ghost_text().map(|s| s.to_string())
+            });
 
         // Render sidebars
         let left_sidebar = self.sidebars.render(SidebarPosition::Left, &ctx);
@@ -683,6 +694,7 @@ impl App {
                 self.editor = Editor::new();
                 self.ghost = GhostCompletion::new();
                 self.history_search = HistorySearch::new();
+                self.recommend_engine = RecommendationEngine::with_defaults();
             }
             PaletteAction::Quit => {
                 self.state = AppState::Quitting;
