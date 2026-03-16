@@ -2282,6 +2282,8 @@ pub struct Executor {
     observer: Arc<dyn ReflectionObserver>,
     /// Embedded HTTP server state (serve builtin)
     serve_state: serve::ServeState,
+    /// Debug/X-Ray controller for stepping and tracing
+    debug_controller: Option<Arc<tokio::sync::Mutex<colony_debug::DebugController>>>,
 }
 
 impl Executor {
@@ -2300,6 +2302,7 @@ impl Executor {
             heartbeat_scheduler: hb_scheduler,
             observer: Arc::new(colony_reflection::NoopObserver),
             serve_state: serve::ServeState::new(),
+            debug_controller: None,
         }
     }
 
@@ -2318,6 +2321,7 @@ impl Executor {
             heartbeat_scheduler: hb_scheduler,
             observer: Arc::new(colony_reflection::NoopObserver),
             serve_state: serve::ServeState::new(),
+            debug_controller: None,
         }
     }
 
@@ -2357,6 +2361,21 @@ impl Executor {
     /// Get reference to the reflection observer
     pub fn observer(&self) -> &Arc<dyn ReflectionObserver> {
         &self.observer
+    }
+
+    /// Set the debug/X-Ray controller for stepping and tracing.
+    pub fn set_debug_controller(
+        &mut self,
+        controller: Arc<tokio::sync::Mutex<colony_debug::DebugController>>,
+    ) {
+        self.debug_controller = Some(controller);
+    }
+
+    /// Get reference to the debug controller, if set.
+    pub fn debug_controller(
+        &self,
+    ) -> Option<&Arc<tokio::sync::Mutex<colony_debug::DebugController>>> {
+        self.debug_controller.as_ref()
     }
 
     /// Get reference to job table
@@ -3707,7 +3726,23 @@ impl Executor {
         Box::pin(async move {
             use colony_parser::Statement;
 
-            match stmt {
+            // Debug/X-Ray hook: notify controller before dispatch
+            let debug_start = if self.debug_controller.is_some() {
+                Some(std::time::Instant::now())
+            } else {
+                None
+            };
+            if let Some(ref debug) = self.debug_controller {
+                let line = stmt.span().start.line;
+                let source = format!("{:?}", std::mem::discriminant(stmt));
+                let mut ctrl = debug.lock().await;
+                let should_proceed = ctrl.on_statement_enter(line, &source);
+                if !should_proceed {
+                    ctrl.wait_for_command().await;
+                }
+            }
+
+            let result = match stmt {
                 Statement::SimpleCommand(cmd) => {
                     let status = Box::pin(self.execute_simple_command(cmd)).await?;
                     let code = status.code();
@@ -3868,7 +3903,21 @@ impl Executor {
                     eprintln!("Statement type not yet supported in function: {:?}", other);
                     Ok(1)
                 }
+            };
+
+            // Debug/X-Ray hook: notify controller after dispatch
+            if let (Some(start), Some(ref debug)) =
+                (debug_start, &self.debug_controller)
+            {
+                let elapsed = start.elapsed();
+                let mut ctrl = debug.lock().await;
+                ctrl.on_statement_exit(
+                    stmt.span().start.line,
+                    elapsed.as_micros() as u64,
+                );
             }
+
+            result
         })
     }
 

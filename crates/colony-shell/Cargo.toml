@@ -70,6 +70,7 @@ colony-tuple = { path = "../colony-tuple" }
 colony-ui-core = { path = "../colony-ui-core" }
 colony-secure = { path = "../colony-secure" }
 colony-reflection = { path = "../colony-reflection" }
+colony-debug = { workspace = true }
 parking_lot.workspace = true
 tokio.workspace = true
 tracing.workspace = true

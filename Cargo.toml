@@ -39,6 +39,7 @@ members = [
     "crates/colony-recommend",
     "crates/colony-events",
     "crates/colony-events-bin",
+    "crates/colony-debug",
 ]
 
 [workspace.package]
@@ -135,6 +136,7 @@ colony-panel = { path = "crates/colony-panel" }
 colony-history = { path = "crates/colony-history" }
 colony-context = { path = "crates/colony-context" }
 colony-recommend = { path = "crates/colony-recommend" }
+colony-debug = { path = "crates/colony-debug" }
 
 # HTTP server
 axum = "0.8"

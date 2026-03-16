@@ -41,6 +41,14 @@ pub(crate) struct ShellOptions {
 
     #[arg(long, default_value_t = 2, env = "COLONY_DEPTH", value_name = "LEVEL")]
     pub(crate) depth: u8,
+
+    /// Start the script debugger (breakpoints, stepping, inspection)
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub(crate) debug: bool,
+
+    /// Start the X-Ray tracer (auto-play with real-time annotations)
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub(crate) xray: bool,
 }
 
 impl ShellOptions {

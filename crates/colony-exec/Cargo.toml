@@ -16,6 +16,7 @@ colony-channels = { path = "../colony-channels" }
 colony-protocol = { path = "../colony-protocol" }
 colony-recipe = { path = "../colony-recipe" }
 colony-reflection = { path = "../colony-reflection" }
+colony-debug = { workspace = true }
 colony-secure = { path = "../colony-secure" }
 colony-context = { path = "../colony-context" }
 colony-panel = { path = "../colony-panel" }
