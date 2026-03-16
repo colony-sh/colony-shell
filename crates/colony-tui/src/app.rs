@@ -34,8 +34,8 @@ use colony_exec::Executor;
 use colony_expand::ExpansionContext;
 use colony_recommend::RecommendationEngine;
 use colony_ui_core::{
-    ComponentContext, FileTreePanel, GitFilesPanel, McpPanel, SessionPanel, SidebarManager,
-    SidebarPosition,
+    ComponentContext, ContextPanel, DiagPanel, FileTreePanel, GitFilesPanel, LlmPanel, McpPanel,
+    SessionPanel, SidebarManager, SidebarPosition, ToolPanel,
 };
 use std::sync::Arc;
 
@@ -119,6 +119,10 @@ impl App {
         sidebars.register(Arc::new(SessionPanel::new()));
         sidebars.register(Arc::new(McpPanel::new()));
         sidebars.register(Arc::new(GitFilesPanel::new()));
+        sidebars.register(Arc::new(ContextPanel::new()));
+        sidebars.register(Arc::new(LlmPanel::new()));
+        sidebars.register(Arc::new(ToolPanel::new()));
+        sidebars.register(Arc::new(DiagPanel::new()));
 
         // Initialize shell executor
         let context = ExpansionContext::new();
