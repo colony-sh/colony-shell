@@ -1,0 +1,1 @@
+//! Info pane -- placeholder, implemented in Task 4.

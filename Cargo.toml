@@ -32,6 +32,7 @@ members = [
     "crates/colony-logs-bin",
     "crates/colony-session-bin",
     "crates/colony-gitstage-bin",
+    "crates/colony-debug",
 ]
 
 [workspace.package]
@@ -115,6 +116,7 @@ colony-ui-core = { path = "crates/colony-ui-core" }
 colony-tui = { path = "crates/colony-tui" }
 colony-recipe = { path = "crates/colony-recipe" }
 colony-panel = { path = "crates/colony-panel" }
+colony-debug = { path = "crates/colony-debug" }
 
 [profile.dev]
 opt-level = 0
