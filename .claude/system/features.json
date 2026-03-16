@@ -1651,7 +1651,7 @@
       "description": "Colony as a personal application platform. Deploy and manage local services, background tasks, and persistent agents. Integration with Docker, process management, and service discovery.",
       "status": "new",
       "priority": 7,
-      "dependencies": ["F054"],
+      "dependencies": [],
       "notes": [
         "2025-12-27: Design document created (docs/plans/2025-12-27-personal-app-platform-design.md)"
       ]
