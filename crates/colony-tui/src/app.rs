@@ -29,7 +29,7 @@ use crate::keybindings::{Action, KeyMapper, Mode};
 use crate::prompt::PromptRenderer;
 use crate::sidebar::SidebarRenderer;
 use crate::theme::Theme;
-use crate::widgets::PromptWidgetState;
+use crate::widgets::{ActiveWidget, PromptWidgetState};
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
 use colony_ui_core::{
@@ -223,6 +223,10 @@ impl App {
             .collect();
         let palette_selected = self.command_palette.selected();
 
+        // Prompt widget state
+        let prompt_widget_active = self.prompt_widget.is_active();
+        let prompt_widget_snapshot = self.prompt_widget.active_widget().cloned();
+
         self.terminal
             .draw(|frame| {
                 let size = frame.area();
@@ -342,6 +346,17 @@ impl App {
                         &palette_results,
                         palette_selected,
                     );
+                }
+
+                // Render prompt widget popup (overlay)
+                if prompt_widget_active {
+                    match prompt_widget_snapshot.as_ref() {
+                        Some(ActiveWidget::Confirm(w)) => w.render(frame, main_area),
+                        Some(ActiveWidget::FilePicker(w)) => w.render(frame, main_area),
+                        Some(ActiveWidget::BranchPicker(w)) => w.render(frame, main_area),
+                        Some(ActiveWidget::ToolApproval(w)) => w.render(frame, main_area),
+                        None => {}
+                    }
                 }
             })
             .map_err(|e| miette::miette!("Failed to draw: {}", e))?;
@@ -583,8 +598,9 @@ impl App {
 
             // Prompt widgets
             Action::PromptWidgetAccept => {
-                if let Some(_result) = self.prompt_widget.accept() {
+                if let Some(result) = self.prompt_widget.accept() {
                     self.keys.set_mode(Mode::Insert);
+                    self.handle_widget_result(result);
                 } else {
                     self.keys.set_mode(Mode::Insert);
                 }
@@ -721,6 +737,12 @@ impl App {
             PaletteAction::RunCommand(cmd) => {
                 self.execute_command(&cmd).await?;
             }
+            PaletteAction::ShowFilePicker => {
+                self.activate_file_picker();
+            }
+            PaletteAction::ShowBranchPicker => {
+                self.activate_branch_picker();
+            }
         }
         Ok(())
     }
@@ -730,9 +752,70 @@ impl App {
         match cmd.trim() {
             "q" | "quit" => self.state = AppState::Quitting,
             "clear" => self.content.clear(),
+            "files" => self.activate_file_picker(),
+            "branches" => self.activate_branch_picker(),
             _ => {} // Unknown command
         }
         Ok(())
+    }
+
+    /// Activate the file picker widget.
+    fn activate_file_picker(&mut self) {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let widget = crate::widgets::FilePickerWidget::new(cwd);
+        self.prompt_widget
+            .activate(ActiveWidget::FilePicker(widget));
+        self.keys.set_mode(Mode::PromptWidget);
+    }
+
+    /// Activate the branch picker widget.
+    fn activate_branch_picker(&mut self) {
+        let widget = crate::widgets::BranchPickerWidget::new();
+        self.prompt_widget
+            .activate(ActiveWidget::BranchPicker(widget));
+        self.keys.set_mode(Mode::PromptWidget);
+    }
+
+    /// Activate a confirmation dialog.
+    pub fn activate_confirm(&mut self, prompt: impl Into<String>) {
+        let widget = crate::widgets::ConfirmWidget::new(prompt);
+        self.prompt_widget
+            .activate(ActiveWidget::Confirm(widget));
+        self.keys.set_mode(Mode::PromptWidget);
+    }
+
+    /// Handle the result from a completed prompt widget.
+    fn handle_widget_result(&mut self, result: crate::widgets::WidgetResult) {
+        match result {
+            crate::widgets::WidgetResult::Accept(value) => {
+                // Insert the accepted value at the current cursor position
+                // This works for file paths, branch names, etc.
+                let current = self.editor.buffer().to_string();
+                if current.is_empty() {
+                    self.editor.set_buffer(&value);
+                } else {
+                    // Append with a space separator
+                    self.editor.set_buffer(&format!("{current} {value}"));
+                }
+            }
+            crate::widgets::WidgetResult::Cancel => {
+                // Nothing to do on cancel
+            }
+        }
+    }
+
+    /// Activate a tool approval dialog.
+    pub fn activate_tool_approval(
+        &mut self,
+        tool_name: impl Into<String>,
+        arguments: impl Into<String>,
+        component_id: impl Into<String>,
+    ) {
+        let widget =
+            crate::widgets::ToolApprovalWidget::new(tool_name, arguments, component_id);
+        self.prompt_widget
+            .activate(ActiveWidget::ToolApproval(widget));
+        self.keys.set_mode(Mode::PromptWidget);
     }
 
     /// Create component context for prompt rendering
