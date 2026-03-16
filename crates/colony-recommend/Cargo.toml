@@ -1,0 +1,13 @@
+[package]
+name = "colony-recommend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Command recommendation engine for Colony Shell"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+dirs = { workspace = true }
+
+[dev-dependencies]
