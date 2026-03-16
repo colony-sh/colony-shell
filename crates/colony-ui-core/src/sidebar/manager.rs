@@ -79,6 +79,7 @@ impl SidebarManager {
                     "session".to_string(),
                     "mcp".to_string(),
                     "git_files".to_string(),
+                    "context".to_string(),
                 ],
                 collapsed_panels: vec!["session".to_string()],
             },

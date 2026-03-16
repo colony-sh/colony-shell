@@ -36,8 +36,8 @@ pub use manager::{color_to_string, ComponentData, PromptData, PromptManager};
 pub use registry::ComponentRegistry;
 pub use render::ansi::{render_outputs, render_prompt, strip_ansi};
 pub use sidebar::{
-    FileTreePanel, GitFilesPanel, McpPanel, SessionPanel, SidebarData, SidebarManager,
-    SidebarPanelData,
+    ContextPanel, FileTreePanel, GitFilesPanel, McpPanel, SessionPanel, SidebarData,
+    SidebarManager, SidebarPanelData,
 };
 pub use subscription::SubscriptionManager;
 pub use widgets::{

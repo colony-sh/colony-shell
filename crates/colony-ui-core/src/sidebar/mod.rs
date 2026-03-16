@@ -7,4 +7,4 @@ mod manager;
 pub mod panels;
 
 pub use manager::{SidebarData, SidebarManager, SidebarPanelData};
-pub use panels::{FileTreePanel, GitFilesPanel, McpPanel, SessionPanel};
+pub use panels::{ContextPanel, FileTreePanel, GitFilesPanel, McpPanel, SessionPanel};
