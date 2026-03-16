@@ -608,9 +608,9 @@ pub(crate) async fn display_tuple_activity(
                 handle.write().await.clone_from(&PathBuf::from(new));
             }
 
-            // Load special files from new directory (F030)
+            // Load special files from new directory with hierarchy walk (F030)
             let new_path = PathBuf::from(new);
-            if colony_exec::special_files::SpecialFilesLoader::has_special_files(&new_path) {
+            if colony_exec::special_files::SpecialFilesLoader::has_special_files_in_hierarchy(&new_path) {
                 executor.load_special_files(&new_path);
 
                 if let Some(state) = executor.special_files() {

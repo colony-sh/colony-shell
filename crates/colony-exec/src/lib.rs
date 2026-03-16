@@ -2371,11 +2371,11 @@ impl Executor {
         self.special_files.as_ref()
     }
 
-    /// Load special files from a directory (triggered on cd/pushd/popd)
+    /// Load special files from a directory with hierarchy walking (triggered on cd/pushd/popd).
     pub fn load_special_files(&mut self, dir: &std::path::Path) {
         use colony_tuple::{Tuple, Value};
 
-        match special_files::SpecialFilesLoader::load(dir) {
+        match special_files::SpecialFilesLoader::load_with_hierarchy(dir) {
             Ok(state) => {
                 // Seed context channel with CONTEXT.md entries
                 for entry in &state.context_entries {
@@ -2384,12 +2384,24 @@ impl Executor {
                     }
                 }
 
-                // Emit tuples for loaded agents
+                // Emit session-scoped tuples for loaded agents
                 for agent in &state.agents {
                     self.tuple_space.out(Tuple::from(vec![
                         Value::Str("agent_loaded".to_string()),
+                        Value::Str(self.session_id.clone()),
                         Value::Str(agent.name.clone()),
                         Value::Str(dir.display().to_string()),
+                    ]));
+                }
+
+                // Emit per-file-type tuples
+                let loaded_files = special_files::SpecialFilesLoader::collect_loaded_files(dir);
+                for loaded in loaded_files.values() {
+                    self.tuple_space.out(Tuple::from(vec![
+                        Value::Str("special_files_loaded".to_string()),
+                        Value::Str(self.session_id.clone()),
+                        Value::Str(loaded.file_type.to_string()),
+                        Value::Str(loaded.path.display().to_string()),
                     ]));
                 }
 
@@ -2404,12 +2416,6 @@ impl Executor {
                 }
 
                 self.special_files = Some(state);
-
-                // Emit summary tuple
-                self.tuple_space.out(Tuple::from(vec![
-                    Value::Str("special_files_loaded".to_string()),
-                    Value::Str(dir.display().to_string()),
-                ]));
             }
             Err(e) => {
                 tracing::warn!("Failed to load special files from {}: {}", dir.display(), e);

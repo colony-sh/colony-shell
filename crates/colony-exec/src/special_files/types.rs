@@ -6,6 +6,36 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::SystemTime;
+
+/// Identifies the type of a special file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SpecialFileType {
+    Agent, Context, Tools, Prompt, Config, Heartbeat,
+}
+
+impl SpecialFileType {
+    pub fn filename(&self) -> &'static str {
+        match self {
+            Self::Agent => "AGENT.md", Self::Context => "CONTEXT.md", Self::Tools => "TOOLS.md",
+            Self::Prompt => "PROMPT.md", Self::Config => ".colony/config.toml", Self::Heartbeat => "HEARTBEAT.md",
+        }
+    }
+    pub fn merges_up_tree(&self) -> bool { matches!(self, Self::Context | Self::Heartbeat) }
+}
+
+impl std::fmt::Display for SpecialFileType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.filename()) }
+}
+
+/// A single loaded special file with metadata for cache invalidation.
+#[derive(Debug, Clone)]
+pub struct LoadedSpecialFile {
+    pub file_type: SpecialFileType,
+    pub path: PathBuf,
+    pub content: String,
+    pub last_modified: SystemTime,
+}
 
 /// Parsed agent definition from AGENT.md
 #[derive(Debug, Clone, Serialize, Deserialize)]
