@@ -32,6 +32,7 @@ members = [
     "crates/colony-logs-bin",
     "crates/colony-session-bin",
     "crates/colony-gitstage-bin",
+    "crates/colony-history",
 ]
 
 [workspace.package]
@@ -92,7 +93,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.6", features = ["v4"] }
 
 # SQLite
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled-full"] }
 
 # File system watching
 notify = { version = "6.1", default-features = false, features = ["macos_fsevent"] }
@@ -125,6 +126,7 @@ colony-ui-core = { path = "crates/colony-ui-core" }
 colony-tui = { path = "crates/colony-tui" }
 colony-recipe = { path = "crates/colony-recipe" }
 colony-panel = { path = "crates/colony-panel" }
+colony-history = { path = "crates/colony-history" }
 
 [profile.dev]
 opt-level = 0

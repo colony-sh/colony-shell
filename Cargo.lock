@@ -1628,6 +1628,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-history"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "nix 0.28.0",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "colony-history-bin"
 version = "0.1.0"
 dependencies = [
@@ -6487,11 +6504,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7753b721174eb8ff87a9a0e799e2d7bc3749323e773db92e0984debb00019d6e"
 dependencies = [
  "bitflags 2.10.0",
+ "chrono",
+ "csv",
  "fallible-iterator",
  "fallible-streaming-iterator",
  "hashlink",
  "libsqlite3-sys",
+ "serde_json",
  "smallvec",
+ "time",
+ "url",
+ "uuid",
 ]
 
 [[package]]
