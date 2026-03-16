@@ -199,6 +199,7 @@ fn execute_statement_in_child_with_return(
                 &session_id,
                 &mut channels,
                 None,
+                None,
             ) {
                 let _ = std::io::stdout().flush();
 
@@ -530,6 +531,7 @@ fn execute_single_element_blocking(
             &tuple_space,
             &session_id,
             &mut channels,
+            None,
             None,
         ) {
             let _ = std::io::stdout().flush();

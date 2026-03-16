@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 colony-parser.workspace = true
 colony-expand.workspace = true
+colony-history = { workspace = true }
 colony-tuple = { path = "../colony-tuple" }
 colony-channels = { path = "../colony-channels" }
 colony-protocol = { path = "../colony-protocol" }

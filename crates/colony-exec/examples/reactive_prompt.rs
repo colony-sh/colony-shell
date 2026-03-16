@@ -109,7 +109,9 @@ fn main() {
         &mut ctx,
         &jobs,
         executor.tuple_space(),
+        executor.session_id(),
         &mut channels,
+        None,
         None,
     ) {
         result.ok();
@@ -132,7 +134,9 @@ fn main() {
         &mut ctx,
         &jobs,
         executor.tuple_space(),
+        executor.session_id(),
         &mut channels,
+        None,
         None,
     ) {
         result.ok();
@@ -155,7 +159,9 @@ fn main() {
         &mut ctx,
         &jobs,
         executor.tuple_space(),
+        executor.session_id(),
         &mut channels,
+        None,
         None,
     ) {
         result.ok();
@@ -178,7 +184,9 @@ fn main() {
         &mut ctx,
         &jobs,
         executor.tuple_space(),
+        executor.session_id(),
         &mut channels,
+        None,
         None,
     ) {
         result.ok();

@@ -21,6 +21,7 @@ use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Default maximum history size
 pub const DEFAULT_HISTSIZE: usize = 500;
@@ -639,18 +640,42 @@ pub struct HistorySearchResult {
     pub match_end: usize,
 }
 
-#[derive(Debug)]
 pub struct InteractiveHistorySearch<'a> {
     history: &'a History,
+    /// Optional SQLite-backed store for FTS5 search.
+    store: Option<Arc<colony_history::HistoryStore>>,
     query: String,
     results: Vec<HistorySearchResult>,
     selected_index: usize,
+}
+
+impl std::fmt::Debug for InteractiveHistorySearch<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InteractiveHistorySearch")
+            .field("query", &self.query)
+            .field("results", &self.results)
+            .field("selected_index", &self.selected_index)
+            .field("has_store", &self.store.is_some())
+            .finish()
+    }
 }
 
 impl<'a> InteractiveHistorySearch<'a> {
     pub fn new(history: &'a History) -> Self {
         Self {
             history,
+            store: None,
+            query: String::new(),
+            results: Vec::new(),
+            selected_index: 0,
+        }
+    }
+
+    /// Create with an optional FTS5-backed store for richer search.
+    pub fn with_store(history: &'a History, store: Arc<colony_history::HistoryStore>) -> Self {
+        Self {
+            history,
+            store: Some(store),
             query: String::new(),
             results: Vec::new(),
             selected_index: 0,
@@ -666,6 +691,24 @@ impl<'a> InteractiveHistorySearch<'a> {
             return;
         }
 
+        // Prefer FTS5 search when the store is available
+        if let Some(ref store) = self.store {
+            if let Ok(fts_results) = store.search_fts(query, 50) {
+                self.results = fts_results
+                    .into_iter()
+                    .map(|r| HistorySearchResult {
+                        command: r.command,
+                        index: 0,
+                        match_start: 0,
+                        match_end: 0,
+                    })
+                    .collect();
+                return;
+            }
+            // FTS5 query failed (e.g. invalid syntax) -- fall through to VecDeque search
+        }
+
+        // Fallback: in-memory VecDeque fuzzy search
         let query_lower = query.to_lowercase();
 
         for (idx, cmd) in self.history.entries.iter().enumerate().rev() {
@@ -713,6 +756,14 @@ impl<'a> InteractiveHistorySearch<'a> {
 impl History {
     pub fn interactive_search(&self) -> InteractiveHistorySearch<'_> {
         InteractiveHistorySearch::new(self)
+    }
+
+    /// Create an interactive search that prefers FTS5 via the given store.
+    pub fn interactive_search_with_store(
+        &self,
+        store: Arc<colony_history::HistoryStore>,
+    ) -> InteractiveHistorySearch<'_> {
+        InteractiveHistorySearch::with_store(self, store)
     }
 
     pub fn fuzzy_search(&self, query: &str, max_results: usize) -> Vec<HistorySearchResult> {

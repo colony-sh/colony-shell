@@ -2265,6 +2265,8 @@ pub struct Executor {
     channels: ChannelManager,
     /// Command history
     history: History,
+    /// SQLite-backed history store for structured metadata (colony-history)
+    history_store: Option<Arc<colony_history::HistoryStore>>,
     /// Loaded special files state (F030)
     special_files: Option<special_files::SpecialFilesState>,
     /// Heartbeat file watcher (F030)
@@ -2283,6 +2285,7 @@ impl Executor {
             session_id,
             channels: ChannelManager::new(),
             history: History::new(),
+            history_store: None,
             special_files: None,
             heartbeat_watcher: None,
             observer: Arc::new(colony_reflection::NoopObserver),
@@ -2298,10 +2301,21 @@ impl Executor {
             session_id,
             channels: ChannelManager::new(),
             history,
+            history_store: None,
             special_files: None,
             heartbeat_watcher: None,
             observer: Arc::new(colony_reflection::NoopObserver),
         }
+    }
+
+    /// Set the SQLite-backed history store.
+    pub fn set_history_store(&mut self, store: Arc<colony_history::HistoryStore>) {
+        self.history_store = Some(store);
+    }
+
+    /// Get the history store, if available.
+    pub fn history_store(&self) -> Option<&Arc<colony_history::HistoryStore>> {
+        self.history_store.as_ref()
     }
 
     pub fn history(&self) -> &History {
@@ -3131,6 +3145,7 @@ impl Executor {
                 &self.session_id,
                 &mut self.channels,
                 Some(&mut self.history),
+                self.history_store.as_ref(),
             ) {
                 let result = builtin_result?;
 

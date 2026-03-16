@@ -60,6 +60,7 @@ path = "../colony-session-bin/src/main.rs"
 colony-parser.workspace = true
 colony-expand.workspace = true
 colony-exec.workspace = true
+colony-history = { workspace = true }
 colony-protocol.workspace = true
 colony-agent = { path = "../colony-agent" }
 colony-config = { path = "../colony-config" }

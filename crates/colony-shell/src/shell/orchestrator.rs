@@ -10,6 +10,7 @@ use crate::widget_server::WidgetServer;
 use colony_agent::Agent;
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
+use colony_history::{HistoryStore, HistoryWriter};
 use colony_reflection::ReflectionObserver;
 use miette::Result;
 use tokio::{pin, select, signal};
@@ -174,11 +175,29 @@ async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
 
     println!("   Type 'exit' to quit");
 
+    // Initialise the SQLite-backed history store and background writer
+    let (history_store, history_writer) = match HistoryStore::open(&HistoryStore::default_path()) {
+        Ok(store) => {
+            let store = Arc::new(store);
+            let writer = HistoryWriter::start(store.clone());
+            tracing::info!("History store opened: {:?}", store.db_path());
+            (Some(store), Some(writer))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to open history store: {}", e);
+            (None, None)
+        }
+    };
+
     let mut context = ExpansionContext::new();
     context.set_interactive(true);
     load_exported_functions(&mut context);
     init_secure_registry(&mut context);
     let mut executor = Executor::new(context);
+
+    if let Some(ref store) = history_store {
+        executor.set_history_store(store.clone());
+    }
 
     let observer = create_observer();
     executor.set_observer(observer.clone());
@@ -216,10 +235,16 @@ async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
     }
 
     #[cfg(feature = "tui")]
-    let result = crate::repl_tui::run_repl_tui(agent, executor, cwd_handle).await;
+    let result = {
+        // History writer and store are dropped when this scope ends,
+        // flushing any remaining records to disk.
+        let _writer = history_writer;
+        let _store = history_store;
+        crate::repl_tui::run_repl_tui(agent, executor, cwd_handle).await
+    };
 
     #[cfg(not(feature = "tui"))]
-    let result = run_repl(agent, executor, cwd_handle).await;
+    let result = run_repl(agent, executor, cwd_handle, history_writer, history_store).await;
 
     if let Some(shutdown) = shutdown_handle {
         let _ = shutdown.send(());

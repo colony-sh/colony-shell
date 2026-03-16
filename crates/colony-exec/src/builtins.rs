@@ -159,6 +159,7 @@ pub fn execute_builtin(
     session_id: &str,
     channels: &mut ChannelManager,
     history: Option<&mut crate::history::History>,
+    history_store: Option<&std::sync::Arc<colony_history::HistoryStore>>,
 ) -> Option<Result<BuiltinResult>> {
     let mut expander = Expander::with_executor_and_expr(
         context.clone(),
@@ -269,7 +270,7 @@ pub fn execute_builtin(
         "typeset" => builtin_declare(&args, context), // typeset is alias for declare
         "disown" => builtin_disown(&args, jobs),
         "hash" => builtin_hash(&args, context),
-        "history" => builtin_history(&args, history),
+        "history" => builtin_history(&args, history, history_store),
         "path" => builtin_path(&args, context, tuple_space, session_id),
         "flux" => crate::flux::builtin_flux(&args, tuple_space),
         "colony" => builtin_colony(&args),
@@ -5151,7 +5152,325 @@ fn generate_completions(
 fn builtin_history(
     args: &[String],
     history: Option<&mut crate::history::History>,
+    history_store: Option<&std::sync::Arc<colony_history::HistoryStore>>,
 ) -> Result<BuiltinResult> {
+    // Check for new subcommands that require the HistoryStore
+    if let Some(subcommand) = args.first() {
+        match subcommand.as_str() {
+            "search" => {
+                let Some(store) = history_store else {
+                    eprintln!("history search: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let query = args[1..].join(" ");
+                if query.is_empty() {
+                    eprintln!("history search: missing query");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                match store.search_fts(&query, 50) {
+                    Ok(results) => {
+                        for r in &results {
+                            let ts = chrono::DateTime::from_timestamp_millis(r.timestamp)
+                                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                                .unwrap_or_default();
+                            let exit_marker = if r.exit_code != 0 {
+                                format!(" [{}]", r.exit_code)
+                            } else {
+                                String::new()
+                            };
+                            println!("  {}  {}{}", ts, r.command, exit_marker);
+                        }
+                        if results.is_empty() {
+                            println!("No results for: {}", query);
+                        }
+                        return Ok(BuiltinResult::Success(0));
+                    }
+                    Err(e) => {
+                        eprintln!("history search: {}", e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            "stats" => {
+                let Some(store) = history_store else {
+                    eprintln!("history stats: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                match colony_history::HistoryStats::compute(store) {
+                    Ok(stats) => {
+                        let since = stats
+                            .earliest_timestamp
+                            .and_then(|ts| chrono::DateTime::from_timestamp_millis(ts))
+                            .map(|dt| dt.format("%Y-%m-%d").to_string())
+                            .unwrap_or_else(|| "N/A".to_string());
+                        println!(
+                            "Commands: {} (since {})",
+                            stats.total_commands, since
+                        );
+                        println!(
+                            "Today: {}  |  This week: {}  |  This month: {}",
+                            stats.today_count, stats.week_count, stats.month_count
+                        );
+                        println!();
+
+                        if !stats.executor_counts.is_empty() {
+                            println!("By executor:");
+                            for (executor, count) in &stats.executor_counts {
+                                let pct = if stats.total_commands > 0 {
+                                    (*count as f64 / stats.total_commands as f64) * 100.0
+                                } else {
+                                    0.0
+                                };
+                                println!(
+                                    "  {:<16} {:>6} ({:.1}%)",
+                                    executor, count, pct
+                                );
+                            }
+                            println!();
+                        }
+
+                        if !stats.top_directories.is_empty() {
+                            println!("Top directories:");
+                            for (dir, count) in &stats.top_directories {
+                                println!("  {:<40} {:>6}", dir, count);
+                            }
+                            println!();
+                        }
+
+                        if !stats.peak_hours.is_empty() {
+                            let top_hours: Vec<String> = stats
+                                .peak_hours
+                                .iter()
+                                .filter(|(_, c)| *c > 0)
+                                .map(|(h, _)| format!("{:02}-{:02}", h, (h + 1) % 24))
+                                .take(4)
+                                .collect();
+                            if !top_hours.is_empty() {
+                                println!("Peak hours: {}", top_hours.join(", "));
+                            }
+                        }
+
+                        return Ok(BuiltinResult::Success(0));
+                    }
+                    Err(e) => {
+                        eprintln!("history stats: {}", e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            "bookmark" => {
+                let Some(store) = history_store else {
+                    eprintln!("history bookmark: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let Some(id) = args.get(1) else {
+                    eprintln!("history bookmark: missing record ID");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                match store.toggle_bookmark(id) {
+                    Ok(bookmarked) => {
+                        if bookmarked {
+                            println!("Bookmarked: {}", id);
+                        } else {
+                            println!("Unbookmarked: {}", id);
+                        }
+                        return Ok(BuiltinResult::Success(0));
+                    }
+                    Err(e) => {
+                        eprintln!("history bookmark: {}", e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            "note" => {
+                let Some(store) = history_store else {
+                    eprintln!("history note: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let Some(id) = args.get(1) else {
+                    eprintln!("history note: usage: history note <id> <text>");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let text = args[2..].join(" ");
+                if text.is_empty() {
+                    eprintln!("history note: missing note text");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                match store.set_note(id, &text) {
+                    Ok(()) => {
+                        println!("Note set on {}", id);
+                        return Ok(BuiltinResult::Success(0));
+                    }
+                    Err(e) => {
+                        eprintln!("history note: {}", e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            "tag" => {
+                let Some(store) = history_store else {
+                    eprintln!("history tag: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let Some(id) = args.get(1) else {
+                    eprintln!("history tag: usage: history tag <id> <tags>");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let tags = args[2..].join(",");
+                if tags.is_empty() {
+                    eprintln!("history tag: missing tags");
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                match store.set_tags(id, &tags) {
+                    Ok(()) => {
+                        println!("Tags set on {}", id);
+                        return Ok(BuiltinResult::Success(0));
+                    }
+                    Err(e) => {
+                        eprintln!("history tag: {}", e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            "agents" => {
+                let Some(store) = history_store else {
+                    eprintln!("history agents: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                match store.agent_summary() {
+                    Ok(summaries) => {
+                        if summaries.is_empty() {
+                            println!("No agent commands recorded.");
+                        } else {
+                            for summary in &summaries {
+                                println!(
+                                    "{}: {} commands",
+                                    summary.executor, summary.total
+                                );
+                                for (risk, count) in &summary.risk_breakdown {
+                                    println!("  {}: {}", risk, count);
+                                }
+                            }
+                        }
+                        return Ok(BuiltinResult::Success(0));
+                    }
+                    Err(e) => {
+                        eprintln!("history agents: {}", e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            "delete" => {
+                let Some(store) = history_store else {
+                    eprintln!("history delete: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let option = args.get(1).map(String::as_str);
+                match option {
+                    Some("--before") => {
+                        let Some(date_str) = args.get(2) else {
+                            eprintln!("history delete: --before requires a date argument");
+                            return Ok(BuiltinResult::Failure(1));
+                        };
+                        let Some(timestamp) = parse_date_to_timestamp(date_str) else {
+                            eprintln!(
+                                "history delete: invalid date '{}' (expected YYYY-MM-DD)",
+                                date_str
+                            );
+                            return Ok(BuiltinResult::Failure(1));
+                        };
+                        match store.delete_before(timestamp) {
+                            Ok(deleted) => {
+                                println!("Deleted {} records", deleted);
+                                return Ok(BuiltinResult::Success(0));
+                            }
+                            Err(e) => {
+                                eprintln!("history delete: {}", e);
+                                return Ok(BuiltinResult::Failure(1));
+                            }
+                        }
+                    }
+                    Some("--pattern") => {
+                        let Some(pattern) = args.get(2) else {
+                            eprintln!(
+                                "history delete: --pattern requires a regex argument"
+                            );
+                            return Ok(BuiltinResult::Failure(1));
+                        };
+                        match store.delete_by_pattern(pattern) {
+                            Ok(deleted) => {
+                                println!("Deleted {} records", deleted);
+                                return Ok(BuiltinResult::Success(0));
+                            }
+                            Err(e) => {
+                                eprintln!("history delete: {}", e);
+                                return Ok(BuiltinResult::Failure(1));
+                            }
+                        }
+                    }
+                    Some(other) => {
+                        eprintln!(
+                            "history delete: unknown option '{}'. Use --before <date> or --pattern <regex>",
+                            other
+                        );
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                    None => {
+                        eprintln!(
+                            "history delete: usage: history delete --before <date> | --pattern <regex>"
+                        );
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            "export" => {
+                let Some(store) = history_store else {
+                    eprintln!("history export: history store not available");
+                    return Ok(BuiltinResult::Failure(1));
+                };
+                let mut format = colony_history::ExportFormat::Json;
+                let mut i = 1;
+                while i < args.len() {
+                    if args[i] == "--format" {
+                        i += 1;
+                        if let Some(fmt) = args.get(i) {
+                            format = match fmt.as_str() {
+                                "json" => colony_history::ExportFormat::Json,
+                                "csv" => colony_history::ExportFormat::Csv,
+                                "jsonl" => colony_history::ExportFormat::Jsonl,
+                                _ => {
+                                    eprintln!(
+                                        "history export: unknown format '{}' (json, csv, jsonl)",
+                                        fmt
+                                    );
+                                    return Ok(BuiltinResult::Failure(1));
+                                }
+                            };
+                        } else {
+                            eprintln!("history export: --format requires an argument");
+                            return Ok(BuiltinResult::Failure(1));
+                        }
+                    }
+                    i += 1;
+                }
+                match store.export_all(format) {
+                    Ok(output) => {
+                        println!("{}", output);
+                        return Ok(BuiltinResult::Success(0));
+                    }
+                    Err(e) => {
+                        eprintln!("history export: {}", e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+            _ => {
+                // Not a recognized subcommand -- fall through to legacy flag handling
+            }
+        }
+    }
+
+    // Fall through to existing history builtin behavior (flags: -c, -d, -a, -r, -w, -n)
     match history {
         Some(h) => {
             let exit_code = crate::history::execute_history_builtin(args, h);
@@ -5166,6 +5485,16 @@ fn builtin_history(
             Ok(BuiltinResult::Failure(1))
         }
     }
+}
+
+/// Parse a date string in YYYY-MM-DD format to a Unix timestamp in milliseconds.
+fn parse_date_to_timestamp(date_str: &str) -> Option<i64> {
+    let naive = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()?;
+    let datetime = naive
+        .and_hms_opt(0, 0, 0)?
+        .and_local_timezone(chrono::Local)
+        .earliest()?;
+    Some(datetime.timestamp_millis())
 }
 
 /// path - Manage PATH environment variable
@@ -6415,6 +6744,7 @@ mod tests {
             "test",
             &mut channels,
             None,
+            None,
         );
         assert!(result.is_some());
 
@@ -6437,6 +6767,7 @@ mod tests {
             &tuple_space,
             "test",
             &mut channels,
+            None,
             None,
         );
         assert!(result.is_some());
@@ -6461,6 +6792,7 @@ mod tests {
             "test",
             &mut channels,
             None,
+            None,
         );
         assert!(result.is_some());
 
@@ -6484,6 +6816,7 @@ mod tests {
             &tuple_space,
             "test",
             &mut channels,
+            None,
             None,
         );
         assert!(result.is_some());
@@ -6512,6 +6845,7 @@ mod tests {
             &tuple_space,
             "test",
             &mut channels,
+            None,
             None,
         );
         assert!(result.is_some());
@@ -6542,6 +6876,7 @@ mod tests {
             &tuple_space,
             "test",
             &mut channels,
+            None,
             None,
         );
         assert!(result.is_some());
@@ -6574,6 +6909,7 @@ mod tests {
             "test",
             &mut channels,
             None,
+            None,
         );
         assert!(result.is_some());
 
@@ -6597,6 +6933,7 @@ mod tests {
             "test",
             &mut channels,
             None,
+            None,
         );
         assert!(result.is_none()); // ls is not a builtin
     }
@@ -6616,6 +6953,7 @@ mod tests {
             &tuple_space,
             "test",
             &mut channels,
+            None,
             None,
         );
         assert!(result.is_some());
@@ -6649,6 +6987,7 @@ mod tests {
             "test",
             &mut channels,
             None,
+            None,
         );
         assert!(result.is_some());
 
@@ -6672,6 +7011,7 @@ mod tests {
             &tuple_space,
             "test",
             &mut channels,
+            None,
             None,
         );
         assert!(result.is_some());
@@ -6716,6 +7056,7 @@ mod tests {
             "test",
             &mut channels,
             None,
+            None,
         );
         assert!(result.is_some());
 
@@ -6758,6 +7099,7 @@ mod tests {
             &tuple_space,
             "test",
             &mut channels,
+            None,
             None,
         );
         assert!(result.is_some());

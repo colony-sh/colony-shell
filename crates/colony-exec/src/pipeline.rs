@@ -1036,6 +1036,7 @@ fn execute_simple_command_in_child_blocking(
             &session_id,
             &mut channels,
             None,
+            None,
         ) {
             match result {
                 Ok(builtin_result) => return Ok(builtin_result.exit_code()),
@@ -1795,6 +1796,7 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
             &tuple_space,
             &session_id,
             &mut channels,
+            None,
             None,
         ) {
             match result {

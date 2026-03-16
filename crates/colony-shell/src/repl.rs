@@ -6,6 +6,7 @@ use std::time::Instant;
 use crate::shell::execution::handle_llm_command;
 use colony_agent::{Agent, NaturalLanguageDetector};
 use colony_exec::Executor;
+use colony_history::{HistoryStore, HistoryWriter, PrivacyAction, PrivacyFilter};
 use colony_protocol::{
     emit_prompt, emit_prompt_busy, emit_prompt_ready, emit_prompt_state, GitStateData,
     InteractiveConfig, PromptComponentData, PromptSpan, PromptStateData,
@@ -269,12 +270,17 @@ pub(crate) async fn run_repl(
     mut agent: Option<Agent>,
     mut executor: Executor,
     cwd_handle: Option<Arc<RwLock<PathBuf>>>,
+    _history_writer: Option<HistoryWriter>,
+    _history_store: Option<Arc<HistoryStore>>,
 ) -> Result<()> {
     let helper = ColonyHelper::new();
     let mut rl = Editor::new().map_err(|e| miette::miette!("failed to create readline: {}", e))?;
     rl.set_helper(Some(helper));
 
     configure_history(&mut executor, &mut rl);
+
+    let privacy_filter = PrivacyFilter::new(vec![]);
+    let session_id = executor.session_id().to_string();
 
     let mut prompt_manager = PromptManager::default();
     let use_osc = is_colony_terminal();
@@ -361,9 +367,31 @@ pub(crate) async fn run_repl(
                 }
                 let cmd_start = Instant::now();
 
-                match execute_shell_command(line, &mut executor).await {
+                let exec_result = execute_shell_command(line, &mut executor).await;
+                let duration_ms = cmd_start.elapsed().as_millis() as u64;
+                let exit_code = executor.context().last_exit_status();
+
+                // Record command to SQLite history store
+                if let Some(ref writer) = _history_writer {
+                    if privacy_filter.should_record(line) == PrivacyAction::Record {
+                        let cwd = std::env::current_dir()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let record = colony_history::HistoryRecord::builder()
+                            .command(line)
+                            .cwd(&cwd)
+                            .exit_code(exit_code)
+                            .duration_ms(duration_ms)
+                            .session_id(&session_id)
+                            .build();
+                        if let Ok(record) = record {
+                            writer.send(record);
+                        }
+                    }
+                }
+
+                match exec_result {
                     Ok(()) => {
-                        let duration_ms = cmd_start.elapsed().as_millis() as u64;
                         prompt_manager.on_event("cmd_complete");
                         display_tuple_activity(
                             &mut executor,
@@ -379,7 +407,6 @@ pub(crate) async fn run_repl(
                         }
                     }
                     Err(e) => {
-                        let duration_ms = cmd_start.elapsed().as_millis() as u64;
                         eprintln!("Error: {}", e);
                         prompt_manager.on_event("cmd_complete");
 

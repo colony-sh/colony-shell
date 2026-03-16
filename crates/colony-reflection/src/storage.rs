@@ -49,6 +49,12 @@ impl ObservationStore {
         }
 
         let conn = Connection::open(db_path)?;
+        // Enable WAL mode for concurrent reads (e.g., panel binaries reading
+        // while the shell process writes).  WAL is sticky per-database, so
+        // whichever crate opens first sets it.
+        let _: String =
+            conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))?;
+
         let store = Self {
             conn: Mutex::new(conn),
             db_path: db_path.to_path_buf(),
