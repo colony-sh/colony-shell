@@ -11,4 +11,5 @@ pub mod events;
 pub mod explain;
 pub mod tui;
 
+pub use controller::{DebugCommand, DebugController, DebugMode, ExecState};
 pub use events::{Complexity, TraceEvent};

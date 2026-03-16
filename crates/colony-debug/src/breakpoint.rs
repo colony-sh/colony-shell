@@ -85,3 +85,80 @@ impl Default for BreakpointManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_and_check() {
+        let mut mgr = BreakpointManager::new();
+        let id = mgr.add(10, None);
+        assert_eq!(mgr.check(10), Some(id));
+        assert_eq!(mgr.check(11), None);
+    }
+
+    #[test]
+    fn disable_skips() {
+        let mut mgr = BreakpointManager::new();
+        let id = mgr.add(5, None);
+        mgr.toggle(id);
+        assert_eq!(mgr.check(5), None);
+    }
+
+    #[test]
+    fn remove_works() {
+        let mut mgr = BreakpointManager::new();
+        let id = mgr.add(5, None);
+        assert!(mgr.remove(id));
+        assert_eq!(mgr.check(5), None);
+    }
+
+    #[test]
+    fn hit_count_increments() {
+        let mut mgr = BreakpointManager::new();
+        mgr.add(5, None);
+        mgr.check(5);
+        mgr.check(5);
+        assert_eq!(mgr.list()[0].hit_count, 2);
+    }
+
+    #[test]
+    fn clear_removes_all() {
+        let mut mgr = BreakpointManager::new();
+        mgr.add(1, None);
+        mgr.add(2, None);
+        mgr.clear();
+        assert!(mgr.list().is_empty());
+    }
+
+    #[test]
+    fn remove_nonexistent_returns_false() {
+        let mut mgr = BreakpointManager::new();
+        assert!(!mgr.remove(42));
+    }
+
+    #[test]
+    fn toggle_nonexistent_is_noop() {
+        let mut mgr = BreakpointManager::new();
+        mgr.toggle(42); // should not panic
+    }
+
+    #[test]
+    fn re_enable_after_toggle() {
+        let mut mgr = BreakpointManager::new();
+        let id = mgr.add(5, None);
+        mgr.toggle(id);
+        assert_eq!(mgr.check(5), None);
+        mgr.toggle(id);
+        assert_eq!(mgr.check(5), Some(id));
+    }
+
+    #[test]
+    fn conditional_breakpoint_stored() {
+        let mut mgr = BreakpointManager::new();
+        let id = mgr.add(10, Some("$x > 5".to_string()));
+        let bp = mgr.list().iter().find(|b| b.id == id).expect("breakpoint exists");
+        assert_eq!(bp.condition.as_deref(), Some("$x > 5"));
+    }
+}
