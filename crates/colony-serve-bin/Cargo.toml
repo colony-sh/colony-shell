@@ -1,0 +1,14 @@
+[package]
+name = "colony-serve-bin"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "serve-monitor"
+path = "src/main.rs"
+
+[dependencies]
+colony-panel = { path = "../colony-panel" }
+serde_json.workspace = true
+serde.workspace = true
+chrono.workspace = true

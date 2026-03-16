@@ -38,6 +38,13 @@ uuid.workspace = true
 sha2 = "0.10"
 hex = "0.4"
 
+# serve builtin
+axum.workspace = true
+tower-http.workspace = true
+tower.workspace = true
+arc-swap.workspace = true
+hmac.workspace = true
+
 # flux process manager builtin
 sysinfo = "0.32"
 ratatui = "0.29"

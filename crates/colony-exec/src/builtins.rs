@@ -125,6 +125,7 @@ fn is_builtin_base(name: &str) -> bool {
             | "secure"
             | "mirror"
             | "sidebar"
+            | "serve"
     )
 }
 
@@ -295,6 +296,59 @@ pub fn execute_builtin(
                 Err(e) => {
                     eprintln!("sidebar: {e}");
                     Ok(BuiltinResult::Failure(1))
+                }
+            }
+        }
+        "serve" => {
+            // Namespaced builtins: serve:status and serve:header use the
+            // thread-local response meta channel for per-request metadata.
+            // The main "serve" command is intercepted at the Executor level
+            // (see lib.rs execute_simple_command) because it needs ServeState.
+            if args.is_empty() {
+                // No subcommand -- the main "serve" builtin is handled by the
+                // Executor which has access to ServeState. This branch handles
+                // the namespaced "serve:status" / "serve:header" calls.
+                eprintln!("serve: missing subcommand (use serve start, serve stop, etc.)");
+                Ok(BuiltinResult::Failure(1))
+            } else {
+                match args[0].as_str() {
+                    "status" if args.len() >= 2 => {
+                        // serve:status <code>  -- set HTTP response status
+                        let Ok(code) = args[1].parse::<u16>() else {
+                            eprintln!("serve:status: invalid status code '{}'", args[1]);
+                            return Some(Ok(BuiltinResult::Failure(1)));
+                        };
+                        let sent = crate::serve::endpoint_handler::send_response_meta(
+                            crate::serve::state::ResponseMeta::Status(code),
+                        );
+                        if sent {
+                            Ok(BuiltinResult::Success(0))
+                        } else {
+                            eprintln!("serve:status: not inside a serve handler");
+                            Ok(BuiltinResult::Failure(1))
+                        }
+                    }
+                    "header" if args.len() >= 3 => {
+                        // serve:header <name> <value>  -- set HTTP response header
+                        let name = args[1].clone();
+                        let value = args[2..].join(" ");
+                        let sent = crate::serve::endpoint_handler::send_response_meta(
+                            crate::serve::state::ResponseMeta::Header(name, value),
+                        );
+                        if sent {
+                            Ok(BuiltinResult::Success(0))
+                        } else {
+                            eprintln!("serve:header: not inside a serve handler");
+                            Ok(BuiltinResult::Failure(1))
+                        }
+                    }
+                    _ => {
+                        // Other serve subcommands are handled at the Executor level.
+                        // If we get here, it means execute_builtin was called directly
+                        // without the Executor intercept -- return a helpful error.
+                        eprintln!("serve: this subcommand requires executor context");
+                        Ok(BuiltinResult::Failure(1))
+                    }
                 }
             }
         }

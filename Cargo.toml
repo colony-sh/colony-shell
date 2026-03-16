@@ -33,6 +33,7 @@ members = [
     "crates/colony-session-bin",
     "crates/colony-gitstage-bin",
     "crates/colony-history",
+    "crates/colony-serve-bin",
 ]
 
 [workspace.package]
@@ -127,6 +128,13 @@ colony-tui = { path = "crates/colony-tui" }
 colony-recipe = { path = "crates/colony-recipe" }
 colony-panel = { path = "crates/colony-panel" }
 colony-history = { path = "crates/colony-history" }
+
+# HTTP server
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs", "cors", "limit"] }
+tower = "0.5"
+arc-swap = "1.7"
+hmac = "0.12"
 
 [profile.dev]
 opt-level = 0

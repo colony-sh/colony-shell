@@ -20,6 +20,7 @@ pub mod goals;
 pub mod history;
 pub mod mirror;
 pub mod panes;
+pub mod serve;
 pub mod sidebar;
 mod jobs;
 mod path;
@@ -2278,6 +2279,8 @@ pub struct Executor {
     heartbeat_watcher: Option<special_files::HeartbeatWatcher>,
     /// Reflection observer for collecting usage data
     observer: Arc<dyn ReflectionObserver>,
+    /// Embedded HTTP server state (serve builtin)
+    serve_state: serve::ServeState,
 }
 
 impl Executor {
@@ -2294,6 +2297,7 @@ impl Executor {
             special_files: None,
             heartbeat_watcher: None,
             observer: Arc::new(colony_reflection::NoopObserver),
+            serve_state: serve::ServeState::new(),
         }
     }
 
@@ -2310,6 +2314,7 @@ impl Executor {
             special_files: None,
             heartbeat_watcher: None,
             observer: Arc::new(colony_reflection::NoopObserver),
+            serve_state: serve::ServeState::new(),
         }
     }
 
@@ -2364,6 +2369,11 @@ impl Executor {
     /// Get session ID (shell PID) for scoping tuples
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    /// Get reference to serve state (embedded HTTP server)
+    pub fn serve_state(&self) -> &serve::ServeState {
+        &self.serve_state
     }
 
     /// Get reference to loaded special files state
@@ -3147,6 +3157,30 @@ impl Executor {
                     &mut self.context,
                 )?)
             };
+
+            // Handle serve builtin with executor-owned state.
+            // The "serve" command (not namespaced serve:status/serve:header)
+            // needs access to ServeState on the Executor.
+            if command_name == "serve" {
+                let mut serve_args = extra_args_from_name.clone();
+                for arg_word in &cmd.args {
+                    if let Ok(fields) = expander.expand_word(arg_word) {
+                        for field in fields {
+                            serve_args.push(field.text);
+                        }
+                    }
+                }
+                return match serve::builtin_serve(
+                    &serve_args,
+                    &self.context,
+                    &self.tuple_space,
+                    &self.session_id,
+                    &self.serve_state,
+                ) {
+                    Ok(result) => Ok(ExitStatus::new(result.exit_code())),
+                    Err(e) => Err(e),
+                };
+            }
 
             if let Some(builtin_result) = execute_builtin(
                 cmd,
