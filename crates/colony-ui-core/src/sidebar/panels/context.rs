@@ -174,7 +174,13 @@ mod tests {
     fn test_context() -> ComponentContext {
         ComponentContext {
             cwd: std::path::PathBuf::from("/"),
-            ..Default::default()
+            env: std::collections::HashMap::new(),
+            last_exit_code: 0,
+            running_jobs: 0,
+            stopped_jobs: 0,
+            model: None,
+            last_command_duration: None,
+            hostname: None,
         }
     }
 

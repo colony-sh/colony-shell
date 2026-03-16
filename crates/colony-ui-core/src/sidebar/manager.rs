@@ -82,6 +82,7 @@ impl SidebarManager {
                     "context".to_string(),
                     "llm".to_string(),
                     "tools".to_string(),
+                    "diag".to_string(),
                 ],
                 collapsed_panels: vec!["session".to_string()],
             },
