@@ -214,6 +214,21 @@ impl SecureRegistry {
         self.approvals.list_approvals(variable)
     }
 
+    /// Redact known secret values from a string.
+    ///
+    /// Replaces any substring matching a stored credential value with `***`.
+    /// Secret values never leave this crate — only the sanitized result is returned.
+    pub fn redact(&self, input: &str) -> String {
+        let vars = self.secure_vars.read();
+        let mut result = input.to_string();
+        for var in vars.values() {
+            if !var.value.is_empty() {
+                result = result.replace(&var.value, "***");
+            }
+        }
+        result
+    }
+
     fn create_pending_request(&self, variable: &str, script_path: &Path, script_hash: &str) -> u64 {
         let mut counter = self.request_counter.write();
         *counter += 1;
@@ -272,6 +287,27 @@ mod tests {
         assert_eq!(var.name, "AWS_SECRET_KEY");
         assert_eq!(var.value, "secret123");
         assert_eq!(var.source, SecureVarSource::Explicit);
+    }
+
+    #[test]
+    fn test_redact_replaces_known_secrets() {
+        let registry = SecureRegistry::with_defaults().unwrap();
+        registry.set_secure_value("API_KEY", "sk-abc123xyz");
+
+        let input = "curl -H 'Authorization: Bearer sk-abc123xyz' https://api.example.com";
+        let redacted = registry.redact(input);
+
+        assert!(!redacted.contains("sk-abc123xyz"));
+        assert!(redacted.contains("***"));
+        assert!(redacted.contains("https://api.example.com"));
+    }
+
+    #[test]
+    fn test_redact_no_secrets_returns_unchanged() {
+        let registry = SecureRegistry::with_defaults().unwrap();
+        let input = "echo hello world";
+        let redacted = registry.redact(input);
+        assert_eq!(redacted, input);
     }
 
     #[test]
