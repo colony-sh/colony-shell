@@ -2177,3 +2177,21 @@
 [2026-03-16 01:40] PROGRESS: Ollama now reports supports_streaming() = true (removed false override)
 [2026-03-16 01:45] VALIDATED: 109 tests passing in colony-agent (15 new streaming tests)
 [2026-03-16 01:50] MILESTONE: F068 (Agent Provider Streaming) COMPLETE!
+[2026-03-16 02:00] START: F070 (Export Functions) - implementing export -f for function export
+[2026-03-16 02:05] ASSESSMENT: Core infrastructure already present (ExpansionContext exported_functions, serialize_function_for_export, build_env, load_exported_functions)
+[2026-03-16 02:10] PROGRESS: Made builtin_export pub(crate) for testability
+[2026-03-16 02:15] PROGRESS: Added deterministic sort to export -f listing output
+[2026-03-16 02:20] PROGRESS: Enhanced export -p to also list exported functions with declare -fx format
+[2026-03-16 02:25] PROGRESS: Created export_func_tests.rs with 13 comprehensive unit tests
+[2026-03-16 02:30] VALIDATED: All 13 export -f tests passing (387 total in colony-exec, 1 pre-existing env-dependent failure)
+[2026-03-16 02:35] COMPLETE: F070 Export Functions (export -f) fully implemented and tested
+[2026-03-16 03:00] START: F067 (Job Control Signals - fg/bg completion)
+[2026-03-16 03:05] PROGRESS: Analyzed existing stubs in builtins.rs and job infrastructure in jobs.rs
+[2026-03-16 03:10] PROGRESS: Added most_recent_stopped_job() and most_recent_active_job() to JobTable
+[2026-03-16 03:15] PROGRESS: Implemented continue_job() using killpg(SIGCONT), wait_for_foreground_job() with WUNTRACED
+[2026-03-16 03:20] PROGRESS: Implemented reap_children() for non-blocking SIGCHLD handling (WNOHANG | WUNTRACED)
+[2026-03-16 03:25] PROGRESS: Replaced fg stub with full implementation: SIGCONT + tcsetpgrp + waitpid + take_terminal
+[2026-03-16 03:30] PROGRESS: Replaced bg stub with full implementation: SIGCONT + Background status + notification
+[2026-03-16 03:35] PROGRESS: Added 14 tests (10 builtins + 4 jobs) covering error cases and job selection
+[2026-03-16 03:40] VALIDATED: All 14 new tests passing, cargo check clean
+[2026-03-16 03:45] COMPLETE: F067 Job Control Signals (fg/bg) fully implemented

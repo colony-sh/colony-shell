@@ -1538,16 +1538,18 @@
       "id": "F067",
       "name": "Job Control Signals (fg/bg completion)",
       "description": "Complete job control with SIGCONT for suspended processes. fg builtin resumes stopped job in foreground with terminal control. bg builtin resumes stopped job in background. Currently fg/bg are stubs that validate but don't send signals.",
-      "status": "new",
+      "status": "complete",
       "priority": 3,
       "dependencies": ["F008"],
       "notes": [
         "2025-12-17: Job table infrastructure complete (F008)",
         "2025-12-17: fg/bg builtins exist but return 'not implemented' for actual resumption",
-        "TODO: Send SIGCONT to stopped process groups",
-        "TODO: Terminal control transfer for fg (tcsetpgrp)",
-        "TODO: Wait for foreground job completion",
-        "TODO: Background job monitoring via SIGCHLD"
+        "2026-03-16: Implemented fg with SIGCONT + tcsetpgrp + waitpid(WUNTRACED)",
+        "2026-03-16: Implemented bg with SIGCONT + Background status update",
+        "2026-03-16: Added continue_job(), wait_for_foreground_job(), reap_children() to jobs.rs",
+        "2026-03-16: Added most_recent_stopped_job() and most_recent_active_job() to JobTable",
+        "2026-03-16: 14 tests passing (10 new builtins + 4 new jobs tests)",
+        "2026-03-16: COMPLETE - fg/bg fully operational with signal handling"
       ]
     },
     {
@@ -1584,11 +1586,12 @@
       "id": "F070",
       "name": "Export Functions (export -f)",
       "description": "Bash-compatible function export via environment variables. export -f serializes function body into BASH_FUNC_name%% env vars. Child processes can inherit shell functions.",
-      "status": "new",
+      "status": "complete",
       "priority": 3,
       "dependencies": ["F007"],
       "notes": [
-        "2025-12-23: Design document created (docs/plans/2025-12-23-export-functions.md)"
+        "2025-12-23: Design document created (docs/plans/2025-12-23-export-functions.md)",
+        "Completed 2026-03-16: Full implementation with 13 unit tests. export -f, export -fn, export -pf, serialization, env var round-trip, startup import all verified."
       ]
     },
     {

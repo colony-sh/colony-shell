@@ -31,6 +31,8 @@ mod xtrace;
 
 #[cfg(test)]
 pub(crate) mod test_helpers;
+#[cfg(test)]
+mod export_func_tests;
 
 pub use alias::{expand_alias, AliasExpansionResult};
 
@@ -38,7 +40,10 @@ pub use builtins::{execute_builtin, is_builtin, BuiltinResult};
 pub use command::execute_command;
 pub use command_sub::{execute_and_capture, execute_statement_for_process_sub};
 pub use error::{ExecutionError, Result};
-pub use jobs::{init_job_control, Job, JobId, JobStatus, JobTable};
+pub use jobs::{
+    continue_job, give_terminal_to, init_job_control, reap_children, take_terminal,
+    wait_for_foreground_job, Job, JobId, JobStatus, JobTable,
+};
 pub use path::resolve_command;
 pub use pipeline::execute_pipeline;
 pub use process::{ExitStatus, ProcessHandle};

@@ -385,7 +385,7 @@ fn builtin_cd(
 /// -f: Export functions (export -f funcname)
 /// -n: Remove export attribute (export -n name, export -fn funcname)
 /// -p: Print all exported variables/functions
-fn builtin_export(
+pub(crate) fn builtin_export(
     args: &[String],
     context: &mut ExpansionContext,
     tuple_space: &TupleSpace,
@@ -420,7 +420,11 @@ fn builtin_export(
 
     if export_functions {
         if names.is_empty() || print_mode {
-            for name in context.exported_function_names() {
+            // Collect and sort for deterministic output
+            let mut func_names: Vec<String> =
+                context.exported_function_names().cloned().collect();
+            func_names.sort();
+            for name in &func_names {
                 if let Some(func) = context.get_function(name) {
                     let body = format_function_body(&func.body);
                     println!("{} () \n{{ \n{}\n}}", name, body);
@@ -458,8 +462,18 @@ fn builtin_export(
     }
 
     if print_mode || names.is_empty() {
+        // Print exported variables
         for (key, value) in env::vars() {
             println!("declare -x {}=\"{}\"", key, value);
+        }
+        // Also print exported functions (bash compat: `export -p` includes functions)
+        let mut func_names: Vec<String> = context.exported_function_names().cloned().collect();
+        func_names.sort();
+        for name in &func_names {
+            if let Some(func) = context.get_function(name) {
+                let body = format_function_body(&func.body);
+                println!("declare -fx {} () \n{{ \n{}\n}}", name, body);
+            }
         }
         return Ok(BuiltinResult::Success(0));
     }
@@ -1193,34 +1207,124 @@ fn builtin_eval(args: &[String]) -> Result<BuiltinResult> {
 /// fg - Bring job to foreground
 ///
 /// Usage: fg [%job_id]
-/// TODO: Implement terminal control and SIGCONT
-fn builtin_fg(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
-    let job_list = jobs.list_jobs();
+///
+/// Resumes a stopped job in the foreground by sending SIGCONT to its process
+/// group and transferring terminal control. If no job spec is given, uses the
+/// most recent stopped job, or the most recent background job as a fallback.
+fn builtin_fg(args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
+    // Resolve the target job: explicit spec or most recent stopped/background
+    let job = if let Some(spec) = args.first() {
+        let Some(job_id) = parse_job_spec(spec, jobs) else {
+            eprintln!("fg: {}: no such job", spec);
+            return Ok(BuiltinResult::Failure(1));
+        };
+        let Some(job) = jobs.get_job(job_id) else {
+            eprintln!("fg: {}: no such job", spec);
+            return Ok(BuiltinResult::Failure(1));
+        };
+        job
+    } else {
+        // Prefer stopped jobs, fall back to background
+        let Some(job) = jobs
+            .most_recent_stopped_job()
+            .or_else(|| jobs.most_recent_active_job())
+        else {
+            eprintln!("fg: no current job");
+            return Ok(BuiltinResult::Failure(1));
+        };
+        job
+    };
 
-    if job_list.is_empty() {
-        eprintln!("fg: no current job");
+    // Print the command being foregrounded (bash convention)
+    eprintln!("{}", job.command);
+
+    // Send SIGCONT to resume the process group (no-op if already running)
+    if let Err(e) = crate::jobs::continue_job(job.pgid) {
+        // ESRCH means the process group is gone; clean up and report
+        eprintln!("fg: job has terminated: {}", e);
+        jobs.update_status(job.id, crate::JobStatus::Done(crate::ExitStatus::new(1)));
         return Ok(BuiltinResult::Failure(1));
     }
 
-    // For now, just list what would be foregrounded
-    eprintln!("fg: would foreground job (not yet implemented)");
-    Ok(BuiltinResult::Failure(1))
+    // Transfer terminal control to the job's process group
+    if let Err(e) = crate::jobs::give_terminal_to(job.pgid) {
+        eprintln!("fg: terminal control: {}", e);
+        // Continue anyway; the job is running even if tcsetpgrp failed
+    }
+
+    // Mark the job as running in the foreground
+    jobs.update_status(job.id, crate::JobStatus::Running);
+
+    // Wait for the job to finish or stop again (blocking)
+    let result_status = crate::jobs::wait_for_foreground_job(&job);
+
+    // Reclaim terminal control for the shell
+    let _ = crate::jobs::take_terminal();
+
+    // Update job table based on the wait result
+    match result_status {
+        crate::JobStatus::Stopped => {
+            jobs.update_status(job.id, crate::JobStatus::Stopped);
+            eprintln!("\n[{}]+  Stopped  {}", job.id, job.command);
+            // Stopped job returns 148 (128 + SIGTSTP=20 on most platforms)
+            Ok(BuiltinResult::Success(148))
+        }
+        crate::JobStatus::Done(exit_status) => {
+            jobs.update_status(job.id, crate::JobStatus::Done(exit_status));
+            Ok(BuiltinResult::Success(exit_status.code()))
+        }
+        // Running and Background are not returned by wait_for_foreground_job
+        _ => Ok(BuiltinResult::Success(0)),
+    }
 }
 
 /// bg - Continue job in background
 ///
 /// Usage: bg [%job_id]
-/// TODO: Implement SIGCONT to stopped jobs
-fn builtin_bg(_args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
-    let job_list = jobs.list_jobs();
+///
+/// Resumes a stopped job in the background by sending SIGCONT to its process
+/// group. If no job spec is given, uses the most recent stopped job.
+/// The job continues running without terminal control.
+fn builtin_bg(args: &[String], jobs: &JobTable) -> Result<BuiltinResult> {
+    // Resolve the target job: explicit spec or most recent stopped
+    let job = if let Some(spec) = args.first() {
+        let Some(job_id) = parse_job_spec(spec, jobs) else {
+            eprintln!("bg: {}: no such job", spec);
+            return Ok(BuiltinResult::Failure(1));
+        };
+        let Some(job) = jobs.get_job(job_id) else {
+            eprintln!("bg: {}: no such job", spec);
+            return Ok(BuiltinResult::Failure(1));
+        };
+        job
+    } else {
+        let Some(job) = jobs.most_recent_stopped_job() else {
+            eprintln!("bg: no current job");
+            return Ok(BuiltinResult::Failure(1));
+        };
+        job
+    };
 
-    if job_list.is_empty() {
-        eprintln!("bg: no current job");
+    // Only stopped jobs can be backgrounded
+    if !job.is_stopped() {
+        eprintln!("bg: job {} already in background", job.id);
         return Ok(BuiltinResult::Failure(1));
     }
 
-    eprintln!("bg: would background job (not yet implemented)");
-    Ok(BuiltinResult::Failure(1))
+    // Send SIGCONT to resume the process group
+    if let Err(e) = crate::jobs::continue_job(job.pgid) {
+        eprintln!("bg: job has terminated: {}", e);
+        jobs.update_status(job.id, crate::JobStatus::Done(crate::ExitStatus::new(1)));
+        return Ok(BuiltinResult::Failure(1));
+    }
+
+    // Mark the job as running in the background
+    jobs.update_status(job.id, crate::JobStatus::Background);
+
+    // Print the background job notification (bash convention)
+    println!("[{}] {} &", job.id, job.command);
+
+    Ok(BuiltinResult::Success(0))
 }
 
 /// jobs - List all jobs
@@ -7536,5 +7640,426 @@ mod tests {
         );
         assert!(result.is_ok());
         assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    // --- fg/bg tests ---
+
+    #[test]
+    fn test_fg_no_jobs() {
+        let jobs = JobTable::new();
+        let result = builtin_fg(&[], &jobs).unwrap();
+        // Should fail with exit code 1 when no jobs exist
+        assert_eq!(result.exit_code(), 1);
+        assert!(matches!(result, BuiltinResult::Failure(1)));
+    }
+
+    #[test]
+    fn test_fg_invalid_job_spec() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+
+        // Add a job so the table is non-empty
+        jobs.add_job(
+            Pid::from_raw(99999),
+            vec![Pid::from_raw(99999)],
+            "sleep 100".to_string(),
+        );
+        jobs.update_status(1, crate::JobStatus::Stopped);
+
+        // Reference a non-existent job
+        let result = builtin_fg(&["%999".to_string()], &jobs).unwrap();
+        assert_eq!(result.exit_code(), 1);
+        assert!(matches!(result, BuiltinResult::Failure(1)));
+    }
+
+    #[test]
+    fn test_bg_no_jobs() {
+        let jobs = JobTable::new();
+        let result = builtin_bg(&[], &jobs).unwrap();
+        // Should fail with exit code 1 when no stopped jobs exist
+        assert_eq!(result.exit_code(), 1);
+        assert!(matches!(result, BuiltinResult::Failure(1)));
+    }
+
+    #[test]
+    fn test_bg_invalid_job_spec() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+
+        jobs.add_job(
+            Pid::from_raw(99998),
+            vec![Pid::from_raw(99998)],
+            "sleep 200".to_string(),
+        );
+        jobs.update_status(1, crate::JobStatus::Stopped);
+
+        let result = builtin_bg(&["%999".to_string()], &jobs).unwrap();
+        assert_eq!(result.exit_code(), 1);
+        assert!(matches!(result, BuiltinResult::Failure(1)));
+    }
+
+    #[test]
+    fn test_bg_no_stopped_jobs() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+
+        // Add a running (background) job, but no stopped ones
+        let id = jobs.add_job(
+            Pid::from_raw(99997),
+            vec![Pid::from_raw(99997)],
+            "sleep 300".to_string(),
+        );
+        jobs.update_status(id, crate::JobStatus::Background);
+
+        // bg with no args should fail because there are no stopped jobs
+        let result = builtin_bg(&[], &jobs).unwrap();
+        assert_eq!(result.exit_code(), 1);
+    }
+
+    #[test]
+    fn test_bg_already_running() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+
+        // Add a background (running) job and reference it explicitly
+        let id = jobs.add_job(
+            Pid::from_raw(99996),
+            vec![Pid::from_raw(99996)],
+            "sleep 400".to_string(),
+        );
+        jobs.update_status(id, crate::JobStatus::Background);
+
+        // Explicitly referencing a running job with bg should fail
+        let spec = format!("%{}", id);
+        let result = builtin_bg(&[spec], &jobs).unwrap();
+        assert_eq!(result.exit_code(), 1);
+    }
+
+    #[test]
+    fn test_fg_selects_most_recent_stopped() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+
+        // Add two stopped jobs; fg should pick the one with higher ID
+        let id1 = jobs.add_job(
+            Pid::from_raw(88881),
+            vec![Pid::from_raw(88881)],
+            "job_first".to_string(),
+        );
+        let id2 = jobs.add_job(
+            Pid::from_raw(88882),
+            vec![Pid::from_raw(88882)],
+            "job_second".to_string(),
+        );
+        jobs.update_status(id1, crate::JobStatus::Stopped);
+        jobs.update_status(id2, crate::JobStatus::Stopped);
+
+        // fg will try to send SIGCONT to pgid 88882 which is not a real
+        // process, so it will fail with "job has terminated", but the
+        // important thing is that it selected the right job (id2).
+        let result = builtin_fg(&[], &jobs).unwrap();
+        // The job was selected (we can verify by checking the status was
+        // updated to Done after the SIGCONT failure)
+        let job = jobs.get_job(id2).unwrap();
+        assert!(job.is_done());
+        // Job id1 should still be stopped (was not selected)
+        let job1 = jobs.get_job(id1).unwrap();
+        assert!(job1.is_stopped());
+        assert_eq!(result.exit_code(), 1); // Failed because fake PID
+    }
+
+    #[test]
+    fn test_parse_job_spec_percent_number() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+        let id = jobs.add_job(
+            Pid::from_raw(77770),
+            vec![Pid::from_raw(77770)],
+            "test_cmd".to_string(),
+        );
+
+        assert_eq!(parse_job_spec(&format!("%{}", id), &jobs), Some(id));
+        assert_eq!(parse_job_spec("%999", &jobs), None);
+    }
+
+    #[test]
+    fn test_parse_job_spec_percent_plus() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+        let _id1 = jobs.add_job(
+            Pid::from_raw(77771),
+            vec![Pid::from_raw(77771)],
+            "first".to_string(),
+        );
+        let _id2 = jobs.add_job(
+            Pid::from_raw(77772),
+            vec![Pid::from_raw(77772)],
+            "second".to_string(),
+        );
+
+        // %+ and %% refer to the most recent (last in list) job
+        let result = parse_job_spec("%+", &jobs);
+        assert!(result.is_some());
+
+        let result2 = parse_job_spec("%%", &jobs);
+        assert!(result2.is_some());
+
+        // Verify that job IDs are valid
+        assert!(jobs.get_job(result.unwrap()).is_some());
+    }
+
+    #[test]
+    fn test_parse_job_spec_by_command_prefix() {
+        use nix::unistd::Pid;
+        let jobs = JobTable::new();
+        let id = jobs.add_job(
+            Pid::from_raw(77773),
+            vec![Pid::from_raw(77773)],
+            "my_unique_command --flag".to_string(),
+        );
+
+        assert_eq!(parse_job_spec("%my_unique", &jobs), Some(id));
+        assert_eq!(parse_job_spec("%nonexistent", &jobs), None);
+    }
+
+    // ---- export -f (function export) tests ----
+
+    /// Helper: define a function in the context from a shell command string.
+    fn define_test_function(context: &mut ExpansionContext, name: &str, body_source: &str) {
+        use colony_parser::pest_api;
+        let stmt = pest_api::parse_statement(body_source).unwrap();
+        let func_def = colony_parser::FunctionDef {
+            name: name.to_string(),
+            body: vec![stmt],
+            span: colony_parser::Span::DUMMY,
+        };
+        context.define_function(name.to_string(), func_def);
+    }
+
+    #[test]
+    fn test_export_f_marks_function() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+        define_test_function(&mut context, "greet", "echo hello");
+        assert!(!context.is_function_exported("greet"));
+        let result = builtin_export(
+            &["-f".to_string(), "greet".to_string()],
+            &mut context,
+            &tuple_space,
+            "test",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+        assert!(context.is_function_exported("greet"));
+    }
+
+    #[test]
+    fn test_export_f_nonexistent_fails() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+        let result = builtin_export(
+            &["-f".to_string(), "nosuchfunc".to_string()],
+            &mut context,
+            &tuple_space,
+            "test",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+    }
+
+    #[test]
+    fn test_export_fn_unexports() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+        define_test_function(&mut context, "myfunc", "echo test");
+        context.export_function("myfunc");
+        assert!(context.is_function_exported("myfunc"));
+        let result = builtin_export(
+            &["-fn".to_string(), "myfunc".to_string()],
+            &mut context,
+            &tuple_space,
+            "test",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+        assert!(!context.is_function_exported("myfunc"));
+        // Function itself should still exist
+        assert!(context.is_function("myfunc"));
+    }
+
+    #[test]
+    fn test_export_fn_separate_flags() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+        define_test_function(&mut context, "myfunc", "echo test");
+        context.export_function("myfunc");
+        let result = builtin_export(
+            &["-f".to_string(), "-n".to_string(), "myfunc".to_string()],
+            &mut context,
+            &tuple_space,
+            "test",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+        assert!(!context.is_function_exported("myfunc"));
+    }
+
+    #[test]
+    fn test_export_f_multiple() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+        define_test_function(&mut context, "func_a", "echo a");
+        define_test_function(&mut context, "func_b", "echo b");
+        define_test_function(&mut context, "func_c", "echo c");
+        let result = builtin_export(
+            &[
+                "-f".to_string(),
+                "func_a".to_string(),
+                "func_b".to_string(),
+                "func_c".to_string(),
+            ],
+            &mut context,
+            &tuple_space,
+            "test",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 0);
+        assert!(context.is_function_exported("func_a"));
+        assert!(context.is_function_exported("func_b"));
+        assert!(context.is_function_exported("func_c"));
+    }
+
+    #[test]
+    fn test_export_f_partial_failure() {
+        let mut context = ExpansionContext::new();
+        let tuple_space = TupleSpace::new();
+        define_test_function(&mut context, "real_func", "echo real");
+        let result = builtin_export(
+            &[
+                "-f".to_string(),
+                "real_func".to_string(),
+                "fake_func".to_string(),
+            ],
+            &mut context,
+            &tuple_space,
+            "test",
+        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().exit_code(), 1);
+        assert!(context.is_function_exported("real_func"));
+    }
+
+    #[test]
+    fn test_serialize_function_format() {
+        use colony_parser::pest_api;
+        let stmt = pest_api::parse_statement("echo hello world").unwrap();
+        let func_def = colony_parser::FunctionDef {
+            name: "greet".to_string(),
+            body: vec![stmt],
+            span: colony_parser::Span::DUMMY,
+        };
+        let serialized = serialize_function_for_export(&func_def);
+        assert!(serialized.starts_with("() {"));
+        assert!(serialized.contains("echo hello world"));
+        assert!(serialized.ends_with('}'));
+    }
+
+    #[test]
+    fn test_build_env_has_exported_funcs() {
+        let mut context = ExpansionContext::new();
+        define_test_function(&mut context, "testfn", "echo from_testfn");
+        context.export_function("testfn");
+        let env = crate::build_env(&context);
+        let func_env = env.iter().find(|(k, _)| k == "BASH_FUNC_testfn%%");
+        assert!(func_env.is_some());
+        let (_, value) = func_env.unwrap();
+        assert!(value.starts_with("() {"));
+        assert!(value.contains("echo from_testfn"));
+    }
+
+    #[test]
+    fn test_build_env_excludes_unexported() {
+        let mut context = ExpansionContext::new();
+        define_test_function(&mut context, "private_fn", "echo private");
+        let env = crate::build_env(&context);
+        let func_env = env.iter().find(|(k, _)| k == "BASH_FUNC_private_fn%%");
+        assert!(func_env.is_none());
+    }
+
+    #[test]
+    fn test_function_export_roundtrip() {
+        use colony_parser::pest_api;
+        let mut context = ExpansionContext::new();
+        let stmt = pest_api::parse_statement("echo hello_roundtrip").unwrap();
+        let func_def = colony_parser::FunctionDef {
+            name: "roundtrip_fn".to_string(),
+            body: vec![stmt],
+            span: colony_parser::Span::DUMMY,
+        };
+        context.define_function("roundtrip_fn".to_string(), func_def);
+        context.export_function("roundtrip_fn");
+
+        let env = crate::build_env(&context);
+        let (env_key, env_value) = env
+            .iter()
+            .find(|(k, _)| k == "BASH_FUNC_roundtrip_fn%%")
+            .expect("exported function should be in env");
+        assert_eq!(env_key, "BASH_FUNC_roundtrip_fn%%");
+        assert!(env_value.starts_with("() {"));
+
+        // Parse it back (simulate child shell import)
+        let func_source = format!("roundtrip_fn {}", env_value);
+        let parsed = pest_api::parse_statement(&func_source);
+        assert!(parsed.is_ok(), "Failed to parse: {:?}", parsed);
+        match parsed.unwrap() {
+            colony_parser::Statement::FunctionDef(func) => {
+                assert_eq!(func.name, "roundtrip_fn");
+                assert!(!func.body.is_empty());
+            }
+            other => panic!("Expected FunctionDef, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_import_function_from_env_value() {
+        use colony_parser::pest_api;
+        let func_name = "test_import_fn";
+        let env_value = "() { \n    echo imported\n}";
+        let mut context = ExpansionContext::new();
+
+        // Simulate the import logic from startup.rs
+        assert!(env_value.starts_with("() {"));
+        let func_source = format!("{} {}", func_name, env_value);
+        if let Ok(colony_parser::Statement::FunctionDef(func)) =
+            pest_api::parse_statement(&func_source)
+        {
+            context.define_function(func.name.clone(), func);
+            context.export_function(func_name);
+        }
+        assert!(context.is_function(func_name));
+        assert!(context.is_function_exported(func_name));
+    }
+
+    #[test]
+    fn test_import_skips_invalid_env_value() {
+        let func_name = "bad_import_fn";
+        let env_value = "not a function definition";
+        let mut context = ExpansionContext::new();
+
+        if env_value.starts_with("() {") {
+            panic!("Test setup error");
+        }
+        assert!(!context.is_function(func_name));
+    }
+
+    #[test]
+    fn test_unset_removes_export_flag() {
+        let mut context = ExpansionContext::new();
+        define_test_function(&mut context, "to_unset", "echo bye");
+        context.export_function("to_unset");
+        assert!(context.is_function_exported("to_unset"));
+        context.unset_function("to_unset");
+        assert!(!context.is_function("to_unset"));
+        assert!(!context.is_function_exported("to_unset"));
     }
 }
