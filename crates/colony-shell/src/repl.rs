@@ -358,12 +358,16 @@ pub(crate) async fn run_repl(
                 }
 
                 if line.starts_with("llm ") {
-                    handle_llm_command(line, &mut agent).await;
-                    // Drain LLM channel messages after agent interaction
-                    if let Some(ref mut rx) = llm_channel_rx {
-                        drain_llm_channel(rx, &mut executor);
+                    // Channel builtins (show/export/clear) fall through to the executor
+                    let sub = line.split_whitespace().nth(1).unwrap_or("");
+                    if !matches!(sub, "show" | "export" | "clear") {
+                        handle_llm_command(line, &mut agent).await;
+                        // Drain LLM channel messages after agent interaction
+                        if let Some(ref mut rx) = llm_channel_rx {
+                            drain_llm_channel(rx, &mut executor);
+                        }
+                        continue;
                     }
-                    continue;
                 }
 
                 if let Some(ref mut agent) = agent {
