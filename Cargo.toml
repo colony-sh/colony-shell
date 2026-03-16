@@ -33,8 +33,10 @@ members = [
     "crates/colony-session-bin",
     "crates/colony-gitstage-bin",
     "crates/colony-history",
+    "crates/colony-context",
     "crates/colony-serve-bin",
     "crates/colony-heartbeat-bin",
+    "crates/colony-recommend",
 ]
 
 [workspace.package]
@@ -129,6 +131,8 @@ colony-tui = { path = "crates/colony-tui" }
 colony-recipe = { path = "crates/colony-recipe" }
 colony-panel = { path = "crates/colony-panel" }
 colony-history = { path = "crates/colony-history" }
+colony-context = { path = "crates/colony-context" }
+colony-recommend = { path = "crates/colony-recommend" }
 
 # HTTP server
 axum = "0.8"

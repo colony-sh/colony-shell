@@ -1,0 +1,17 @@
+[package]
+name = "colony-context"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Context management system for Colony Shell"
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+rmp-serde = "1"
+chrono.workspace = true
+dirs.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3"
