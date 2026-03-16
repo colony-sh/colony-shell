@@ -930,8 +930,8 @@
     {
       "id": "F039",
       "name": "Heredoc Support",
-      "description": "Full POSIX heredoc implementation with content injection into AST. Supports <<EOF (normal), <<-EOF (strip tabs), <<'EOF' (quoted delimiter, no expansion), and all POSIX heredoc features.",
-      "status": "in_progress",
+      "description": "Full POSIX heredoc implementation with content injection into AST. Supports <<EOF (normal), <<-EOF (strip tabs), <<'EOF' (quoted delimiter, no expansion), and all POSIX heredoc features. 27/32 tests passing, 91/91 parser tests. Edge cases (delimiter line continuation, multi-FD) tracked as F078/F079.",
+      "status": "complete",
       "priority": 2,
       "dependencies": [
         "F021",
@@ -1666,6 +1666,34 @@
       "notes": [
         "Spec: docs/spec/3-type-system.md",
         "Proc definitions (F057) provide the function syntax for typed parameters"
+      ]
+    },
+    {
+      "id": "F078",
+      "name": "Heredoc Delimiter Line Continuation",
+      "description": "Support backslash-newline line continuation in heredoc delimiters. Currently heredoc preprocessing detects delimiters before line continuation runs, so 'cat <<EO\\<newline>F' sees 'EO\\' as the delimiter instead of 'EOF'. Fix requires refactoring preprocessor ordering or adding delimiter-aware line continuation in heredoc.rs. Affects 3 skipped BATS tests (#20, #22, #24).",
+      "status": "new",
+      "priority": 6,
+      "dependencies": ["F039"],
+      "notes": [
+        "2026-03-16: Split from F039 (complete). Edge case — rare in real-world shell scripts.",
+        "Root cause: preprocess_heredocs() runs before preprocess_line_continuations().",
+        "Fix options: (a) reorder preprocessors, (b) add line continuation to heredoc.rs.",
+        "Risk: reordering could affect other preprocessor interactions."
+      ]
+    },
+    {
+      "id": "F079",
+      "name": "Multi-FD Heredoc Concurrency",
+      "description": "Support multiple heredocs directed to different file descriptors in a single command (e.g., 'while read line1; do read line2 <&3; done <<EOF1 3<<EOF2'). Currently causes tokio panic due to concurrent pipe/FD handling. Affects 1 skipped BATS test (#11).",
+      "status": "new",
+      "priority": 7,
+      "dependencies": ["F039"],
+      "notes": [
+        "2026-03-16: Split from F039 (complete). Advanced feature — multiple FD heredocs are uncommon.",
+        "Root cause: multiple pipe FDs with tokio async execution creates race condition.",
+        "Fix options: (a) serialize heredoc pipe setup, (b) use select/epoll for coordination.",
+        "Risk: High — requires execution pipeline refactoring for FD management."
       ]
     }
   ]
