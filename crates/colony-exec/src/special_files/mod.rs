@@ -26,7 +26,7 @@ use std::time::SystemTime;
 
 pub use agent_md::AgentMdParser;
 pub use context_md::ContextMdParser;
-pub use heartbeat::{HeartbeatParser, HeartbeatWatcher};
+pub use heartbeat::{body_is_empty, parse_heartbeat, ChecklistItem, HeartbeatConfig};
 pub use prompt_md::PromptMdParser;
 pub use tools_md::ToolsMdParser;
 pub use types::*;
@@ -62,7 +62,9 @@ impl SpecialFilesLoader {
             tool_configs: Vec::new(),
             prompt_templates: Vec::new(),
             project_config: None,
-            heartbeat_entries: Vec::new(),
+            heartbeat_config: None,
+            heartbeat_items: Vec::new(),
+            heartbeat_path: None,
         };
 
         if let Ok(agents) = Self::try_load_agent_md(dir) {
@@ -80,8 +82,10 @@ impl SpecialFilesLoader {
         if let Ok(config) = Self::try_load_colony_config(dir) {
             state.project_config = Some(config);
         }
-        if let Ok(heartbeat) = Self::try_load_heartbeat_md(dir) {
-            state.heartbeat_entries = heartbeat;
+        if let Ok((config, items, path)) = Self::try_load_heartbeat_md(dir) {
+            state.heartbeat_config = Some(config);
+            state.heartbeat_items = items;
+            state.heartbeat_path = Some(path);
         }
 
         Ok(state)
@@ -89,9 +93,9 @@ impl SpecialFilesLoader {
 
     /// Load special files with directory hierarchy walking.
     ///
-    /// For non-merging types (Agent, Tools, Prompt, Config), the first
-    /// directory that contains the file wins. For merging types (Context,
-    /// Heartbeat), entries from all ancestor directories are collected with
+    /// For non-merging types (Agent, Tools, Prompt, Config, Heartbeat),
+    /// the first directory that contains the file wins. For merging types
+    /// (Context), entries from all ancestor directories are collected with
     /// the deepest directory's entries appearing first.
     pub fn load_with_hierarchy(dir: &Path) -> Result<SpecialFilesState, SpecialFilesError> {
         let mut state = SpecialFilesState {
@@ -101,7 +105,9 @@ impl SpecialFilesLoader {
             tool_configs: Vec::new(),
             prompt_templates: Vec::new(),
             project_config: None,
-            heartbeat_entries: Vec::new(),
+            heartbeat_config: None,
+            heartbeat_items: Vec::new(),
+            heartbeat_path: None,
         };
 
         let search_dirs = Self::build_search_path(dir);
@@ -146,9 +152,12 @@ impl SpecialFilesLoader {
                     found_config = true;
                 }
             }
-            if let Ok(mut heartbeat) = Self::try_load_heartbeat_md(search_dir) {
-                if !heartbeat.is_empty() {
-                    state.heartbeat_entries.append(&mut heartbeat);
+            // Heartbeat is first-found (not merging) since F080 operates on a single HEARTBEAT.md
+            if state.heartbeat_path.is_none() {
+                if let Ok((config, items, path)) = Self::try_load_heartbeat_md(search_dir) {
+                    state.heartbeat_config = Some(config);
+                    state.heartbeat_items = items;
+                    state.heartbeat_path = Some(path);
                 }
             }
         }
@@ -259,10 +268,16 @@ impl SpecialFilesLoader {
         })
     }
 
-    fn try_load_heartbeat_md(dir: &Path) -> Result<Vec<types::HeartbeatEntry>, SpecialFilesError> {
+    fn try_load_heartbeat_md(dir: &Path) -> Result<(types::HeartbeatConfig, Vec<types::ChecklistItem>, PathBuf), SpecialFilesError> {
         let path = dir.join("HEARTBEAT.md");
-        let Some(content) = read_file_if_exists(&path)? else { return Ok(Vec::new()) };
-        Ok(HeartbeatParser::parse(&content))
+        let Some(content) = read_file_if_exists(&path)? else {
+            return Err(SpecialFilesError::Io {
+                path: path.display().to_string(),
+                source: std::io::Error::new(std::io::ErrorKind::NotFound, "not found"),
+            });
+        };
+        let (config, items) = parse_heartbeat(&content);
+        Ok((config, items, path))
     }
 }
 
@@ -317,13 +332,14 @@ mod tests {
         std::fs::write(dir.path().join("CONTEXT.md"), "# CONTEXT.md\n---\n## Sec1\nContent.\n").unwrap();
         std::fs::write(dir.path().join("TOOLS.md"), "# TOOLS.md\n---\n## shell\nRun commands.\n### Configuration\n- timeout: 30s\n").unwrap();
         std::fs::write(dir.path().join("PROMPT.md"), "# PROMPT.md\n---\n## tpl\n```\nHello {name}\n```\n").unwrap();
-        std::fs::write(dir.path().join("HEARTBEAT.md"), "# HEARTBEAT.md\n---\n## agent: worker\n- status: idle\n- updated: 2025-01-15T00:00:00Z\n").unwrap();
+        std::fs::write(dir.path().join("HEARTBEAT.md"), "---\ninterval: 10m\n---\n\n- [ ] Check tests\n").unwrap();
         let state = SpecialFilesLoader::load(dir.path()).unwrap();
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.context_entries.len(), 1);
         assert_eq!(state.tool_configs.len(), 1);
         assert_eq!(state.prompt_templates.len(), 1);
-        assert_eq!(state.heartbeat_entries.len(), 1);
+        assert!(state.heartbeat_config.is_some());
+        assert_eq!(state.heartbeat_items.len(), 1);
     }
 
     #[test]
@@ -336,7 +352,8 @@ mod tests {
     fn test_special_file_type_merges() {
         assert!(!SpecialFileType::Agent.merges_up_tree());
         assert!(SpecialFileType::Context.merges_up_tree());
-        assert!(SpecialFileType::Heartbeat.merges_up_tree());
+        // Heartbeat changed to first-found in F080
+        assert!(!SpecialFileType::Heartbeat.merges_up_tree());
     }
 
     #[test]
@@ -376,16 +393,18 @@ mod tests {
     }
 
     #[test]
-    fn test_hierarchy_heartbeat_merges() {
+    fn test_hierarchy_heartbeat_first_found() {
         let root = tempfile::tempdir().unwrap();
         let child = root.path().join("child");
         std::fs::create_dir(&child).unwrap();
-        std::fs::write(root.path().join("HEARTBEAT.md"), "# HEARTBEAT.md\n---\n## agent: parent-bot\n- status: idle\n- updated: 2025-01-01T00:00:00Z\n").unwrap();
-        std::fs::write(child.join("HEARTBEAT.md"), "# HEARTBEAT.md\n---\n## agent: child-bot\n- status: working\n- task: building\n- updated: 2025-01-02T00:00:00Z\n").unwrap();
+        std::fs::write(root.path().join("HEARTBEAT.md"), "---\ninterval: 1h\n---\n\n- [ ] Parent check\n").unwrap();
+        std::fs::write(child.join("HEARTBEAT.md"), "---\ninterval: 5m\n---\n\n- [ ] Child check\n").unwrap();
         let state = SpecialFilesLoader::load_with_hierarchy(&child).unwrap();
-        assert_eq!(state.heartbeat_entries.len(), 2);
-        assert_eq!(state.heartbeat_entries[0].agent_name, "child-bot");
-        assert_eq!(state.heartbeat_entries[1].agent_name, "parent-bot");
+        // First-found: child wins
+        assert!(state.heartbeat_config.is_some());
+        assert_eq!(state.heartbeat_config.as_ref().unwrap().interval_secs, 300); // 5m
+        assert_eq!(state.heartbeat_items.len(), 1);
+        assert_eq!(state.heartbeat_items[0].text, "Child check");
     }
 
     #[test]

@@ -1688,6 +1688,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-heartbeat-bin"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "colony-exec",
+ "colony-panel",
+ "serde_json",
+]
+
+[[package]]
 name = "colony-history"
 version = "0.1.0"
 dependencies = [

@@ -126,6 +126,7 @@ fn is_builtin_base(name: &str) -> bool {
             | "mirror"
             | "sidebar"
             | "serve"
+            | "heartbeat"
     )
 }
 
@@ -350,6 +351,20 @@ pub fn execute_builtin(
                         Ok(BuiltinResult::Failure(1))
                     }
                 }
+            }
+        }
+        "heartbeat" => {
+            // The heartbeat builtin is intercepted at the Executor level
+            // (see lib.rs execute_simple_command) because it needs
+            // HeartbeatScheduler state. If we get here without args,
+            // show usage.
+            if args.is_empty() {
+                eprintln!("heartbeat: missing subcommand");
+                eprintln!("Usage: heartbeat start|stop|run|status|interval|log|render");
+                Ok(BuiltinResult::Failure(1))
+            } else {
+                eprintln!("heartbeat: this subcommand requires executor context");
+                Ok(BuiltinResult::Failure(1))
             }
         }
         _ => unreachable!("is_builtin returned true but no handler"),

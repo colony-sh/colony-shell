@@ -27,6 +27,7 @@ mod path;
 mod pipeline;
 mod process;
 mod redirect;
+pub mod heartbeat;
 pub mod special_files;
 mod xtrace;
 
@@ -2275,8 +2276,8 @@ pub struct Executor {
     history_store: Option<Arc<colony_history::HistoryStore>>,
     /// Loaded special files state (F030)
     special_files: Option<special_files::SpecialFilesState>,
-    /// Heartbeat file watcher (F030)
-    heartbeat_watcher: Option<special_files::HeartbeatWatcher>,
+    /// Heartbeat scheduler (F080)
+    heartbeat_scheduler: heartbeat::HeartbeatScheduler,
     /// Reflection observer for collecting usage data
     observer: Arc<dyn ReflectionObserver>,
     /// Embedded HTTP server state (serve builtin)
@@ -2286,6 +2287,7 @@ pub struct Executor {
 impl Executor {
     pub fn new(context: ExpansionContext) -> Self {
         let session_id = std::process::id().to_string();
+        let hb_scheduler = heartbeat::HeartbeatScheduler::new(&session_id);
         Self {
             context,
             jobs: JobTable::new(),
@@ -2295,7 +2297,7 @@ impl Executor {
             history: History::new(),
             history_store: None,
             special_files: None,
-            heartbeat_watcher: None,
+            heartbeat_scheduler: hb_scheduler,
             observer: Arc::new(colony_reflection::NoopObserver),
             serve_state: serve::ServeState::new(),
         }
@@ -2303,6 +2305,7 @@ impl Executor {
 
     pub fn with_history(context: ExpansionContext, history: History) -> Self {
         let session_id = std::process::id().to_string();
+        let hb_scheduler = heartbeat::HeartbeatScheduler::new(&session_id);
         Self {
             context,
             jobs: JobTable::new(),
@@ -2312,7 +2315,7 @@ impl Executor {
             history,
             history_store: None,
             special_files: None,
-            heartbeat_watcher: None,
+            heartbeat_scheduler: hb_scheduler,
             observer: Arc::new(colony_reflection::NoopObserver),
             serve_state: serve::ServeState::new(),
         }
@@ -2415,15 +2418,8 @@ impl Executor {
                     ]));
                 }
 
-                // Start heartbeat watcher if HEARTBEAT.md exists or agents are defined
-                if dir.join("HEARTBEAT.md").exists() || !state.agents.is_empty() {
-                    match special_files::HeartbeatWatcher::new(dir) {
-                        Ok(watcher) => self.heartbeat_watcher = Some(watcher),
-                        Err(e) => {
-                            tracing::warn!("Failed to start heartbeat watcher: {}", e);
-                        }
-                    }
-                }
+                // Set heartbeat scheduler tuple space for reactive coordination
+                self.heartbeat_scheduler.set_tuple_space(self.tuple_space.clone());
 
                 self.special_files = Some(state);
             }
@@ -2433,28 +2429,201 @@ impl Executor {
         }
     }
 
-    /// Poll heartbeat watcher and emit tuples for any changes
-    pub fn poll_heartbeat(&mut self) {
-        use colony_tuple::{Tuple, Value};
+    /// Get a reference to the heartbeat scheduler.
+    pub fn heartbeat_scheduler(&self) -> &heartbeat::HeartbeatScheduler {
+        &self.heartbeat_scheduler
+    }
 
-        let Some(watcher) = &self.heartbeat_watcher else {
-            return;
-        };
+    /// Execute the heartbeat builtin subcommands.
+    fn execute_heartbeat_builtin(&self, args: &[String]) -> Result<ExitStatus> {
+        let subcmd = args.first().map(String::as_str).unwrap_or("");
 
-        if let Some(entries) = watcher.poll() {
-            for entry in &entries {
-                self.tuple_space.out(Tuple::from(vec![
-                    Value::Str("heartbeat".to_string()),
-                    Value::Str(entry.agent_name.clone()),
-                    Value::Str(entry.status.to_string()),
-                    Value::Str(entry.task.clone().unwrap_or_default()),
-                    Value::Str(entry.updated.clone()),
-                ]));
+        match subcmd {
+            "start" => {
+                let cwd = self.context.get_var_or_env("PWD")
+                    .unwrap_or_else(|| ".".to_string());
+
+                match self.heartbeat_scheduler.discover(std::path::Path::new(&cwd)) {
+                    Ok(path) => {
+                        eprintln!("heartbeat: discovered {}", path.display());
+                    }
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        return Ok(ExitStatus::new(1));
+                    }
+                }
+
+                match self.heartbeat_scheduler.start() {
+                    Ok(()) => {
+                        let config = self.heartbeat_scheduler.config();
+                        eprintln!(
+                            "heartbeat: scheduler started (interval={}s, mode={})",
+                            config.interval_secs, config.mode,
+                        );
+                        Ok(ExitStatus::new(0))
+                    }
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        Ok(ExitStatus::new(1))
+                    }
+                }
             }
+            "stop" => {
+                match self.heartbeat_scheduler.stop() {
+                    Ok(()) => {
+                        eprintln!("heartbeat: scheduler stopped");
+                        Ok(ExitStatus::new(0))
+                    }
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        Ok(ExitStatus::new(1))
+                    }
+                }
+            }
+            "run" => {
+                match self.heartbeat_scheduler.run_once() {
+                    Ok(run) => {
+                        println!("Run {}: {} ({}ms)", run.id, run.status, run.duration_ms);
+                        for finding in &run.findings {
+                            println!("  {}: {}", finding.severity, finding.message);
+                        }
+                        if run.findings.is_empty() && !run.raw_output.is_empty() {
+                            println!("{}", run.raw_output);
+                        }
+                        Ok(ExitStatus::new(0))
+                    }
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        Ok(ExitStatus::new(1))
+                    }
+                }
+            }
+            "status" => {
+                let status = self.heartbeat_scheduler.status();
+                if status.running {
+                    println!("Heartbeat: running");
+                } else {
+                    println!("Heartbeat: stopped");
+                }
+                if let Some(ref path) = status.checklist_path {
+                    println!("Checklist: {}", path.display());
+                }
+                println!("Interval: {}s", status.interval_secs);
+                println!("Mode: {}", status.mode);
+                if let Some(ref last) = status.last_run {
+                    println!("Last run: {} ({})", last.status, last.id);
+                }
+                Ok(ExitStatus::new(0))
+            }
+            "interval" => {
+                let Some(dur_str) = args.get(1) else {
+                    eprintln!("heartbeat interval: missing duration (e.g. 5m, 1h)");
+                    return Ok(ExitStatus::new(1));
+                };
+                let Some(secs) = heartbeat::parse_duration(dur_str) else {
+                    eprintln!("heartbeat interval: invalid duration '{dur_str}'");
+                    return Ok(ExitStatus::new(1));
+                };
+                self.heartbeat_scheduler.set_interval(secs);
+                eprintln!("heartbeat: interval set to {secs}s");
+                Ok(ExitStatus::new(0))
+            }
+            "log" => {
+                let Some(store) = self.heartbeat_scheduler.store() else {
+                    eprintln!("heartbeat: no store available (run 'heartbeat start' first)");
+                    return Ok(ExitStatus::new(1));
+                };
 
-            // Update stored state
-            if let Some(state) = &mut self.special_files {
-                state.heartbeat_entries = entries;
+                // If a run_id is provided, show that specific run
+                if let Some(run_id) = args.get(1) {
+                    match store.get_run(run_id) {
+                        Ok(Some(run)) => {
+                            println!("Run: {}", run.id);
+                            println!("Time: {}", run.timestamp);
+                            println!("Duration: {}ms", run.duration_ms);
+                            println!("Status: {}", run.status);
+                            println!("Path: {}", run.checklist_path);
+                            println!();
+                            for finding in &run.findings {
+                                println!("{}: {}", finding.severity, finding.message);
+                            }
+                            if !run.raw_output.is_empty() {
+                                println!();
+                                println!("--- Raw Output ---");
+                                println!("{}", run.raw_output);
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("heartbeat log: run '{run_id}' not found");
+                            return Ok(ExitStatus::new(1));
+                        }
+                        Err(e) => {
+                            eprintln!("heartbeat log: {e}");
+                            return Ok(ExitStatus::new(1));
+                        }
+                    }
+                    return Ok(ExitStatus::new(0));
+                }
+
+                // Show recent runs
+                match store.recent_runs(20) {
+                    Ok(runs) => {
+                        if runs.is_empty() {
+                            println!("No heartbeat runs recorded.");
+                        } else {
+                            println!("{:<10} {:>8} {:>12} {:>8}", "Time", "Duration", "Status", "Findings");
+                            for run in &runs {
+                                let warn_count = run.findings.iter()
+                                    .filter(|f| f.severity == heartbeat::Severity::Warn).count();
+                                let alert_count = run.findings.iter()
+                                    .filter(|f| f.severity == heartbeat::Severity::Alert).count();
+                                let id_short = if run.id.len() > 8 { &run.id[..8] } else { &run.id };
+                                println!(
+                                    "{:<10} {:>6}ms {:>12} {}w/{}a  {}",
+                                    run.timestamp, run.duration_ms, run.status,
+                                    warn_count, alert_count, id_short,
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("heartbeat log: {e}");
+                        return Ok(ExitStatus::new(1));
+                    }
+                }
+                Ok(ExitStatus::new(0))
+            }
+            "render" => {
+                let Some(store) = self.heartbeat_scheduler.store() else {
+                    eprintln!("heartbeat: no store available (run 'heartbeat start' first)");
+                    return Ok(ExitStatus::new(1));
+                };
+
+                let checklist_content = self.heartbeat_scheduler.checklist_path()
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .unwrap_or_default();
+
+                let config = self.heartbeat_scheduler.config();
+                let runs = store.recent_runs(20).unwrap_or_default();
+
+                let html = heartbeat::dashboard::render_dashboard(
+                    &checklist_content,
+                    &runs,
+                    config.interval_secs,
+                    &config.mode.to_string(),
+                );
+                print!("{html}");
+                Ok(ExitStatus::new(0))
+            }
+            "" => {
+                eprintln!("heartbeat: missing subcommand");
+                eprintln!("Usage: heartbeat start|stop|run|status|interval|log|render");
+                Ok(ExitStatus::new(1))
+            }
+            other => {
+                eprintln!("heartbeat: unknown subcommand '{other}'");
+                eprintln!("Usage: heartbeat start|stop|run|status|interval|log|render");
+                Ok(ExitStatus::new(1))
             }
         }
     }
@@ -3180,6 +3349,19 @@ impl Executor {
                     Ok(result) => Ok(ExitStatus::new(result.exit_code())),
                     Err(e) => Err(e),
                 };
+            }
+
+            // Handle heartbeat builtin with executor-owned state.
+            if command_name == "heartbeat" {
+                let mut hb_args = extra_args_from_name.clone();
+                for arg_word in &cmd.args {
+                    if let Ok(fields) = expander.expand_word(arg_word) {
+                        for field in fields {
+                            hb_args.push(field.text);
+                        }
+                    }
+                }
+                return self.execute_heartbeat_builtin(&hb_args);
             }
 
             if let Some(builtin_result) = execute_builtin(

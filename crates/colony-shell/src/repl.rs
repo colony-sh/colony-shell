@@ -666,14 +666,11 @@ pub(crate) async fn display_tuple_activity(
         }
     }
 
-    // Poll heartbeat watcher (F030)
-    executor.poll_heartbeat();
-
-    // Collect and display heartbeat updates
+    // Collect and display heartbeat findings (F080)
     let heartbeat_tuples: Vec<Tuple> = {
         let tuple_space = executor.tuple_space();
         let heartbeat_pattern = Tuple::pattern(&[
-            Value::Str("heartbeat".to_string()),
+            Value::Str("heartbeat_finding".to_string()),
             Value::Wildcard,
             Value::Wildcard,
             Value::Wildcard,
@@ -688,29 +685,17 @@ pub(crate) async fn display_tuple_activity(
 
     for tuple in &heartbeat_tuples {
         if let (
-            Some(Value::Str(agent)),
-            Some(Value::Str(status)),
-            Some(Value::Str(task)),
-            Some(Value::Str(updated)),
+            Some(Value::Str(_path)),
+            Some(Value::Str(_run_id)),
+            Some(Value::Str(severity)),
+            Some(Value::Str(message)),
         ) = (
             tuple.fields.get(1),
             tuple.fields.get(2),
             tuple.fields.get(3),
             tuple.fields.get(4),
         ) {
-            if !task.is_empty() {
-                println!("[{}] {}: {}", agent, status, task);
-            } else {
-                println!("[{}] {}", agent, status);
-            }
-
-            // Emit OSC 2337 heartbeat to terminal
-            let task_opt: Option<&str> = if task.is_empty() {
-                None
-            } else {
-                Some(task.as_str())
-            };
-            colony_protocol::emit_heartbeat(agent, status, task_opt, None, updated);
+            println!("[heartbeat] {severity}: {message}");
         }
     }
 }

@@ -21,7 +21,7 @@ impl SpecialFileType {
             Self::Prompt => "PROMPT.md", Self::Config => ".colony/config.toml", Self::Heartbeat => "HEARTBEAT.md",
         }
     }
-    pub fn merges_up_tree(&self) -> bool { matches!(self, Self::Context | Self::Heartbeat) }
+    pub fn merges_up_tree(&self) -> bool { matches!(self, Self::Context) }
 }
 
 impl std::fmt::Display for SpecialFileType {
@@ -92,60 +92,10 @@ pub struct PromptTemplate {
     pub variables: Vec<String>,
 }
 
-/// Parsed heartbeat entry from HEARTBEAT.md
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HeartbeatEntry {
-    pub agent_name: String,
-    pub status: HeartbeatStatus,
-    pub task: Option<String>,
-    pub progress: Option<u8>,
-    pub started: Option<String>,
-    pub updated: String,
-    pub pid: Option<u32>,
-    pub last_task: Option<String>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum HeartbeatStatus {
-    Idle,
-    Working,
-    Thinking,
-    Streaming,
-    Error,
-    Done,
-    Unknown,
-}
-
-impl std::fmt::Display for HeartbeatStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Self::Idle => "idle",
-            Self::Working => "working",
-            Self::Thinking => "thinking",
-            Self::Streaming => "streaming",
-            Self::Error => "error",
-            Self::Done => "done",
-            Self::Unknown => "unknown",
-        };
-        f.write_str(s)
-    }
-}
-
-impl HeartbeatStatus {
-    pub fn from_str_lossy(s: &str) -> Self {
-        match s.trim().to_lowercase().as_str() {
-            "idle" => Self::Idle,
-            "working" => Self::Working,
-            "thinking" => Self::Thinking,
-            "streaming" => Self::Streaming,
-            "error" => Self::Error,
-            "done" => Self::Done,
-            _ => Self::Unknown,
-        }
-    }
-}
+// Re-export heartbeat types from the F080 scheduler module.
+// The heartbeat types are canonical in heartbeat::types and re-exported
+// here for backwards compatibility with the F030 special files system.
+pub use crate::heartbeat::types::{ChecklistItem, HeartbeatConfig};
 
 /// Project config from .colony/config.toml
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -195,5 +145,7 @@ pub struct SpecialFilesState {
     pub tool_configs: Vec<ToolConfig>,
     pub prompt_templates: Vec<PromptTemplate>,
     pub project_config: Option<ProjectConfig>,
-    pub heartbeat_entries: Vec<HeartbeatEntry>,
+    pub heartbeat_config: Option<HeartbeatConfig>,
+    pub heartbeat_items: Vec<ChecklistItem>,
+    pub heartbeat_path: Option<PathBuf>,
 }

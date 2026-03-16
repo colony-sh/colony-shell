@@ -1,0 +1,14 @@
+[package]
+name = "colony-heartbeat-bin"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "heartbeat-monitor"
+path = "src/main.rs"
+
+[dependencies]
+colony-panel = { path = "../colony-panel" }
+colony-exec = { path = "../colony-exec" }
+serde_json = { workspace = true }
+chrono = { workspace = true }
