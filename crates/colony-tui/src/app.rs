@@ -32,8 +32,8 @@ use crate::theme::Theme;
 use colony_exec::Executor;
 use colony_expand::ExpansionContext;
 use colony_ui_core::{
-    ComponentContext, ContextPanel, FileTreePanel, GitFilesPanel, McpPanel, SessionPanel,
-    SidebarManager, SidebarPosition,
+    ComponentContext, ContextPanel, FileTreePanel, GitFilesPanel, LlmPanel, McpPanel,
+    SessionPanel, SidebarManager, SidebarPosition,
 };
 use std::sync::Arc;
 
@@ -114,6 +114,7 @@ impl App {
         sidebars.register(Arc::new(McpPanel::new()));
         sidebars.register(Arc::new(GitFilesPanel::new()));
         sidebars.register(Arc::new(ContextPanel::new()));
+        sidebars.register(Arc::new(LlmPanel::new()));
 
         // Initialize shell executor
         let context = ExpansionContext::new();
