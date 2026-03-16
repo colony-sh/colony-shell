@@ -1514,6 +1514,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-debug"
+version = "0.4.1"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "colony-env-bin"
 version = "0.1.0"
 dependencies = [
@@ -1527,6 +1539,7 @@ version = "0.4.1"
 dependencies = [
  "chrono",
  "colony-channels",
+ "colony-debug",
  "colony-expand",
  "colony-panel",
  "colony-parser",
@@ -1819,6 +1832,7 @@ dependencies = [
  "clap",
  "colony-agent",
  "colony-config",
+ "colony-debug",
  "colony-exec",
  "colony-expand",
  "colony-panel",

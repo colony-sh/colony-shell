@@ -117,6 +117,87 @@ async fn run_script_mode(script: &std::path::Path, opts: &ShellOptions) -> ! {
         }
     }
 
+    // Debug/X-Ray mode (F071)
+    if opts.debug || opts.xray {
+        let mode = if opts.debug {
+            colony_debug::DebugMode::Debug
+        } else {
+            colony_debug::DebugMode::XRay
+        };
+
+        let source = match std::fs::read_to_string(script) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("colony: {}: {}", script.display(), e);
+                std::process::exit(1);
+            }
+        };
+
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let controller = colony_debug::DebugController::new(mode, event_tx, cmd_rx);
+        let controller = std::sync::Arc::new(tokio::sync::Mutex::new(controller));
+
+        let mut context = ExpansionContext::new();
+        load_exported_functions(&mut context);
+        init_secure_registry(&mut context);
+        context.set_shell_name(script.display().to_string());
+        context.set_current_script_path(Some(script.to_path_buf()));
+        context.set_positional_params(opts.positional_args.clone());
+
+        let mut executor = Executor::new(context);
+        executor.set_observer(create_observer());
+        executor.set_debug_controller(controller);
+        run_startup_files(opts, &mut executor).await;
+
+        // The executor is not Send (recursive futures use Pin<Box<dyn Future>>),
+        // so we run both futures on the current task using tokio::join!
+        // The TUI runs in a blocking thread since it needs crossterm raw mode.
+        let script_path = script.to_path_buf();
+        let tui_source = source.clone();
+
+        // Spawn TUI on a blocking thread (needs terminal control)
+        let tui_handle = tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(async {
+                if let Err(e) =
+                    colony_debug::tui::run(&tui_source, mode, event_rx, cmd_tx).await
+                {
+                    eprintln!("colony: debug TUI error: {}", e);
+                }
+            });
+        });
+
+        let exec_future = async {
+            match executor
+                .execute_source_file(&script_path, vec![])
+                .await
+            {
+                Ok(status) => status.code(),
+                Err(e) => {
+                    eprintln!("colony: {}: {}", script_path.display(), e);
+                    127
+                }
+            }
+        };
+
+        // Run executor future. The TUI runs concurrently on a blocking thread.
+        // We use select! only for ctrl+c handling; exec_future drives the executor.
+        pin!(exec_future);
+
+        let code = select! {
+            _ = signal::ctrl_c() => {
+                eprintln!("colony: interrupted (SIGINT)");
+                130
+            }
+            code = &mut exec_future => code,
+        };
+
+        // Abort TUI blocking task (it will exit when channels close)
+        tui_handle.abort();
+        std::process::exit(code);
+    }
+
     let mut context = ExpansionContext::new();
     load_exported_functions(&mut context);
     init_secure_registry(&mut context);
