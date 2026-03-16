@@ -11,6 +11,7 @@ repository.workspace = true
 colony-parser.workspace = true
 colony-protocol.workspace = true
 colony-exec.workspace = true
+colony-channels.workspace = true
 colony-cloud-sdk = { workspace = true, optional = true }
 colony-reflection.workspace = true
 colony-memory = { workspace = true, optional = true }

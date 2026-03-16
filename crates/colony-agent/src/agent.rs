@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
+use colony_channels::LlmMessage;
 use colony_reflection::ReflectionObserver;
 use futures::StreamExt;
+use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -34,6 +36,8 @@ pub struct Agent {
     conversation_id: Option<String>,
     /// Reflection observer
     observer: Option<Arc<dyn ReflectionObserver>>,
+    /// Channel writer for LLM conversation (fd 4 / stdllm)
+    llm_channel_tx: Option<mpsc::UnboundedSender<LlmMessage>>,
 }
 
 /// Agent configuration
@@ -218,6 +222,7 @@ impl Agent {
             conversation_store: None,
             conversation_id: None,
             observer: None,
+            llm_channel_tx: None,
         })
     }
 
@@ -265,6 +270,7 @@ impl Agent {
             conversation_store: None,
             conversation_id: None,
             observer: None,
+            llm_channel_tx: None,
         })
     }
 
@@ -349,6 +355,22 @@ impl Agent {
         self.observer = Some(observer);
     }
 
+    /// Set the LLM channel writer for forwarding conversation to fd 4 (stdllm).
+    ///
+    /// Returns the receiving end so the caller can drain messages into a `ChannelManager`.
+    pub fn set_llm_channel(&mut self) -> mpsc::UnboundedReceiver<LlmMessage> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.llm_channel_tx = Some(tx);
+        rx
+    }
+
+    /// Send a message to the LLM channel if a writer is configured.
+    fn emit_to_llm_channel(&self, msg: LlmMessage) {
+        if let Some(ref tx) = self.llm_channel_tx {
+            let _ = tx.send(msg);
+        }
+    }
+
     /// Process user input and return agent response
     pub async fn process(&mut self, user_input: impl Into<String>) -> Result<String> {
         let cancel = CancellationToken::new();
@@ -363,6 +385,12 @@ impl Agent {
     ) -> Result<String> {
         let input = user_input.into();
         info!("Processing user input: {}", input);
+
+        // Emit user message to LLM channel (fd 4)
+        self.emit_to_llm_channel(LlmMessage::new(
+            colony_channels::LlmRole::User,
+            &input,
+        ));
 
         let user_msg = Message {
             role: MessageRole::User,
@@ -452,6 +480,12 @@ impl Agent {
 
         // Add assistant response to conversation history
         if !response_text.is_empty() {
+            // Emit assistant response to LLM channel (fd 4)
+            self.emit_to_llm_channel(LlmMessage::new(
+                colony_channels::LlmRole::Assistant,
+                &response_text,
+            ));
+
             let assistant_msg = Message {
                 role: MessageRole::Assistant,
                 content: MessageContent::Text(response_text.clone()),
@@ -476,6 +510,12 @@ impl Agent {
     pub async fn process_full(&mut self, user_input: impl Into<String>) -> Result<String> {
         let input = user_input.into();
         info!("Processing user input (full): {}", input);
+
+        // Emit user message to LLM channel (fd 4)
+        self.emit_to_llm_channel(LlmMessage::new(
+            colony_channels::LlmRole::User,
+            &input,
+        ));
 
         self.messages.push(Message {
             role: MessageRole::User,
@@ -531,6 +571,12 @@ impl Agent {
         }
 
         if !response_text.is_empty() {
+            // Emit assistant response to LLM channel (fd 4)
+            self.emit_to_llm_channel(LlmMessage::new(
+                colony_channels::LlmRole::Assistant,
+                &response_text,
+            ));
+
             self.messages.push(Message {
                 role: MessageRole::Assistant,
                 content: MessageContent::Text(response_text.clone()),
@@ -608,6 +654,16 @@ impl Agent {
         };
 
         let result_str = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
+
+        // Emit tool result to LLM channel (fd 4) for conversation logging
+        self.emit_to_llm_channel(
+            LlmMessage::new(
+                colony_channels::LlmRole::Tool,
+                format!("Tool result ({}): {}", tool_name, result_str),
+            )
+            .with_name(&tool_name)
+            .with_tool_call_id(&tool_use_id),
+        );
 
         self.messages.push(Message {
             role: MessageRole::User,

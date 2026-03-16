@@ -59,6 +59,30 @@ impl ChannelManager {
             .downcast_mut::<ContextChannel>()
     }
 
+    /// Get LLM channel (convenience method)
+    pub fn llm(&mut self) -> Option<&mut LlmChannel> {
+        self.channels
+            .get_mut(&STDLLM)?
+            .as_any_mut()
+            .downcast_mut::<LlmChannel>()
+    }
+
+    /// Get tool channel (convenience method)
+    pub fn tool(&mut self) -> Option<&mut ToolChannel> {
+        self.channels
+            .get_mut(&STDTOOL)?
+            .as_any_mut()
+            .downcast_mut::<ToolChannel>()
+    }
+
+    /// Get diagnostic channel (convenience method)
+    pub fn diag(&mut self) -> Option<&mut DiagChannel> {
+        self.channels
+            .get_mut(&STDDIAG)?
+            .as_any_mut()
+            .downcast_mut::<DiagChannel>()
+    }
+
     /// Register a channel
     pub fn register(&mut self, channel: Box<dyn Channel>) {
         let id = channel.id();

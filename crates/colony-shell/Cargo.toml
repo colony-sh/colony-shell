@@ -22,6 +22,7 @@ colony-expand.workspace = true
 colony-exec.workspace = true
 colony-protocol.workspace = true
 colony-agent = { path = "../colony-agent" }
+colony-channels.workspace = true
 colony-config = { path = "../colony-config" }
 colony-tree-sitter = { path = "../colony-tree-sitter" }
 colony-tuple = { path = "../colony-tuple" }
