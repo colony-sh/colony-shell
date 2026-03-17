@@ -131,6 +131,8 @@ fn is_builtin_base(name: &str) -> bool {
             | "llm"
             | "tool"
             | "diag"
+            | "canvas"
+            | "draw"
     )
 }
 
@@ -373,6 +375,8 @@ pub fn execute_builtin(
         "llm" => builtin_llm(&args, channels),
         "tool" => builtin_tool(&args, channels),
         "diag" => builtin_diag(&args, channels),
+        "canvas" => crate::canvas_builtin::builtin_canvas(&args),
+        "draw" => crate::draw_builtin::builtin_draw(&args),
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 
