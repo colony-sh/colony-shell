@@ -153,7 +153,10 @@ pub fn parse_sidebar_args(args: &[String]) -> Result<SidebarCommand, String> {
         if has_flags {
             vec![(remaining[0].clone(), remaining[1..].to_vec())]
         } else {
-            remaining.iter().map(|cmd| (cmd.clone(), Vec::new())).collect()
+            remaining
+                .iter()
+                .map(|cmd| (cmd.clone(), Vec::new()))
+                .collect()
         }
     };
 
@@ -186,7 +189,12 @@ pub fn parse_hotkey_str(s: &str) -> Result<(Vec<&str>, &str), String> {
     for m in modifiers {
         match m.to_lowercase().as_str() {
             "ctrl" | "alt" | "shift" => {}
-            _ => return Err(format!("unknown modifier '{}': expected ctrl, alt, or shift", m)),
+            _ => {
+                return Err(format!(
+                    "unknown modifier '{}': expected ctrl, alt, or shift",
+                    m
+                ))
+            }
         }
     }
 
@@ -195,9 +203,32 @@ pub fn parse_hotkey_str(s: &str) -> Result<(Vec<&str>, &str), String> {
     let valid_key = lower.len() == 1
         || matches!(
             lower.as_str(),
-            "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
-                | "space" | "tab" | "esc" | "enter" | "backspace" | "delete" | "insert"
-                | "home" | "end" | "pageup" | "pagedown" | "up" | "down" | "left" | "right"
+            "f1" | "f2"
+                | "f3"
+                | "f4"
+                | "f5"
+                | "f6"
+                | "f7"
+                | "f8"
+                | "f9"
+                | "f10"
+                | "f11"
+                | "f12"
+                | "space"
+                | "tab"
+                | "esc"
+                | "enter"
+                | "backspace"
+                | "delete"
+                | "insert"
+                | "home"
+                | "end"
+                | "pageup"
+                | "pagedown"
+                | "up"
+                | "down"
+                | "left"
+                | "right"
         );
 
     if !valid_key {
@@ -233,7 +264,10 @@ mod tests {
         let cmd = parse_sidebar_args(&args(&["left", "filetree"])).unwrap();
         match cmd {
             SidebarCommand::Add {
-                position, commands, layout_mode, ..
+                position,
+                commands,
+                layout_mode,
+                ..
             } => {
                 assert_eq!(position, PanelPosition::Left);
                 assert_eq!(commands.len(), 1);
@@ -246,9 +280,15 @@ mod tests {
 
     #[test]
     fn test_parse_with_options() {
-        let cmd =
-            parse_sidebar_args(&args(&["left", "--weight", "2", "--max-width", "30", "filetree"]))
-                .unwrap();
+        let cmd = parse_sidebar_args(&args(&[
+            "left",
+            "--weight",
+            "2",
+            "--max-width",
+            "30",
+            "filetree",
+        ]))
+        .unwrap();
         match cmd {
             SidebarCommand::Add {
                 weight, max_size, ..
@@ -262,8 +302,7 @@ mod tests {
 
     #[test]
     fn test_parse_with_command_args() {
-        let cmd =
-            parse_sidebar_args(&args(&["right", "preview", "--theme", "dark"])).unwrap();
+        let cmd = parse_sidebar_args(&args(&["right", "preview", "--theme", "dark"])).unwrap();
         match cmd {
             SidebarCommand::Add { commands, .. } => {
                 assert_eq!(commands.len(), 1);
@@ -278,7 +317,11 @@ mod tests {
     fn test_parse_multi_command_tabs() {
         let cmd = parse_sidebar_args(&args(&["left", "filetree", "filedetails"])).unwrap();
         match cmd {
-            SidebarCommand::Add { commands, layout_mode, .. } => {
+            SidebarCommand::Add {
+                commands,
+                layout_mode,
+                ..
+            } => {
                 assert_eq!(commands.len(), 2);
                 assert_eq!(commands[0].0, "filetree");
                 assert_eq!(commands[1].0, "filedetails");
@@ -290,9 +333,14 @@ mod tests {
 
     #[test]
     fn test_parse_stack_mode() {
-        let cmd = parse_sidebar_args(&args(&["left", "--stack", "filetree", "filedetails"])).unwrap();
+        let cmd =
+            parse_sidebar_args(&args(&["left", "--stack", "filetree", "filedetails"])).unwrap();
         match cmd {
-            SidebarCommand::Add { commands, layout_mode, .. } => {
+            SidebarCommand::Add {
+                commands,
+                layout_mode,
+                ..
+            } => {
                 assert_eq!(commands.len(), 2);
                 assert_eq!(layout_mode, LayoutMode::Stack);
             }
@@ -302,7 +350,8 @@ mod tests {
 
     #[test]
     fn test_parse_explicit_tabs_mode() {
-        let cmd = parse_sidebar_args(&args(&["left", "--tabs", "filetree", "filedetails"])).unwrap();
+        let cmd =
+            parse_sidebar_args(&args(&["left", "--tabs", "filetree", "filedetails"])).unwrap();
         match cmd {
             SidebarCommand::Add { layout_mode, .. } => {
                 assert_eq!(layout_mode, LayoutMode::Tabs);
@@ -354,7 +403,9 @@ mod tests {
     fn test_parse_hotkey() {
         let cmd = parse_sidebar_args(&args(&["left", "--hotkey", "ctrl-b", "filetree"])).unwrap();
         match cmd {
-            SidebarCommand::Add { hotkey, commands, .. } => {
+            SidebarCommand::Add {
+                hotkey, commands, ..
+            } => {
                 assert_eq!(hotkey, Some("ctrl-b".to_string()));
                 assert_eq!(commands[0].0, "filetree");
             }
@@ -364,9 +415,22 @@ mod tests {
 
     #[test]
     fn test_parse_hotkey_with_stack() {
-        let cmd = parse_sidebar_args(&args(&["left", "--hotkey", "ctrl-b", "--stack", "filetree", "filedetails"])).unwrap();
+        let cmd = parse_sidebar_args(&args(&[
+            "left",
+            "--hotkey",
+            "ctrl-b",
+            "--stack",
+            "filetree",
+            "filedetails",
+        ]))
+        .unwrap();
         match cmd {
-            SidebarCommand::Add { hotkey, layout_mode, commands, .. } => {
+            SidebarCommand::Add {
+                hotkey,
+                layout_mode,
+                commands,
+                ..
+            } => {
                 assert_eq!(hotkey, Some("ctrl-b".to_string()));
                 assert_eq!(layout_mode, LayoutMode::Stack);
                 assert_eq!(commands.len(), 2);

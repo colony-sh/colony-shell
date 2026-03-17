@@ -145,7 +145,10 @@ fn parse_checklist(body: &str) -> Vec<ChecklistItem> {
                 text: text.to_string(),
                 checked: false,
             });
-        } else if let Some(text) = trimmed.strip_prefix("- [x] ").or_else(|| trimmed.strip_prefix("- [X] ")) {
+        } else if let Some(text) = trimmed
+            .strip_prefix("- [x] ")
+            .or_else(|| trimmed.strip_prefix("- [X] "))
+        {
             items.push(ChecklistItem {
                 text: text.to_string(),
                 checked: true,
@@ -256,7 +259,8 @@ mod tests {
 
     #[test]
     fn test_frontmatter_with_unknown_keys() {
-        let content = "---\ninterval: 10m\nunknown_key: whatever\nmode: notify\n---\n\n- [ ] Item\n";
+        let content =
+            "---\ninterval: 10m\nunknown_key: whatever\nmode: notify\n---\n\n- [ ] Item\n";
         let (config, _) = parse_heartbeat(content);
         assert_eq!(config.interval_secs, 600);
         assert_eq!(config.mode, SecurityMode::Notify);

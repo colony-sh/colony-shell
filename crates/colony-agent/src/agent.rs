@@ -282,6 +282,19 @@ impl Agent {
             .await
     }
 
+    /// Switch to a model from a "provider:model" spec string.
+    pub async fn switch_to(&mut self, spec: &str) -> Result<()> {
+        let (provider_type, model_name) =
+            if let Some((provider_str, model_name)) = spec.split_once(':') {
+                let pt = ProviderType::parse(provider_str)
+                    .ok_or_else(|| AgentError::Protocol(format!("unknown provider: {provider_str}")))?;
+                (pt, model_name.to_string())
+            } else {
+                (infer_provider_from_model(spec), spec.to_string())
+            };
+        self.switch_model(provider_type, model_name).await
+    }
+
     /// Get current provider info
     pub fn current_provider(&self) -> (&ProviderType, &str) {
         (self.router.current_provider(), self.router.current_model())
@@ -657,6 +670,22 @@ impl Agent {
     /// Get message count in current conversation
     pub fn message_count(&self) -> usize {
         self.messages.len()
+    }
+
+    /// Get tool registry (read-only)
+    pub fn tools(&self) -> &ToolRegistry {
+        &self.tools
+    }
+
+    /// Get conversation store (if persistence is enabled)
+    pub fn conversation_store(&self) -> Option<&ConversationStore> {
+        self.conversation_store.as_ref()
+    }
+
+    /// Clear conversation history, keeping system prompt
+    pub fn clear_messages(&mut self) {
+        self.messages.retain(|m| matches!(m.role, MessageRole::System));
+        self.context_manager.update_estimate(&self.messages);
     }
 }
 

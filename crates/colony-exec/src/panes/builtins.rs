@@ -194,16 +194,18 @@ mod tests {
 
     #[test]
     fn test_split_with_ratio() {
-        let result =
-            builtin_split(&["--vertical".to_string(), "--ratio".to_string(), "0.3".to_string()])
-                .unwrap();
+        let result = builtin_split(&[
+            "--vertical".to_string(),
+            "--ratio".to_string(),
+            "0.3".to_string(),
+        ])
+        .unwrap();
         assert!(matches!(result, BuiltinResult::Success(0)));
     }
 
     #[test]
     fn test_split_invalid_ratio() {
-        let result =
-            builtin_split(&["--ratio".to_string(), "1.5".to_string()]).unwrap();
+        let result = builtin_split(&["--ratio".to_string(), "1.5".to_string()]).unwrap();
         assert!(matches!(result, BuiltinResult::Failure(1)));
     }
 

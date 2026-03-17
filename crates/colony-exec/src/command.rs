@@ -102,7 +102,9 @@ fn execute_command_blocking(
 
             // Register child process in secure lineage tracking
             if let Some(registry_arc) = context.secure_registry() {
-                registry_arc.lock().register_child(std::process::id(), handle.pid());
+                registry_arc
+                    .lock()
+                    .register_child(std::process::id(), handle.pid());
             }
 
             return handle.wait();
@@ -141,7 +143,9 @@ fn execute_command_blocking(
 
     // Register child process in secure lineage tracking
     if let Some(registry_arc) = context.secure_registry() {
-        registry_arc.lock().register_child(std::process::id(), handle.pid());
+        registry_arc
+            .lock()
+            .register_child(std::process::id(), handle.pid());
     }
 
     // 6. Wait for completion

@@ -128,9 +128,7 @@ impl GoalTree {
 
     /// Update a goal's status
     pub fn update_status(&mut self, id: GoalId, status: GoalStatus) -> Result<()> {
-        let goal = self
-            .find_goal_mut(id)
-            .ok_or(GoalError::NotFound(id))?;
+        let goal = self.find_goal_mut(id).ok_or(GoalError::NotFound(id))?;
 
         goal.status = status;
         goal.updated_at = chrono::Utc::now().to_rfc3339();
@@ -154,9 +152,7 @@ impl GoalTree {
     /// held (e.g. `InProgress`). Callers that want to preserve the existing
     /// status must save and restore it themselves.
     pub fn add_blocker(&mut self, id: GoalId, blocker: impl Into<String>) -> Result<()> {
-        let goal = self
-            .find_goal_mut(id)
-            .ok_or(GoalError::NotFound(id))?;
+        let goal = self.find_goal_mut(id).ok_or(GoalError::NotFound(id))?;
 
         goal.blockers.push(blocker.into());
         goal.status = GoalStatus::Blocked;

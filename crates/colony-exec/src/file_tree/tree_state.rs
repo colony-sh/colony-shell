@@ -74,7 +74,11 @@ impl FileNode {
 
     /// Count total nodes in this subtree (including self)
     pub fn node_count(&self) -> usize {
-        1 + self.children.iter().map(FileNode::node_count).sum::<usize>()
+        1 + self
+            .children
+            .iter()
+            .map(FileNode::node_count)
+            .sum::<usize>()
     }
 }
 
@@ -132,9 +136,7 @@ impl TreeState {
             return Ok(node);
         }
 
-        let mut entries: Vec<_> = std::fs::read_dir(dir)?
-            .filter_map(|e| e.ok())
-            .collect();
+        let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
         entries.sort_by_key(|e| e.file_name());
 
         for entry in entries {
@@ -183,10 +185,7 @@ impl TreeState {
         }
     }
 
-    fn apply_status_recursive(
-        node: &mut FileNode,
-        statuses: &HashMap<PathBuf, GitFileStatus>,
-    ) {
+    fn apply_status_recursive(node: &mut FileNode, statuses: &HashMap<PathBuf, GitFileStatus>) {
         if let Some(status) = statuses.get(&node.path) {
             node.git_status = Some(*status);
         }
@@ -255,20 +254,39 @@ mod tests {
     #[test]
     fn test_node_count() {
         let mut dir = FileNode::new_dir("src".to_string(), PathBuf::from("/src"));
-        dir.children
-            .push(FileNode::new_file("a.rs".to_string(), PathBuf::from("/src/a.rs")));
-        dir.children
-            .push(FileNode::new_file("b.rs".to_string(), PathBuf::from("/src/b.rs")));
+        dir.children.push(FileNode::new_file(
+            "a.rs".to_string(),
+            PathBuf::from("/src/a.rs"),
+        ));
+        dir.children.push(FileNode::new_file(
+            "b.rs".to_string(),
+            PathBuf::from("/src/b.rs"),
+        ));
         assert_eq!(dir.node_count(), 3);
     }
 
     #[test]
     fn test_git_file_status_parsing() {
-        assert_eq!(GitFileStatus::from_porcelain_char('M'), GitFileStatus::Modified);
-        assert_eq!(GitFileStatus::from_porcelain_char('A'), GitFileStatus::Added);
-        assert_eq!(GitFileStatus::from_porcelain_char('D'), GitFileStatus::Deleted);
-        assert_eq!(GitFileStatus::from_porcelain_char('?'), GitFileStatus::Untracked);
-        assert_eq!(GitFileStatus::from_porcelain_char(' '), GitFileStatus::Unmodified);
+        assert_eq!(
+            GitFileStatus::from_porcelain_char('M'),
+            GitFileStatus::Modified
+        );
+        assert_eq!(
+            GitFileStatus::from_porcelain_char('A'),
+            GitFileStatus::Added
+        );
+        assert_eq!(
+            GitFileStatus::from_porcelain_char('D'),
+            GitFileStatus::Deleted
+        );
+        assert_eq!(
+            GitFileStatus::from_porcelain_char('?'),
+            GitFileStatus::Untracked
+        );
+        assert_eq!(
+            GitFileStatus::from_porcelain_char(' '),
+            GitFileStatus::Unmodified
+        );
     }
 
     #[test]

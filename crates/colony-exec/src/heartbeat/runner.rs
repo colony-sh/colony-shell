@@ -179,8 +179,14 @@ I also noticed some other things but they're not critical.
     #[test]
     fn test_derive_status_pass() {
         let findings = vec![
-            Finding { severity: Severity::Pass, message: "ok".to_string() },
-            Finding { severity: Severity::Pass, message: "ok".to_string() },
+            Finding {
+                severity: Severity::Pass,
+                message: "ok".to_string(),
+            },
+            Finding {
+                severity: Severity::Pass,
+                message: "ok".to_string(),
+            },
         ];
         assert_eq!(derive_status(&findings), HeartbeatStatus::Pass);
     }
@@ -188,8 +194,14 @@ I also noticed some other things but they're not critical.
     #[test]
     fn test_derive_status_warn() {
         let findings = vec![
-            Finding { severity: Severity::Pass, message: "ok".to_string() },
-            Finding { severity: Severity::Warn, message: "hmm".to_string() },
+            Finding {
+                severity: Severity::Pass,
+                message: "ok".to_string(),
+            },
+            Finding {
+                severity: Severity::Warn,
+                message: "hmm".to_string(),
+            },
         ];
         assert_eq!(derive_status(&findings), HeartbeatStatus::Warn);
     }
@@ -197,9 +209,18 @@ I also noticed some other things but they're not critical.
     #[test]
     fn test_derive_status_alert() {
         let findings = vec![
-            Finding { severity: Severity::Pass, message: "ok".to_string() },
-            Finding { severity: Severity::Warn, message: "hmm".to_string() },
-            Finding { severity: Severity::Alert, message: "bad".to_string() },
+            Finding {
+                severity: Severity::Pass,
+                message: "ok".to_string(),
+            },
+            Finding {
+                severity: Severity::Warn,
+                message: "hmm".to_string(),
+            },
+            Finding {
+                severity: Severity::Alert,
+                message: "bad".to_string(),
+            },
         ];
         assert_eq!(derive_status(&findings), HeartbeatStatus::Alert);
     }
@@ -222,7 +243,12 @@ I also noticed some other things but they're not critical.
     #[test]
     fn test_build_checklist_prompt() {
         let checklist = "- [ ] Check tests\n- [ ] Check disk\n";
-        let prompt = build_checklist_prompt(checklist, Some("Rust project"), "/home/user/project", Some("main"));
+        let prompt = build_checklist_prompt(
+            checklist,
+            Some("Rust project"),
+            "/home/user/project",
+            Some("main"),
+        );
         assert!(prompt.contains("Check tests"));
         assert!(prompt.contains("/home/user/project"));
         assert!(prompt.contains("main"));

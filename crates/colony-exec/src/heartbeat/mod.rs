@@ -140,11 +140,15 @@ impl HeartbeatScheduler {
         state.running = true;
         state.started_at = Some(std::time::Instant::now());
 
-        let interval_secs = state.interval_override.unwrap_or(state.config.interval_secs);
+        let interval_secs = state
+            .interval_override
+            .unwrap_or(state.config.interval_secs);
         let scheduler = self.clone();
 
         tokio::spawn(async move {
-            scheduler.background_loop(path, interval_secs, stop_rx).await;
+            scheduler
+                .background_loop(path, interval_secs, stop_rx)
+                .await;
         });
 
         Ok(())
@@ -175,10 +179,9 @@ impl HeartbeatScheduler {
             return Err(HeartbeatError::NotFound);
         };
 
-        let callback = state
-            .agent_callback
-            .clone()
-            .ok_or_else(|| HeartbeatError::NoProvider("no agent callback configured".to_string()))?;
+        let callback = state.agent_callback.clone().ok_or_else(|| {
+            HeartbeatError::NoProvider("no agent callback configured".to_string())
+        })?;
 
         let store = state.store.clone();
         let tuple_space = state.tuple_space.clone();
@@ -196,7 +199,9 @@ impl HeartbeatScheduler {
             .map(|i| &content[i + 4..])
             .unwrap_or(&content);
         if body_is_empty(body) && items.is_empty() {
-            return Err(HeartbeatError::Agent("checklist is empty, skipping".to_string()));
+            return Err(HeartbeatError::Agent(
+                "checklist is empty, skipping".to_string(),
+            ));
         }
 
         let run = callback(&config, &content)?;
@@ -242,7 +247,9 @@ impl HeartbeatScheduler {
     /// Get the current scheduler status for display.
     pub fn status(&self) -> SchedulerStatus {
         let state = self.inner.lock().expect("scheduler mutex poisoned");
-        let interval_secs = state.interval_override.unwrap_or(state.config.interval_secs);
+        let interval_secs = state
+            .interval_override
+            .unwrap_or(state.config.interval_secs);
 
         SchedulerStatus {
             running: state.running,

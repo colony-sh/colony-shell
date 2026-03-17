@@ -14,7 +14,6 @@ struct StyleState {
     flags: StyleFlags,
 }
 
-
 impl StyleState {
     fn reset(&mut self) {
         self.fg = Color::Default;

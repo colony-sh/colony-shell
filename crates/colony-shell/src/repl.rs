@@ -358,6 +358,12 @@ pub(crate) async fn run_repl(
                     break;
                 }
 
+                // Agent builtin — intercept here because agent lives in REPL, not executor
+                if line == "agent" || line.starts_with("agent ") {
+                    handle_agent_builtin(line, &mut agent).await;
+                    continue;
+                }
+
                 if line.starts_with("llm ") {
                     // Channel builtins (show/export/clear) fall through to the executor
                     let sub = line.split_whitespace().nth(1).unwrap_or("");
@@ -756,6 +762,173 @@ fn configure_history(executor: &mut Executor, rl: &mut Editor<ColonyHelper, Defa
 fn save_history(executor: &Executor) {
     if let Err(e) = executor.history().save_to_file() {
         eprintln!("Warning: failed to save history: {}", e);
+    }
+}
+
+async fn handle_agent_builtin(line: &str, agent: &mut Option<Agent>) {
+    let args: Vec<&str> = line.split_whitespace().collect();
+    let subcmd = args.get(1).copied().unwrap_or("status");
+
+    match subcmd {
+        "status" => {
+            let Some(agent) = agent.as_ref() else {
+                println!("Agent: not initialized");
+                println!("  Start a conversation with # or ? prefix to activate.");
+                return;
+            };
+            let (provider, model) = agent.current_provider();
+            let stats = agent.usage_stats();
+            let util = agent.context_utilization();
+            let msg_count = agent.message_count();
+            let warning = agent.budget_warning();
+
+            println!("Agent: active");
+            println!("  Provider:    {:?}", provider);
+            println!("  Model:       {}", model);
+            println!("  Messages:    {}", msg_count);
+            println!("  Context:     {:.0}% utilized", util * 100.0);
+            println!("  Tokens in:   {}", stats.total_input_tokens);
+            println!("  Tokens out:  {}", stats.total_output_tokens);
+            println!("  Requests:    {}", stats.request_count);
+            if let Some(conv_id) = agent.conversation_id() {
+                println!("  Conversation: {}", conv_id);
+            }
+            if !matches!(warning, colony_agent::BudgetWarning::None) {
+                println!("  Budget:      {:?}", warning);
+            }
+        }
+        "model" => {
+            let Some(agent) = agent.as_ref() else {
+                eprintln!("agent: not initialized");
+                return;
+            };
+            let (provider, model) = agent.current_provider();
+            println!("{:?}:{}", provider, model);
+        }
+        "switch" => {
+            let Some(spec) = args.get(2) else {
+                eprintln!("Usage: agent switch <provider:model>");
+                eprintln!("  e.g. agent switch anthropic:claude-sonnet-4-5-20250514");
+                eprintln!("       agent switch openai:gpt-4o");
+                eprintln!("       agent switch ollama:llama3");
+                return;
+            };
+            let Some(agent) = agent.as_mut() else {
+                eprintln!("agent: not initialized");
+                return;
+            };
+            match agent.switch_to(spec).await {
+                Ok(()) => {
+                    let (provider, model) = agent.current_provider();
+                    println!("Switched to {:?}:{}", provider, model);
+                }
+                Err(e) => eprintln!("agent switch: {}", e),
+            }
+        }
+        "reset" => {
+            let Some(agent) = agent.as_mut() else {
+                eprintln!("agent: not initialized");
+                return;
+            };
+            agent.clear_messages();
+            println!("Conversation cleared. System prompt retained.");
+        }
+        "tools" => {
+            let Some(agent) = agent.as_ref() else {
+                eprintln!("agent: not initialized");
+                return;
+            };
+            let names = agent.tools().tool_names();
+            if names.is_empty() {
+                println!("No tools registered.");
+            } else {
+                println!("{} tools registered:", names.len());
+                for name in &names {
+                    let classification = agent.tools().classification(name);
+                    let badge = match classification {
+                        Some(colony_agent::ToolClassification::Programmatic) => "auto",
+                        Some(colony_agent::ToolClassification::UserFacing) => "approval",
+                        None => "unknown",
+                    };
+                    println!("  {:<30} [{}]", name, badge);
+                }
+            }
+        }
+        "history" => {
+            let Some(agent) = agent.as_ref() else {
+                eprintln!("agent: not initialized");
+                return;
+            };
+            let Some(store) = agent.conversation_store() else {
+                println!("Conversation persistence not enabled.");
+                return;
+            };
+            let limit = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(10);
+            match store.list_conversations(limit) {
+                Ok(convs) => {
+                    if convs.is_empty() {
+                        println!("No saved conversations.");
+                    } else {
+                        println!("{} most recent conversations:", convs.len());
+                        for conv in &convs {
+                            let title = conv.title.as_deref().unwrap_or("untitled");
+                            let date = conv.updated_at.format("%Y-%m-%d %H:%M");
+                            println!(
+                                "  {}  {:30} {:>3} msgs  {}",
+                                &conv.id[..8],
+                                title,
+                                conv.message_count,
+                                date
+                            );
+                        }
+                    }
+                }
+                Err(e) => eprintln!("agent history: {}", e),
+            }
+        }
+        "messages" => {
+            let Some(agent) = agent.as_ref() else {
+                eprintln!("agent: not initialized");
+                return;
+            };
+            println!("{} messages in conversation", agent.message_count());
+        }
+        "config" => {
+            let Some(agent) = agent.as_ref() else {
+                eprintln!("agent: not initialized");
+                return;
+            };
+            let (provider, model) = agent.current_provider();
+            let config = agent.config();
+            println!("provider:      {:?}", provider);
+            println!("model:         {}", model);
+            println!("max_tokens:    {}", config.max_tokens);
+            println!("temperature:   {}", config.temperature.map(|t| format!("{:.1}", t)).unwrap_or_else(|| "default".to_string()));
+            println!("caching:       {}", config.use_caching);
+            println!("persistence:   {}", config.persistence_enabled);
+            println!("memory:        {}", config.memory_enabled);
+            println!("context:       {:.0}%", agent.context_utilization() * 100.0);
+            if !config.auto_approve_patterns.is_empty() {
+                println!("auto_approve:  {}", config.auto_approve_patterns.join(", "));
+            }
+        }
+        "help" | "--help" | "-h" => {
+            println!("Usage: agent <subcommand>");
+            println!();
+            println!("Subcommands:");
+            println!("  status                Show agent status, model, token usage (default)");
+            println!("  model                 Show current provider:model");
+            println!("  switch <provider:model> Switch to a different model");
+            println!("  reset                 Clear conversation history");
+            println!("  tools                 List registered tools with classifications");
+            println!("  history [N]           Show N most recent conversations (default 10)");
+            println!("  messages              Show conversation message count");
+            println!("  config                Show full agent configuration");
+            println!("  help                  Show this help");
+        }
+        other => {
+            eprintln!("agent: unknown subcommand '{}'. Try 'agent help'.", other);
+        }
     }
 }
 

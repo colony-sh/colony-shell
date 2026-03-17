@@ -9,11 +9,11 @@
 //! - `FileTreeGit` — git status overlay
 
 use super::{GitStatusCache, TreeState};
+use crate::builtins::BuiltinResult;
+use crate::Result;
 use colony_protocol::{
     emit_file_tree_delta, emit_file_tree_git, emit_file_tree_snapshot, FileTreeChangeKind,
 };
-use crate::builtins::BuiltinResult;
-use crate::Result;
 use colony_tuple::{Tuple, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

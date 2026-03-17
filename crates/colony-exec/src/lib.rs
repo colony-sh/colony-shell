@@ -8,34 +8,34 @@
 //! - Signal handling (future: job control)
 
 mod alias;
+pub mod buffers;
 pub mod builtin_redirect;
 mod builtins;
 mod command;
 mod command_sub;
 mod error;
-pub mod buffers;
+pub mod events;
 pub mod file_tree;
 pub mod flux;
 pub mod goals;
+pub mod heartbeat;
 pub mod history;
+mod jobs;
 pub mod mirror;
 pub mod panes;
-pub mod serve;
-pub mod sidebar;
-mod jobs;
 mod path;
 mod pipeline;
 mod process;
 mod redirect;
-pub mod heartbeat;
-pub mod events;
+pub mod serve;
+pub mod sidebar;
 pub mod special_files;
 mod xtrace;
 
 #[cfg(test)]
-pub(crate) mod test_helpers;
-#[cfg(test)]
 mod export_func_tests;
+#[cfg(test)]
+pub(crate) mod test_helpers;
 
 pub use alias::{expand_alias, AliasExpansionResult};
 
@@ -2215,10 +2215,7 @@ mod tests {
     #[test]
     fn while_loop_terminates_on_condition() {
         let exec = exec_program("i=0; while [ $i -lt 3 ]; do i=$((i+1)); done");
-        assert_eq!(
-            exec.context().get_var_or_env("i"),
-            Some("3".to_string()),
-        );
+        assert_eq!(exec.context().get_var_or_env("i"), Some("3".to_string()),);
     }
 
     #[test]
@@ -2245,19 +2242,13 @@ mod tests {
     #[test]
     fn if_true_branch_executes() {
         let exec = exec_program("if true; then x=yes; else x=no; fi");
-        assert_eq!(
-            exec.context().get_var_or_env("x"),
-            Some("yes".to_string()),
-        );
+        assert_eq!(exec.context().get_var_or_env("x"), Some("yes".to_string()),);
     }
 
     #[test]
     fn if_false_takes_else_branch() {
         let exec = exec_program("if false; then x=yes; else x=no; fi");
-        assert_eq!(
-            exec.context().get_var_or_env("x"),
-            Some("no".to_string()),
-        );
+        assert_eq!(exec.context().get_var_or_env("x"), Some("no".to_string()),);
     }
 }
 
@@ -2354,15 +2345,6 @@ impl Executor {
         &mut self.channels
     }
 
-    /// Write a diagnostic entry to the DiagChannel (fd 6).
-    ///
-    /// Silently drops the entry if the channel is unavailable.
-    pub fn emit_diag(&mut self, entry: colony_channels::DiagEntry) {
-        if let Some(diag) = self.channels.diag() {
-            diag.add_entry(entry);
-        }
-    }
-
     /// Set the reflection observer
     pub fn set_observer(&mut self, observer: Arc<dyn ReflectionObserver>) {
         self.observer = observer;
@@ -2448,7 +2430,8 @@ impl Executor {
                 }
 
                 // Set heartbeat scheduler tuple space for reactive coordination
-                self.heartbeat_scheduler.set_tuple_space(self.tuple_space.clone());
+                self.heartbeat_scheduler
+                    .set_tuple_space(self.tuple_space.clone());
 
                 self.special_files = Some(state);
             }
@@ -2469,10 +2452,15 @@ impl Executor {
 
         match subcmd {
             "start" => {
-                let cwd = self.context.get_var_or_env("PWD")
+                let cwd = self
+                    .context
+                    .get_var_or_env("PWD")
                     .unwrap_or_else(|| ".".to_string());
 
-                match self.heartbeat_scheduler.discover(std::path::Path::new(&cwd)) {
+                match self
+                    .heartbeat_scheduler
+                    .discover(std::path::Path::new(&cwd))
+                {
                     Ok(path) => {
                         eprintln!("heartbeat: discovered {}", path.display());
                     }
@@ -2497,36 +2485,32 @@ impl Executor {
                     }
                 }
             }
-            "stop" => {
-                match self.heartbeat_scheduler.stop() {
-                    Ok(()) => {
-                        eprintln!("heartbeat: scheduler stopped");
-                        Ok(ExitStatus::new(0))
-                    }
-                    Err(e) => {
-                        eprintln!("heartbeat: {e}");
-                        Ok(ExitStatus::new(1))
-                    }
+            "stop" => match self.heartbeat_scheduler.stop() {
+                Ok(()) => {
+                    eprintln!("heartbeat: scheduler stopped");
+                    Ok(ExitStatus::new(0))
                 }
-            }
-            "run" => {
-                match self.heartbeat_scheduler.run_once() {
-                    Ok(run) => {
-                        println!("Run {}: {} ({}ms)", run.id, run.status, run.duration_ms);
-                        for finding in &run.findings {
-                            println!("  {}: {}", finding.severity, finding.message);
-                        }
-                        if run.findings.is_empty() && !run.raw_output.is_empty() {
-                            println!("{}", run.raw_output);
-                        }
-                        Ok(ExitStatus::new(0))
-                    }
-                    Err(e) => {
-                        eprintln!("heartbeat: {e}");
-                        Ok(ExitStatus::new(1))
-                    }
+                Err(e) => {
+                    eprintln!("heartbeat: {e}");
+                    Ok(ExitStatus::new(1))
                 }
-            }
+            },
+            "run" => match self.heartbeat_scheduler.run_once() {
+                Ok(run) => {
+                    println!("Run {}: {} ({}ms)", run.id, run.status, run.duration_ms);
+                    for finding in &run.findings {
+                        println!("  {}: {}", finding.severity, finding.message);
+                    }
+                    if run.findings.is_empty() && !run.raw_output.is_empty() {
+                        println!("{}", run.raw_output);
+                    }
+                    Ok(ExitStatus::new(0))
+                }
+                Err(e) => {
+                    eprintln!("heartbeat: {e}");
+                    Ok(ExitStatus::new(1))
+                }
+            },
             "status" => {
                 let status = self.heartbeat_scheduler.status();
                 if status.running {
@@ -2600,17 +2584,34 @@ impl Executor {
                         if runs.is_empty() {
                             println!("No heartbeat runs recorded.");
                         } else {
-                            println!("{:<10} {:>8} {:>12} {:>8}", "Time", "Duration", "Status", "Findings");
+                            println!(
+                                "{:<10} {:>8} {:>12} {:>8}",
+                                "Time", "Duration", "Status", "Findings"
+                            );
                             for run in &runs {
-                                let warn_count = run.findings.iter()
-                                    .filter(|f| f.severity == heartbeat::Severity::Warn).count();
-                                let alert_count = run.findings.iter()
-                                    .filter(|f| f.severity == heartbeat::Severity::Alert).count();
-                                let id_short = if run.id.len() > 8 { &run.id[..8] } else { &run.id };
+                                let warn_count = run
+                                    .findings
+                                    .iter()
+                                    .filter(|f| f.severity == heartbeat::Severity::Warn)
+                                    .count();
+                                let alert_count = run
+                                    .findings
+                                    .iter()
+                                    .filter(|f| f.severity == heartbeat::Severity::Alert)
+                                    .count();
+                                let id_short = if run.id.len() > 8 {
+                                    &run.id[..8]
+                                } else {
+                                    &run.id
+                                };
                                 println!(
                                     "{:<10} {:>6}ms {:>12} {}w/{}a  {}",
-                                    run.timestamp, run.duration_ms, run.status,
-                                    warn_count, alert_count, id_short,
+                                    run.timestamp,
+                                    run.duration_ms,
+                                    run.status,
+                                    warn_count,
+                                    alert_count,
+                                    id_short,
                                 );
                             }
                         }
@@ -2628,7 +2629,9 @@ impl Executor {
                     return Ok(ExitStatus::new(1));
                 };
 
-                let checklist_content = self.heartbeat_scheduler.checklist_path()
+                let checklist_content = self
+                    .heartbeat_scheduler
+                    .checklist_path()
                     .and_then(|p| std::fs::read_to_string(p).ok())
                     .unwrap_or_default();
 
@@ -2860,21 +2863,6 @@ impl Executor {
             format!("{} {}", cmd_name, cmd_args.join(" "))
         };
 
-        // Emit command execution diagnostic to DiagChannel (fd 6)
-        self.emit_diag(
-            colony_channels::DiagEntry::new(
-                colony_channels::Severity::Trace,
-                format!("cmd exit={} dur={}ms: {}", exit_code, duration_ms, input),
-            )
-            .with_source("executor")
-            .with_metadata(serde_json::json!({
-                "command": cmd_name,
-                "args": cmd_args,
-                "exit_code": exit_code,
-                "duration_ms": duration_ms,
-            })),
-        );
-
         self.observer
             .observe_command(colony_reflection::CommandData {
                 input,
@@ -2893,16 +2881,6 @@ impl Executor {
                     | ExecutionError::Exit(_)
                     | ExecutionError::Errexit(_)
             ) {
-                // Emit error diagnostic to DiagChannel (fd 6)
-                self.emit_diag(
-                    colony_channels::DiagEntry::new(
-                        colony_channels::Severity::Error,
-                        format!("{}: {}", error_kind_str(e), e),
-                    )
-                    .with_source("executor")
-                    .with_code(error_kind_str(e).to_string()),
-                );
-
                 self.observer
                     .observe_error(colony_reflection::ErrorData {
                         kind: error_kind_str(e),
@@ -3608,10 +3586,14 @@ impl Executor {
             |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
         );
 
-        let prompt_fields = expander
-            .expand_word(&invocation.prompt)
-            .map_err(|_| ExecutionError::CommandNotFound("agent prompt expansion failed".to_string()))?;
-        let prompt_text: String = prompt_fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" ");
+        let prompt_fields = expander.expand_word(&invocation.prompt).map_err(|_| {
+            ExecutionError::CommandNotFound("agent prompt expansion failed".to_string())
+        })?;
+        let prompt_text: String = prompt_fields
+            .iter()
+            .map(|f| f.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
 
         let agent_name = &invocation.agent_name;
         let tool = invocation.tool.as_deref();
@@ -3625,10 +3607,13 @@ impl Executor {
             }
         }
 
-        self.context.set_var("AGENT_NAME".to_string(), agent_name.clone());
-        self.context.set_var("AGENT_PROMPT".to_string(), prompt_text);
+        self.context
+            .set_var("AGENT_NAME".to_string(), agent_name.clone());
+        self.context
+            .set_var("AGENT_PROMPT".to_string(), prompt_text);
         if let Some(t) = tool {
-            self.context.set_var("AGENT_TOOL".to_string(), t.to_string());
+            self.context
+                .set_var("AGENT_TOOL".to_string(), t.to_string());
         }
 
         Ok(ExitStatus::success())

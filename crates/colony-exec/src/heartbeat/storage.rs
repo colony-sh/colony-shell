@@ -127,9 +127,7 @@ impl HeartbeatStore {
             .map_err(|e| HeartbeatError::Database(format!("prepare recent: {e}")))?;
 
         let rows = stmt
-            .query_map(rusqlite::params![limit as i64], |row| {
-                Self::row_to_run(row)
-            })
+            .query_map(rusqlite::params![limit as i64], |row| Self::row_to_run(row))
             .map_err(|e| HeartbeatError::Database(format!("query recent: {e}")))?;
 
         let mut runs = Vec::new();
@@ -192,8 +190,7 @@ impl HeartbeatStore {
         let interval_secs: u64 = row.get(7)?;
 
         let status = HeartbeatStatus::from_str_lossy(&status_str);
-        let findings: Vec<Finding> =
-            serde_json::from_str(&findings_json).unwrap_or_default();
+        let findings: Vec<Finding> = serde_json::from_str(&findings_json).unwrap_or_default();
 
         Ok(HeartbeatRun {
             id,

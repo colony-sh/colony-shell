@@ -84,10 +84,22 @@ fn render_history(runs: &[HeartbeatRun]) -> String {
         let status_class = status_css_class(run.status);
         let time = format_timestamp(run.timestamp);
         let duration = format!("{:.1}s", run.duration_ms as f64 / 1000.0);
-        let warn_count = run.findings.iter().filter(|f| f.severity == Severity::Warn).count();
-        let alert_count = run.findings.iter().filter(|f| f.severity == Severity::Alert).count();
+        let warn_count = run
+            .findings
+            .iter()
+            .filter(|f| f.severity == Severity::Warn)
+            .count();
+        let alert_count = run
+            .findings
+            .iter()
+            .filter(|f| f.severity == Severity::Alert)
+            .count();
         let findings_summary = format!("{warn_count} warn, {alert_count} alert");
-        let run_id_short = if run.id.len() > 8 { &run.id[..8] } else { &run.id };
+        let run_id_short = if run.id.len() > 8 {
+            &run.id[..8]
+        } else {
+            &run.id
+        };
 
         let href = format!("#{}", run.id);
         rows.push_str(&format!(

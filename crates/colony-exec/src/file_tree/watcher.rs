@@ -74,7 +74,8 @@ impl FileSystemWatcher {
         })?;
 
         watcher.watch(root, RecursiveMode::Recursive)?;
-        watcher.configure(Config::default().with_poll_interval(std::time::Duration::from_secs(2)))?;
+        watcher
+            .configure(Config::default().with_poll_interval(std::time::Duration::from_secs(2)))?;
 
         Ok(Self {
             _watcher: watcher,
@@ -88,8 +89,7 @@ impl FileSystemWatcher {
     }
 
     fn is_git_change(path: &Path) -> bool {
-        path.components()
-            .any(|c| c.as_os_str() == ".git")
+        path.components().any(|c| c.as_os_str() == ".git")
     }
 
     fn should_ignore(path: &Path, _root: &Path) -> bool {

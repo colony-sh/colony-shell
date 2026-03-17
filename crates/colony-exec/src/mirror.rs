@@ -109,13 +109,14 @@ impl ObservationRow {
 
 /// Open the observations database read-only.
 fn open_db(path: &PathBuf) -> Result<Connection> {
-    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(
-        |e| {
-            ExecutionError::IoError(std::io::Error::other(
-                format!("mirror: failed to open database {}: {}", path.display(), e),
-            ))
-        },
-    )?;
+    let conn =
+        Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e| {
+            ExecutionError::IoError(std::io::Error::other(format!(
+                "mirror: failed to open database {}: {}",
+                path.display(),
+                e
+            )))
+        })?;
 
     // Use WAL mode read-only so we don't block the writer
     conn.pragma_update(None, "journal_mode", "wal")
@@ -125,10 +126,7 @@ fn open_db(path: &PathBuf) -> Result<Connection> {
 }
 
 /// Query observations newer than the given timestamp.
-fn query_new_observations(
-    conn: &Connection,
-    since_timestamp: u64,
-) -> Result<Vec<ObservationRow>> {
+fn query_new_observations(conn: &Connection, since_timestamp: u64) -> Result<Vec<ObservationRow>> {
     let mut stmt = conn
         .prepare(
             "SELECT timestamp, category, data, session_id \
@@ -138,9 +136,9 @@ fn query_new_observations(
              LIMIT ?2",
         )
         .map_err(|e| {
-            ExecutionError::IoError(std::io::Error::other(
-                format!("mirror: query prepare failed: {e}"),
-            ))
+            ExecutionError::IoError(std::io::Error::other(format!(
+                "mirror: query prepare failed: {e}"
+            )))
         })?;
 
     let rows = stmt
@@ -156,17 +154,15 @@ fn query_new_observations(
             },
         )
         .map_err(|e| {
-            ExecutionError::IoError(std::io::Error::other(
-                format!("mirror: query failed: {e}"),
-            ))
+            ExecutionError::IoError(std::io::Error::other(format!("mirror: query failed: {e}")))
         })?;
 
     let mut observations = Vec::new();
     for row in rows {
         let obs = row.map_err(|e| {
-            ExecutionError::IoError(std::io::Error::other(
-                format!("mirror: row read failed: {e}"),
-            ))
+            ExecutionError::IoError(std::io::Error::other(format!(
+                "mirror: row read failed: {e}"
+            )))
         })?;
         observations.push(obs);
     }
@@ -200,12 +196,10 @@ fn parse_mirror_args(args: &[String]) -> std::result::Result<MirrorArgs, String>
                 db_path = Some(PathBuf::from(path));
             }
             "-h" | "--help" => {
-                return Err(
-                    "Usage: mirror [--db PATH] [-v|--verbose]\n\n\
+                return Err("Usage: mirror [--db PATH] [-v|--verbose]\n\n\
                      Tail the reflection database and surface LLM-powered suggestions.\n\
                      Press Ctrl-C to stop."
-                        .to_string(),
-                );
+                    .to_string());
             }
             other => {
                 return Err(format!("mirror: unknown option: {other}"));
@@ -289,9 +283,8 @@ fn run_mirror_loop(ma: &MirrorArgs) -> Result<BuiltinResult> {
                 .join("\n");
 
             // Attempt LLM analysis (currently a placeholder)
-            let suggestion = tokio::runtime::Handle::current().block_on(async {
-                analyze_observations(&context).await
-            });
+            let suggestion = tokio::runtime::Handle::current()
+                .block_on(async { analyze_observations(&context).await });
 
             if let Some((text, priority)) = suggestion {
                 colony_protocol::emit_mirror_suggestion(&text, &priority);

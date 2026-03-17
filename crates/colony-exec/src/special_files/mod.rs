@@ -187,7 +187,12 @@ impl SpecialFilesLoader {
                         .unwrap_or(SystemTime::UNIX_EPOCH);
                     loaded.insert(
                         path.clone(),
-                        LoadedSpecialFile { file_type, path, content, last_modified },
+                        LoadedSpecialFile {
+                            file_type,
+                            path,
+                            content,
+                            last_modified,
+                        },
                     );
                 }
             }
@@ -201,8 +206,12 @@ impl SpecialFilesLoader {
         let mut current = dir.to_path_buf();
         loop {
             dirs.push(current.clone());
-            let Some(parent) = current.parent() else { break };
-            if parent == current { break }
+            let Some(parent) = current.parent() else {
+                break;
+            };
+            if parent == current {
+                break;
+            }
             current = parent.to_path_buf();
         }
         if let Some(home) = dirs::home_dir() {
@@ -226,32 +235,43 @@ impl SpecialFilesLoader {
 
     /// Check whether a directory or any of its ancestors contain special files.
     pub fn has_special_files_in_hierarchy(dir: &Path) -> bool {
-        Self::build_search_path(dir).iter().any(|d| Self::has_special_files(d))
+        Self::build_search_path(dir)
+            .iter()
+            .any(|d| Self::has_special_files(d))
     }
 
     fn try_load_agent_md(dir: &Path) -> Result<Vec<types::AgentDefinition>, SpecialFilesError> {
         let path = dir.join("AGENT.md");
-        let Some(content) = read_file_if_exists(&path)? else { return Ok(Vec::new()) };
+        let Some(content) = read_file_if_exists(&path)? else {
+            return Ok(Vec::new());
+        };
         AgentMdParser::parse(&content, &path).map_err(|e| SpecialFilesError::Parse {
-            file: path.display().to_string(), message: e.to_string(),
+            file: path.display().to_string(),
+            message: e.to_string(),
         })
     }
 
     fn try_load_context_md(dir: &Path) -> Result<Vec<types::ContextEntry>, SpecialFilesError> {
         let path = dir.join("CONTEXT.md");
-        let Some(content) = read_file_if_exists(&path)? else { return Ok(Vec::new()) };
+        let Some(content) = read_file_if_exists(&path)? else {
+            return Ok(Vec::new());
+        };
         Ok(ContextMdParser::parse(&content, &path))
     }
 
     fn try_load_tools_md(dir: &Path) -> Result<Vec<types::ToolConfig>, SpecialFilesError> {
         let path = dir.join("TOOLS.md");
-        let Some(content) = read_file_if_exists(&path)? else { return Ok(Vec::new()) };
+        let Some(content) = read_file_if_exists(&path)? else {
+            return Ok(Vec::new());
+        };
         Ok(ToolsMdParser::parse(&content, &path))
     }
 
     fn try_load_prompt_md(dir: &Path) -> Result<Vec<types::PromptTemplate>, SpecialFilesError> {
         let path = dir.join("PROMPT.md");
-        let Some(content) = read_file_if_exists(&path)? else { return Ok(Vec::new()) };
+        let Some(content) = read_file_if_exists(&path)? else {
+            return Ok(Vec::new());
+        };
         Ok(PromptMdParser::parse(&content, &path))
     }
 
@@ -264,11 +284,15 @@ impl SpecialFilesLoader {
             });
         };
         toml::from_str(&content).map_err(|e| SpecialFilesError::Toml {
-            path: path.display().to_string(), source: e,
+            path: path.display().to_string(),
+            source: e,
         })
     }
 
-    fn try_load_heartbeat_md(dir: &Path) -> Result<(types::HeartbeatConfig, Vec<types::ChecklistItem>, PathBuf), SpecialFilesError> {
+    fn try_load_heartbeat_md(
+        dir: &Path,
+    ) -> Result<(types::HeartbeatConfig, Vec<types::ChecklistItem>, PathBuf), SpecialFilesError>
+    {
         let path = dir.join("HEARTBEAT.md");
         let Some(content) = read_file_if_exists(&path)? else {
             return Err(SpecialFilesError::Io {
@@ -285,7 +309,10 @@ fn read_file_if_exists(path: &Path) -> Result<Option<String>, SpecialFilesError>
     match std::fs::read_to_string(path) {
         Ok(content) => Ok(Some(content)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(SpecialFilesError::Io { path: path.display().to_string(), source: e }),
+        Err(e) => Err(SpecialFilesError::Io {
+            path: path.display().to_string(),
+            source: e,
+        }),
     }
 }
 
@@ -317,8 +344,16 @@ mod tests {
     #[test]
     fn test_load_with_agent_and_context() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("AGENT.md"), "# AGENT.md\n---\n## test-agent\nTest.\n### Capabilities\n- model: test\n").unwrap();
-        std::fs::write(dir.path().join("CONTEXT.md"), "# CONTEXT.md\n---\n## Overview\nTest project.\n").unwrap();
+        std::fs::write(
+            dir.path().join("AGENT.md"),
+            "# AGENT.md\n---\n## test-agent\nTest.\n### Capabilities\n- model: test\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("CONTEXT.md"),
+            "# CONTEXT.md\n---\n## Overview\nTest project.\n",
+        )
+        .unwrap();
         let state = SpecialFilesLoader::load(dir.path()).unwrap();
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.agents[0].name, "test-agent");
@@ -328,11 +363,31 @@ mod tests {
     #[test]
     fn test_load_all_files() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("AGENT.md"), "# AGENT.md\n---\n## agent-a\nA.\n### Capabilities\n- model: m\n").unwrap();
-        std::fs::write(dir.path().join("CONTEXT.md"), "# CONTEXT.md\n---\n## Sec1\nContent.\n").unwrap();
-        std::fs::write(dir.path().join("TOOLS.md"), "# TOOLS.md\n---\n## shell\nRun commands.\n### Configuration\n- timeout: 30s\n").unwrap();
-        std::fs::write(dir.path().join("PROMPT.md"), "# PROMPT.md\n---\n## tpl\n```\nHello {name}\n```\n").unwrap();
-        std::fs::write(dir.path().join("HEARTBEAT.md"), "---\ninterval: 10m\n---\n\n- [ ] Check tests\n").unwrap();
+        std::fs::write(
+            dir.path().join("AGENT.md"),
+            "# AGENT.md\n---\n## agent-a\nA.\n### Capabilities\n- model: m\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("CONTEXT.md"),
+            "# CONTEXT.md\n---\n## Sec1\nContent.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("TOOLS.md"),
+            "# TOOLS.md\n---\n## shell\nRun commands.\n### Configuration\n- timeout: 30s\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("PROMPT.md"),
+            "# PROMPT.md\n---\n## tpl\n```\nHello {name}\n```\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("HEARTBEAT.md"),
+            "---\ninterval: 10m\n---\n\n- [ ] Check tests\n",
+        )
+        .unwrap();
         let state = SpecialFilesLoader::load(dir.path()).unwrap();
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.context_entries.len(), 1);
@@ -361,8 +416,16 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let child = root.path().join("child");
         std::fs::create_dir(&child).unwrap();
-        std::fs::write(root.path().join("AGENT.md"), "# AGENT.md\n---\n## parent-agent\nP.\n### Capabilities\n- model: p\n").unwrap();
-        std::fs::write(child.join("AGENT.md"), "# AGENT.md\n---\n## child-agent\nC.\n### Capabilities\n- model: c\n").unwrap();
+        std::fs::write(
+            root.path().join("AGENT.md"),
+            "# AGENT.md\n---\n## parent-agent\nP.\n### Capabilities\n- model: p\n",
+        )
+        .unwrap();
+        std::fs::write(
+            child.join("AGENT.md"),
+            "# AGENT.md\n---\n## child-agent\nC.\n### Capabilities\n- model: c\n",
+        )
+        .unwrap();
         let state = SpecialFilesLoader::load_with_hierarchy(&child).unwrap();
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.agents[0].name, "child-agent");
@@ -373,7 +436,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let child = root.path().join("child");
         std::fs::create_dir(&child).unwrap();
-        std::fs::write(root.path().join("AGENT.md"), "# AGENT.md\n---\n## inherited\nI.\n### Capabilities\n- model: p\n").unwrap();
+        std::fs::write(
+            root.path().join("AGENT.md"),
+            "# AGENT.md\n---\n## inherited\nI.\n### Capabilities\n- model: p\n",
+        )
+        .unwrap();
         let state = SpecialFilesLoader::load_with_hierarchy(&child).unwrap();
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.agents[0].name, "inherited");
@@ -384,8 +451,16 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let child = root.path().join("child");
         std::fs::create_dir(&child).unwrap();
-        std::fs::write(root.path().join("CONTEXT.md"), "# CONTEXT.md\n---\n## Org\nAcme.\n").unwrap();
-        std::fs::write(child.join("CONTEXT.md"), "# CONTEXT.md\n---\n## Project\nX.\n").unwrap();
+        std::fs::write(
+            root.path().join("CONTEXT.md"),
+            "# CONTEXT.md\n---\n## Org\nAcme.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            child.join("CONTEXT.md"),
+            "# CONTEXT.md\n---\n## Project\nX.\n",
+        )
+        .unwrap();
         let state = SpecialFilesLoader::load_with_hierarchy(&child).unwrap();
         assert_eq!(state.context_entries.len(), 2);
         assert_eq!(state.context_entries[0].section, "Project");
@@ -397,8 +472,16 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let child = root.path().join("child");
         std::fs::create_dir(&child).unwrap();
-        std::fs::write(root.path().join("HEARTBEAT.md"), "---\ninterval: 1h\n---\n\n- [ ] Parent check\n").unwrap();
-        std::fs::write(child.join("HEARTBEAT.md"), "---\ninterval: 5m\n---\n\n- [ ] Child check\n").unwrap();
+        std::fs::write(
+            root.path().join("HEARTBEAT.md"),
+            "---\ninterval: 1h\n---\n\n- [ ] Parent check\n",
+        )
+        .unwrap();
+        std::fs::write(
+            child.join("HEARTBEAT.md"),
+            "---\ninterval: 5m\n---\n\n- [ ] Child check\n",
+        )
+        .unwrap();
         let state = SpecialFilesLoader::load_with_hierarchy(&child).unwrap();
         // First-found: child wins
         assert!(state.heartbeat_config.is_some());
@@ -428,8 +511,16 @@ mod tests {
     #[test]
     fn test_collect_loaded_files() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("AGENT.md"), "# AGENT.md\n---\n## bot\nBot.\n### Capabilities\n- model: x\n").unwrap();
-        std::fs::write(dir.path().join("CONTEXT.md"), "# CONTEXT.md\n---\n## Info\nCtx.\n").unwrap();
+        std::fs::write(
+            dir.path().join("AGENT.md"),
+            "# AGENT.md\n---\n## bot\nBot.\n### Capabilities\n- model: x\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("CONTEXT.md"),
+            "# CONTEXT.md\n---\n## Info\nCtx.\n",
+        )
+        .unwrap();
         let loaded = SpecialFilesLoader::collect_loaded_files(dir.path());
         assert_eq!(loaded.len(), 2);
     }
@@ -449,8 +540,16 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let c = root.path().join("a/b/c");
         std::fs::create_dir_all(&c).unwrap();
-        std::fs::write(root.path().join("CONTEXT.md"), "# CONTEXT.md\n---\n## Root\nRoot.\n").unwrap();
-        std::fs::write(root.path().join("a/AGENT.md"), "# AGENT.md\n---\n## deep\nD.\n### Capabilities\n- model: d\n").unwrap();
+        std::fs::write(
+            root.path().join("CONTEXT.md"),
+            "# CONTEXT.md\n---\n## Root\nRoot.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("a/AGENT.md"),
+            "# AGENT.md\n---\n## deep\nD.\n### Capabilities\n- model: d\n",
+        )
+        .unwrap();
         let state = SpecialFilesLoader::load_with_hierarchy(&c).unwrap();
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.agents[0].name, "deep");

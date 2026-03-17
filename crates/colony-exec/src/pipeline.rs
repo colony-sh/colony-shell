@@ -1563,12 +1563,14 @@ fn execute_pipeline_element_in_child(element: &PipelineElement, context: &Expans
             let mut expander = Expander::with_executor_and_expr(
                 context.clone(),
                 crate::execute_and_capture,
-                |expr, ctx| {
-                    crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string())
-                },
+                |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
             );
             let prompt_text = match expander.expand_word(&invocation.prompt) {
-                Ok(fields) => fields.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" "),
+                Ok(fields) => fields
+                    .iter()
+                    .map(|f| f.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" "),
                 Err(_) => {
                     eprintln!("colony: agent prompt expansion failed");
                     std::process::exit(1);
