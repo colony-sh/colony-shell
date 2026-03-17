@@ -6291,9 +6291,10 @@ fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
         "install" => colony_install(sub_args),
         "publish" => colony_publish(sub_args),
         "recipe" => colony_recipe(sub_args),
+        "plugin" => colony_plugin(sub_args),
         _ => {
             eprintln!("colony: unknown subcommand '{}'", subcommand);
-            eprintln!("Usage: colony <install|publish|recipe> [args...]");
+            eprintln!("Usage: colony <install|publish|recipe|plugin> [args...]");
             Ok(BuiltinResult::Failure(1))
         }
     }
@@ -6647,6 +6648,126 @@ fn colony_recipe_show(name: &str) -> Result<BuiltinResult> {
     }
 
     Ok(BuiltinResult::Success(0))
+}
+
+/// colony plugin — manage the Colony Claude Code plugin
+fn colony_plugin(args: &[String]) -> Result<BuiltinResult> {
+    let subcmd = args.first().map(|s| s.as_str()).unwrap_or("status");
+
+    match subcmd {
+        "install" => {
+            let plugin_dir = dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".claude/plugins/colony");
+
+            // Find plugin source — check relative to the colony binary
+            let exe_path = std::env::current_exe().unwrap_or_default();
+            let possible_sources = [
+                // Next to the binary (installed via release tarball)
+                exe_path.parent().unwrap_or(std::path::Path::new(".")).join("../share/colony/claude-plugin"),
+                // In the source tree
+                exe_path.parent().unwrap_or(std::path::Path::new(".")).join("../../claude-plugin"),
+                // Common dev path
+                dirs::home_dir().unwrap_or_default().join("src/github.com/colony-sh/colony-shell/claude-plugin"),
+            ];
+
+            let Some(source) = possible_sources.iter().find(|p| p.join(".claude-plugin").exists()) else {
+                eprintln!("colony plugin: could not find plugin source files");
+                eprintln!("Expected claude-plugin/ directory with .claude-plugin/plugin.json");
+                return Ok(BuiltinResult::Failure(1));
+            };
+
+            // Copy plugin files
+            let dirs_to_copy = [".claude-plugin", "skills", "commands", "hooks"];
+            if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
+                eprintln!("colony plugin: failed to create {}: {}", plugin_dir.display(), e);
+                return Ok(BuiltinResult::Failure(1));
+            }
+
+            for dir_name in &dirs_to_copy {
+                let src = source.join(dir_name);
+                let dst = plugin_dir.join(dir_name);
+                if src.exists() {
+                    let _ = std::fs::remove_dir_all(&dst);
+                    if let Err(e) = copy_dir_recursive(&src, &dst) {
+                        eprintln!("colony plugin: failed to copy {}: {}", dir_name, e);
+                        return Ok(BuiltinResult::Failure(1));
+                    }
+                }
+            }
+
+            println!("Installed Colony Claude Code plugin to {}", plugin_dir.display());
+            println!("Run /reload-plugins in Claude Code to activate.");
+            Ok(BuiltinResult::Success(0))
+        }
+        "status" => {
+            let plugin_dir = dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".claude/plugins/colony");
+
+            if plugin_dir.join(".claude-plugin/plugin.json").exists() {
+                println!("Colony Claude Code plugin: installed");
+                println!("  Path: {}", plugin_dir.display());
+
+                // Count skills
+                let skills_dir = plugin_dir.join("skills");
+                if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+                    let count = entries.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count();
+                    println!("  Skills: {}", count);
+                }
+            } else {
+                println!("Colony Claude Code plugin: not installed");
+                println!("  Run: colony plugin install");
+            }
+            Ok(BuiltinResult::Success(0))
+        }
+        "uninstall" => {
+            let plugin_dir = dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".claude/plugins/colony");
+
+            if plugin_dir.exists() {
+                if let Err(e) = std::fs::remove_dir_all(&plugin_dir) {
+                    eprintln!("colony plugin: failed to remove: {}", e);
+                    return Ok(BuiltinResult::Failure(1));
+                }
+                println!("Uninstalled Colony Claude Code plugin.");
+            } else {
+                println!("Colony Claude Code plugin is not installed.");
+            }
+            Ok(BuiltinResult::Success(0))
+        }
+        "help" | "--help" | "-h" => {
+            println!("Usage: colony plugin <subcommand>");
+            println!();
+            println!("Subcommands:");
+            println!("  install     Install/update the Colony Claude Code plugin");
+            println!("  status      Show plugin installation status");
+            println!("  uninstall   Remove the plugin");
+            println!("  help        Show this help");
+            Ok(BuiltinResult::Success(0))
+        }
+        other => {
+            eprintln!("colony plugin: unknown subcommand '{}'. Try 'colony plugin help'.", other);
+            Ok(BuiltinResult::Failure(1))
+        }
+    }
+}
+
+/// Recursively copy a directory
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
 }
 
 fn extract_recipe_name_from_url(url: &str) -> Option<String> {

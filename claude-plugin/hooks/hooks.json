@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -n \"$COLONY_SHELL\" ]; then echo '--- Colony Shell v0.4.1 ---'; echo \"Canvas: ${COLONY_CANVAS_ID:-none}\"; context show --tokens 2>/dev/null || true; agent status 2>/dev/null || true; fi",
+            "async": false
+          }
+        ]
+      }
+    ]
+  }
+}

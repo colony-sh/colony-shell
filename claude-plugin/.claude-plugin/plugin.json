@@ -1,0 +1,17 @@
+{
+  "name": "colony",
+  "displayName": "Colony Integration",
+  "description": "Gives Claude awareness of Colony Shell environment and Colony Nerve canvas. Activates when COLONY_SHELL or COLONY_CANVAS_ID env vars are detected.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Colony",
+    "email": "hello@colony.sh"
+  },
+  "homepage": "https://colony.sh",
+  "repository": "https://github.com/colony-sh/colony-claude-plugin",
+  "license": "MIT",
+  "keywords": ["colony", "shell", "canvas", "spatial", "ai-native"],
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "hooks": "./hooks/hooks.json"
+}
