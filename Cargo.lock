@@ -1962,6 +1962,7 @@ dependencies = [
 name = "colony-shell"
 version = "0.4.1"
 dependencies = [
+ "chrono",
  "clap",
  "colony-agent",
  "colony-channels",
@@ -1996,6 +1997,7 @@ dependencies = [
  "terminal_size",
  "thiserror 1.0.69",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

@@ -232,6 +232,11 @@ async fn run_script_mode(script: &std::path::Path, opts: &ShellOptions) -> ! {
 }
 
 async fn run_repl_mode(_opts: &ShellOptions) -> Result<()> {
+    // First-run onboarding wizard (runs before REPL/TUI initialization)
+    if crate::onboarding::check_first_run() {
+        crate::onboarding::wizard::run();
+    }
+
     println!("Colony Shell v{}", env!("CARGO_PKG_VERSION"));
     println!("POSIX-compliant shell with AI agent integration");
     println!();

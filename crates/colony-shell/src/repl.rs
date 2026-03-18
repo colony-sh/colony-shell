@@ -364,6 +364,12 @@ pub(crate) async fn run_repl(
                     continue;
                 }
 
+                // Intercept `colony onboard` to run the wizard from the REPL
+                if line == "colony onboard" || line.starts_with("colony onboard ") {
+                    crate::onboarding::wizard::run();
+                    continue;
+                }
+
                 if line.starts_with("llm ") {
                     // Channel builtins (show/export/clear) fall through to the executor
                     let sub = line.split_whitespace().nth(1).unwrap_or("");
