@@ -54,6 +54,10 @@ colony-tui = { path = "../colony-tui", optional = true }
 colony-panel = { path = "../colony-panel" }
 dirs.workspace = true
 
+# For onboarding wizard
+chrono = "0.4"
+toml = "0.8"
+
 [features]
 default = ["tui"]
 tui = ["dep:colony-tui"]
