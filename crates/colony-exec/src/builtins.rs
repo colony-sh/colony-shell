@@ -5448,7 +5448,7 @@ fn get_builtin_names() -> Vec<&'static str> {
 fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
     if args.is_empty() {
         eprintln!("colony: missing subcommand");
-        eprintln!("Usage: colony <install|publish|recipe> [args...]");
+        eprintln!("Usage: colony <install|publish|recipe|onboard> [args...]");
         return Ok(BuiltinResult::Failure(1));
     }
 
@@ -5459,9 +5459,17 @@ fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
         "install" => colony_install(sub_args),
         "publish" => colony_publish(sub_args),
         "recipe" => colony_recipe(sub_args),
+        "onboard" => {
+            // The actual wizard is handled by the REPL layer (colony-shell crate)
+            // which intercepts "colony onboard" before it reaches the executor.
+            // If we get here, we're in non-interactive mode.
+            eprintln!("colony onboard: the setup wizard requires an interactive terminal.");
+            eprintln!("Run `colony` interactively to use the onboarding wizard.");
+            Ok(BuiltinResult::Failure(1))
+        }
         _ => {
             eprintln!("colony: unknown subcommand '{}'", subcommand);
-            eprintln!("Usage: colony <install|publish|recipe> [args...]");
+            eprintln!("Usage: colony <install|publish|recipe|onboard> [args...]");
             Ok(BuiltinResult::Failure(1))
         }
     }

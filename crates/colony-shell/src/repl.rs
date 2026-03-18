@@ -341,6 +341,12 @@ pub(crate) async fn run_repl(
                     break;
                 }
 
+                // Intercept `colony onboard` to run the wizard from the REPL
+                if line == "colony onboard" || line.starts_with("colony onboard ") {
+                    crate::onboarding::wizard::run();
+                    continue;
+                }
+
                 if line.starts_with("llm ") {
                     handle_llm_command(line, &mut agent).await;
                     continue;
