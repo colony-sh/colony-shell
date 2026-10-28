@@ -99,6 +99,8 @@ async fn execute_handler(
         cmd.env(format!("TUPLE_{i}"), val);
     }
     cmd.env("TUPLE_COUNT", tuple_values.len().to_string());
+    // Timeout drops this future; kill the child with it so it can't outlive the 30s cap.
+    cmd.kill_on_drop(true);
 
     let output = cmd.output().await?;
 
@@ -135,9 +137,26 @@ fn truncate_output(s: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    if trimmed.len() <= MAX_OUTPUT_LEN {
-        Some(trimmed.to_string())
-    } else {
-        Some(format!("{}...", &trimmed[..MAX_OUTPUT_LEN]))
+    match trimmed.char_indices().nth(MAX_OUTPUT_LEN) {
+        Some((end, _)) => Some(format!("{}...", &trimmed[..end])),
+        None => Some(trimmed.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_output_multibyte_does_not_panic() {
+        let s = "é".repeat(MAX_OUTPUT_LEN + 10);
+        let out = truncate_output(&s).unwrap();
+        assert_eq!(out.chars().count(), MAX_OUTPUT_LEN + 3);
+    }
+
+    #[test]
+    fn test_truncate_output_short_and_empty() {
+        assert_eq!(truncate_output("  hi \n").as_deref(), Some("hi"));
+        assert_eq!(truncate_output("   "), None);
     }
 }

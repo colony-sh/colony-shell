@@ -341,9 +341,10 @@ fn format_ago(d: std::time::Duration) -> String {
 }
 
 fn truncate_str(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}...", &s[..max.saturating_sub(3)])
+        let kept: String = s.chars().take(max.saturating_sub(3)).collect();
+        format!("{kept}...")
     }
 }
