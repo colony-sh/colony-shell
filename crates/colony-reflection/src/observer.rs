@@ -15,6 +15,7 @@ use crate::types::{
 // ---------------------------------------------------------------------------
 
 /// Async observer interface for recording shell observations.
+#[allow(clippy::double_must_use)] // async_trait marks methods that already return a must-use future
 #[async_trait]
 pub trait ReflectionObserver: Send + Sync {
     async fn observe_command(&self, cmd: CommandData);

@@ -114,6 +114,7 @@ pub type CompletionStream = Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Sen
 ///
 /// Implementors provide LLM completion capabilities with streaming support.
 /// Each provider handles its own authentication, rate limiting, and error handling.
+#[allow(clippy::double_must_use)] // async_trait marks methods that already return a must-use future
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
     /// Send completion request and get streaming response

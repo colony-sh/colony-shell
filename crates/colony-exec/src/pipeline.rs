@@ -1038,10 +1038,7 @@ fn execute_simple_command_in_child_blocking(
             None,
             None,
         ) {
-            match result {
-                Ok(builtin_result) => return Ok(builtin_result.exit_code()),
-                Err(e) => return Err(e),
-            }
+            return Ok(result?.exit_code());
         }
     }
 
@@ -1258,13 +1255,8 @@ fn execute_match_in_child_blocking(
             colony_parser::MatchBody::Block(stmts) => {
                 let mut last = 0;
                 for stmt in stmts {
-                    match execute_statement_in_child_blocking(stmt, context) {
-                        Ok(code) => {
-                            last = code;
-                            context.set_last_exit_status(code);
-                        }
-                        Err(e) => return Err(e),
-                    }
+                    last = execute_statement_in_child_blocking(stmt, context)?;
+                    context.set_last_exit_status(last);
                 }
                 last
             }

@@ -5149,7 +5149,7 @@ fn builtin_complete(args: &[String], context: &mut ExpansionContext) -> Result<B
                 if let Some(action) = CompletionAction::from_action_name(&args[i]) {
                     spec.actions.push(action);
                 } else {
-                    eprintln!("complete: {}: invalid action name", &args[i]);
+                    eprintln!("complete: {}: invalid action name", args[i]);
                     return Ok(BuiltinResult::Failure(1));
                 }
                 i += 1;
@@ -5374,7 +5374,7 @@ fn builtin_compgen(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                 if let Some(action) = CompletionAction::from_action_name(&args[i]) {
                     spec.actions.push(action);
                 } else {
-                    eprintln!("compgen: {}: invalid action name", &args[i]);
+                    eprintln!("compgen: {}: invalid action name", args[i]);
                     return Ok(BuiltinResult::Failure(1));
                 }
                 i += 1;

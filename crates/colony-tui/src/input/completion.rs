@@ -288,11 +288,8 @@ impl GhostCompletion {
 
         // Expand ~ to home directory
         let expanded = if partial.starts_with('~') {
-            if let Some(home) = dirs::home_dir() {
-                partial.replacen('~', home.to_str()?, 1)
-            } else {
-                return None;
-            }
+            let home = dirs::home_dir()?;
+            partial.replacen('~', home.to_str()?, 1)
         } else {
             partial.to_string()
         };

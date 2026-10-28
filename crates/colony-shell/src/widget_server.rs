@@ -271,6 +271,9 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    /// Servers in one test process share `colony-$PID.sock`, so they must not overlap.
+    static SOCKET_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn test_socket_path_generation() {
         let path = WidgetServer::socket_path_for_pid(12345);
@@ -279,6 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_lifecycle() {
+        let _guard = SOCKET_LOCK.lock().await;
         let temp_dir = tempfile::tempdir().unwrap();
         let cwd = temp_dir.path().to_path_buf();
         std::env::set_var("XDG_RUNTIME_DIR", temp_dir.path());
@@ -299,6 +303,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_message_framing() {
+        let _guard = SOCKET_LOCK.lock().await;
         let temp_dir = tempfile::tempdir().unwrap();
         let cwd = temp_dir.path().to_path_buf();
         std::env::set_var("XDG_RUNTIME_DIR", temp_dir.path());
