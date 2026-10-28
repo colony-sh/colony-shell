@@ -52,135 +52,81 @@ impl Default for AliasContext {
 /// Preprocess source code to expand aliases at command positions
 ///
 /// Returns the expanded source code where aliases in command position
-/// have been substituted with their values.
+/// (start of input, or after `;`, `|`, `&`, `&&`, `||`, newline, `(`, `{`
+/// or a backtick) have been substituted with their values.
 pub fn preprocess_aliases(source: &str, ctx: &mut AliasContext) -> String {
     if ctx.aliases.is_empty() {
         return source.to_string();
     }
 
     let mut result = String::with_capacity(source.len() * 2);
-    let mut remaining = source;
+    let mut rest = source;
 
-    while !remaining.is_empty() {
-        let (before, cmd_start, after) = find_command_position(remaining);
-        result.push_str(before);
+    // Each pass starts at a command position: expand its first word, then
+    // copy everything up to and including the next command separator.
+    loop {
+        let trimmed = skip_whitespace(rest);
+        result.push_str(&rest[..rest.len() - trimmed.len()]);
 
-        if cmd_start.is_empty() && after.is_empty() {
+        let (word, after) = extract_word(trimmed);
+        let (expanded, after) = expand_command_word(word, after, ctx);
+        result.push_str(&expanded);
+
+        let end = next_command_position(after);
+        result.push_str(&after[..end]);
+        if end == after.len() {
             break;
         }
-
-        if !cmd_start.is_empty() {
-            let expanded = expand_at_command_position(cmd_start, after, ctx);
-            result.push_str(&expanded.0);
-            remaining = expanded.1;
-        } else {
-            remaining = after;
-        }
+        rest = &after[end..];
     }
 
     result
 }
 
-fn find_command_position(source: &str) -> (&str, &str, &str) {
-    let bytes = source.as_bytes();
-    let mut i = 0;
+/// Byte index just past the next unquoted command separator, or `s.len()`.
+fn next_command_position(s: &str) -> usize {
+    let bytes = s.as_bytes();
     let mut in_single_quote = false;
     let mut in_double_quote = false;
 
-    while i < bytes.len() {
-        let c = bytes[i];
-
-        if c == b'\'' && !in_double_quote {
-            in_single_quote = !in_single_quote;
-            i += 1;
-            continue;
+    for (i, &c) in bytes.iter().enumerate() {
+        match c {
+            b'\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            b'"' if !in_single_quote => in_double_quote = !in_double_quote,
+            _ if in_single_quote || in_double_quote => {}
+            // `2>&1`, `>|` are redirections, not separators
+            b'&' | b'|' if i > 0 && matches!(bytes[i - 1], b'>' | b'<') => {}
+            // `${var}` is parameter expansion, not a brace group
+            b'{' if i > 0 && bytes[i - 1] == b'$' => {}
+            b';' | b'|' | b'&' | b'\n' | b'(' | b'{' | b'`' => return i + 1,
+            _ => {}
         }
-
-        if c == b'"' && !in_single_quote {
-            in_double_quote = !in_double_quote;
-            i += 1;
-            continue;
-        }
-
-        if in_single_quote || in_double_quote {
-            i += 1;
-            continue;
-        }
-
-        if is_command_starter(bytes, i) {
-            let start = skip_whitespace(&source[i..]);
-            let word_start = i + (source[i..].len() - start.len());
-            return (&source[..word_start], start, "");
-        }
-
-        i += 1;
     }
 
-    (source, "", "")
+    bytes.len()
 }
 
-fn is_command_starter(bytes: &[u8], pos: usize) -> bool {
-    if pos == 0 {
-        return !bytes[0].is_ascii_whitespace();
+/// Expand `word` if it is an alias. Returns the replacement text and the
+/// input that remains after it.
+fn expand_command_word<'a>(word: &str, rest: &'a str, ctx: &AliasContext) -> (String, &'a str) {
+    let Some(mut expanded) = ctx.get(word).map(str::to_string) else {
+        return (word.to_string(), rest);
+    };
+
+    // POSIX 2.3.1: a value ending in a blank makes the next word alias-eligible
+    if expanded.ends_with([' ', '\t']) {
+        let (next_word, next_rest) = extract_word(rest);
+        if let Some(next_alias) = ctx.get(next_word) {
+            expanded.push_str(next_alias);
+            return (expanded, next_rest);
+        }
     }
 
-    let prev = bytes[pos - 1];
-    let curr = bytes[pos];
-
-    if curr.is_ascii_whitespace() {
-        return false;
-    }
-
-    matches!(prev, b';' | b'|' | b'&' | b'\n' | b'(' | b'{' | b'`')
-        || (pos >= 2 && bytes[pos - 2] == b'&' && prev == b'&')
-        || (pos >= 2 && bytes[pos - 2] == b'|' && prev == b'|')
+    (expanded, rest)
 }
 
 fn skip_whitespace(s: &str) -> &str {
     s.trim_start_matches([' ', '\t'])
-}
-
-fn expand_at_command_position<'a>(
-    word_and_rest: &'a str,
-    _after: &'a str,
-    ctx: &mut AliasContext,
-) -> (String, &'a str) {
-    let (word, rest) = extract_word(word_and_rest);
-
-    if word.is_empty() {
-        return (String::new(), rest);
-    }
-
-    if ctx.is_expanding(word) {
-        return (word.to_string() + rest, "");
-    }
-
-    if let Some(alias_value) = ctx.get(word).map(|s| s.to_string()) {
-        ctx.start_expanding(word);
-
-        let ends_with_space = alias_value.ends_with(' ') || alias_value.ends_with('\t');
-
-        let mut expanded = alias_value.clone();
-
-        if ends_with_space {
-            let next_rest = skip_whitespace(rest);
-            let (next_word, next_rest_after) = extract_word(next_rest);
-            if !next_word.is_empty() && !ctx.is_expanding(next_word) {
-                if let Some(next_alias) = ctx.get(next_word).map(|s| s.to_string()) {
-                    expanded.push_str(&next_alias);
-                    expanded.push_str(next_rest_after);
-                    ctx.stop_expanding(word);
-                    return (expanded, "");
-                }
-            }
-        }
-
-        expanded.push_str(rest);
-        ctx.stop_expanding(word);
-        (expanded, "")
-    } else {
-        (word.to_string() + rest, "")
-    }
 }
 
 fn extract_word(s: &str) -> (&str, &str) {
@@ -321,5 +267,24 @@ mod tests {
         );
         let result = preprocess_aliases("cat file | countlines", &mut ctx);
         assert_eq!(result, "cat file | wc -l");
+    }
+
+    #[test]
+    fn test_alias_after_and_or_and_newline() {
+        let mut ctx = AliasContext::from_map(
+            [("e".to_string(), "echo".to_string())]
+                .into_iter()
+                .collect(),
+        );
+        let result = preprocess_aliases("true && e a || e b\ne c", &mut ctx);
+        assert_eq!(result, "true && echo a || echo b\necho c");
+    }
+
+    #[test]
+    fn test_redirect_and_param_expansion_are_not_command_positions() {
+        let mut ctx =
+            AliasContext::from_map([("x".to_string(), "BAD".to_string())].into_iter().collect());
+        let result = preprocess_aliases("echo ${x} 2>&x >|x", &mut ctx);
+        assert_eq!(result, "echo ${x} 2>&x >|x");
     }
 }
