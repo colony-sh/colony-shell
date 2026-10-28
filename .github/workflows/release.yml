@@ -133,7 +133,7 @@ jobs:
           set -euo pipefail
 
           TAG="${GITHUB_REF#refs/tags/}"
-          ARCHIVE="colony-${TAG}-${{ matrix.target }}.tar.gz"
+          ARCHIVE="colony-${{ matrix.target }}.tar.gz"
           STAGING="staging-${{ matrix.target }}"
 
           mkdir -p "${STAGING}"
@@ -211,16 +211,16 @@ jobs:
             echo ""
             echo '```bash'
             echo "# macOS (Apple Silicon)"
-            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-${TAG}-aarch64-apple-darwin.tar.gz | tar xz"
+            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-aarch64-apple-darwin.tar.gz | tar xz"
             echo ""
             echo "# macOS (Intel)"
-            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-${TAG}-x86_64-apple-darwin.tar.gz | tar xz"
+            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-x86_64-apple-darwin.tar.gz | tar xz"
             echo ""
             echo "# Linux (x86_64)"
-            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-${TAG}-x86_64-unknown-linux-gnu.tar.gz | tar xz"
+            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-x86_64-unknown-linux-gnu.tar.gz | tar xz"
             echo ""
             echo "# Linux (ARM64)"
-            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-${TAG}-aarch64-unknown-linux-gnu.tar.gz | tar xz"
+            echo "curl -fsSL https://github.com/colony-sh/colony-shell/releases/download/${TAG}/colony-aarch64-unknown-linux-gnu.tar.gz | tar xz"
             echo '```'
             echo ""
             echo "Or install via Homebrew:"
@@ -309,20 +309,20 @@ jobs:
 
             on_macos do
               if Hardware::CPU.arm?
-                url "${BASE_URL}/colony-${TAG}-aarch64-apple-darwin.tar.gz"
+                url "${BASE_URL}/colony-aarch64-apple-darwin.tar.gz"
                 sha256 "${SHA_AARCH64_DARWIN}"
               else
-                url "${BASE_URL}/colony-${TAG}-x86_64-apple-darwin.tar.gz"
+                url "${BASE_URL}/colony-x86_64-apple-darwin.tar.gz"
                 sha256 "${SHA_X86_64_DARWIN}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "${BASE_URL}/colony-${TAG}-aarch64-unknown-linux-gnu.tar.gz"
+                url "${BASE_URL}/colony-aarch64-unknown-linux-gnu.tar.gz"
                 sha256 "${SHA_AARCH64_LINUX}"
               else
-                url "${BASE_URL}/colony-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                url "${BASE_URL}/colony-x86_64-unknown-linux-gnu.tar.gz"
                 sha256 "${SHA_X86_64_LINUX}"
               end
             end

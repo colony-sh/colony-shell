@@ -4,7 +4,7 @@
 #    or: ./install.sh [--no-plugin]
 set -eu
 
-COLONY_VERSION="0.4.1"
+COLONY_VERSION="${COLONY_VERSION:-latest}"
 INSTALL_DIR="${COLONY_INSTALL_DIR:-$HOME/.local/bin}"
 PLUGIN_DIR="$HOME/.claude/plugins/colony"
 
@@ -21,6 +21,7 @@ err()   { printf "${RED}✗${RESET} %s\n" "$1" >&2; }
 
 skip_plugin=false
 from_source=false
+plugin_src=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -98,20 +99,26 @@ install_from_source() {
 # Download prebuilt binary (future — for now, source only)
 install_prebuilt() {
     platform=$(detect_platform)
-    url="https://github.com/colony-sh/colony-shell/releases/download/v${COLONY_VERSION}/colony-${platform}.tar.gz"
+    if [ "$COLONY_VERSION" = latest ]; then
+        url="https://github.com/colony-sh/colony-shell/releases/latest/download/colony-${platform}.tar.gz"
+    else
+        url="https://github.com/colony-sh/colony-shell/releases/download/v${COLONY_VERSION#v}/colony-${platform}.tar.gz"
+    fi
 
-    info "Downloading Colony Shell v${COLONY_VERSION} for ${platform}..."
+    info "Downloading Colony Shell (${COLONY_VERSION}) for ${platform}..."
 
     tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
     if curl --retry 3 -fsSL "$url" -o "$tmp/colony.tar.gz" 2>/dev/null; then
+        tar xzf "$tmp/colony.tar.gz" -C "$tmp"
         mkdir -p "$INSTALL_DIR"
-        tar xzf "$tmp/colony.tar.gz" -C "$INSTALL_DIR"
+        cp "$tmp/colony" "$INSTALL_DIR/colony"
         chmod +x "$INSTALL_DIR/colony"
-        rm -rf "$tmp"
+        # The tarball ships the plugin next to the binary.
+        [ -d "$tmp/claude-plugin/.claude-plugin" ] && plugin_src="$tmp/claude-plugin"
         ok "Installed colony to $INSTALL_DIR/colony"
     else
         info "No prebuilt binary available, building from source..."
-        rm -rf "$tmp"
         install_from_source
     fi
 }
@@ -132,8 +139,9 @@ install_plugin() {
     info "Installing Colony Claude Code plugin..."
 
     # Find plugin source
-    plugin_src=""
-    if [ -d "claude-plugin/.claude-plugin" ]; then
+    if [ -n "$plugin_src" ]; then
+        :
+    elif [ -d "claude-plugin/.claude-plugin" ]; then
         plugin_src="claude-plugin"
     elif [ -d "$HOME/src/github.com/colony-sh/colony-shell/claude-plugin/.claude-plugin" ]; then
         plugin_src="$HOME/src/github.com/colony-sh/colony-shell/claude-plugin"
@@ -172,7 +180,7 @@ check_path() {
 # Main
 main() {
     echo ""
-    printf "${CYAN}Colony Shell${RESET} v${COLONY_VERSION}\n"
+    printf "${CYAN}Colony Shell${RESET} installer\n"
     echo ""
 
     if [ "$from_source" = true ]; then

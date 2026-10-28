@@ -1468,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "colony-agent"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1502,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "colony-channels"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "colony-reflection",
@@ -1517,7 +1517,7 @@ dependencies = [
 
 [[package]]
 name = "colony-cloud-sdk"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "dirs 5.0.1",
@@ -1534,7 +1534,7 @@ dependencies = [
 
 [[package]]
 name = "colony-config"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -1548,7 +1548,7 @@ dependencies = [
 
 [[package]]
 name = "colony-context"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -1561,7 +1561,7 @@ dependencies = [
 
 [[package]]
 name = "colony-debug"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -1611,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "colony-exec"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "arc-swap",
  "axum",
@@ -1660,7 +1660,7 @@ dependencies = [
 
 [[package]]
 name = "colony-expand"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "colony-parser",
  "colony-protocol",
@@ -1688,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "colony-filetree"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "colony-protocol",
  "colony-reflection",
@@ -1718,7 +1718,7 @@ dependencies = [
 
 [[package]]
 name = "colony-focus"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "dirs 5.0.1",
  "rusqlite",
@@ -1798,7 +1798,7 @@ dependencies = [
 
 [[package]]
 name = "colony-mcp"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "colony-channels",
@@ -1820,7 +1820,7 @@ dependencies = [
 
 [[package]]
 name = "colony-memory"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -1852,7 +1852,7 @@ dependencies = [
 
 [[package]]
 name = "colony-parser"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "miette",
  "pest",
@@ -1872,7 +1872,7 @@ dependencies = [
 
 [[package]]
 name = "colony-protocol"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "colony-recipe"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -1892,7 +1892,7 @@ dependencies = [
 
 [[package]]
 name = "colony-recommend"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -1901,7 +1901,7 @@ dependencies = [
 
 [[package]]
 name = "colony-reflection"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "colony-secure"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -1960,7 +1960,7 @@ dependencies = [
 
 [[package]]
 name = "colony-shell"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "clap",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "colony-tui"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "colony-exec",
  "colony-expand",
@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "colony-tuple"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "ipc-channel",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "colony-ui-core"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "colony-exec",
  "colony-filetree",
