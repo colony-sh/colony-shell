@@ -204,7 +204,7 @@ mod inner {
     }
 
     /// Assess the importance of an exchange (0.0 = trivial, 1.0 = critical)
-    fn assess_importance(user_message: &str, assistant_response: &str) -> f32 {
+    pub(super) fn assess_importance(user_message: &str, assistant_response: &str) -> f32 {
         let mut score = 0.0f32;
 
         let user_lower = user_message.to_lowercase();
@@ -261,23 +261,20 @@ mod inner {
     }
 
     /// Create a condensed summary of an exchange for storage
-    fn summarize_exchange(user_message: &str, assistant_response: &str) -> String {
-        let user_truncated = if user_message.len() > 200 {
-            format!("{}...", &user_message[..200])
-        } else {
-            user_message.to_string()
-        };
-
-        let response_truncated = if assistant_response.len() > 300 {
-            format!("{}...", &assistant_response[..300])
-        } else {
-            assistant_response.to_string()
-        };
-
+    pub(super) fn summarize_exchange(user_message: &str, assistant_response: &str) -> String {
         format!(
             "User asked: {}\nAssistant: {}",
-            user_truncated, response_truncated
+            truncate_chars(user_message, 200),
+            truncate_chars(assistant_response, 300)
         )
+    }
+
+    /// Truncate to `max` chars (not bytes, so multibyte text can't panic).
+    fn truncate_chars(s: &str, max: usize) -> String {
+        match s.char_indices().nth(max) {
+            Some((end, _)) => format!("{}...", &s[..end]),
+            None => s.to_string(),
+        }
     }
 }
 
@@ -307,6 +304,7 @@ pub use stub::*;
 #[cfg(test)]
 #[cfg(feature = "memory")]
 mod tests {
+    use super::inner::{assess_importance, summarize_exchange};
     use super::*;
 
     #[test]
@@ -370,6 +368,13 @@ mod tests {
         let long_msg = "x".repeat(500);
         let summary = summarize_exchange(&long_msg, &long_msg);
         assert!(summary.len() < 1000);
+        assert!(summary.contains("..."));
+    }
+
+    #[test]
+    fn test_summarize_exchange_multibyte_does_not_panic() {
+        let long_msg = "é".repeat(500);
+        let summary = summarize_exchange(&long_msg, &long_msg);
         assert!(summary.contains("..."));
     }
 }
