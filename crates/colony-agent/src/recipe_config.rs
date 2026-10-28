@@ -275,8 +275,14 @@ max_turns = 25
         let recipe = full_recipe();
         let config = RecipeAgentConfig::from_recipe(&recipe);
 
-        assert_eq!(config.system_prompt.as_deref(), Some("You are an expert coder."));
-        assert_eq!(config.model_provider, Some(crate::router::ProviderType::Anthropic));
+        assert_eq!(
+            config.system_prompt.as_deref(),
+            Some("You are an expert coder.")
+        );
+        assert_eq!(
+            config.model_provider,
+            Some(crate::router::ProviderType::Anthropic)
+        );
         assert_eq!(
             config.model_name.as_deref(),
             Some("claude-3-5-sonnet-20241022")
@@ -382,10 +388,7 @@ provider = "ollama"
 
         assert_eq!(config.system_prompt, "You are an expert coder.");
         assert_eq!(config.temperature, Some(0.3));
-        assert_eq!(
-            config.auto_approve_patterns,
-            vec!["file_read", "search"]
-        );
+        assert_eq!(config.auto_approve_patterns, vec!["file_read", "search"]);
     }
 
     #[test]

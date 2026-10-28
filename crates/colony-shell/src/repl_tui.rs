@@ -35,8 +35,8 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Terminal;
 use tokio::sync::RwLock;
 
-use crate::shell::{execute_shell_command, is_colony_terminal};
 use crate::shell::execution::handle_llm_command;
+use crate::shell::{execute_shell_command, is_colony_terminal};
 
 // --- Scrollback ---
 
@@ -155,13 +155,10 @@ impl OutputCapture {
     fn begin() -> io::Result<Self> {
         // SAFETY: dup/dup2/pipe/close are safe to call with valid fds.
         // fd 1 (stdout) and fd 2 (stderr) are always valid in a running process.
-        let saved_stdout = nix::unistd::dup(1)
-            .map_err(io::Error::other)?;
-        let saved_stderr = nix::unistd::dup(2)
-            .map_err(io::Error::other)?;
+        let saved_stdout = nix::unistd::dup(1).map_err(io::Error::other)?;
+        let saved_stderr = nix::unistd::dup(2).map_err(io::Error::other)?;
 
-        let (read_owned, write_owned) = nix::unistd::pipe()
-            .map_err(io::Error::other)?;
+        let (read_owned, write_owned) = nix::unistd::pipe().map_err(io::Error::other)?;
         let read_fd = read_owned.as_raw_fd();
         let write_fd = write_owned.as_raw_fd();
 
@@ -170,10 +167,8 @@ impl OutputCapture {
         std::mem::forget(write_owned);
 
         // Redirect stdout and stderr to the pipe write end
-        nix::unistd::dup2(write_fd, 1)
-            .map_err(io::Error::other)?;
-        nix::unistd::dup2(write_fd, 2)
-            .map_err(io::Error::other)?;
+        nix::unistd::dup2(write_fd, 1).map_err(io::Error::other)?;
+        nix::unistd::dup2(write_fd, 2).map_err(io::Error::other)?;
 
         // Close the extra write fd (stdout/stderr ARE the write end now)
         let _ = nix::unistd::close(write_fd);
@@ -203,10 +198,8 @@ impl OutputCapture {
 
         // Restore original stdout and stderr (this closes the pipe write end,
         // which signals EOF to the reader thread)
-        nix::unistd::dup2(self.saved_stdout, 1)
-            .map_err(io::Error::other)?;
-        nix::unistd::dup2(self.saved_stderr, 2)
-            .map_err(io::Error::other)?;
+        nix::unistd::dup2(self.saved_stdout, 1).map_err(io::Error::other)?;
+        nix::unistd::dup2(self.saved_stderr, 2).map_err(io::Error::other)?;
         let _ = nix::unistd::close(self.saved_stdout);
         let _ = nix::unistd::close(self.saved_stderr);
 
@@ -231,7 +224,7 @@ fn strip_ansi(s: &str) -> String {
             // Skip ESC [ ... final_byte sequences (CSI)
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                // consume until we hit a letter (0x40-0x7E)
+                              // consume until we hit a letter (0x40-0x7E)
                 while let Some(&next) = chars.peek() {
                     chars.next();
                     if next.is_ascii_alphabetic() || next == '~' {
@@ -264,11 +257,7 @@ fn strip_ansi(s: &str) -> String {
 fn prompt_text(prompt_manager: &PromptManager, ctx: &ComponentContext) -> String {
     let prompt_data = prompt_manager.render_data(ctx);
     let (left_line, _) = PromptRenderer::render(&prompt_data);
-    left_line
-        .spans
-        .iter()
-        .map(|s| s.content.as_ref())
-        .collect()
+    left_line.spans.iter().map(|s| s.content.as_ref()).collect()
 }
 
 /// Render a panel's frame lines inside a bordered area.
@@ -371,12 +360,7 @@ fn render_stacked_panels(
     }
 }
 
-fn render_panel_frame(
-    frame: &mut ratatui::Frame,
-    area: Rect,
-    lines: &[FrameLine],
-    focused: bool,
-) {
+fn render_panel_frame(frame: &mut ratatui::Frame, area: Rect, lines: &[FrameLine], focused: bool) {
     let border_style = if focused {
         Style::default().fg(Color::Cyan)
     } else {
@@ -391,7 +375,6 @@ fn render_panel_frame(
     let rendered_lines: Vec<Line> = lines
         .iter()
         .take(inner.height as usize)
-        
         .map(|fl| {
             let indent = fl.indent.unwrap_or(0) as usize;
             let is_selected = fl.selected.unwrap_or(false);
@@ -536,7 +519,9 @@ async fn process_sidebar_commands(
         };
         match serde_json::from_str::<SidebarCommand>(json) {
             Ok(cmd) => commands.push(cmd),
-            Err(e) => scrollback.add_error(&format!("[sidebar] json parse error: {e} — raw: {json}")),
+            Err(e) => {
+                scrollback.add_error(&format!("[sidebar] json parse error: {e} — raw: {json}"))
+            }
         }
     }
 
@@ -640,8 +625,8 @@ pub(crate) async fn run_repl_tui(
     .map_err(|e| miette::miette!("failed to enter alternate screen: {}", e))?;
 
     let backend = CrosstermBackend::new(io::stdout());
-    let mut terminal = Terminal::new(backend)
-        .map_err(|e| miette::miette!("failed to create terminal: {}", e))?;
+    let mut terminal =
+        Terminal::new(backend).map_err(|e| miette::miette!("failed to create terminal: {}", e))?;
 
     let mut editor = InputEditor::new();
     let mut history = EditorHistory::new();
@@ -722,8 +707,7 @@ async fn run_repl_loop(
 
         if use_osc {
             let prompt_data = prompt_manager.render_data(&ctx);
-            let state =
-                super::repl::build_prompt_state(&ctx, &prompt_data, model_name.as_deref());
+            let state = super::repl::build_prompt_state(&ctx, &prompt_data, model_name.as_deref());
             emit_prompt_state(state);
             emit_prompt_ready(None);
         }
@@ -851,8 +835,8 @@ async fn execute_with_capture(
     // These need the real terminal.
     let first_word = line.split_whitespace().next().unwrap_or("");
     let interactive_commands = [
-        "vi", "vim", "nvim", "nano", "emacs", "less", "more", "top", "htop", "man", "ssh",
-        "tmux", "screen",
+        "vi", "vim", "nvim", "nano", "emacs", "less", "more", "top", "htop", "man", "ssh", "tmux",
+        "screen",
     ];
 
     if interactive_commands.contains(&first_word) {
@@ -1010,10 +994,7 @@ fn draw_tui(
     let cursor_row = editor.buffer.cursor_row();
     let cursor_col = editor.buffer.cursor_col();
     let prompt_spans = left_line.spans.clone();
-    let prompt_width: u16 = prompt_spans
-        .iter()
-        .map(|s| s.content.len())
-        .sum::<usize>() as u16;
+    let prompt_width: u16 = prompt_spans.iter().map(|s| s.content.len()).sum::<usize>() as u16;
 
     let focus = panel_host.focus;
 
@@ -1036,7 +1017,13 @@ fn draw_tui(
                             } else {
                                 false
                             };
-                            render_panel_group(frame, *panel_area, group, panel_host, group_focused);
+                            render_panel_group(
+                                frame,
+                                *panel_area,
+                                group,
+                                panel_host,
+                                group_focused,
+                            );
                         }
                     }
                     continue;
@@ -1071,12 +1058,8 @@ fn draw_tui(
             input_lines.push(Line::from(first_spans));
 
             for line in editor.buffer.lines().iter().skip(1) {
-                let continuation = format!(
-                    "{:>width$}{}",
-                    "> ",
-                    line,
-                    width = prompt_width as usize
-                );
+                let continuation =
+                    format!("{:>width$}{}", "> ", line, width = prompt_width as usize);
                 input_lines.push(Line::from(continuation));
             }
 
@@ -1091,9 +1074,7 @@ fn draw_tui(
             };
             let status_line = Line::from(vec![Span::styled(
                 bar_text,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .bg(Color::DarkGray),
+                Style::default().fg(Color::Yellow).bg(Color::DarkGray),
             )]);
             let status_bar =
                 Paragraph::new(vec![status_line]).style(Style::default().bg(Color::DarkGray));
@@ -1127,7 +1108,9 @@ fn render_scrollback(frame: &mut ratatui::Frame, area: Rect, scrollback: &Scroll
         .iter()
         .map(|entry| {
             let style = match entry.style {
-                ScrollbackStyle::Prompt => Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ScrollbackStyle::Prompt => Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
                 ScrollbackStyle::Output => Style::default().fg(Color::White),
                 ScrollbackStyle::Error => Style::default().fg(Color::Red),
             };
@@ -1172,10 +1155,7 @@ fn render_help_modal(frame: &mut ratatui::Frame, area: Rect, panel_host: &PanelH
                     } else {
                         "off"
                     };
-                    help_lines.push(format!(
-                        "{:<10} Toggle panels [{}]",
-                        hk, state
-                    ));
+                    help_lines.push(format!("{:<10} Toggle panels [{}]", hk, state));
                 }
             }
         }
@@ -1216,7 +1196,11 @@ fn render_help_modal(frame: &mut ratatui::Frame, area: Rect, panel_host: &PanelH
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow))
         .title(" Help ")
-        .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        .title_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
 
     let paragraph = Paragraph::new(lines)
         .block(block)
@@ -1272,9 +1256,7 @@ async fn read_input_line(
         let messages = panel_host.poll_panels().await;
         for (id, msg) in &messages {
             if let PanelMessage::Emit(ref emit) = msg {
-                panel_host
-                    .broadcast_tuple(&emit.key, &emit.value)
-                    .await;
+                panel_host.broadcast_tuple(&emit.key, &emit.value).await;
             }
             let _ = (id, msg); // suppress unused warnings for non-emit messages
         }
@@ -1285,9 +1267,7 @@ async fn read_input_line(
             let ev = event::read().map_err(|e| miette::miette!("event read error: {}", e))?;
 
             match ev {
-                Event::Key(key)
-                    if key.kind == crossterm::event::KeyEventKind::Press =>
-                {
+                Event::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
                     // Hotkey toggle: check registered hotkeys first
                     let matched_hotkey = panel_host
                         .hotkeys()
@@ -1297,8 +1277,14 @@ async fn read_input_line(
                     if let Some(hk) = matched_hotkey {
                         panel_host.toggle_hotkey(&hk).await;
                         redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message, *show_help,
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
                         )?;
                         continue;
                     }
@@ -1308,8 +1294,14 @@ async fn read_input_line(
                         // Any key dismisses the help modal
                         *show_help = false;
                         redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message, *show_help,
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
                         )?;
                         continue;
                     }
@@ -1319,8 +1311,14 @@ async fn read_input_line(
                     {
                         *show_help = true;
                         redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message, *show_help,
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
                         )?;
                         continue;
                     }
@@ -1331,8 +1329,14 @@ async fn read_input_line(
                         if prompt_empty || !matches!(panel_host.focus, Focus::Main) {
                             panel_host.cycle_focus();
                             redraw(
-                                terminal, prompt_manager, ctx, editor,
-                                panel_host, scrollback, status_message, *show_help,
+                                terminal,
+                                prompt_manager,
+                                ctx,
+                                editor,
+                                panel_host,
+                                scrollback,
+                                status_message,
+                                *show_help,
                             )?;
                             continue;
                         }
@@ -1341,13 +1345,18 @@ async fn read_input_line(
                     // Scrollback navigation: Shift+Up/Down or Ctrl+Up/Down
                     if matches!(
                         (key.modifiers, key.code),
-                        (KeyModifiers::SHIFT, KeyCode::Up)
-                            | (KeyModifiers::CONTROL, KeyCode::Up)
+                        (KeyModifiers::SHIFT, KeyCode::Up) | (KeyModifiers::CONTROL, KeyCode::Up)
                     ) {
                         scrollback.scroll_up(3);
                         redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message, *show_help,
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
                         )?;
                         continue;
                     }
@@ -1358,8 +1367,14 @@ async fn read_input_line(
                     ) {
                         scrollback.scroll_down(3);
                         redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message, *show_help,
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
                         )?;
                         continue;
                     }
@@ -1370,8 +1385,14 @@ async fn read_input_line(
                         if key.code == KeyCode::Esc {
                             panel_host.focus = Focus::Main;
                             redraw(
-                                terminal, prompt_manager, ctx, editor,
-                                panel_host, scrollback, status_message, *show_help,
+                                terminal,
+                                prompt_manager,
+                                ctx,
+                                editor,
+                                panel_host,
+                                scrollback,
+                                status_message,
+                                *show_help,
                             )?;
                             continue;
                         }
@@ -1392,8 +1413,14 @@ async fn read_input_line(
                                             panel_host.focus = Focus::Panel(new_id);
                                         }
                                         redraw(
-                                            terminal, prompt_manager, ctx, editor,
-                                            panel_host, scrollback, status_message, *show_help,
+                                            terminal,
+                                            prompt_manager,
+                                            ctx,
+                                            editor,
+                                            panel_host,
+                                            scrollback,
+                                            status_message,
+                                            *show_help,
                                         )?;
                                         continue;
                                     }
@@ -1404,8 +1431,14 @@ async fn read_input_line(
                         let panel_event = crossterm_key_to_panel_event(key);
                         let _ = panel_host.send_to_focused(&panel_event).await;
                         redraw(
-                            terminal, prompt_manager, ctx, editor,
-                            panel_host, scrollback, status_message, *show_help,
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
                         )?;
                         continue;
                     }
@@ -1446,22 +1479,19 @@ async fn read_input_line(
                         EditorAction::Complete(prefix) => {
                             let builtins = vec![
                                 "cd", "pwd", "echo", "export", "unset", "source", "exit",
-                                "history", "jobs", "fg", "bg", "alias", "unalias", "set",
-                                "shift", "test", "true", "false", "read", "printf", "type",
-                                "hash", "ulimit", "umask", "wait", "trap", "return", "break",
-                                "continue", "eval", "exec", "command", "builtin", "local",
-                                "declare", "readonly", "getopts", "times", "llm", "path",
-                                "sidebar",
+                                "history", "jobs", "fg", "bg", "alias", "unalias", "set", "shift",
+                                "test", "true", "false", "read", "printf", "type", "hash",
+                                "ulimit", "umask", "wait", "trap", "return", "break", "continue",
+                                "eval", "exec", "command", "builtin", "local", "declare",
+                                "readonly", "getopts", "times", "llm", "path", "sidebar",
                             ]
                             .into_iter()
                             .map(String::from)
                             .collect();
 
-                            let history_entries: Vec<String> =
-                                history.entries().to_vec();
+                            let history_entries: Vec<String> = history.entries().to_vec();
 
-                            let comp_ctx =
-                                CompletionContext::from_env(builtins, history_entries);
+                            let comp_ctx = CompletionContext::from_env(builtins, history_entries);
                             let items = CompletionEngine::complete(&prefix, &comp_ctx);
 
                             if let Some(first) = items.first() {
@@ -1485,29 +1515,45 @@ async fn read_input_line(
                     }
 
                     redraw(
-                        terminal, prompt_manager, ctx, editor,
-                        panel_host, scrollback, status_message, *show_help,
+                        terminal,
+                        prompt_manager,
+                        ctx,
+                        editor,
+                        panel_host,
+                        scrollback,
+                        status_message,
+                        *show_help,
                     )?;
                 }
-                Event::Mouse(mouse) => {
-                    match mouse.kind {
-                        MouseEventKind::ScrollUp => {
-                            scrollback.scroll_up(3);
-                            redraw(
-                                terminal, prompt_manager, ctx, editor,
-                                panel_host, scrollback, status_message, *show_help,
-                            )?;
-                        }
-                        MouseEventKind::ScrollDown => {
-                            scrollback.scroll_down(3);
-                            redraw(
-                                terminal, prompt_manager, ctx, editor,
-                                panel_host, scrollback, status_message, *show_help,
-                            )?;
-                        }
-                        _ => {}
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        scrollback.scroll_up(3);
+                        redraw(
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
+                        )?;
                     }
-                }
+                    MouseEventKind::ScrollDown => {
+                        scrollback.scroll_down(3);
+                        redraw(
+                            terminal,
+                            prompt_manager,
+                            ctx,
+                            editor,
+                            panel_host,
+                            scrollback,
+                            status_message,
+                            *show_help,
+                        )?;
+                    }
+                    _ => {}
+                },
                 Event::Resize(_, _) => {
                     // Notify panels of new dimensions
                     let size = terminal.size().unwrap_or_default();
@@ -1516,8 +1562,14 @@ async fn read_input_line(
                     panel_host.notify_resize(&layout).await;
 
                     redraw(
-                        terminal, prompt_manager, ctx, editor,
-                        panel_host, scrollback, status_message, *show_help,
+                        terminal,
+                        prompt_manager,
+                        ctx,
+                        editor,
+                        panel_host,
+                        scrollback,
+                        status_message,
+                        *show_help,
                     )?;
                 }
                 _ => {}
@@ -1525,8 +1577,14 @@ async fn read_input_line(
         } else if !messages.is_empty() {
             // Panels produced new frames, redraw
             redraw(
-                terminal, prompt_manager, ctx, editor,
-                panel_host, scrollback, status_message, *show_help,
+                terminal,
+                prompt_manager,
+                ctx,
+                editor,
+                panel_host,
+                scrollback,
+                status_message,
+                *show_help,
             )?;
         }
     }

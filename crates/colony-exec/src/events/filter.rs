@@ -75,21 +75,21 @@ pub enum LiteralValue {
 /// Token produced by the lexer.
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
-    Var(usize),         // $N
-    StringLit(String),  // "..."
-    NumberLit(f64),     // 123 or 123.45
-    Eq,                 // ==
-    NotEq,              // !=
-    Gt,                 // >
-    Gte,                // >=
-    Lt,                 // <
-    Lte,                // <=
-    Contains,           // ~
-    And,                // AND
-    Or,                 // OR
-    Not,                // NOT
-    LParen,             // (
-    RParen,             // )
+    Var(usize),        // $N
+    StringLit(String), // "..."
+    NumberLit(f64),    // 123 or 123.45
+    Eq,                // ==
+    NotEq,             // !=
+    Gt,                // >
+    Gte,               // >=
+    Lt,                // <
+    Lte,               // <=
+    Contains,          // ~
+    And,               // AND
+    Or,                // OR
+    Not,               // NOT
+    LParen,            // (
+    RParen,            // )
 }
 
 // ---------------------------------------------------------------------------
@@ -118,12 +118,14 @@ fn tokenize(input: &str) -> Result<Vec<Token>, FilterError> {
                     i += 1;
                 }
                 if i == start {
-                    return Err(FilterError::InvalidVar("$ not followed by number".to_string()));
+                    return Err(FilterError::InvalidVar(
+                        "$ not followed by number".to_string(),
+                    ));
                 }
                 let num_str: String = chars[start..i].iter().collect();
-                let index: usize = num_str.parse().map_err(|_| {
-                    FilterError::InvalidVar(format!("${num_str}"))
-                })?;
+                let index: usize = num_str
+                    .parse()
+                    .map_err(|_| FilterError::InvalidVar(format!("${num_str}")))?;
                 tokens.push(Token::Var(index));
             }
 
@@ -214,7 +216,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, FilterError> {
                 i += 1;
             }
 
-            c if c.is_ascii_digit() || (c == '-' && i + 1 < len && chars[i + 1].is_ascii_digit()) => {
+            c if c.is_ascii_digit()
+                || (c == '-' && i + 1 < len && chars[i + 1].is_ascii_digit()) =>
+            {
                 let start = i;
                 if c == '-' {
                     i += 1;
@@ -223,11 +227,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>, FilterError> {
                     i += 1;
                 }
                 let num_str: String = chars[start..i].iter().collect();
-                let num: f64 = num_str.parse().map_err(|_| {
-                    FilterError::UnexpectedToken {
-                        pos: start,
-                        message: format!("invalid number: {num_str}"),
-                    }
+                let num: f64 = num_str.parse().map_err(|_| FilterError::UnexpectedToken {
+                    pos: start,
+                    message: format!("invalid number: {num_str}"),
                 })?;
                 tokens.push(Token::NumberLit(num));
             }
@@ -304,7 +306,10 @@ impl Parser {
         if self.pos < self.tokens.len() {
             return Err(FilterError::UnexpectedToken {
                 pos: self.pos,
-                message: format!("unexpected token after expression: {:?}", self.tokens[self.pos]),
+                message: format!(
+                    "unexpected token after expression: {:?}",
+                    self.tokens[self.pos]
+                ),
             });
         }
 
@@ -431,7 +436,11 @@ pub fn evaluate_filter(expr: &FilterExpr, values: &[String]) -> bool {
     match expr {
         FilterExpr::True => true,
 
-        FilterExpr::Compare { var_index, op, value } => {
+        FilterExpr::Compare {
+            var_index,
+            op,
+            value,
+        } => {
             let var_str = values.get(*var_index).map(String::as_str).unwrap_or("");
             eval_compare(var_str, *op, value)
         }
@@ -469,7 +478,9 @@ fn eval_compare(var_str: &str, op: CompareOp, value: &LiteralValue) -> bool {
 
         CompareOp::Eq => match value {
             LiteralValue::Str(s) => var_str == s,
-            LiteralValue::Num(n) => var_str.parse::<f64>().is_ok_and(|v| (v - n).abs() < f64::EPSILON),
+            LiteralValue::Num(n) => var_str
+                .parse::<f64>()
+                .is_ok_and(|v| (v - n).abs() < f64::EPSILON),
         },
 
         CompareOp::NotEq => match value {
@@ -618,31 +629,61 @@ mod tests {
     #[test]
     fn test_eval_eq_string() {
         let expr = parse_filter("$2 == \"GET\"").unwrap();
-        assert!(evaluate_filter(&expr, &vals(&["http_request", "sess-1", "GET", "/api"])));
-        assert!(!evaluate_filter(&expr, &vals(&["http_request", "sess-1", "POST", "/api"])));
+        assert!(evaluate_filter(
+            &expr,
+            &vals(&["http_request", "sess-1", "GET", "/api"])
+        ));
+        assert!(!evaluate_filter(
+            &expr,
+            &vals(&["http_request", "sess-1", "POST", "/api"])
+        ));
     }
 
     #[test]
     fn test_eval_gte_numeric() {
         let expr = parse_filter("$4 >= 500").unwrap();
-        assert!(evaluate_filter(&expr, &vals(&["http", "s", "GET", "/", "500"])));
-        assert!(evaluate_filter(&expr, &vals(&["http", "s", "GET", "/", "503"])));
-        assert!(!evaluate_filter(&expr, &vals(&["http", "s", "GET", "/", "200"])));
+        assert!(evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "GET", "/", "500"])
+        ));
+        assert!(evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "GET", "/", "503"])
+        ));
+        assert!(!evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "GET", "/", "200"])
+        ));
     }
 
     #[test]
     fn test_eval_contains() {
         let expr = parse_filter("$3 ~ \"/api/\"").unwrap();
-        assert!(evaluate_filter(&expr, &vals(&["http", "s", "GET", "/api/status"])));
-        assert!(!evaluate_filter(&expr, &vals(&["http", "s", "GET", "/index.html"])));
+        assert!(evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "GET", "/api/status"])
+        ));
+        assert!(!evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "GET", "/index.html"])
+        ));
     }
 
     #[test]
     fn test_eval_and() {
         let expr = parse_filter("$2 == \"POST\" AND $4 >= 400").unwrap();
-        assert!(evaluate_filter(&expr, &vals(&["http", "s", "POST", "/api", "500"])));
-        assert!(!evaluate_filter(&expr, &vals(&["http", "s", "GET", "/api", "500"])));
-        assert!(!evaluate_filter(&expr, &vals(&["http", "s", "POST", "/api", "200"])));
+        assert!(evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "POST", "/api", "500"])
+        ));
+        assert!(!evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "GET", "/api", "500"])
+        ));
+        assert!(!evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "POST", "/api", "200"])
+        ));
     }
 
     #[test]
@@ -663,10 +704,22 @@ mod tests {
     #[test]
     fn test_eval_complex() {
         let expr = parse_filter("($2 == \"POST\" OR $2 == \"PUT\") AND $4 >= 400").unwrap();
-        assert!(evaluate_filter(&expr, &vals(&["http", "s", "POST", "/", "500"])));
-        assert!(evaluate_filter(&expr, &vals(&["http", "s", "PUT", "/", "400"])));
-        assert!(!evaluate_filter(&expr, &vals(&["http", "s", "GET", "/", "500"])));
-        assert!(!evaluate_filter(&expr, &vals(&["http", "s", "POST", "/", "200"])));
+        assert!(evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "POST", "/", "500"])
+        ));
+        assert!(evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "PUT", "/", "400"])
+        ));
+        assert!(!evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "GET", "/", "500"])
+        ));
+        assert!(!evaluate_filter(
+            &expr,
+            &vals(&["http", "s", "POST", "/", "200"])
+        ));
     }
 
     #[test]

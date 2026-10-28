@@ -197,8 +197,7 @@ impl GoalStore {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    status: GoalStatus::parse(&status_str)
-                        .unwrap_or(GoalStatus::Active),
+                    status: GoalStatus::parse(&status_str).unwrap_or(GoalStatus::Active),
                     parent_id: row.get(4)?,
                     children,
                     created_at: row.get(5)?,
@@ -228,8 +227,7 @@ impl GoalStore {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    status: GoalStatus::parse(&status_str)
-                        .unwrap_or(GoalStatus::Active),
+                    status: GoalStatus::parse(&status_str).unwrap_or(GoalStatus::Active),
                     parent_id: row.get(4)?,
                     children: Vec::new(),
                     created_at: row.get(5)?,
@@ -282,8 +280,7 @@ impl GoalStore {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     description: row.get(2)?,
-                    status: GoalStatus::parse(&status_str)
-                        .unwrap_or(GoalStatus::Active),
+                    status: GoalStatus::parse(&status_str).unwrap_or(GoalStatus::Active),
                     parent_id: row.get(4)?,
                     children: Vec::new(),
                     created_at: row.get(5)?,
@@ -307,8 +304,7 @@ impl GoalStore {
 
     pub fn goal_count(&self) -> Result<usize> {
         let conn = self.lock()?;
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM goals", [], |row| row.get(0))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM goals", [], |row| row.get(0))?;
         Ok(count as usize)
     }
 }
@@ -372,7 +368,10 @@ mod tests {
         store.save_goal(&goal).unwrap();
 
         let loaded = store.get_goal("g-1").unwrap().unwrap();
-        assert_eq!(loaded.description.as_deref(), Some("A detailed description"));
+        assert_eq!(
+            loaded.description.as_deref(),
+            Some("A detailed description")
+        );
     }
 
     #[test]
@@ -418,7 +417,8 @@ mod tests {
         tree.add_root(make_goal("g-1", "Root")).unwrap();
         tree.add_child("g-1", make_goal("g-2", "Child A")).unwrap();
         tree.add_child("g-1", make_goal("g-3", "Child B")).unwrap();
-        tree.add_child("g-2", make_goal("g-4", "Grandchild")).unwrap();
+        tree.add_child("g-2", make_goal("g-4", "Grandchild"))
+            .unwrap();
 
         store.save_tree(&tree).unwrap();
 
@@ -474,7 +474,9 @@ mod tests {
         store.save_goal(&make_goal("g-1", "Goal A")).unwrap();
         store.save_goal(&make_goal("g-2", "Goal B")).unwrap();
 
-        store.create_session("session-1", Some("Test session")).unwrap();
+        store
+            .create_session("session-1", Some("Test session"))
+            .unwrap();
         store.link_goal_to_session("session-1", "g-1").unwrap();
         store.link_goal_to_session("session-1", "g-2").unwrap();
 

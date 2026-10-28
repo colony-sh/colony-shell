@@ -239,9 +239,7 @@ fn parse_openai_sse_stream(
             loop {
                 // Try to extract a complete line from the buffer
                 while let Some(line_end) = state.buffer.find('\n') {
-                    let line = state.buffer[..line_end]
-                        .trim_end_matches('\r')
-                        .to_string();
+                    let line = state.buffer[..line_end].trim_end_matches('\r').to_string();
                     state.buffer = state.buffer[line_end + 1..].to_string();
 
                     // Skip empty lines (SSE event boundaries)
@@ -643,8 +641,7 @@ mod tests {
             "data: [DONE]\n\n",
         );
 
-        let byte_stream =
-            futures::stream::once(async move { Ok(bytes::Bytes::from(sse_body)) });
+        let byte_stream = futures::stream::once(async move { Ok(bytes::Bytes::from(sse_body)) });
 
         let response = build_mock_response(byte_stream);
         let mut event_stream = Box::pin(parse_openai_sse_stream(response));
@@ -678,8 +675,7 @@ mod tests {
             "data: [DONE]\n\n",
         );
 
-        let byte_stream =
-            futures::stream::once(async move { Ok(bytes::Bytes::from(sse_body)) });
+        let byte_stream = futures::stream::once(async move { Ok(bytes::Bytes::from(sse_body)) });
         let response = build_mock_response(byte_stream);
         let mut event_stream = Box::pin(parse_openai_sse_stream(response));
 

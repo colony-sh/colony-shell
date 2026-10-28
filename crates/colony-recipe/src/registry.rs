@@ -44,11 +44,10 @@ impl RecipeRegistry {
     /// Open or create the registry at a specific path.
     pub fn open_at(manifest_path: PathBuf) -> Result<Self> {
         let manifest = if manifest_path.exists() {
-            let content =
-                std::fs::read_to_string(&manifest_path).map_err(|e| RecipeError::Io {
-                    path: manifest_path.display().to_string(),
-                    source: e,
-                })?;
+            let content = std::fs::read_to_string(&manifest_path).map_err(|e| RecipeError::Io {
+                path: manifest_path.display().to_string(),
+                source: e,
+            })?;
             toml::from_str(&content).map_err(|e| RecipeError::TomlParse {
                 path: manifest_path.display().to_string(),
                 source: e,
@@ -65,9 +64,7 @@ impl RecipeRegistry {
 
     /// Register an installed recipe.
     pub fn register(&mut self, entry: InstalledRecipe) -> Result<()> {
-        self.manifest
-            .recipes
-            .insert(entry.name.clone(), entry);
+        self.manifest.recipes.insert(entry.name.clone(), entry);
         self.save()
     }
 
@@ -118,14 +115,9 @@ impl RecipeRegistry {
 
     /// Return the default recipes directory (~/.colony/recipes/).
     pub fn recipes_dir() -> Result<PathBuf> {
-        let home = dirs::home_dir().ok_or_else(|| {
-            RecipeError::Io {
-                path: "~".to_string(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "HOME directory not found",
-                ),
-            }
+        let home = dirs::home_dir().ok_or_else(|| RecipeError::Io {
+            path: "~".to_string(),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "HOME directory not found"),
         })?;
         Ok(home.join(".colony/recipes"))
     }
@@ -135,12 +127,7 @@ impl RecipeRegistry {
 pub const RECIPE_REQUIRED_FILES: &[&str] = &["AGENT.md"];
 
 /// Optional files that may exist in a recipe package.
-pub const RECIPE_OPTIONAL_FILES: &[&str] = &[
-    "TOOLS.md",
-    "CONTEXT.md",
-    "PROMPT.md",
-    "recipe.toml",
-];
+pub const RECIPE_OPTIONAL_FILES: &[&str] = &["TOOLS.md", "CONTEXT.md", "PROMPT.md", "recipe.toml"];
 
 /// Validate that a directory contains a valid recipe structure.
 ///

@@ -22,13 +22,15 @@ fn main() {
         let mut out = stdout.lock();
         writeln!(out, "{SENTINEL_CONFIG}").ok();
         let config = PanelConfig {
-            subscriptions: vec![
-                "filetree_select".to_string(),
-                "gitfiles_select".to_string(),
-            ],
+            subscriptions: vec!["filetree_select".to_string(), "gitfiles_select".to_string()],
             help: Vec::new(),
         };
-        writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&config).expect("config must serialize")
+        )
+        .ok();
         out.flush().ok();
     }
 
@@ -136,7 +138,12 @@ fn emit_frame(stdout: &io::Stdout, state: &DiffState) {
     let mut out = stdout.lock();
     writeln!(out, "{SENTINEL_FRAME}").ok();
     for line in state.render_lines() {
-        writeln!(out, "{}", serde_json::to_string(&line).expect("frame line must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&line).expect("frame line must serialize")
+        )
+        .ok();
     }
     writeln!(out, "{SENTINEL_FRAME}").ok();
     out.flush().ok();
@@ -154,7 +161,12 @@ fn emit_tuple(stdout: &io::Stdout, key: &str, state: &DiffState) {
         key: key.to_string(),
         value: serde_json::json!({ "file": path_str }),
     };
-    writeln!(out, "{}", serde_json::to_string(&emit).expect("tuple emit must serialize")).ok();
+    writeln!(
+        out,
+        "{}",
+        serde_json::to_string(&emit).expect("tuple emit must serialize")
+    )
+    .ok();
     out.flush().ok();
 }
 
@@ -228,10 +240,7 @@ impl DiffState {
         let Some(ref file) = self.file else {
             return false;
         };
-        let status = Command::new("git")
-            .arg("add")
-            .arg(file)
-            .status();
+        let status = Command::new("git").arg("add").arg(file).status();
         let Ok(status) = status else { return false };
         if status.success() {
             self.refresh_diff();
@@ -265,11 +274,7 @@ impl DiffState {
         let Some(ref file) = self.file else { return };
 
         // Try unstaged diff first, then staged diff
-        let output = Command::new("git")
-            .arg("diff")
-            .arg("--")
-            .arg(file)
-            .output();
+        let output = Command::new("git").arg("diff").arg("--").arg(file).output();
 
         let output = match output {
             Ok(o) if !o.stdout.is_empty() => o,

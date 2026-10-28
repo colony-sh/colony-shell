@@ -1487,10 +1487,10 @@ impl AstBuilder {
             (target.to_string(), None)
         };
 
-        let prompt_pair = inner
+        let prompt_pair = inner.next().ok_or(BuildError::MissingFunctionName)?;
+        let prompt_word = prompt_pair
+            .into_inner()
             .next()
-            .ok_or(BuildError::MissingFunctionName)?;
-        let prompt_word = prompt_pair.into_inner().next()
             .ok_or(BuildError::MissingFunctionName)?;
         let prompt = Self::build_word(prompt_word)?;
 
@@ -3465,12 +3465,10 @@ mod tests {
         let stmt = crate::pest_api::parse_statement(source).unwrap();
         let pipeline = match &stmt {
             Statement::Pipeline(p) => p,
-            Statement::List(list) => {
-                match &*list.first {
-                    Statement::Pipeline(p) => p,
-                    other => panic!("Expected Pipeline inside List, got {:?}", other),
-                }
-            }
+            Statement::List(list) => match &*list.first {
+                Statement::Pipeline(p) => p,
+                other => panic!("Expected Pipeline inside List, got {:?}", other),
+            },
             other => panic!("Expected Pipeline or List, got {:?}", other),
         };
         assert_eq!(pipeline.elements.len(), 2);
@@ -4456,7 +4454,13 @@ mod tests {
             other => panic!("Expected Pipeline or List, got {:?}", other),
         };
         assert_eq!(pipeline.elements.len(), 2);
-        assert!(matches!(&*pipeline.elements[0].command, Statement::SimpleCommand(_)));
-        assert!(matches!(&*pipeline.elements[1].command, Statement::AgentInvocation(_)));
+        assert!(matches!(
+            &*pipeline.elements[0].command,
+            Statement::SimpleCommand(_)
+        ));
+        assert!(matches!(
+            &*pipeline.elements[1].command,
+            Statement::AgentInvocation(_)
+        ));
     }
 }

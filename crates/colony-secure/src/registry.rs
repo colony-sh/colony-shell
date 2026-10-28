@@ -1,4 +1,7 @@
-use crate::{ApprovalDatabase, ApprovalScope, ProcessLineage, Result, SecureConfig, SecureError, GRANTED_BY_INTERACTIVE};
+use crate::{
+    ApprovalDatabase, ApprovalScope, ProcessLineage, Result, SecureConfig, SecureError,
+    GRANTED_BY_INTERACTIVE,
+};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use sha2::{Digest, Sha256};

@@ -111,17 +111,15 @@ impl RateLimiter {
     pub async fn acquire(&self, endpoint: &str) {
         let wait = {
             let mut buckets = self.buckets.lock().await;
-            let bucket = buckets
-                .entry(endpoint.to_string())
-                .or_insert_with(|| {
-                    let rps = self
-                        .config
-                        .endpoint_limits
-                        .get(endpoint)
-                        .copied()
-                        .unwrap_or(self.config.default_rps);
-                    TokenBucket::new(rps)
-                });
+            let bucket = buckets.entry(endpoint.to_string()).or_insert_with(|| {
+                let rps = self
+                    .config
+                    .endpoint_limits
+                    .get(endpoint)
+                    .copied()
+                    .unwrap_or(self.config.default_rps);
+                TokenBucket::new(rps)
+            });
 
             // Check server-side rate limit first
             if let Some(info) = self.check_server_limit(endpoint).await {

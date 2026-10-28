@@ -71,8 +71,9 @@ pub(crate) async fn execute_shell_command(line: &str, executor: &mut Executor) -
     };
 
     let mut alias_ctx = AliasContext::from_map(executor.context().aliases().clone());
-    let stmt = colony_parser::pest_api::parse_statement_with_aliases(&effective_line, &mut alias_ctx)
-        .map_err(|e| miette::miette!("parse error: {}", e))?;
+    let stmt =
+        colony_parser::pest_api::parse_statement_with_aliases(&effective_line, &mut alias_ctx)
+            .map_err(|e| miette::miette!("parse error: {}", e))?;
 
     let exit_code = execute_statement_for_code(&stmt, executor).await;
     executor.context_mut().set_last_exit_status(exit_code);
@@ -1068,6 +1069,9 @@ mod tests {
     #[test]
     fn arithmetic_invalid_returns_zero() {
         let mut executor = Executor::new(ExpansionContext::new());
-        assert_eq!(evaluate_arithmetic_command("not a number", &mut executor), 0);
+        assert_eq!(
+            evaluate_arithmetic_command("not a number", &mut executor),
+            0
+        );
     }
 }

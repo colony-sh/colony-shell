@@ -21,7 +21,12 @@ fn main() {
             subscriptions: vec!["cmd_complete".to_string(), "git_change".to_string()],
             help: Vec::new(),
         };
-        writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&config).expect("config must serialize")
+        )
+        .ok();
         out.flush().ok();
     }
 
@@ -77,7 +82,12 @@ fn emit_frame(stdout: &io::Stdout, state: &GitStatusState) {
     let mut out = stdout.lock();
     writeln!(out, "{SENTINEL_FRAME}").ok();
     for line in state.render_lines() {
-        writeln!(out, "{}", serde_json::to_string(&line).expect("frame line must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&line).expect("frame line must serialize")
+        )
+        .ok();
     }
     writeln!(out, "{SENTINEL_FRAME}").ok();
     out.flush().ok();
@@ -123,9 +133,9 @@ impl FileStatus {
     fn icon(self) -> &'static str {
         match self {
             Self::Staged => "\u{f00c}",    // check mark
-            Self::Modified => "\u{f040}",   // pencil
-            Self::Deleted => "\u{f00d}",    // x mark
-            Self::Untracked => "\u{f128}",  // question mark
+            Self::Modified => "\u{f040}",  // pencil
+            Self::Deleted => "\u{f00d}",   // x mark
+            Self::Untracked => "\u{f128}", // question mark
         }
     }
 }
@@ -269,7 +279,11 @@ impl GitStatusState {
                     "bold"
                 };
                 lines.push(FrameLine {
-                    text: format!("{} ({})", entry.status.label(), self.count_status(entry.status)),
+                    text: format!(
+                        "{} ({})",
+                        entry.status.label(),
+                        self.count_status(entry.status)
+                    ),
                     icon: None,
                     style: Some(header_style.to_string()),
                     indent: None,
@@ -346,7 +360,11 @@ fn parse_branch_info() -> BranchInfo {
     // Extract branch name (everything before "..." or end of string)
     let branch_part = header.split("...").next().unwrap_or(header);
     // Also strip any bracket info from branch name
-    info.name = branch_part.split(' ').next().unwrap_or(branch_part).to_string();
+    info.name = branch_part
+        .split(' ')
+        .next()
+        .unwrap_or(branch_part)
+        .to_string();
 
     // Parse ahead/behind from bracket portion
     if let Some(bracket_start) = header.find('[') {
@@ -368,9 +386,7 @@ fn parse_branch_info() -> BranchInfo {
 }
 
 fn parse_git_status() -> Vec<GitEntry> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .output();
+    let output = Command::new("git").args(["status", "--porcelain"]).output();
 
     let Ok(output) = output else {
         return Vec::new();

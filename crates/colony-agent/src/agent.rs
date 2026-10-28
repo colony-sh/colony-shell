@@ -284,14 +284,15 @@ impl Agent {
 
     /// Switch to a model from a "provider:model" spec string.
     pub async fn switch_to(&mut self, spec: &str) -> Result<()> {
-        let (provider_type, model_name) =
-            if let Some((provider_str, model_name)) = spec.split_once(':') {
-                let pt = ProviderType::parse(provider_str)
-                    .ok_or_else(|| AgentError::Protocol(format!("unknown provider: {provider_str}")))?;
-                (pt, model_name.to_string())
-            } else {
-                (infer_provider_from_model(spec), spec.to_string())
-            };
+        let (provider_type, model_name) = if let Some((provider_str, model_name)) =
+            spec.split_once(':')
+        {
+            let pt = ProviderType::parse(provider_str)
+                .ok_or_else(|| AgentError::Protocol(format!("unknown provider: {provider_str}")))?;
+            (pt, model_name.to_string())
+        } else {
+            (infer_provider_from_model(spec), spec.to_string())
+        };
         self.switch_model(provider_type, model_name).await
     }
 
@@ -362,10 +363,7 @@ impl Agent {
         info!("Processing user input: {}", input);
 
         // Emit user message to LLM channel (fd 4)
-        self.emit_to_llm_channel(LlmMessage::new(
-            colony_channels::LlmRole::User,
-            &input,
-        ));
+        self.emit_to_llm_channel(LlmMessage::new(colony_channels::LlmRole::User, &input));
 
         let user_msg = Message {
             role: MessageRole::User,
@@ -373,9 +371,7 @@ impl Agent {
         };
 
         // Persist user message
-        if let (Some(store), Some(conv_id)) =
-            (&self.conversation_store, &self.conversation_id)
-        {
+        if let (Some(store), Some(conv_id)) = (&self.conversation_store, &self.conversation_id) {
             store.save_message(conv_id, &user_msg, None)?;
         }
 
@@ -459,8 +455,7 @@ impl Agent {
                 content: MessageContent::Text(response_text.clone()),
             };
 
-            if let (Some(store), Some(conv_id)) =
-                (&self.conversation_store, &self.conversation_id)
+            if let (Some(store), Some(conv_id)) = (&self.conversation_store, &self.conversation_id)
             {
                 store.save_message(conv_id, &assistant_msg, Some(output_tokens_est as i64))?;
             }
@@ -484,10 +479,7 @@ impl Agent {
         info!("Processing user input (full): {}", input);
 
         // Emit user message to LLM channel (fd 4)
-        self.emit_to_llm_channel(LlmMessage::new(
-            colony_channels::LlmRole::User,
-            &input,
-        ));
+        self.emit_to_llm_channel(LlmMessage::new(colony_channels::LlmRole::User, &input));
 
         self.messages.push(Message {
             role: MessageRole::User,
@@ -601,10 +593,7 @@ impl Agent {
         let result = if self.approval.needs_approval(&tool_name, classification)
             && !self.tools.is_auto_approved(&tool_name)
         {
-            let approval = self
-                .approval
-                .request_approval(&tool_name, &input)
-                .await?;
+            let approval = self.approval.request_approval(&tool_name, &input).await?;
 
             match approval {
                 ApprovalResponse::Approved => self.execute_tool(&tool_name, input).await?,
@@ -643,11 +632,7 @@ impl Agent {
         Ok(())
     }
 
-    async fn execute_tool(
-        &self,
-        tool_name: &str,
-        input: serde_json::Value,
-    ) -> Result<ToolOutput> {
+    async fn execute_tool(&self, tool_name: &str, input: serde_json::Value) -> Result<ToolOutput> {
         self.tools
             .execute(tool_name, input)
             .await
@@ -684,7 +669,8 @@ impl Agent {
 
     /// Clear conversation history, keeping system prompt
     pub fn clear_messages(&mut self) {
-        self.messages.retain(|m| matches!(m.role, MessageRole::System));
+        self.messages
+            .retain(|m| matches!(m.role, MessageRole::System));
         self.context_manager.update_estimate(&self.messages);
     }
 }

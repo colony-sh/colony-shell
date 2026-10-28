@@ -59,7 +59,9 @@ pub mod ttl;
 pub use ipc::{IpcError, IpcTupleSpace, TupleNotification};
 pub use persistent::{PersistentTupleSpace, StorageError};
 pub use subscription::{SubscriptionId, SubscriptionManager, TupleEvent};
-pub use transaction::{Transaction, TransactionError, TransactionId, TransactionManager, TxOp, TxState};
+pub use transaction::{
+    Transaction, TransactionError, TransactionId, TransactionManager, TxOp, TxState,
+};
 pub use ttl::{TimedTuple, TtlConfig, TtlTupleSpace};
 
 use parking_lot::{Condvar, Mutex};

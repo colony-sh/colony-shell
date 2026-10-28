@@ -32,7 +32,12 @@ fn main() {
                 "Esc  Return to prompt".to_string(),
             ],
         };
-        writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&config).expect("config must serialize")
+        )
+        .ok();
         out.flush().ok();
     }
 
@@ -102,7 +107,12 @@ fn emit_frame(stdout: &io::Stdout, state: &TreeState) {
     let mut out = stdout.lock();
     writeln!(out, "{SENTINEL_FRAME}").ok();
     for line in state.render_lines() {
-        writeln!(out, "{}", serde_json::to_string(&line).expect("frame line must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&line).expect("frame line must serialize")
+        )
+        .ok();
     }
     writeln!(out, "{SENTINEL_FRAME}").ok();
     out.flush().ok();
@@ -115,7 +125,12 @@ fn emit_tuple(stdout: &io::Stdout, key: &str, path: &Path) {
         key: key.to_string(),
         value: serde_json::json!(path.display().to_string()),
     };
-    writeln!(out, "{}", serde_json::to_string(&emit).expect("tuple emit must serialize")).ok();
+    writeln!(
+        out,
+        "{}",
+        serde_json::to_string(&emit).expect("tuple emit must serialize")
+    )
+    .ok();
     out.flush().ok();
 }
 
@@ -325,9 +340,7 @@ impl TreeState {
         items.sort_by(|a, b| {
             let a_dir = a.path().is_dir();
             let b_dir = b.path().is_dir();
-            b_dir
-                .cmp(&a_dir)
-                .then(a.file_name().cmp(&b.file_name()))
+            b_dir.cmp(&a_dir).then(a.file_name().cmp(&b.file_name()))
         });
 
         for item in items {
@@ -345,12 +358,7 @@ impl TreeState {
         }
     }
 
-    fn scan_dir_with_expanded(
-        &mut self,
-        dir: &Path,
-        depth: u16,
-        expanded: &HashSet<PathBuf>,
-    ) {
+    fn scan_dir_with_expanded(&mut self, dir: &Path, depth: u16, expanded: &HashSet<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
@@ -358,9 +366,7 @@ impl TreeState {
         items.sort_by(|a, b| {
             let a_dir = a.path().is_dir();
             let b_dir = b.path().is_dir();
-            b_dir
-                .cmp(&a_dir)
-                .then(a.file_name().cmp(&b.file_name()))
+            b_dir.cmp(&a_dir).then(a.file_name().cmp(&b.file_name()))
         });
 
         for item in items {

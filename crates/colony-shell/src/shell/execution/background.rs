@@ -74,7 +74,10 @@ mod tests {
     fn max_jobs_is_reasonable_power_of_two() {
         // MAX_JOBS should be a power of two for clean limits and > 0
         assert!(MAX_JOBS > 0);
-        assert!(MAX_JOBS.is_power_of_two(), "MAX_JOBS should be a power of two");
+        assert!(
+            MAX_JOBS.is_power_of_two(),
+            "MAX_JOBS should be a power of two"
+        );
         // Sanity: not too small (shells typically allow at least 32) and not absurdly large
         assert!(MAX_JOBS >= 32, "MAX_JOBS too small for real usage");
         assert!(MAX_JOBS <= 1024, "MAX_JOBS unreasonably large");
@@ -95,8 +98,7 @@ mod tests {
         }
 
         // Attempting to run in background should fail
-        let stmt = colony_parser::pest_api::parse_statement("echo full")
-            .expect("parse failed");
+        let stmt = colony_parser::pest_api::parse_statement("echo full").expect("parse failed");
         let result = run_in_background(&stmt, &mut executor).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "too many background jobs");

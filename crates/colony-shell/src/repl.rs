@@ -657,7 +657,9 @@ pub(crate) async fn display_tuple_activity(
 
             // Load special files from new directory with hierarchy walk (F030)
             let new_path = PathBuf::from(new);
-            if colony_exec::special_files::SpecialFilesLoader::has_special_files_in_hierarchy(&new_path) {
+            if colony_exec::special_files::SpecialFilesLoader::has_special_files_in_hierarchy(
+                &new_path,
+            ) {
                 executor.load_special_files(&new_path);
 
                 if let Some(state) = executor.special_files() {
@@ -909,7 +911,13 @@ async fn handle_agent_builtin(line: &str, agent: &mut Option<Agent>) {
             println!("provider:      {:?}", provider);
             println!("model:         {}", model);
             println!("max_tokens:    {}", config.max_tokens);
-            println!("temperature:   {}", config.temperature.map(|t| format!("{:.1}", t)).unwrap_or_else(|| "default".to_string()));
+            println!(
+                "temperature:   {}",
+                config
+                    .temperature
+                    .map(|t| format!("{:.1}", t))
+                    .unwrap_or_else(|| "default".to_string())
+            );
             println!("caching:       {}", config.use_caching);
             println!("persistence:   {}", config.persistence_enabled);
             println!("memory:        {}", config.memory_enabled);

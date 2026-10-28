@@ -332,7 +332,10 @@ impl EventRegistry {
             output.push_str(&format!("[[listener]]\n"));
             output.push_str(&format!("pattern = {:?}\n", listener.pattern));
             output.push_str(&format!("handler = {:?}\n", listener.handler));
-            output.push_str(&format!("handler_type = {:?}\n", listener.handler_type.as_str()));
+            output.push_str(&format!(
+                "handler_type = {:?}\n",
+                listener.handler_type.as_str()
+            ));
             if !listener.filter.is_empty() {
                 output.push_str(&format!("filter = {:?}\n", listener.filter));
             }
@@ -375,15 +378,9 @@ impl EventRegistry {
                 .map(HandlerType::from_str_lossy)
                 .unwrap_or(HandlerType::CommandEval);
 
-            let filter = entry
-                .get("filter")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let filter = entry.get("filter").and_then(|v| v.as_str()).unwrap_or("");
 
-            let once = entry
-                .get("once")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+            let once = entry.get("once").and_then(|v| v.as_bool()).unwrap_or(false);
 
             let description = entry
                 .get("description")
@@ -495,9 +492,7 @@ impl EventRegistry {
     /// Resolve an ID or unique prefix to a full listener ID.
     fn resolve_id(&self, id_or_prefix: &str) -> RegistryResult<String> {
         let conn = self.conn.lock().expect("registry mutex poisoned");
-        let mut stmt = conn.prepare(
-            "SELECT id FROM event_listeners WHERE id LIKE ?1 || '%'",
-        )?;
+        let mut stmt = conn.prepare("SELECT id FROM event_listeners WHERE id LIKE ?1 || '%'")?;
 
         let mut rows = stmt.query(rusqlite::params![id_or_prefix])?;
         let mut matches = Vec::new();
@@ -542,7 +537,14 @@ mod tests {
     fn test_add_and_list_listener() {
         let reg = EventRegistry::open_in_memory().expect("open");
         let id = reg
-            .add_listener("http_request", "echo $2", HandlerType::CommandEval, "", false, "test listener")
+            .add_listener(
+                "http_request",
+                "echo $2",
+                HandlerType::CommandEval,
+                "",
+                false,
+                "test listener",
+            )
             .expect("add");
 
         assert!(!id.is_empty());

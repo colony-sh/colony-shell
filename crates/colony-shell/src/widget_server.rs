@@ -250,10 +250,7 @@ async fn process_widget_message(
                         approved
                     );
                 } else {
-                    tracing::warn!(
-                        "No pending approval for component_id '{}'",
-                        component_id
-                    );
+                    tracing::warn!("No pending approval for component_id '{}'", component_id);
                 }
             }
             None

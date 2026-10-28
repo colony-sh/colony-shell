@@ -249,9 +249,7 @@ fn parse_ollama_ndjson_stream(
             loop {
                 // Try to extract a complete line from the buffer
                 while let Some(line_end) = state.buffer.find('\n') {
-                    let line = state.buffer[..line_end]
-                        .trim_end_matches('\r')
-                        .to_string();
+                    let line = state.buffer[..line_end].trim_end_matches('\r').to_string();
                     state.buffer = state.buffer[line_end + 1..].to_string();
 
                     if line.is_empty() {
@@ -412,8 +410,7 @@ mod tests {
             "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n",
         );
 
-        let byte_stream =
-            futures::stream::once(async move { Ok(bytes::Bytes::from(ndjson_body)) });
+        let byte_stream = futures::stream::once(async move { Ok(bytes::Bytes::from(ndjson_body)) });
         let response = build_mock_response(byte_stream);
         let mut event_stream = Box::pin(parse_ollama_ndjson_stream(response));
 

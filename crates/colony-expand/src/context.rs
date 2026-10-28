@@ -1,5 +1,7 @@
 //! Expansion context - provides shell state for expansions
 
+#[cfg(feature = "secure")]
+use parking_lot::Mutex;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
@@ -8,8 +10,6 @@ use std::path::Path;
 use std::path::PathBuf;
 #[cfg(feature = "secure")]
 use std::sync::Arc;
-#[cfg(feature = "secure")]
-use parking_lot::Mutex;
 #[cfg(feature = "secure")]
 use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -983,10 +983,9 @@ impl ExpansionContext {
                                 Some(maybe_decrypt_value(value))
                             }
                         }
-                        colony_secure::AccessResult::Pending(request_id) => {
-                            self.handle_secure_approval(name, request_id, registry_arc)
-                                .map(maybe_decrypt_value)
-                        }
+                        colony_secure::AccessResult::Pending(request_id) => self
+                            .handle_secure_approval(name, request_id, registry_arc)
+                            .map(maybe_decrypt_value),
                         colony_secure::AccessResult::Denied => None,
                     };
                 }
@@ -1015,7 +1014,10 @@ impl ExpansionContext {
 
         let decision = if is_terminal {
             // Emit OSC 2337 SecureAccess widget and read response from stdin
-            let script_path = self.current_script_path.as_ref().map(|p| p.to_string_lossy().to_string());
+            let script_path = self
+                .current_script_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string());
             colony_protocol::emit_secure_access_request(
                 request_id,
                 name,
@@ -1038,9 +1040,7 @@ impl ExpansionContext {
                 Some((_id, colony_protocol::SecureAccessDecision::Remember)) => {
                     ApprovalDecision::Remember
                 }
-                Some((_id, colony_protocol::SecureAccessDecision::Deny)) => {
-                    ApprovalDecision::Deny
-                }
+                Some((_id, colony_protocol::SecureAccessDecision::Deny)) => ApprovalDecision::Deny,
                 None => ApprovalDecision::Deny,
             }
         } else {
@@ -1061,7 +1061,9 @@ impl ExpansionContext {
         };
 
         let registry = registry_arc.lock();
-        registry.handle_approval_response(request_id, decision).unwrap_or_default()
+        registry
+            .handle_approval_response(request_id, decision)
+            .unwrap_or_default()
     }
 
     fn get_var_or_env_raw(&self, name: &str) -> Option<String> {

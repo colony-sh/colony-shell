@@ -42,12 +42,15 @@ pub struct LayoutEngine {
 
 impl LayoutEngine {
     pub fn new() -> Self {
-        Self {
-            panels: Vec::new(),
-        }
+        Self { panels: Vec::new() }
     }
 
-    pub fn add_panel(&mut self, id: PanelId, position: PanelPosition, constraints: PanelConstraints) {
+    pub fn add_panel(
+        &mut self,
+        id: PanelId,
+        position: PanelPosition,
+        constraints: PanelConstraints,
+    ) {
         self.panels.push((id, position, constraints));
     }
 
@@ -221,9 +224,17 @@ mod tests {
     #[test]
     fn test_single_left_panel() {
         let mut engine = LayoutEngine::new();
-        engine.add_panel(PanelId(0), PanelPosition::Left, PanelConstraints {
-            weight: 1, min_size: 15, max_size: 40, outer: false, content_size: 25,
-        });
+        engine.add_panel(
+            PanelId(0),
+            PanelPosition::Left,
+            PanelConstraints {
+                weight: 1,
+                min_size: 15,
+                max_size: 40,
+                outer: false,
+                content_size: 25,
+            },
+        );
         let result = engine.resolve(Rect::new(0, 0, 80, 24));
         assert_eq!(result.panels[&PanelId(0)].width, 25);
         assert_eq!(result.panels[&PanelId(0)].height, 24);
@@ -233,12 +244,28 @@ mod tests {
     #[test]
     fn test_two_left_panels_horizontal() {
         let mut engine = LayoutEngine::new();
-        engine.add_panel(PanelId(0), PanelPosition::Left, PanelConstraints {
-            weight: 2, min_size: 15, max_size: 40, outer: false, content_size: 25,
-        });
-        engine.add_panel(PanelId(1), PanelPosition::Left, PanelConstraints {
-            weight: 1, min_size: 15, max_size: 30, outer: false, content_size: 20,
-        });
+        engine.add_panel(
+            PanelId(0),
+            PanelPosition::Left,
+            PanelConstraints {
+                weight: 2,
+                min_size: 15,
+                max_size: 40,
+                outer: false,
+                content_size: 25,
+            },
+        );
+        engine.add_panel(
+            PanelId(1),
+            PanelPosition::Left,
+            PanelConstraints {
+                weight: 1,
+                min_size: 15,
+                max_size: 30,
+                outer: false,
+                content_size: 20,
+            },
+        );
         let result = engine.resolve(Rect::new(0, 0, 100, 24));
         assert!(result.panels.contains_key(&PanelId(0)));
         assert!(result.panels.contains_key(&PanelId(1)));
@@ -251,12 +278,28 @@ mod tests {
     #[test]
     fn test_outer_top_full_width() {
         let mut engine = LayoutEngine::new();
-        engine.add_panel(PanelId(0), PanelPosition::Left, PanelConstraints {
-            weight: 1, min_size: 15, max_size: 25, outer: false, content_size: 20,
-        });
-        engine.add_panel(PanelId(1), PanelPosition::Top, PanelConstraints {
-            weight: 1, min_size: 3, max_size: 10, outer: true, content_size: 5,
-        });
+        engine.add_panel(
+            PanelId(0),
+            PanelPosition::Left,
+            PanelConstraints {
+                weight: 1,
+                min_size: 15,
+                max_size: 25,
+                outer: false,
+                content_size: 20,
+            },
+        );
+        engine.add_panel(
+            PanelId(1),
+            PanelPosition::Top,
+            PanelConstraints {
+                weight: 1,
+                min_size: 3,
+                max_size: 10,
+                outer: true,
+                content_size: 5,
+            },
+        );
         let result = engine.resolve(Rect::new(0, 0, 80, 24));
         assert_eq!(result.panels[&PanelId(1)].width, 80);
         assert_eq!(result.panels[&PanelId(1)].y, 0);
@@ -265,12 +308,28 @@ mod tests {
     #[test]
     fn test_inner_top_between_panels() {
         let mut engine = LayoutEngine::new();
-        engine.add_panel(PanelId(0), PanelPosition::Left, PanelConstraints {
-            weight: 1, min_size: 15, max_size: 20, outer: false, content_size: 20,
-        });
-        engine.add_panel(PanelId(1), PanelPosition::Top, PanelConstraints {
-            weight: 1, min_size: 3, max_size: 10, outer: false, content_size: 5,
-        });
+        engine.add_panel(
+            PanelId(0),
+            PanelPosition::Left,
+            PanelConstraints {
+                weight: 1,
+                min_size: 15,
+                max_size: 20,
+                outer: false,
+                content_size: 20,
+            },
+        );
+        engine.add_panel(
+            PanelId(1),
+            PanelPosition::Top,
+            PanelConstraints {
+                weight: 1,
+                min_size: 3,
+                max_size: 10,
+                outer: false,
+                content_size: 5,
+            },
+        );
         let result = engine.resolve(Rect::new(0, 0, 80, 24));
         // Inner top should not span the left panel
         assert!(result.panels[&PanelId(1)].width < 80);
@@ -280,12 +339,28 @@ mod tests {
     #[test]
     fn test_main_enforced_minimum() {
         let mut engine = LayoutEngine::new();
-        engine.add_panel(PanelId(0), PanelPosition::Left, PanelConstraints {
-            weight: 1, min_size: 30, max_size: 40, outer: false, content_size: 35,
-        });
-        engine.add_panel(PanelId(1), PanelPosition::Right, PanelConstraints {
-            weight: 1, min_size: 30, max_size: 40, outer: false, content_size: 35,
-        });
+        engine.add_panel(
+            PanelId(0),
+            PanelPosition::Left,
+            PanelConstraints {
+                weight: 1,
+                min_size: 30,
+                max_size: 40,
+                outer: false,
+                content_size: 35,
+            },
+        );
+        engine.add_panel(
+            PanelId(1),
+            PanelPosition::Right,
+            PanelConstraints {
+                weight: 1,
+                min_size: 30,
+                max_size: 40,
+                outer: false,
+                content_size: 35,
+            },
+        );
         let result = engine.resolve(Rect::new(0, 0, 60, 24));
         assert!(result.main.width >= 10);
     }
@@ -293,12 +368,28 @@ mod tests {
     #[test]
     fn test_left_and_right() {
         let mut engine = LayoutEngine::new();
-        engine.add_panel(PanelId(0), PanelPosition::Left, PanelConstraints {
-            weight: 1, min_size: 15, max_size: 25, outer: false, content_size: 20,
-        });
-        engine.add_panel(PanelId(1), PanelPosition::Right, PanelConstraints {
-            weight: 1, min_size: 15, max_size: 25, outer: false, content_size: 20,
-        });
+        engine.add_panel(
+            PanelId(0),
+            PanelPosition::Left,
+            PanelConstraints {
+                weight: 1,
+                min_size: 15,
+                max_size: 25,
+                outer: false,
+                content_size: 20,
+            },
+        );
+        engine.add_panel(
+            PanelId(1),
+            PanelPosition::Right,
+            PanelConstraints {
+                weight: 1,
+                min_size: 15,
+                max_size: 25,
+                outer: false,
+                content_size: 20,
+            },
+        );
         let result = engine.resolve(Rect::new(0, 0, 80, 24));
         // Left panel at x=0, right panel at far right
         assert_eq!(result.panels[&PanelId(0)].x, 0);

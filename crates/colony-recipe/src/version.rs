@@ -97,10 +97,7 @@ pub enum VersionConstraint {
     Tilde(SemVer),
     GreaterThanOrEqual(SemVer),
     LessThan(SemVer),
-    Range {
-        min: SemVer,
-        max: SemVer,
-    },
+    Range { min: SemVer, max: SemVer },
     Any,
 }
 
@@ -151,9 +148,7 @@ impl VersionConstraint {
                 }
                 if min.major == 0 {
                     if min.minor == 0 {
-                        version.major == 0
-                            && version.minor == 0
-                            && version.patch == min.patch
+                        version.major == 0 && version.minor == 0 && version.patch == min.patch
                     } else {
                         version.major == 0 && version.minor == min.minor
                     }
@@ -224,15 +219,10 @@ pub struct VersionRequest {
     pub requested_by: String,
 }
 
-pub fn detect_version_conflicts(
-    requests: &[VersionRequest],
-) -> Vec<VersionConflict> {
+pub fn detect_version_conflicts(requests: &[VersionRequest]) -> Vec<VersionConflict> {
     let mut by_recipe: HashMap<&str, Vec<&VersionRequest>> = HashMap::new();
     for req in requests {
-        by_recipe
-            .entry(&req.recipe_name)
-            .or_default()
-            .push(req);
+        by_recipe.entry(&req.recipe_name).or_default().push(req);
     }
 
     let mut conflicts = Vec::new();
@@ -243,9 +233,8 @@ pub fn detect_version_conflicts(
         }
 
         let has_conflict = reqs.iter().any(|r1| {
-            reqs.iter().any(|r2| {
-                !std::ptr::eq(*r1, *r2) && !r1.constraint.satisfies(&r2.version)
-            })
+            reqs.iter()
+                .any(|r2| !std::ptr::eq(*r1, *r2) && !r1.constraint.satisfies(&r2.version))
         });
 
         if has_conflict {
@@ -278,10 +267,7 @@ pub fn resolve_version(
                 })?;
             Ok(newest.clone())
         }
-        ResolutionStrategy::ErrorOnConflict => Err(RecipeError::Invalid(format!(
-            "{}",
-            conflict
-        ))),
+        ResolutionStrategy::ErrorOnConflict => Err(RecipeError::Invalid(format!("{}", conflict))),
     }
 }
 
@@ -622,14 +608,12 @@ mod tests {
     fn test_version_conflict_display() {
         let conflict = VersionConflict {
             recipe_name: "base".to_string(),
-            versions: vec![
-                VersionRequest {
-                    recipe_name: "base".to_string(),
-                    version: SemVer::parse("1.0.0").unwrap(),
-                    constraint: VersionConstraint::Caret(SemVer::parse("1.0.0").unwrap()),
-                    requested_by: "a".to_string(),
-                },
-            ],
+            versions: vec![VersionRequest {
+                recipe_name: "base".to_string(),
+                version: SemVer::parse("1.0.0").unwrap(),
+                constraint: VersionConstraint::Caret(SemVer::parse("1.0.0").unwrap()),
+                requested_by: "a".to_string(),
+            }],
         };
 
         let display = conflict.to_string();

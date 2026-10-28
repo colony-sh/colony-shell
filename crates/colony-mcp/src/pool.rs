@@ -105,10 +105,7 @@ impl McpConnectionPool {
     }
 
     /// Connect to a single server by configuration
-    pub async fn connect_server(
-        &mut self,
-        server_config: &colony_config::McpServer,
-    ) -> Result<()> {
+    pub async fn connect_server(&mut self, server_config: &colony_config::McpServer) -> Result<()> {
         let mut connection = McpConnection::new(server_config.clone());
         connection.connect().await?;
         self.connections
@@ -256,10 +253,7 @@ impl McpConnectionPool {
 
     /// Total number of tools available across all servers
     pub fn tool_count(&self) -> usize {
-        self.connections
-            .values()
-            .map(|c| c.tools().len())
-            .sum()
+        self.connections.values().map(|c| c.tools().len()).sum()
     }
 
     /// Refresh tools from all connected servers

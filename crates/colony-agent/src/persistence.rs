@@ -47,9 +47,8 @@ impl ConversationStore {
             })?;
         }
 
-        let conn = Connection::open(&path).map_err(|e| {
-            AgentError::Conversation(format!("failed to open database: {}", e))
-        })?;
+        let conn = Connection::open(&path)
+            .map_err(|e| AgentError::Conversation(format!("failed to open database: {}", e)))?;
 
         let store = Self {
             conn: Mutex::new(conn),
@@ -75,9 +74,10 @@ impl ConversationStore {
     }
 
     fn initialize_schema(&self) -> Result<(), AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS conversations (
@@ -103,9 +103,7 @@ impl ConversationStore {
             CREATE INDEX IF NOT EXISTS idx_conversations_updated
                 ON conversations(updated_at DESC);",
         )
-        .map_err(|e| {
-            AgentError::Conversation(format!("failed to initialize schema: {}", e))
-        })?;
+        .map_err(|e| AgentError::Conversation(format!("failed to initialize schema: {}", e)))?;
 
         Ok(())
     }
@@ -117,9 +115,10 @@ impl ConversationStore {
         title: Option<&str>,
         model: &str,
     ) -> Result<(), AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         let now = Utc::now().to_rfc3339();
         conn.execute(
@@ -140,9 +139,10 @@ impl ConversationStore {
         message: &Message,
         token_count: Option<i64>,
     ) -> Result<i64, AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         let role = match message.role {
             MessageRole::User => "user",
@@ -152,8 +152,9 @@ impl ConversationStore {
 
         let content = match &message.content {
             MessageContent::Text(t) => t.clone(),
-            MessageContent::Blocks(blocks) => serde_json::to_string(blocks)
-                .unwrap_or_else(|_| "[]".to_string()),
+            MessageContent::Blocks(blocks) => {
+                serde_json::to_string(blocks).unwrap_or_else(|_| "[]".to_string())
+            }
         };
 
         let now = Utc::now().to_rfc3339();
@@ -180,13 +181,11 @@ impl ConversationStore {
     }
 
     /// Load all messages for a conversation
-    pub fn load_messages(
-        &self,
-        conversation_id: &str,
-    ) -> Result<Vec<StoredMessage>, AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+    pub fn load_messages(&self, conversation_id: &str) -> Result<Vec<StoredMessage>, AgentError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         let mut stmt = conn
             .prepare(
@@ -195,9 +194,7 @@ impl ConversationStore {
                  WHERE conversation_id = ?1
                  ORDER BY id ASC",
             )
-            .map_err(|e| {
-                AgentError::Conversation(format!("failed to prepare query: {}", e))
-            })?;
+            .map_err(|e| AgentError::Conversation(format!("failed to prepare query: {}", e)))?;
 
         let messages = stmt
             .query_map(params![conversation_id], |row| {
@@ -215,22 +212,15 @@ impl ConversationStore {
                     token_count: row.get(5)?,
                 })
             })
-            .map_err(|e| {
-                AgentError::Conversation(format!("failed to query messages: {}", e))
-            })?
+            .map_err(|e| AgentError::Conversation(format!("failed to query messages: {}", e)))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| {
-                AgentError::Conversation(format!("failed to collect messages: {}", e))
-            })?;
+            .map_err(|e| AgentError::Conversation(format!("failed to collect messages: {}", e)))?;
 
         Ok(messages)
     }
 
     /// Convert stored messages back to provider Messages for conversation resumption
-    pub fn resume_conversation(
-        &self,
-        conversation_id: &str,
-    ) -> Result<Vec<Message>, AgentError> {
+    pub fn resume_conversation(&self, conversation_id: &str) -> Result<Vec<Message>, AgentError> {
         let stored = self.load_messages(conversation_id)?;
 
         let messages = stored
@@ -254,13 +244,11 @@ impl ConversationStore {
     }
 
     /// List all conversations, most recently updated first
-    pub fn list_conversations(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<ConversationMeta>, AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+    pub fn list_conversations(&self, limit: usize) -> Result<Vec<ConversationMeta>, AgentError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         let mut stmt = conn
             .prepare(
@@ -270,9 +258,7 @@ impl ConversationStore {
                  ORDER BY c.updated_at DESC
                  LIMIT ?1",
             )
-            .map_err(|e| {
-                AgentError::Conversation(format!("failed to prepare query: {}", e))
-            })?;
+            .map_err(|e| AgentError::Conversation(format!("failed to prepare query: {}", e)))?;
 
         let conversations = stmt
             .query_map(params![limit as i64], |row| {
@@ -292,9 +278,7 @@ impl ConversationStore {
                     model: row.get(4)?,
                 })
             })
-            .map_err(|e| {
-                AgentError::Conversation(format!("failed to query conversations: {}", e))
-            })?
+            .map_err(|e| AgentError::Conversation(format!("failed to query conversations: {}", e)))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
                 AgentError::Conversation(format!("failed to collect conversations: {}", e))
@@ -309,9 +293,10 @@ impl ConversationStore {
         query: &str,
         limit: usize,
     ) -> Result<Vec<ConversationMeta>, AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         let pattern = format!("%{}%", query);
 
@@ -347,9 +332,7 @@ impl ConversationStore {
                     model: row.get(4)?,
                 })
             })
-            .map_err(|e| {
-                AgentError::Conversation(format!("failed to execute search: {}", e))
-            })?
+            .map_err(|e| AgentError::Conversation(format!("failed to execute search: {}", e)))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
                 AgentError::Conversation(format!("failed to collect search results: {}", e))
@@ -363,9 +346,10 @@ impl ConversationStore {
         &self,
         conversation_id: &str,
     ) -> Result<Option<ConversationMeta>, AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         let mut stmt = conn
             .prepare(
@@ -374,9 +358,7 @@ impl ConversationStore {
                  FROM conversations c
                  WHERE c.id = ?1",
             )
-            .map_err(|e| {
-                AgentError::Conversation(format!("failed to prepare query: {}", e))
-            })?;
+            .map_err(|e| AgentError::Conversation(format!("failed to prepare query: {}", e)))?;
 
         let result = stmt
             .query_row(params![conversation_id], |row| {
@@ -402,29 +384,23 @@ impl ConversationStore {
     }
 
     /// Delete a conversation and all its messages
-    pub fn delete_conversation(
-        &self,
-        conversation_id: &str,
-    ) -> Result<(), AgentError> {
-        let conn = self.conn.lock().map_err(|e| {
-            AgentError::Conversation(format!("database lock poisoned: {}", e))
-        })?;
+    pub fn delete_conversation(&self, conversation_id: &str) -> Result<(), AgentError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AgentError::Conversation(format!("database lock poisoned: {}", e)))?;
 
         conn.execute(
             "DELETE FROM messages WHERE conversation_id = ?1",
             params![conversation_id],
         )
-        .map_err(|e| {
-            AgentError::Conversation(format!("failed to delete messages: {}", e))
-        })?;
+        .map_err(|e| AgentError::Conversation(format!("failed to delete messages: {}", e)))?;
 
         conn.execute(
             "DELETE FROM conversations WHERE id = ?1",
             params![conversation_id],
         )
-        .map_err(|e| {
-            AgentError::Conversation(format!("failed to delete conversation: {}", e))
-        })?;
+        .map_err(|e| AgentError::Conversation(format!("failed to delete conversation: {}", e)))?;
 
         Ok(())
     }

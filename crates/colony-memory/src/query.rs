@@ -5,10 +5,7 @@ use crate::store::MemoryEntry;
 pub enum MetadataOperator {
     Equals(serde_json::Value),
     Contains(String),
-    Range {
-        min: Option<f64>,
-        max: Option<f64>,
-    },
+    Range { min: Option<f64>, max: Option<f64> },
     Exists,
 }
 
@@ -112,12 +109,12 @@ fn evaluate_condition(condition: &MetadataCondition, metadata: &serde_json::Valu
         },
         MetadataOperator::Range { min, max } => match field_value {
             Some(v) => {
-                let num = v
-                    .as_f64()
-                    .ok_or_else(|| MemoryError::InvalidScope(format!(
+                let num = v.as_f64().ok_or_else(|| {
+                    MemoryError::InvalidScope(format!(
                         "field '{}' is not a number for range comparison",
                         condition.field
-                    )))?;
+                    ))
+                })?;
                 let above_min = min.map_or(true, |m| num >= m);
                 let below_max = max.map_or(true, |m| num <= m);
                 Ok(above_min && below_max)
@@ -136,7 +133,10 @@ fn resolve_field<'a>(value: &'a serde_json::Value, field: &str) -> Option<&'a se
     Some(current)
 }
 
-pub fn filter_entries(entries: Vec<MemoryEntry>, query: &MetadataQuery) -> Result<Vec<MemoryEntry>> {
+pub fn filter_entries(
+    entries: Vec<MemoryEntry>,
+    query: &MetadataQuery,
+) -> Result<Vec<MemoryEntry>> {
     let mut filtered = Vec::with_capacity(entries.len());
     for entry in entries {
         if query.matches(&entry)? {

@@ -159,8 +159,7 @@ impl Frame {
             return Ok(None);
         }
 
-        let type_tag = TypeTag::from_byte(data[0])
-            .ok_or(ProtocolError::InvalidTypeTag(data[0]))?;
+        let type_tag = TypeTag::from_byte(data[0]).ok_or(ProtocolError::InvalidTypeTag(data[0]))?;
         let flags = FrameFlags::new(data[1]);
         let len = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
 
@@ -259,9 +258,7 @@ impl ChannelCodec {
     }
 
     /// Decode a frame's payload as a typed message
-    pub fn decode_payload<T: for<'de> Deserialize<'de>>(
-        frame: &Frame,
-    ) -> Result<T, ProtocolError> {
+    pub fn decode_payload<T: for<'de> Deserialize<'de>>(frame: &Frame) -> Result<T, ProtocolError> {
         Ok(serde_json::from_slice(&frame.payload)?)
     }
 }
@@ -443,12 +440,8 @@ mod tests {
         let codec = ChannelCodec::new();
         let mut decoder = ChannelCodec::new();
 
-        let frame1 = codec
-            .encode_message(TypeTag::RawText, &"first")
-            .unwrap();
-        let frame2 = codec
-            .encode_message(TypeTag::RawText, &"second")
-            .unwrap();
+        let frame1 = codec.encode_message(TypeTag::RawText, &"first").unwrap();
+        let frame2 = codec.encode_message(TypeTag::RawText, &"second").unwrap();
 
         let mut combined = frame1;
         combined.extend_from_slice(&frame2);

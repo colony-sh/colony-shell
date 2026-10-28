@@ -4,9 +4,7 @@
 //! Subscribes to `cmd_complete` tuples to prepend new commands.
 //! Reads key events from stdin for j/k navigation.
 
-use colony_panel::protocol::{
-    FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME,
-};
+use colony_panel::protocol::{FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
@@ -23,7 +21,12 @@ fn main() {
             subscriptions: vec!["cmd_complete".to_string()],
             help: Vec::new(),
         };
-        writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&config).expect("config must serialize")
+        )
+        .ok();
         out.flush().ok();
     }
 
@@ -83,7 +86,12 @@ fn emit_frame(stdout: &io::Stdout, state: &HistoryState) {
     let mut out = stdout.lock();
     writeln!(out, "{SENTINEL_FRAME}").ok();
     for line in state.render_lines() {
-        writeln!(out, "{}", serde_json::to_string(&line).expect("frame line must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&line).expect("frame line must serialize")
+        )
+        .ok();
     }
     writeln!(out, "{SENTINEL_FRAME}").ok();
     out.flush().ok();
@@ -155,11 +163,7 @@ impl HistoryState {
             .map(|(i, cmd)| {
                 let line_num = format!("{:>4} ", i + 1);
                 let is_selected = i == self.cursor;
-                let style = if is_selected {
-                    "bold,white"
-                } else {
-                    "white"
-                };
+                let style = if is_selected { "bold,white" } else { "white" };
 
                 FrameLine {
                     // Prefix the dim line number into a separate FrameLine field

@@ -580,7 +580,9 @@ pub fn emit_heartbeat(
 
 /// Emit full prompt state for reactive terminal rendering
 pub fn emit_prompt_state(state: PromptStateData) {
-    let msg = ProtocolMessage::PromptState { state: Box::new(state) };
+    let msg = ProtocolMessage::PromptState {
+        state: Box::new(state),
+    };
     emit_message(&msg);
 }
 

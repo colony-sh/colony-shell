@@ -136,8 +136,8 @@ impl Channel for ToolChannel {
     }
 
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-        let text = std::str::from_utf8(data)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let text =
+            std::str::from_utf8(data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         for line in text.lines() {
             if line.is_empty() {

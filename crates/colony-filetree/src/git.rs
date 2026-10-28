@@ -188,10 +188,7 @@ impl GitStatusCache {
     /// Get status for a path (relative to repo root)
     pub fn status(&self, path: &Path) -> Option<GitFileStatus> {
         // Try to make path relative to repo root
-        let relative = path
-            .strip_prefix(&self.repo_root)
-            .ok()
-            .or(Some(path));
+        let relative = path.strip_prefix(&self.repo_root).ok().or(Some(path));
 
         relative.and_then(|rel| self.statuses.get(rel).copied())
     }

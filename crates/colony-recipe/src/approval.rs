@@ -273,10 +273,7 @@ mod tests {
         );
         assert!(enforcer.is_denied("rm_rf"));
         assert!(enforcer.is_denied("exec_command"));
-        assert_eq!(
-            enforcer.check("unknown"),
-            ApprovalDecision::RequireApproval
-        );
+        assert_eq!(enforcer.check("unknown"), ApprovalDecision::RequireApproval);
     }
 
     #[test]

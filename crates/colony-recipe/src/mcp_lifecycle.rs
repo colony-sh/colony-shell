@@ -134,10 +134,7 @@ impl McpLifecycleManager {
     }
 
     pub fn running_servers(&self) -> Vec<&ManagedServer> {
-        self.servers
-            .values()
-            .filter(|s| s.is_running())
-            .collect()
+        self.servers.values().filter(|s| s.is_running()).collect()
     }
 
     pub fn available_tools(&self) -> Vec<&McpToolInfo> {
@@ -196,10 +193,9 @@ impl McpLifecycleManager {
 
         if !healthy && server.is_running() {
             server.mark_unhealthy();
-        } else if healthy && server.status == ServerStatus::Unhealthy
-            && server.pid.is_some() {
-                server.status = ServerStatus::Running;
-            }
+        } else if healthy && server.status == ServerStatus::Unhealthy && server.pid.is_some() {
+            server.status = ServerStatus::Running;
+        }
 
         Ok(())
     }
@@ -229,7 +225,9 @@ pub fn validate_server_config(config: &McpServerConfig) -> Result<()> {
     Ok(())
 }
 
-pub fn build_server_command(config: &McpServerConfig) -> (String, Vec<String>, HashMap<String, String>) {
+pub fn build_server_command(
+    config: &McpServerConfig,
+) -> (String, Vec<String>, HashMap<String, String>) {
     (
         config.command.clone(),
         config.args.clone(),

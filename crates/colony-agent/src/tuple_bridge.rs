@@ -150,12 +150,16 @@ mod inner {
                     "Activated wake pattern subscription"
                 );
 
-                self.active_subscriptions
-                    .push((sub_id, wp.name.clone()));
+                self.active_subscriptions.push((sub_id, wp.name.clone()));
 
                 let sender = self.wake_sender.clone();
                 let pattern_name = wp.name.clone();
-                tokio::spawn(forward_subscription_events(rx, sender, pattern_name, sub_id));
+                tokio::spawn(forward_subscription_events(
+                    rx,
+                    sender,
+                    pattern_name,
+                    sub_id,
+                ));
             }
         }
 
@@ -355,10 +359,7 @@ mod tests {
         let config = TupleBridgeConfig::default();
         let bridge = AgentTupleBridge::new(space.clone(), subs, config);
 
-        let tuple = Tuple::from(vec![
-            Value::Str("custom".to_string()),
-            Value::Int(42),
-        ]);
+        let tuple = Tuple::from(vec![Value::Str("custom".to_string()), Value::Int(42)]);
         bridge.write_tuple(tuple);
 
         let pattern = Tuple::pattern(&[Value::Str("custom".to_string()), Value::Wildcard]);
@@ -386,13 +387,10 @@ mod tests {
         ]);
         subs.notify(&tuple);
 
-        let event = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            rx.recv(),
-        )
-        .await
-        .expect("should receive within timeout")
-        .expect("channel should not be closed");
+        let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+            .await
+            .expect("should receive within timeout")
+            .expect("channel should not be closed");
 
         assert_eq!(event.pattern_name, "task_done");
         assert_eq!(event.tuple.fields[2], Value::Str("build".to_string()));
@@ -418,11 +416,7 @@ mod tests {
         ]);
         subs.notify(&tuple);
 
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx.recv(),
-        )
-        .await;
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(result.is_err(), "should timeout with no matching event");
     }
 
@@ -463,16 +457,15 @@ mod tests {
         let space = TupleSpace::new();
         let subs = SubscriptionManager::new();
 
-        let config = TupleBridgeConfig::default()
-            .with_wake_pattern(WakePattern::new(
-                "tool_results",
-                Tuple::pattern(&[
-                    Value::Str("tool_result".to_string()),
-                    Value::Wildcard,
-                    Value::Wildcard,
-                    Value::Wildcard,
-                ]),
-            ));
+        let config = TupleBridgeConfig::default().with_wake_pattern(WakePattern::new(
+            "tool_results",
+            Tuple::pattern(&[
+                Value::Str("tool_result".to_string()),
+                Value::Wildcard,
+                Value::Wildcard,
+                Value::Wildcard,
+            ]),
+        ));
 
         let mut bridge = AgentTupleBridge::new(space.clone(), subs.clone(), config);
         let mut rx = bridge.take_wake_receiver().expect("first take");
@@ -482,13 +475,10 @@ mod tests {
         let output = crate::tool::ToolOutput::success(serde_json::json!({"file": "test.rs"}));
         bridge.write_tool_result("file_read", &output);
 
-        let event = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            rx.recv(),
-        )
-        .await
-        .expect("should receive within timeout")
-        .expect("channel open");
+        let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+            .await
+            .expect("should receive within timeout")
+            .expect("channel open");
 
         assert_eq!(event.pattern_name, "tool_results");
         assert_eq!(event.tuple.fields[1], Value::Str("file_read".to_string()));

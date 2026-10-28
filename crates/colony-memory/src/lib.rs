@@ -48,9 +48,7 @@ pub use context::{ConversationRole, ConversationTurn, MemoryBackedContext};
 pub use decay::{DecayConfig, ImportanceDecayScheduler};
 pub use embedding::{EmbeddingProvider, FastEmbedProvider};
 pub use error::{MemoryError, Result};
-pub use eviction::{
-    CompositeEvictionPolicy, EvictionPolicy, LruEvictionPolicy, TtlEvictionPolicy,
-};
+pub use eviction::{CompositeEvictionPolicy, EvictionPolicy, LruEvictionPolicy, TtlEvictionPolicy};
 pub use query::{MetadataCondition, MetadataOperator, MetadataQuery};
 pub use scope::Scope;
 pub use store::{MemoryEntry, MemoryStore, SearchResult};

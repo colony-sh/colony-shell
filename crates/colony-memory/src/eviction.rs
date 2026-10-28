@@ -95,10 +95,7 @@ mod tests {
     #[test]
     fn test_lru_no_eviction_under_capacity() {
         let policy = LruEvictionPolicy::new(5);
-        let entries = vec![
-            make_entry("a", 1, 1),
-            make_entry("b", 2, 2),
-        ];
+        let entries = vec![make_entry("a", 1, 1), make_entry("b", 2, 2)];
         let evicted = policy.select_for_eviction(&entries);
         assert!(evicted.is_empty());
     }
@@ -133,10 +130,7 @@ mod tests {
     #[test]
     fn test_ttl_no_eviction_within_window() {
         let policy = TtlEvictionPolicy::new(Duration::hours(24));
-        let entries = vec![
-            make_entry("a", 1, 1),
-            make_entry("b", 2, 2),
-        ];
+        let entries = vec![make_entry("a", 1, 1), make_entry("b", 2, 2)];
         let evicted = policy.select_for_eviction(&entries);
         assert!(evicted.is_empty());
     }

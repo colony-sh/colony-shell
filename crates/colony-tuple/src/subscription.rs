@@ -183,7 +183,10 @@ mod tests {
 
         let event = rx.recv().await.unwrap();
         assert_eq!(event.subscription_id, id);
-        assert_eq!(event.tuple.fields[1], Value::Str("file_changed".to_string()));
+        assert_eq!(
+            event.tuple.fields[1],
+            Value::Str("file_changed".to_string())
+        );
     }
 
     #[tokio::test]
@@ -199,8 +202,7 @@ mod tests {
         ]);
         mgr.notify(&tuple);
 
-        let result =
-            tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
+        let result = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
         assert!(result.is_err());
     }
 
@@ -237,8 +239,7 @@ mod tests {
 
         mgr.notify(&Tuple::from(vec![Value::Int(1)]));
 
-        let result =
-            tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
+        let result = tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
         assert!(result.is_err() || result.unwrap().is_none());
     }
 

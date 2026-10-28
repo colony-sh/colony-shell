@@ -57,7 +57,10 @@ impl GoalTree {
 
         self.goals.insert(id.clone(), goal);
 
-        let parent = self.goals.get_mut(parent_id).expect("parent verified above");
+        let parent = self
+            .goals
+            .get_mut(parent_id)
+            .expect("parent verified above");
         parent.children.push(id.clone());
 
         Ok(id)
@@ -119,11 +122,7 @@ impl GoalTree {
         Ok(())
     }
 
-    pub fn update_description(
-        &mut self,
-        id: &str,
-        description: Option<String>,
-    ) -> Result<()> {
+    pub fn update_description(&mut self, id: &str, description: Option<String>) -> Result<()> {
         let goal = self
             .goals
             .get_mut(id)
@@ -154,7 +153,12 @@ impl GoalTree {
             }
         }
 
-        let old_parent_id = self.goals.get(id).expect("verified above").parent_id.clone();
+        let old_parent_id = self
+            .goals
+            .get(id)
+            .expect("verified above")
+            .parent_id
+            .clone();
 
         if let Some(ref old_pid) = old_parent_id {
             if let Some(old_parent) = self.goals.get_mut(old_pid) {
@@ -243,10 +247,7 @@ impl GoalTree {
     }
 
     pub fn active_goals(&self) -> Vec<&Goal> {
-        self.goals
-            .values()
-            .filter(|g| g.is_active())
-            .collect()
+        self.goals.values().filter(|g| g.is_active()).collect()
     }
 
     pub fn into_goals(self) -> Vec<Goal> {
@@ -256,10 +257,8 @@ impl GoalTree {
     pub fn from_goals(goals: Vec<Goal>) -> Result<Self> {
         let mut tree = Self::new();
 
-        let goal_map: HashMap<String, Goal> = goals
-            .into_iter()
-            .map(|g| (g.id.clone(), g))
-            .collect();
+        let goal_map: HashMap<String, Goal> =
+            goals.into_iter().map(|g| (g.id.clone(), g)).collect();
 
         for goal in goal_map.values() {
             if goal.parent_id.is_some() {
@@ -555,14 +554,11 @@ mod tests {
 
     #[test]
     fn test_from_goals() {
-        let goals = vec![
-            Goal::new("Root").with_id("g-1"),
-            {
-                let mut g = Goal::new("Child").with_id("g-2");
-                g.parent_id = Some("g-1".to_string());
-                g
-            },
-        ];
+        let goals = vec![Goal::new("Root").with_id("g-1"), {
+            let mut g = Goal::new("Child").with_id("g-2");
+            g.parent_id = Some("g-1".to_string());
+            g
+        }];
 
         let tree = GoalTree::from_goals(goals).unwrap();
         assert_eq!(tree.len(), 2);

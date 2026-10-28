@@ -16,7 +16,11 @@ impl CommandSource {
             .into_iter()
             .map(|c| (c, RecommendKind::Builtin))
             .collect();
-        commands.extend(path_commands.into_iter().map(|c| (c, RecommendKind::Command)));
+        commands.extend(
+            path_commands
+                .into_iter()
+                .map(|c| (c, RecommendKind::Command)),
+        );
         Self { commands }
     }
 }
@@ -91,10 +95,7 @@ mod tests {
 
     #[test]
     fn ignores_arg_position() {
-        let source = CommandSource::new(
-            vec!["echo".to_string()],
-            vec!["git".to_string()],
-        );
+        let source = CommandSource::new(vec!["echo".to_string()], vec!["git".to_string()]);
         let input = RecommendInput::parse("git ec", 6, PathBuf::from("/tmp"));
         let results = source.recommend(&input);
         assert!(results.is_empty());

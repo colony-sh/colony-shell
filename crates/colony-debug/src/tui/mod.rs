@@ -54,15 +54,10 @@ pub async fn run(
 
             // Status bar
             let status = match current_mode {
-                DebugMode::XRay => {
-                    "[space] pause  [s/enter] step  [m] mode  [q] quit"
-                }
-                DebugMode::Debug => {
-                    "[s] step  [n] next  [o] out  [c] continue  [m] mode  [q] quit"
-                }
+                DebugMode::XRay => "[space] pause  [s/enter] step  [m] mode  [q] quit",
+                DebugMode::Debug => "[s] step  [n] next  [o] out  [c] continue  [m] mode  [q] quit",
             };
-            let status_widget =
-                Paragraph::new(status).style(Style::default().fg(Color::DarkGray));
+            let status_widget = Paragraph::new(status).style(Style::default().fg(Color::DarkGray));
             frame.render_widget(status_widget, main_and_status[1]);
         })?;
 

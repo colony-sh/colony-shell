@@ -33,10 +33,7 @@ use std::path::PathBuf;
 pub fn detect_handler_type(handler: &str) -> HandlerType {
     let trimmed = handler.trim();
 
-    if trimmed.starts_with('/')
-        || trimmed.starts_with("./")
-        || trimmed.starts_with("../")
-    {
+    if trimmed.starts_with('/') || trimmed.starts_with("./") || trimmed.starts_with("../") {
         return HandlerType::Script;
     }
 
@@ -79,7 +76,9 @@ pub fn daemon_pid_path() -> PathBuf {
 fn daemon_binary_path() -> PathBuf {
     // Try to find it next to the current executable first
     if let Ok(exe) = std::env::current_exe() {
-        let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("/usr/local/bin"));
+        let dir = exe
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("/usr/local/bin"));
         let candidate = dir.join("colony-events");
         if candidate.exists() {
             return candidate;
@@ -464,11 +463,7 @@ fn cmd_daemon(subcmd: &str) -> BuiltinResult {
                 if let Ok(registry) = open_registry() {
                     if let Ok(listeners) = registry.list_listeners() {
                         let enabled = listeners.iter().filter(|l| l.enabled).count();
-                        eprintln!(
-                            "Listeners: {} total, {} enabled",
-                            listeners.len(),
-                            enabled
-                        );
+                        eprintln!("Listeners: {} total, {} enabled", listeners.len(), enabled);
                     }
                     if let Ok(runs) = registry.recent_runs(1) {
                         if let Some(last) = runs.first() {
@@ -647,8 +642,16 @@ fn render_listeners_section(listeners: &[EventListener]) -> String {
     let mut rows = String::new();
     for listener in listeners {
         let short_id = &listener.id[..8.min(listener.id.len())];
-        let enabled_class = if listener.enabled { "enabled" } else { "disabled" };
-        let enabled_icon = if listener.enabled { "&#x2713;" } else { "&#x2717;" };
+        let enabled_class = if listener.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        let enabled_icon = if listener.enabled {
+            "&#x2713;"
+        } else {
+            "&#x2717;"
+        };
         let once_badge = if listener.once {
             r#" <span class="badge once">once</span>"#
         } else {
@@ -777,13 +780,22 @@ mod tests {
     #[test]
     fn test_detect_handler_type_command() {
         assert_eq!(detect_handler_type("echo $2"), HandlerType::CommandEval);
-        assert_eq!(detect_handler_type("alert_errors"), HandlerType::CommandEval);
+        assert_eq!(
+            detect_handler_type("alert_errors"),
+            HandlerType::CommandEval
+        );
     }
 
     #[test]
     fn test_detect_handler_type_script() {
-        assert_eq!(detect_handler_type("./scripts/notify.sh"), HandlerType::Script);
-        assert_eq!(detect_handler_type("/usr/local/bin/handler"), HandlerType::Script);
+        assert_eq!(
+            detect_handler_type("./scripts/notify.sh"),
+            HandlerType::Script
+        );
+        assert_eq!(
+            detect_handler_type("/usr/local/bin/handler"),
+            HandlerType::Script
+        );
         assert_eq!(detect_handler_type("handler.py"), HandlerType::Script);
         assert_eq!(detect_handler_type("../handler.sh"), HandlerType::Script);
     }

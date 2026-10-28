@@ -123,9 +123,10 @@ mod inner {
                 root = root.with_description(desc);
             }
 
-            let root_id = self.tree.add_root(root).map_err(|e| {
-                AgentError::Protocol(format!("failed to create root goal: {}", e))
-            })?;
+            let root_id = self
+                .tree
+                .add_root(root)
+                .map_err(|e| AgentError::Protocol(format!("failed to create root goal: {}", e)))?;
 
             info!(root_id = %root_id, title = task_title, "Created planning root goal");
 
@@ -169,9 +170,10 @@ mod inner {
                 goal = goal.with_description(desc);
             }
 
-            let goal_id = self.tree.add_child(parent_id, goal).map_err(|e| {
-                AgentError::Protocol(format!("failed to add sub-goal: {}", e))
-            })?;
+            let goal_id = self
+                .tree
+                .add_child(parent_id, goal)
+                .map_err(|e| AgentError::Protocol(format!("failed to add sub-goal: {}", e)))?;
 
             Ok(SubGoal {
                 goal_id,
@@ -193,10 +195,7 @@ mod inner {
             };
 
             self.tree.transition(goal_id, target_status).map_err(|e| {
-                AgentError::Protocol(format!(
-                    "failed to transition goal '{}': {}",
-                    goal_id, e
-                ))
+                AgentError::Protocol(format!("failed to transition goal '{}': {}", goal_id, e))
             })?;
 
             debug!(
@@ -257,7 +256,10 @@ mod inner {
             // If all sub-goals completed, mark the root as completed too
             if completed == total && total > 0 {
                 let _ = self.tree.transition(root_id, GoalStatus::Completed);
-                info!(root_id = root_id, "All sub-goals completed, root goal completed");
+                info!(
+                    root_id = root_id,
+                    "All sub-goals completed, root goal completed"
+                );
             }
 
             Ok(PlanExecutionSummary {

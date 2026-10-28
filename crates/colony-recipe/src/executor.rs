@@ -53,21 +53,15 @@ pub struct ExecutionResult {
     pub output: Option<String>,
 }
 
-pub fn resolve_command(
-    command_def: &CommandDef,
-    user_args: &str,
-) -> Result<ResolvedAction> {
+pub fn resolve_command(command_def: &CommandDef, user_args: &str) -> Result<ResolvedAction> {
     match command_def.action {
         CommandAction::Shell => {
-            let base_cmd = command_def
-                .command
-                .as_deref()
-                .ok_or_else(|| {
-                    RecipeError::Invalid(format!(
-                        "shell command '{}' has no 'command' field",
-                        command_def.name
-                    ))
-                })?;
+            let base_cmd = command_def.command.as_deref().ok_or_else(|| {
+                RecipeError::Invalid(format!(
+                    "shell command '{}' has no 'command' field",
+                    command_def.name
+                ))
+            })?;
 
             let full_command = if user_args.is_empty() {
                 base_cmd.to_string()
@@ -80,15 +74,12 @@ pub fn resolve_command(
             }))
         }
         CommandAction::Agent => {
-            let base_prompt = command_def
-                .prompt
-                .as_deref()
-                .ok_or_else(|| {
-                    RecipeError::Invalid(format!(
-                        "agent command '{}' has no 'prompt' field",
-                        command_def.name
-                    ))
-                })?;
+            let base_prompt = command_def.prompt.as_deref().ok_or_else(|| {
+                RecipeError::Invalid(format!(
+                    "agent command '{}' has no 'prompt' field",
+                    command_def.name
+                ))
+            })?;
 
             let full_prompt = if user_args.is_empty() {
                 base_prompt.to_string()
@@ -209,7 +200,10 @@ mod tests {
         };
         let result = resolve_command(&cmd, "");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no 'command' field"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("no 'command' field"));
     }
 
     #[test]

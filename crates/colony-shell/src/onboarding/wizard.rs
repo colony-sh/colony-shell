@@ -14,7 +14,7 @@
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-use crossterm::style::{Attribute, Color, SetAttribute, SetForegroundColor, ResetColor};
+use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
 
 use super::converter;
 use super::importer;

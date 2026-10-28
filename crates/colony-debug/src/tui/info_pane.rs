@@ -92,10 +92,7 @@ impl InfoPane {
                     lines: vec![Line::from(vec![
                         Span::styled(name.clone(), Style::default().fg(Color::Magenta)),
                         Span::raw("="),
-                        Span::styled(
-                            format!("\"{value}\""),
-                            Style::default().fg(Color::Green),
-                        ),
+                        Span::styled(format!("\"{value}\""), Style::default().fg(Color::Green)),
                     ])],
                 });
             }
@@ -146,9 +143,7 @@ impl InfoPane {
                 total,
                 ..
             } => {
-                let total_str = total
-                    .map(|t| format!("/{t}"))
-                    .unwrap_or_default();
+                let total_str = total.map(|t| format!("/{t}")).unwrap_or_default();
                 self.sections.push(InfoSection {
                     title: "LOOP".to_string(),
                     lines: vec![Line::from(Span::styled(
@@ -231,10 +226,7 @@ impl InfoPane {
                     lines: vec![Line::from(vec![
                         Span::styled(expression.clone(), Style::default().fg(Color::Magenta)),
                         Span::raw(": "),
-                        Span::styled(
-                            format!("\"{old_value}\""),
-                            Style::default().fg(Color::Red),
-                        ),
+                        Span::styled(format!("\"{old_value}\""), Style::default().fg(Color::Red)),
                         Span::raw(" -> "),
                         Span::styled(
                             format!("\"{new_value}\""),
@@ -260,10 +252,7 @@ impl InfoPane {
             lines.push(Line::from(vec![
                 Span::styled(name.clone(), Style::default().fg(Color::Magenta)),
                 Span::raw("="),
-                Span::styled(
-                    format!("\"{value}\""),
-                    Style::default().fg(Color::Green),
-                ),
+                Span::styled(format!("\"{value}\""), Style::default().fg(Color::Green)),
             ]));
         }
         self.sections.push(InfoSection {

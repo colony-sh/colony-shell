@@ -4,9 +4,7 @@
 //! server stats, and route information. Follows the standard colony
 //! panel protocol (same as session-panel, history-panel, etc.).
 
-use colony_panel::protocol::{
-    FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME,
-};
+use colony_panel::protocol::{FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME};
 use std::io::{self, BufRead, Write};
 const MAX_RECENT_REQUESTS: usize = 100;
 

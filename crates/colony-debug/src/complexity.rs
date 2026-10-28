@@ -108,18 +108,12 @@ mod tests {
 
     #[test]
     fn command_sub_is_medium() {
-        assert_eq!(
-            score("SimpleCommand", "echo $(date)"),
-            Complexity::Medium
-        );
+        assert_eq!(score("SimpleCommand", "echo $(date)"), Complexity::Medium);
     }
 
     #[test]
     fn backtick_sub_is_medium() {
-        assert_eq!(
-            score("SimpleCommand", "echo `date`"),
-            Complexity::Medium
-        );
+        assert_eq!(score("SimpleCommand", "echo `date`"), Complexity::Medium);
     }
 
     #[test]
@@ -148,10 +142,7 @@ mod tests {
 
     #[test]
     fn redirect_is_medium() {
-        assert_eq!(
-            score("SimpleCommand", "cmd 2>&1"),
-            Complexity::Medium
-        );
+        assert_eq!(score("SimpleCommand", "cmd 2>&1"), Complexity::Medium);
     }
 
     #[test]

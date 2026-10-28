@@ -158,7 +158,11 @@ mod tests {
     fn conditional_breakpoint_stored() {
         let mut mgr = BreakpointManager::new();
         let id = mgr.add(10, Some("$x > 5".to_string()));
-        let bp = mgr.list().iter().find(|b| b.id == id).expect("breakpoint exists");
+        let bp = mgr
+            .list()
+            .iter()
+            .find(|b| b.id == id)
+            .expect("breakpoint exists");
         assert_eq!(bp.condition.as_deref(), Some("$x > 5"));
     }
 }

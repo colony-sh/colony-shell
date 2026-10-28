@@ -189,10 +189,7 @@ fn execute_pin(args: &[&str], store: &ContextStore, project_id: &str) -> Builtin
 }
 
 fn execute_prune(args: &[&str], store: &ContextStore, project_id: &str) -> BuiltinResult {
-    let max_tokens: usize = args
-        .first()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100_000);
+    let max_tokens: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(100_000);
 
     match store.prune(project_id, max_tokens) {
         Ok(n) => BuiltinResult::Output(format!("Pruned {n} entries.")),

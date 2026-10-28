@@ -44,8 +44,8 @@ impl FileSystemWatcher {
         let tree_clone = tree.clone();
 
         // Create the notify watcher
-        let watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-            match res {
+        let watcher =
+            notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
                 Ok(event) => {
                     let watch_events = Self::convert_event(event);
                     for watch_event in watch_events {
@@ -55,9 +55,8 @@ impl FileSystemWatcher {
                 Err(e) => {
                     let _ = tx.blocking_send(WatchEvent::Error(e.to_string()));
                 }
-            }
-        })
-        .map_err(|e| miette::miette!("Failed to create watcher: {}", e))?;
+            })
+            .map_err(|e| miette::miette!("Failed to create watcher: {}", e))?;
 
         Ok(Self {
             tree: tree_clone,
@@ -72,7 +71,7 @@ impl FileSystemWatcher {
         self._watcher
             .watch(self.tree.root_path(), RecursiveMode::Recursive)
             .map_err(|e| miette::miette!("Failed to start watching: {}", e))?;
-        
+
         tracing::info!("Started watching {:?}", self.tree.root_path());
         Ok(())
     }
@@ -120,9 +119,11 @@ impl FileSystemWatcher {
     /// Process pending events (call in a loop or task)
     pub async fn process_events(&mut self) -> Option<Vec<WatchEvent>> {
         let mut events = Vec::new();
-        
+
         // Collect events with a small timeout for batching
-        while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(50), self.rx.recv()).await {
+        while let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(50), self.rx.recv()).await
+        {
             events.push(event);
         }
 
@@ -179,7 +180,7 @@ impl FileSystemWatcher {
     /// Convert notify Event to WatchEvent(s)
     fn convert_event(event: Event) -> Vec<WatchEvent> {
         let mut results = Vec::new();
-        
+
         match event.kind {
             EventKind::Create(_) => {
                 for path in event.paths {
@@ -210,7 +211,7 @@ impl FileSystemWatcher {
             }
             _ => {}
         }
-        
+
         results
     }
 

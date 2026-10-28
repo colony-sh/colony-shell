@@ -345,10 +345,22 @@ mod tests {
         let script_path = PathBuf::from("/deploy.sh");
         let variable = "SECRET";
 
-        db.save_approval(&script_path, "sha256:old", variable, "user", ApprovalScope::Global)
-            .unwrap();
-        db.save_approval(&script_path, "sha256:new", variable, "user", ApprovalScope::Global)
-            .unwrap();
+        db.save_approval(
+            &script_path,
+            "sha256:old",
+            variable,
+            "user",
+            ApprovalScope::Global,
+        )
+        .unwrap();
+        db.save_approval(
+            &script_path,
+            "sha256:new",
+            variable,
+            "user",
+            ApprovalScope::Global,
+        )
+        .unwrap();
 
         let cleared = db
             .clear_stale_approvals(&script_path, "sha256:new")
@@ -370,8 +382,14 @@ mod tests {
         let project_path = PathBuf::from("/home/user/project-script.sh");
         let variable = "DB_PASSWORD";
 
-        db.save_approval(&global_path, "sha256:g1", variable, "user", ApprovalScope::Global)
-            .unwrap();
+        db.save_approval(
+            &global_path,
+            "sha256:g1",
+            variable,
+            "user",
+            ApprovalScope::Global,
+        )
+        .unwrap();
         db.save_approval(
             &project_path,
             "sha256:p1",

@@ -121,7 +121,10 @@ mod tests {
     #[test]
     fn auto_scroll_keeps_visible() {
         // With 20 visible lines, setting current to line 30 should scroll
-        let source = (1..=50).map(|i| format!("echo {i}")).collect::<Vec<_>>().join("\n");
+        let source = (1..=50)
+            .map(|i| format!("echo {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let mut pane = SourcePane::new(&source);
         pane.set_current_line(30);
         assert!(pane.scroll_offset > 0);

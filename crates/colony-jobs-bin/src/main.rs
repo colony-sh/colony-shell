@@ -3,9 +3,7 @@
 //! Emits frames to stdout following the panel protocol.
 //! Subscribes to `job_change` tuples to track job state.
 
-use colony_panel::protocol::{
-    FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME,
-};
+use colony_panel::protocol::{FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME};
 use std::io::{self, BufRead, Write};
 
 fn main() {
@@ -21,7 +19,12 @@ fn main() {
             subscriptions: vec!["job_change".to_string()],
             help: Vec::new(),
         };
-        writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&config).expect("config must serialize")
+        )
+        .ok();
         out.flush().ok();
     }
 
@@ -58,7 +61,12 @@ fn emit_frame(stdout: &io::Stdout, state: &JobsState) {
     let mut out = stdout.lock();
     writeln!(out, "{SENTINEL_FRAME}").ok();
     for line in state.render_lines() {
-        writeln!(out, "{}", serde_json::to_string(&line).expect("frame line must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&line).expect("frame line must serialize")
+        )
+        .ok();
     }
     writeln!(out, "{SENTINEL_FRAME}").ok();
     out.flush().ok();

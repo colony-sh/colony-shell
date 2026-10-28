@@ -70,11 +70,8 @@ impl ContextComposer {
         }
 
         // 4. Remaining entries by priority (descending), then use_count (descending)
-        let mut remaining: Vec<&ContextEntry> = file
-            .entries
-            .iter()
-            .filter(|e| !e.metadata.pinned)
-            .collect();
+        let mut remaining: Vec<&ContextEntry> =
+            file.entries.iter().filter(|e| !e.metadata.pinned).collect();
         remaining.sort_by(|a, b| {
             b.metadata
                 .priority
@@ -209,8 +206,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let store = ContextStore::new(tmp.path().to_path_buf());
 
-        let pinned =
-            ContextEntry::new(ContextKind::Knowledge, "important".to_string()).pinned();
+        let pinned = ContextEntry::new(ContextKind::Knowledge, "important".to_string()).pinned();
         let normal = ContextEntry::new(ContextKind::Knowledge, "meh".to_string());
         store.add_entry("proj", normal).unwrap();
         store.add_entry("proj", pinned).unwrap();

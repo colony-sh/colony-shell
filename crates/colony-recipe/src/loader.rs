@@ -73,7 +73,6 @@ impl RecipeLoader {
             cache: HashMap::new(),
         }
     }
-
 }
 
 impl Default for RecipeLoader {

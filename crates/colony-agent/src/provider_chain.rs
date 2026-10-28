@@ -149,10 +149,7 @@ impl ProviderChain {
 
     /// Mark a provider as failed
     fn mark_failed(&mut self, key: &str, error: &str) {
-        let state = self
-            .health_states
-            .entry(key.to_string())
-            .or_default();
+        let state = self.health_states.entry(key.to_string()).or_default();
 
         state.failure_count += 1;
         state.last_failure = Some(Instant::now());
@@ -169,10 +166,7 @@ impl ProviderChain {
 
     /// Mark a provider as healthy (successful request)
     fn mark_healthy(&mut self, key: &str) {
-        let state = self
-            .health_states
-            .entry(key.to_string())
-            .or_default();
+        let state = self.health_states.entry(key.to_string()).or_default();
 
         state.healthy = true;
         state.failure_count = 0;
@@ -237,9 +231,8 @@ impl ModelProvider for ProviderChain {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| {
-            AgentError::Protocol("all providers exhausted".to_string())
-        }))
+        Err(last_error
+            .unwrap_or_else(|| AgentError::Protocol("all providers exhausted".to_string())))
     }
 
     fn supports_streaming(&self) -> bool {

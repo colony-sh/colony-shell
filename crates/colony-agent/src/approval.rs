@@ -30,7 +30,6 @@ pub struct ApprovalConfig {
     pub colony_terminal: bool,
 }
 
-
 impl ApprovalConfig {
     pub fn with_auto_approve(mut self, patterns: Vec<String>) -> Self {
         self.auto_approve_patterns = patterns;
@@ -73,11 +72,7 @@ impl ApprovalManager {
     }
 
     /// Check if approval is needed for a tool call
-    pub fn needs_approval(
-        &self,
-        tool_name: &str,
-        classification: ToolClassification,
-    ) -> bool {
+    pub fn needs_approval(&self, tool_name: &str, classification: ToolClassification) -> bool {
         if classification == ToolClassification::Programmatic {
             return false;
         }
@@ -128,10 +123,7 @@ impl ApprovalManager {
 
         // If we have the approval channel, wait for the terminal response.
         let Some(pending) = &self.pending_approvals else {
-            tracing::warn!(
-                "No approval channel — auto-approving '{}'",
-                tool_name
-            );
+            tracing::warn!("No approval channel — auto-approving '{}'", tool_name);
             return Ok(ApprovalResponse::Approved);
         };
 
@@ -174,8 +166,8 @@ impl ApprovalManager {
         tool_name: &str,
         input: &serde_json::Value,
     ) -> Result<ApprovalResponse, AgentError> {
-        let input_preview = serde_json::to_string_pretty(input)
-            .unwrap_or_else(|_| format!("{:?}", input));
+        let input_preview =
+            serde_json::to_string_pretty(input).unwrap_or_else(|_| format!("{:?}", input));
 
         let preview = if input_preview.len() > 200 {
             format!("{}...", &input_preview[..200])
@@ -281,8 +273,7 @@ mod tests {
 
     #[test]
     fn test_auto_approve_pattern() {
-        let config = ApprovalConfig::default()
-            .with_auto_approve(vec!["shell_exec".to_string()]);
+        let config = ApprovalConfig::default().with_auto_approve(vec!["shell_exec".to_string()]);
         let manager = ApprovalManager::new(config);
         assert!(!manager.needs_approval("shell_exec", ToolClassification::UserFacing));
         assert!(manager.needs_approval("file_write", ToolClassification::UserFacing));
@@ -290,8 +281,7 @@ mod tests {
 
     #[test]
     fn test_auto_approve_wildcard() {
-        let config = ApprovalConfig::default()
-            .with_auto_approve(vec!["*".to_string()]);
+        let config = ApprovalConfig::default().with_auto_approve(vec!["*".to_string()]);
         let manager = ApprovalManager::new(config);
         assert!(!manager.needs_approval("shell_exec", ToolClassification::UserFacing));
         assert!(!manager.needs_approval("file_write", ToolClassification::UserFacing));
@@ -327,8 +317,7 @@ mod tests {
 
     #[test]
     fn test_colony_terminal_config() {
-        let config = ApprovalConfig::default()
-            .with_colony_terminal(true);
+        let config = ApprovalConfig::default().with_colony_terminal(true);
         assert!(config.colony_terminal);
     }
 }

@@ -123,19 +123,12 @@ impl ToolRegistry {
             Box::new(builtins::FileWrite),
             ToolClassification::UserFacing,
         );
-        registry.register_tool(
-            Box::new(builtins::Search),
-            ToolClassification::Programmatic,
-        );
+        registry.register_tool(Box::new(builtins::Search), ToolClassification::Programmatic);
         registry
     }
 
     /// Register a tool from a Tool trait object
-    pub fn register_tool(
-        &mut self,
-        tool: Box<dyn Tool>,
-        classification: ToolClassification,
-    ) {
+    pub fn register_tool(&mut self, tool: Box<dyn Tool>, classification: ToolClassification) {
         let schema = build_input_schema(&tool.parameters());
         let definition = claude_sdk::Tool {
             name: tool.name().to_string(),
@@ -332,9 +325,7 @@ pub mod builtins {
                     ToolExecutionError::InvalidInput("missing 'command' parameter".to_string())
                 })?;
 
-            let working_dir = params
-                .get("working_dir")
-                .and_then(|v| v.as_str());
+            let working_dir = params.get("working_dir").and_then(|v| v.as_str());
 
             let mut cmd = tokio::process::Command::new("sh");
             cmd.arg("-c").arg(command);
@@ -382,15 +373,15 @@ pub mod builtins {
         }
 
         async fn execute(&self, params: Value) -> Result<ToolOutput, ToolExecutionError> {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    ToolExecutionError::InvalidInput("missing 'path' parameter".to_string())
-                })?;
+            let path = params.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
+                ToolExecutionError::InvalidInput("missing 'path' parameter".to_string())
+            })?;
 
             let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-                ToolExecutionError::ExecutionFailed(format!("failed to read file '{}': {}", path, e))
+                ToolExecutionError::ExecutionFailed(format!(
+                    "failed to read file '{}': {}",
+                    path, e
+                ))
             })?;
 
             Ok(ToolOutput::success(serde_json::json!({
@@ -432,12 +423,9 @@ pub mod builtins {
         }
 
         async fn execute(&self, params: Value) -> Result<ToolOutput, ToolExecutionError> {
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    ToolExecutionError::InvalidInput("missing 'path' parameter".to_string())
-                })?;
+            let path = params.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
+                ToolExecutionError::InvalidInput("missing 'path' parameter".to_string())
+            })?;
 
             let content = params
                 .get("content")
@@ -492,8 +480,9 @@ pub mod builtins {
                     name: "mode".to_string(),
                     param_type: ParamType::String,
                     required: false,
-                    description: "Search mode: 'content' (grep) or 'files' (find). Defaults to 'content'"
-                        .to_string(),
+                    description:
+                        "Search mode: 'content' (grep) or 'files' (find). Defaults to 'content'"
+                            .to_string(),
                 },
             ]
         }
@@ -506,10 +495,7 @@ pub mod builtins {
                     ToolExecutionError::InvalidInput("missing 'pattern' parameter".to_string())
                 })?;
 
-            let path = params
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or(".");
+            let path = params.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
             let mode = params
                 .get("mode")
@@ -518,10 +504,7 @@ pub mod builtins {
 
             let command = match mode {
                 "files" => format!("find {} -name '{}' 2>/dev/null | head -50", path, pattern),
-                _ => format!(
-                    "grep -rn '{}' {} 2>/dev/null | head -50",
-                    pattern, path
-                ),
+                _ => format!("grep -rn '{}' {} 2>/dev/null | head -50", pattern, path),
             };
 
             let output = tokio::process::Command::new("sh")
@@ -725,9 +708,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry_execute_not_found() {
         let registry = ToolRegistry::with_builtins();
-        let result = registry
-            .execute("nonexistent", serde_json::json!({}))
-            .await;
+        let result = registry.execute("nonexistent", serde_json::json!({})).await;
         assert!(result.is_err());
     }
 }

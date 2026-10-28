@@ -46,9 +46,16 @@ pub enum DebugCommand {
     StepOver,
     StepOut,
     Pause,
-    AddBreakpoint { line: u32, condition: Option<String> },
-    RemoveBreakpoint { id: u32 },
-    ToggleBreakpoint { id: u32 },
+    AddBreakpoint {
+        line: u32,
+        condition: Option<String>,
+    },
+    RemoveBreakpoint {
+        id: u32,
+    },
+    ToggleBreakpoint {
+        id: u32,
+    },
     ToggleMode,
     ToggleDepth,
     Quit,
@@ -363,7 +370,7 @@ mod tests {
         let (mut ctrl, _, _) = make_controller(DebugMode::Debug);
         ctrl.state = ExecState::StepOver { depth: 0 };
         ctrl.push_frame(); // now at depth 1
-        // Should continue because depth > step_over depth
+                           // Should continue because depth > step_over depth
         let should_proceed = ctrl.on_statement_enter(10, "inner cmd");
         assert!(should_proceed);
     }
@@ -374,7 +381,7 @@ mod tests {
         ctrl.push_frame(); // depth = 1
         ctrl.state = ExecState::StepOut { depth: 1 };
         ctrl.pop_frame(); // depth = 0
-        // At depth 0 < step_out depth 1: should pause
+                          // At depth 0 < step_out depth 1: should pause
         let should_proceed = ctrl.on_statement_enter(1, "echo done");
         assert!(!should_proceed);
     }
@@ -441,7 +448,13 @@ mod tests {
         let (mut ctrl, mut rx, _) = make_controller(DebugMode::XRay);
         ctrl.on_statement_exit(5, 1234);
         let event = rx.try_recv().expect("should have event");
-        assert!(matches!(event, TraceEvent::LineExit { line: 5, duration_us: 1234 }));
+        assert!(matches!(
+            event,
+            TraceEvent::LineExit {
+                line: 5,
+                duration_us: 1234
+            }
+        ));
     }
 
     #[test]

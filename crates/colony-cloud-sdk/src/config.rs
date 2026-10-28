@@ -96,8 +96,9 @@ impl CloudConfig {
             }
         };
 
-        let config: ConfigFile =
-            toml::from_str(&content).map_err(|e| CloudError::Config(format!("invalid TOML in {}: {}", path.display(), e)))?;
+        let config: ConfigFile = toml::from_str(&content).map_err(|e| {
+            CloudError::Config(format!("invalid TOML in {}: {}", path.display(), e))
+        })?;
 
         Ok(config.cloud.and_then(|c| c.api_key))
     }

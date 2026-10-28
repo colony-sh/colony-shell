@@ -7,9 +7,7 @@
 //! - Enter: trigger immediate run (emits tuple)
 //! - l: show log view
 
-use colony_panel::protocol::{
-    FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME,
-};
+use colony_panel::protocol::{FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME};
 use std::io::{self, BufRead, Write};
 
 fn main() {
@@ -26,10 +24,7 @@ fn main() {
                 "heartbeat_complete".to_string(),
                 "heartbeat_finding".to_string(),
             ],
-            help: vec![
-                "Enter: trigger run".to_string(),
-                "l: show log".to_string(),
-            ],
+            help: vec!["Enter: trigger run".to_string(), "l: show log".to_string()],
         };
         writeln!(
             out,
@@ -203,8 +198,8 @@ impl HeartbeatState {
 
         // Status line
         let status_icon = match self.status.as_str() {
-            "pass" => "\u{2764}", // heart
-            "warn" => "\u{26a0}", // warning
+            "pass" => "\u{2764}",  // heart
+            "warn" => "\u{26a0}",  // warning
             "alert" => "\u{2757}", // exclamation
             _ => "\u{2764}",
         };

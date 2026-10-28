@@ -8,13 +8,19 @@ pub enum MemoryTemperature {
 }
 
 impl MemoryTemperature {
-    pub fn classify(access_count: i32, last_accessed: DateTime<Utc>, config: &TemperatureConfig) -> Self {
+    pub fn classify(
+        access_count: i32,
+        last_accessed: DateTime<Utc>,
+        config: &TemperatureConfig,
+    ) -> Self {
         let age = Utc::now().signed_duration_since(last_accessed);
         let age_hours = age.num_hours();
 
         if access_count >= config.hot_access_threshold && age_hours <= config.hot_recency_hours {
             Self::Hot
-        } else if access_count >= config.warm_access_threshold && age_hours <= config.warm_recency_hours {
+        } else if access_count >= config.warm_access_threshold
+            && age_hours <= config.warm_recency_hours
+        {
             Self::Warm
         } else {
             Self::Cold

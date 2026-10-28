@@ -220,11 +220,7 @@ impl TransactionManager {
     ///
     /// Returns true if committing txn_a would block on resources held by txn_b
     /// and vice versa.
-    pub fn check_deadlock(
-        &self,
-        txn_a: &Transaction,
-        txn_b: &Transaction,
-    ) -> bool {
+    pub fn check_deadlock(&self, txn_a: &Transaction, txn_b: &Transaction) -> bool {
         // Check if txn_a removes something txn_b writes, and vice versa
         let a_removes: Vec<&Tuple> = txn_a
             .operations
@@ -300,10 +296,16 @@ mod tests {
         let mgr = TransactionManager::new(space.clone());
 
         let mut txn = mgr.begin();
-        txn.write(Tuple::from(vec![Value::Str("a".to_string()), Value::Int(1)]))
-            .unwrap();
-        txn.write(Tuple::from(vec![Value::Str("b".to_string()), Value::Int(2)]))
-            .unwrap();
+        txn.write(Tuple::from(vec![
+            Value::Str("a".to_string()),
+            Value::Int(1),
+        ]))
+        .unwrap();
+        txn.write(Tuple::from(vec![
+            Value::Str("b".to_string()),
+            Value::Int(2),
+        ]))
+        .unwrap();
 
         mgr.commit(&mut txn).unwrap();
 
@@ -447,13 +449,17 @@ mod tests {
         let mgr = TransactionManager::new(space);
 
         let mut txn_a = mgr.begin();
-        txn_a.write(Tuple::from(vec![Value::Str("a".to_string())])).unwrap();
+        txn_a
+            .write(Tuple::from(vec![Value::Str("a".to_string())]))
+            .unwrap();
         txn_a
             .remove(Tuple::pattern(&[Value::Str("b".to_string())]))
             .unwrap();
 
         let mut txn_b = mgr.begin();
-        txn_b.write(Tuple::from(vec![Value::Str("b".to_string())])).unwrap();
+        txn_b
+            .write(Tuple::from(vec![Value::Str("b".to_string())]))
+            .unwrap();
         txn_b
             .remove(Tuple::pattern(&[Value::Str("a".to_string())]))
             .unwrap();
@@ -467,10 +473,14 @@ mod tests {
         let mgr = TransactionManager::new(space);
 
         let mut txn_a = mgr.begin();
-        txn_a.write(Tuple::from(vec![Value::Str("a".to_string())])).unwrap();
+        txn_a
+            .write(Tuple::from(vec![Value::Str("a".to_string())]))
+            .unwrap();
 
         let mut txn_b = mgr.begin();
-        txn_b.write(Tuple::from(vec![Value::Str("b".to_string())])).unwrap();
+        txn_b
+            .write(Tuple::from(vec![Value::Str("b".to_string())]))
+            .unwrap();
 
         assert!(!mgr.check_deadlock(&txn_a, &txn_b));
     }
@@ -487,8 +497,11 @@ mod tests {
         let mgr = TransactionManager::new(space.clone());
 
         let mut txn = mgr.begin();
-        txn.write(Tuple::from(vec![Value::Str("temp".to_string()), Value::Int(1)]))
-            .unwrap();
+        txn.write(Tuple::from(vec![
+            Value::Str("temp".to_string()),
+            Value::Int(1),
+        ]))
+        .unwrap();
         txn.remove(Tuple::pattern(&[
             Value::Str("temp".to_string()),
             Value::Wildcard,

@@ -161,19 +161,14 @@ async fn run_script_mode(script: &std::path::Path, opts: &ShellOptions) -> ! {
         let tui_handle = tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Handle::current();
             rt.block_on(async {
-                if let Err(e) =
-                    colony_debug::tui::run(&tui_source, mode, event_rx, cmd_tx).await
-                {
+                if let Err(e) = colony_debug::tui::run(&tui_source, mode, event_rx, cmd_tx).await {
                     eprintln!("colony: debug TUI error: {}", e);
                 }
             });
         });
 
         let exec_future = async {
-            match executor
-                .execute_source_file(&script_path, vec![])
-                .await
-            {
+            match executor.execute_source_file(&script_path, vec![]).await {
                 Ok(status) => status.code(),
                 Err(e) => {
                     eprintln!("colony: {}: {}", script_path.display(), e);

@@ -4,9 +4,7 @@
 //! about the currently selected file (name, path, size, permissions,
 //! modification time, type, and line count for text files).
 
-use colony_panel::protocol::{
-    FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME,
-};
+use colony_panel::protocol::{FrameLine, InputEvent, PanelConfig, SENTINEL_CONFIG, SENTINEL_FRAME};
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -25,7 +23,12 @@ fn main() {
             subscriptions: vec!["filetree_select".to_string()],
             help: Vec::new(),
         };
-        writeln!(out, "{}", serde_json::to_string(&config).expect("config must serialize")).ok();
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&config).expect("config must serialize")
+        )
+        .ok();
         out.flush().ok();
     }
 
@@ -203,7 +206,9 @@ fn format_time(time: SystemTime) -> Result<String, std::time::SystemTimeError> {
 
     // Days since 1970-01-01
     let (year, month, day) = days_to_date(days);
-    Ok(format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02} UTC"))
+    Ok(format!(
+        "{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02} UTC"
+    ))
 }
 
 /// Convert days since Unix epoch to (year, month, day).

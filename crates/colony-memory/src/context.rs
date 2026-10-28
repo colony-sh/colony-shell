@@ -51,11 +51,7 @@ impl MemoryBackedContext {
         &self.scope
     }
 
-    pub async fn store_turn(
-        &self,
-        role: ConversationRole,
-        content: &str,
-    ) -> Result<String> {
+    pub async fn store_turn(&self, role: ConversationRole, content: &str) -> Result<String> {
         self.store_turn_with_importance(role, content, 1.0).await
     }
 
@@ -82,11 +78,7 @@ impl MemoryBackedContext {
         Ok(entries_to_turns(entries))
     }
 
-    pub async fn retrieve_relevant(
-        &self,
-        prompt: &str,
-        limit: usize,
-    ) -> Result<Vec<SearchResult>> {
+    pub async fn retrieve_relevant(&self, prompt: &str, limit: usize) -> Result<Vec<SearchResult>> {
         self.store
             .search_in_scope(prompt, limit, Some(&self.scope))
             .await
@@ -202,14 +194,14 @@ mod tests {
         )
         .await
         .unwrap();
-        ctx.store_turn(
-            ConversationRole::User,
-            "What is the weather like today?",
-        )
-        .await
-        .unwrap();
+        ctx.store_turn(ConversationRole::User, "What is the weather like today?")
+            .await
+            .unwrap();
 
-        let results = ctx.retrieve_relevant("ownership and borrowing", 2).await.unwrap();
+        let results = ctx
+            .retrieve_relevant("ownership and borrowing", 2)
+            .await
+            .unwrap();
         assert!(!results.is_empty());
     }
 
@@ -217,7 +209,8 @@ mod tests {
     async fn test_clear_context() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(MemoryStore::open(dir.path()).await.unwrap());
-        let ctx = MemoryBackedContext::new(store.clone(), Scope::Session("test-session".to_string()));
+        let ctx =
+            MemoryBackedContext::new(store.clone(), Scope::Session("test-session".to_string()));
 
         ctx.store_turn(ConversationRole::User, "Hello")
             .await
@@ -261,7 +254,8 @@ mod tests {
     async fn test_store_turn_with_importance() {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(MemoryStore::open(dir.path()).await.unwrap());
-        let ctx = MemoryBackedContext::new(store.clone(), Scope::Session("test-session".to_string()));
+        let ctx =
+            MemoryBackedContext::new(store.clone(), Scope::Session("test-session".to_string()));
 
         let id = ctx
             .store_turn_with_importance(ConversationRole::User, "Important message", 0.8)

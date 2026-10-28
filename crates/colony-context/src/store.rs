@@ -262,8 +262,7 @@ mod tests {
         let store = ContextStore::new(tmp.path().to_path_buf());
 
         for i in 0..5 {
-            let entry =
-                ContextEntry::new(ContextKind::Knowledge, format!("entry {i}"));
+            let entry = ContextEntry::new(ContextKind::Knowledge, format!("entry {i}"));
             store.add_entry("proj", entry).unwrap();
         }
 

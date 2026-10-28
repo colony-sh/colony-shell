@@ -62,10 +62,10 @@ pub use models::{
 pub use rate_limit::{RateLimitConfig, RateLimitInfo, RateLimiter};
 pub use retry::{with_retry, RetryConfig};
 pub use streaming::{
-    ExtendedStreamChunk, ExtendedStreamChoice, ExtendedStreamDelta, StreamAssembler,
-    StreamContent, StreamToolCall, StreamToolFunction, ToolCallDelta, ToolFunctionDelta,
+    ExtendedStreamChoice, ExtendedStreamChunk, ExtendedStreamDelta, StreamAssembler, StreamContent,
+    StreamToolCall, StreamToolFunction, ToolCallDelta, ToolFunctionDelta,
 };
 pub use timeout::{
-    with_timeout, OperationLog, OperationTracker, OperationType, OperationStatus, RequestId,
+    with_timeout, OperationLog, OperationStatus, OperationTracker, OperationType, RequestId,
     TimeoutConfig,
 };

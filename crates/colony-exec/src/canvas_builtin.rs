@@ -103,12 +103,7 @@ pub fn builtin_canvas(args: &[String]) -> Result<BuiltinResult> {
 fn curl_get(api: &str, token: &str, path: &str) -> Option<String> {
     let url = format!("{api}{path}");
     let output = Command::new("curl")
-        .args([
-            "-s",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            &url,
-        ])
+        .args(["-s", "-H", &format!("Authorization: Bearer {token}"), &url])
         .output()
         .ok()?;
 
@@ -209,7 +204,11 @@ fn cmd_status(env: &CanvasEnv) -> i32 {
         return 0;
     };
 
-    let data = if v.get("data").is_some() { &v["data"] } else { &v };
+    let data = if v.get("data").is_some() {
+        &v["data"]
+    } else {
+        &v
+    };
     let name = data["name"].as_str().unwrap_or("unknown");
     let id_display = if env.canvas_id.len() >= 8 {
         &env.canvas_id[..8]
@@ -269,7 +268,11 @@ fn cmd_widgets(env: &CanvasEnv) -> i32 {
         return 0;
     };
 
-    let data = if v.get("data").is_some() { &v["data"] } else { &v };
+    let data = if v.get("data").is_some() {
+        &v["data"]
+    } else {
+        &v
+    };
 
     let Some(widgets) = data["widgets"].as_array() else {
         eprintln!("canvas: no widgets in response");
@@ -427,7 +430,11 @@ fn widget_create(env: &CanvasEnv, args: &[String]) -> i32 {
     };
 
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp) {
-        let data = if v.get("data").is_some() { &v["data"] } else { &v };
+        let data = if v.get("data").is_some() {
+            &v["data"]
+        } else {
+            &v
+        };
         let id = data["id"].as_str().unwrap_or("?");
         println!("Created {widget_type} widget: {id}");
     }

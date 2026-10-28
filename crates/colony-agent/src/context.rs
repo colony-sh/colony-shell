@@ -66,9 +66,7 @@ impl ContextManager {
                 .iter()
                 .map(|b| match b {
                     crate::provider::ContentBlock::Text { text } => text.len(),
-                    crate::provider::ContentBlock::ToolUse { input, .. } => {
-                        input.to_string().len()
-                    }
+                    crate::provider::ContentBlock::ToolUse { input, .. } => input.to_string().len(),
                     crate::provider::ContentBlock::ToolResult { content, .. } => content.len(),
                 })
                 .sum(),
@@ -334,10 +332,7 @@ mod tests {
     #[test]
     fn test_utilization() {
         let mut manager = ContextManager::new(ContextConfig::new(1000));
-        let messages = vec![make_message(
-            MessageRole::User,
-            &"x".repeat(2000),
-        )];
+        let messages = vec![make_message(MessageRole::User, &"x".repeat(2000))];
         manager.update_estimate(&messages);
         assert!(manager.utilization() > 0.0);
     }
@@ -347,10 +342,7 @@ mod tests {
         let mut manager = ContextManager::new(ContextConfig::new(1000));
         assert_eq!(manager.remaining_tokens(), 1000);
 
-        let messages = vec![make_message(
-            MessageRole::User,
-            &"x".repeat(400),
-        )];
+        let messages = vec![make_message(MessageRole::User, &"x".repeat(400))];
         manager.update_estimate(&messages);
         assert!(manager.remaining_tokens() < 1000);
     }

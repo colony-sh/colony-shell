@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::{RecipeError, Result};
-use crate::recipe::{Recipe, SkillDef, CommandDef, McpServerConfig};
+use crate::recipe::{CommandDef, McpServerConfig, Recipe, SkillDef};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConflictKind {
@@ -51,10 +51,7 @@ pub struct ComposedRecipe {
     pub resolution_order: Vec<String>,
 }
 
-pub fn topological_sort(
-    recipes: &HashMap<String, Recipe>,
-    root: &str,
-) -> Result<Vec<String>> {
+pub fn topological_sort(recipes: &HashMap<String, Recipe>, root: &str) -> Result<Vec<String>> {
     let mut in_degree: HashMap<&str, usize> = HashMap::new();
     let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut all_names: HashSet<&str> = HashSet::new();
@@ -73,10 +70,7 @@ pub fn topological_sort(
 
         for import in &recipe.meta.imports {
             let import_str = import.as_str();
-            adjacency
-                .entry(import_str)
-                .or_default()
-                .push(name);
+            adjacency.entry(import_str).or_default().push(name);
             *in_degree.entry(name).or_insert(0) += 1;
 
             if !all_names.contains(import_str) {
@@ -126,10 +120,7 @@ pub fn topological_sort(
     Ok(order)
 }
 
-pub fn detect_conflicts(
-    recipes: &HashMap<String, Recipe>,
-    order: &[String],
-) -> Vec<MergeConflict> {
+pub fn detect_conflicts(recipes: &HashMap<String, Recipe>, order: &[String]) -> Vec<MergeConflict> {
     let mut skill_sources: HashMap<String, Vec<String>> = HashMap::new();
     let mut command_sources: HashMap<String, Vec<String>> = HashMap::new();
     let mut server_sources: HashMap<String, Vec<String>> = HashMap::new();
@@ -193,10 +184,7 @@ pub fn detect_conflicts(
     conflicts
 }
 
-pub fn compose(
-    recipes: &HashMap<String, Recipe>,
-    root_name: &str,
-) -> Result<ComposedRecipe> {
+pub fn compose(recipes: &HashMap<String, Recipe>, root_name: &str) -> Result<ComposedRecipe> {
     let order = topological_sort(recipes, root_name)?;
     let conflicts = detect_conflicts(recipes, &order);
 
@@ -255,7 +243,7 @@ pub fn compose(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::{RecipeMeta, PromptConfig, ToolsConfig, ModelConfig, BehaviorConfig};
+    use crate::recipe::{BehaviorConfig, ModelConfig, PromptConfig, RecipeMeta, ToolsConfig};
 
     fn make_recipe(name: &str, imports: Vec<&str>) -> Recipe {
         Recipe {
@@ -301,10 +289,7 @@ mod tests {
         recipes.insert("base".to_string(), make_recipe("base", vec![]));
         recipes.insert("left".to_string(), make_recipe("left", vec!["base"]));
         recipes.insert("right".to_string(), make_recipe("right", vec!["base"]));
-        recipes.insert(
-            "top".to_string(),
-            make_recipe("top", vec!["left", "right"]),
-        );
+        recipes.insert("top".to_string(), make_recipe("top", vec!["left", "right"]));
 
         let order = topological_sort(&recipes, "top").unwrap();
         assert_eq!(order[0], "base");

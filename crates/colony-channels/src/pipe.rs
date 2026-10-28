@@ -27,8 +27,7 @@ impl PipePair {
     /// Create a new pipe pair
     pub fn new() -> std::io::Result<Self> {
         // SAFETY: pipe() returns two valid fds on success
-        let (read_fd, write_fd) = nix::unistd::pipe()
-            .map_err(std::io::Error::other)?;
+        let (read_fd, write_fd) = nix::unistd::pipe().map_err(std::io::Error::other)?;
         Ok(Self {
             read_end: read_fd,
             write_end: write_fd,
@@ -104,15 +103,12 @@ impl ChannelPipes {
             let write_fd = pipe.write_raw();
 
             // Close read end in child (belongs to parent)
-            nix::unistd::close(pipe.read_raw())
-                .map_err(std::io::Error::other)?;
+            nix::unistd::close(pipe.read_raw()).map_err(std::io::Error::other)?;
 
             // dup2 write end onto the target channel fd
             if write_fd != target_fd {
-                nix::unistd::dup2(write_fd, target_fd)
-                    .map_err(std::io::Error::other)?;
-                nix::unistd::close(write_fd)
-                    .map_err(std::io::Error::other)?;
+                nix::unistd::dup2(write_fd, target_fd).map_err(std::io::Error::other)?;
+                nix::unistd::close(write_fd).map_err(std::io::Error::other)?;
             }
         }
         Ok(())
@@ -123,8 +119,7 @@ impl ChannelPipes {
     /// Call this in the parent after forking. The parent only needs the read ends.
     pub fn close_child_ends(&mut self) -> std::io::Result<()> {
         for pipe in self.pipes.values() {
-            nix::unistd::close(pipe.write_raw())
-                .map_err(std::io::Error::other)?;
+            nix::unistd::close(pipe.write_raw()).map_err(std::io::Error::other)?;
         }
         Ok(())
     }
@@ -154,8 +149,7 @@ pub fn read_available(fd: RawFd) -> std::io::Result<Vec<u8>> {
 
     loop {
         // SAFETY: fd is valid, buf is properly sized
-        let n = nix::unistd::read(fd, &mut buf)
-            .map_err(std::io::Error::other)?;
+        let n = nix::unistd::read(fd, &mut buf).map_err(std::io::Error::other)?;
 
         if n == 0 {
             break;
@@ -232,7 +226,11 @@ mod tests {
 
         let msg = b"test message through pipe";
         // SAFETY: write_fd is valid from ChannelPipes
-        nix::unistd::write(unsafe { std::os::fd::BorrowedFd::borrow_raw(write_fd) }, msg).unwrap();
+        nix::unistd::write(
+            unsafe { std::os::fd::BorrowedFd::borrow_raw(write_fd) },
+            msg,
+        )
+        .unwrap();
 
         let mut buf = [0u8; 128];
         let n = nix::unistd::read(read_fd, &mut buf).unwrap();

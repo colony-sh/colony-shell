@@ -41,8 +41,8 @@ pub use recipe::{
     RecipeMeta, SkillDef, ToolApprovalConfig, ToolsConfig,
 };
 pub use registry::{
-    validate_recipe_dir, recipe_package_files, InstalledRecipe, RecipeRegistry,
-    RegistryManifest, RECIPE_OPTIONAL_FILES, RECIPE_REQUIRED_FILES,
+    recipe_package_files, validate_recipe_dir, InstalledRecipe, RecipeRegistry, RegistryManifest,
+    RECIPE_OPTIONAL_FILES, RECIPE_REQUIRED_FILES,
 };
 
 pub use approval::{ApprovalDecision, ApprovalEnforcer};
@@ -52,7 +52,7 @@ pub use executor::{
     ShellAction, SkillAction,
 };
 pub use mcp_lifecycle::{
-    build_server_command, validate_server_config, McpLifecycleManager, McpToolInfo, ManagedServer,
+    build_server_command, validate_server_config, ManagedServer, McpLifecycleManager, McpToolInfo,
     ServerStatus,
 };
 pub use skill::{ResolvedSkill, SkillEngine, SkillMatch, TriggerKind};

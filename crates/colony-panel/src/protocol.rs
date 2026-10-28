@@ -498,7 +498,8 @@ mod tests {
 
     #[tokio::test]
     async fn debug_lines_outside_frame_are_ignored() {
-        let input = "some debug output\nanother debug line\n---FRAME---\n{\"text\":\"ok\"}\n---FRAME---\n";
+        let input =
+            "some debug output\nanother debug line\n---FRAME---\n{\"text\":\"ok\"}\n---FRAME---\n";
         let mut parser = FrameParser::new(make_reader(input));
 
         let msg = parser.next_message().await.unwrap().unwrap();

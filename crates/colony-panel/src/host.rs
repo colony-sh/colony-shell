@@ -206,11 +206,8 @@ impl PanelHost {
             // Try to read a message with a very short timeout.
             // We read *before* checking exit so buffered output from a
             // fast-exiting process is still consumed.
-            match tokio::time::timeout(
-                std::time::Duration::from_millis(5),
-                slot.read_message(),
-            )
-            .await
+            match tokio::time::timeout(std::time::Duration::from_millis(5), slot.read_message())
+                .await
             {
                 Ok(Ok(Some(msg))) => {
                     if let PanelMessage::Frame(ref lines) = msg {
@@ -263,7 +260,12 @@ impl PanelHost {
     /// Send a tuple event to all panels whose subscriptions match the key.
     pub async fn broadcast_tuple(&mut self, key: &str, value: &serde_json::Value) {
         for slot in self.slots.values_mut() {
-            if slot.config().subscriptions.iter().any(|s| s == key || s == "*") {
+            if slot
+                .config()
+                .subscriptions
+                .iter()
+                .any(|s| s == key || s == "*")
+            {
                 let _ = slot
                     .send_event(&InputEvent::Tuple {
                         data: serde_json::json!({ "key": key, "value": value }),
@@ -421,7 +423,9 @@ impl PanelHost {
             .await?;
 
         // Auto-group panels at the same position
-        self.groups.entry(position).or_insert_with(|| PositionGroup::new(layout_mode));
+        self.groups
+            .entry(position)
+            .or_insert_with(|| PositionGroup::new(layout_mode));
         let group = self.groups.get_mut(&position).unwrap();
         group.mode = layout_mode;
 
@@ -447,8 +451,10 @@ impl PanelHost {
     pub async fn toggle_hotkey(&mut self, hotkey: &str) {
         // If panels are currently active for this hotkey, remove them
         if let Some(ids) = self.hotkey_active.remove(hotkey) {
-            let live_ids: Vec<PanelId> =
-                ids.into_iter().filter(|id| self.slots.contains_key(id)).collect();
+            let live_ids: Vec<PanelId> = ids
+                .into_iter()
+                .filter(|id| self.slots.contains_key(id))
+                .collect();
             if !live_ids.is_empty() {
                 for id in live_ids {
                     self.remove_panel(id).await;
@@ -484,9 +490,7 @@ impl PanelHost {
                 continue;
             };
 
-            let mode = *position_modes
-                .entry(position)
-                .or_insert(LayoutMode::Tabs);
+            let mode = *position_modes.entry(position).or_insert(LayoutMode::Tabs);
             let group = self
                 .groups
                 .entry(position)
@@ -540,7 +544,9 @@ impl PanelHost {
         let position = specs[0].position;
 
         // Ensure the group exists
-        self.groups.entry(position).or_insert_with(|| PositionGroup::new(mode));
+        self.groups
+            .entry(position)
+            .or_insert_with(|| PositionGroup::new(mode));
         self.groups.get_mut(&position).unwrap().mode = mode;
 
         let mut ids = Vec::new();
@@ -570,7 +576,10 @@ impl PanelHost {
 
         if let Some(hk) = hotkey {
             for spec in specs {
-                self.hotkey_specs.entry(hk.to_string()).or_default().push(spec);
+                self.hotkey_specs
+                    .entry(hk.to_string())
+                    .or_default()
+                    .push(spec);
             }
             self.hotkey_active
                 .entry(hk.to_string())
@@ -679,7 +688,15 @@ mod tests {
         let script = "sleep 60";
         let mut host = PanelHost::new();
         let id = host
-            .add_panel("sh", &["-c", script], PanelPosition::Right, 1, 15, 40, false)
+            .add_panel(
+                "sh",
+                &["-c", script],
+                PanelPosition::Right,
+                1,
+                15,
+                40,
+                false,
+            )
             .await
             .unwrap();
 

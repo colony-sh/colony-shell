@@ -228,8 +228,7 @@ mod tests {
 
     #[test]
     fn test_token_budget_custom_thresholds() {
-        let budget = TokenBudget::new(100)
-            .with_thresholds(0.50, 0.80);
+        let budget = TokenBudget::new(100).with_thresholds(0.50, 0.80);
 
         assert_eq!(budget.check(49), BudgetWarning::None);
         assert_eq!(budget.check(50), BudgetWarning::Warning);
@@ -297,8 +296,7 @@ mod tests {
 
     #[test]
     fn test_tracker_with_budget() {
-        let mut tracker = TokenTracker::new()
-            .with_budget(TokenBudget::new(200));
+        let mut tracker = TokenTracker::new().with_budget(TokenBudget::new(200));
 
         let warning = tracker.record(RequestUsage {
             input_tokens: 50,
@@ -327,8 +325,7 @@ mod tests {
 
     #[test]
     fn test_tracker_budget_remaining() {
-        let mut tracker = TokenTracker::new()
-            .with_budget(TokenBudget::new(1000));
+        let mut tracker = TokenTracker::new().with_budget(TokenBudget::new(1000));
 
         assert_eq!(tracker.budget_remaining(), Some(1000));
 

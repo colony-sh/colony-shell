@@ -92,10 +92,7 @@ pub enum TraceEvent {
     LineExit { line: u32, duration_us: u64 },
 
     /// First-occurrence concept explanation (X-Ray teach mode).
-    Concept {
-        name: String,
-        explanation: String,
-    },
+    Concept { name: String, explanation: String },
 
     /// Debugger hit a breakpoint.
     BreakpointHit {

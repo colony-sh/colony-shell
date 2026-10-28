@@ -80,11 +80,7 @@ pub struct McpSession {
 
 impl McpSession {
     /// Create a new MCP session
-    pub fn new(
-        pool: McpConnectionPool,
-        codegen: McpCodegen,
-        tuple_space: TupleSpace,
-    ) -> Self {
+    pub fn new(pool: McpConnectionPool, codegen: McpCodegen, tuple_space: TupleSpace) -> Self {
         Self {
             pool,
             codegen,
@@ -172,17 +168,15 @@ impl McpSession {
         {
             Ok(result) => {
                 let is_error = result.is_error.unwrap_or(false);
-                let content = result
-                    .structured_content
-                    .unwrap_or_else(|| {
-                        Value::Array(
-                            result
-                                .content
-                                .iter()
-                                .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
-                                .collect(),
-                        )
-                    });
+                let content = result.structured_content.unwrap_or_else(|| {
+                    Value::Array(
+                        result
+                            .content
+                            .iter()
+                            .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
+                            .collect(),
+                    )
+                });
 
                 ToolCallResponse {
                     id: request.id.clone(),

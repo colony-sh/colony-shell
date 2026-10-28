@@ -31,14 +31,10 @@ impl TriggerKind {
             TriggerKind::CommandPrefix(prefix) => {
                 input == prefix || input.starts_with(&format!("{prefix} "))
             }
-            TriggerKind::Regex(pattern) => {
-                regex_matches(pattern, input)
-            }
-            TriggerKind::Keyword(keyword) => {
-                input
-                    .split_whitespace()
-                    .any(|w| w.eq_ignore_ascii_case(keyword))
-            }
+            TriggerKind::Regex(pattern) => regex_matches(pattern, input),
+            TriggerKind::Keyword(keyword) => input
+                .split_whitespace()
+                .any(|w| w.eq_ignore_ascii_case(keyword)),
         }
     }
 }
@@ -116,9 +112,7 @@ impl Default for SkillEngine {
 
 impl SkillEngine {
     pub fn new() -> Self {
-        Self {
-            skills: Vec::new(),
-        }
+        Self { skills: Vec::new() }
     }
 
     pub fn from_skill_defs(defs: &HashMap<String, SkillDef>) -> Self {
@@ -130,10 +124,7 @@ impl SkillEngine {
     }
 
     pub fn register(&mut self, name: &str, def: &SkillDef) {
-        let trigger_str = def
-            .trigger
-            .as_deref()
-            .unwrap_or(name);
+        let trigger_str = def.trigger.as_deref().unwrap_or(name);
         let trigger_kind = TriggerKind::parse(trigger_str);
 
         self.skills.push(ResolvedSkill {
@@ -180,11 +171,7 @@ impl SkillEngine {
 fn extract_arguments(input: &str, trigger: &TriggerKind) -> String {
     match trigger {
         TriggerKind::CommandPrefix(prefix) => {
-            input
-                .strip_prefix(prefix)
-                .unwrap_or("")
-                .trim()
-                .to_string()
+            input.strip_prefix(prefix).unwrap_or("").trim().to_string()
         }
         TriggerKind::Regex(_) | TriggerKind::Keyword(_) => input.to_string(),
     }
@@ -347,7 +334,10 @@ mod tests {
     #[test]
     fn test_extract_arguments_command_prefix() {
         let trigger = TriggerKind::CommandPrefix("/review".to_string());
-        assert_eq!(extract_arguments("/review src/lib.rs", &trigger), "src/lib.rs");
+        assert_eq!(
+            extract_arguments("/review src/lib.rs", &trigger),
+            "src/lib.rs"
+        );
         assert_eq!(extract_arguments("/review", &trigger), "");
     }
 

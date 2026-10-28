@@ -2072,10 +2072,7 @@ fn builtin_context(args: &[String], channels: &mut ChannelManager) -> Result<Bui
     let result = colony_context::builtin::execute(&str_args, &store, project_id);
 
     // For "add" subcommand, also write to channel as side-effect
-    if args.first().map(String::as_str) == Some("add")
-        && args.len() >= 2
-        && args[1] != "--file"
-    {
+    if args.first().map(String::as_str) == Some("add") && args.len() >= 2 && args[1] != "--file" {
         let text = args[1..].join(" ");
         if let Some(ctx_channel) = channels.context() {
             ctx_channel.add_text(&text);
@@ -2220,10 +2217,9 @@ fn builtin_tool(args: &[String], channels: &mut ChannelManager) -> Result<Builti
                 } else {
                     for entry in entries {
                         let status = match &entry.result {
-                            Some(r) if r.success => format!(
-                                "\x1b[32mok\x1b[0m ({}ms)",
-                                r.duration_ms,
-                            ),
+                            Some(r) if r.success => {
+                                format!("\x1b[32mok\x1b[0m ({}ms)", r.duration_ms,)
+                            }
                             Some(r) => format!(
                                 "\x1b[31mfail\x1b[0m: {}",
                                 r.error.as_deref().unwrap_or("unknown"),
@@ -6672,14 +6668,25 @@ fn colony_plugin(args: &[String]) -> Result<BuiltinResult> {
             let exe_path = std::env::current_exe().unwrap_or_default();
             let possible_sources = [
                 // Next to the binary (installed via release tarball)
-                exe_path.parent().unwrap_or(std::path::Path::new(".")).join("../share/colony/claude-plugin"),
+                exe_path
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .join("../share/colony/claude-plugin"),
                 // In the source tree
-                exe_path.parent().unwrap_or(std::path::Path::new(".")).join("../../claude-plugin"),
+                exe_path
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .join("../../claude-plugin"),
                 // Common dev path
-                dirs::home_dir().unwrap_or_default().join("src/github.com/colony-sh/colony-shell/claude-plugin"),
+                dirs::home_dir()
+                    .unwrap_or_default()
+                    .join("src/github.com/colony-sh/colony-shell/claude-plugin"),
             ];
 
-            let Some(source) = possible_sources.iter().find(|p| p.join(".claude-plugin").exists()) else {
+            let Some(source) = possible_sources
+                .iter()
+                .find(|p| p.join(".claude-plugin").exists())
+            else {
                 eprintln!("colony plugin: could not find plugin source files");
                 eprintln!("Expected claude-plugin/ directory with .claude-plugin/plugin.json");
                 return Ok(BuiltinResult::Failure(1));
@@ -6688,7 +6695,11 @@ fn colony_plugin(args: &[String]) -> Result<BuiltinResult> {
             // Copy plugin files
             let dirs_to_copy = [".claude-plugin", "skills", "commands", "hooks"];
             if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
-                eprintln!("colony plugin: failed to create {}: {}", plugin_dir.display(), e);
+                eprintln!(
+                    "colony plugin: failed to create {}: {}",
+                    plugin_dir.display(),
+                    e
+                );
                 return Ok(BuiltinResult::Failure(1));
             }
 
@@ -6704,7 +6715,10 @@ fn colony_plugin(args: &[String]) -> Result<BuiltinResult> {
                 }
             }
 
-            println!("Installed Colony Claude Code plugin to {}", plugin_dir.display());
+            println!(
+                "Installed Colony Claude Code plugin to {}",
+                plugin_dir.display()
+            );
             println!("Run /reload-plugins in Claude Code to activate.");
             Ok(BuiltinResult::Success(0))
         }
@@ -6720,7 +6734,10 @@ fn colony_plugin(args: &[String]) -> Result<BuiltinResult> {
                 // Count skills
                 let skills_dir = plugin_dir.join("skills");
                 if let Ok(entries) = std::fs::read_dir(&skills_dir) {
-                    let count = entries.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count();
+                    let count = entries
+                        .filter_map(|e| e.ok())
+                        .filter(|e| e.path().is_dir())
+                        .count();
                     println!("  Skills: {}", count);
                 }
             } else {
@@ -6756,7 +6773,10 @@ fn colony_plugin(args: &[String]) -> Result<BuiltinResult> {
             Ok(BuiltinResult::Success(0))
         }
         other => {
-            eprintln!("colony plugin: unknown subcommand '{}'. Try 'colony plugin help'.", other);
+            eprintln!(
+                "colony plugin: unknown subcommand '{}'. Try 'colony plugin help'.",
+                other
+            );
             Ok(BuiltinResult::Failure(1))
         }
     }

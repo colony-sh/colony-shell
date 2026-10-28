@@ -246,10 +246,7 @@ mod tests {
             GoalStatus::parse("completed").unwrap(),
             GoalStatus::Completed
         );
-        assert_eq!(
-            GoalStatus::parse("blocked").unwrap(),
-            GoalStatus::Blocked
-        );
+        assert_eq!(GoalStatus::parse("blocked").unwrap(), GoalStatus::Blocked);
         assert_eq!(
             GoalStatus::parse("cancelled").unwrap(),
             GoalStatus::Cancelled

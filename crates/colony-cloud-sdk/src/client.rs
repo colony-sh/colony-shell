@@ -224,9 +224,7 @@ fn parse_sse_stream(
             loop {
                 // Try to extract a complete SSE event from buffer
                 while let Some(line_end) = state.buffer.find('\n') {
-                    let line = state.buffer[..line_end]
-                        .trim_end_matches('\r')
-                        .to_string();
+                    let line = state.buffer[..line_end].trim_end_matches('\r').to_string();
                     state.buffer = state.buffer[line_end + 1..].to_string();
 
                     if line.is_empty() {

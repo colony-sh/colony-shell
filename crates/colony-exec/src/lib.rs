@@ -13,8 +13,8 @@ pub mod builtin_redirect;
 mod builtins;
 pub mod canvas_builtin;
 mod command;
-pub mod draw_builtin;
 mod command_sub;
+pub mod draw_builtin;
 mod error;
 pub mod events;
 pub mod file_tree;
@@ -3928,15 +3928,10 @@ impl Executor {
             };
 
             // Debug/X-Ray hook: notify controller after dispatch
-            if let (Some(start), Some(ref debug)) =
-                (debug_start, &self.debug_controller)
-            {
+            if let (Some(start), Some(ref debug)) = (debug_start, &self.debug_controller) {
                 let elapsed = start.elapsed();
                 let mut ctrl = debug.lock().await;
-                ctrl.on_statement_exit(
-                    stmt.span().start.line,
-                    elapsed.as_micros() as u64,
-                );
+                ctrl.on_statement_exit(stmt.span().start.line, elapsed.as_micros() as u64);
             }
 
             result

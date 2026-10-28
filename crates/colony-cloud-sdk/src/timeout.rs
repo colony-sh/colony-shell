@@ -415,11 +415,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_timeout_success() {
-        let result = with_timeout(
-            Duration::from_secs(5),
-            OperationType::Chat,
-            async { Ok::<_, CloudError>(42) },
-        )
+        let result = with_timeout(Duration::from_secs(5), OperationType::Chat, async {
+            Ok::<_, CloudError>(42)
+        })
         .await;
 
         assert_eq!(result.unwrap(), 42);
@@ -427,14 +425,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_timeout_expires() {
-        let result = with_timeout(
-            Duration::from_millis(10),
-            OperationType::Chat,
-            async {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                Ok::<_, CloudError>(42)
-            },
-        )
+        let result = with_timeout(Duration::from_millis(10), OperationType::Chat, async {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            Ok::<_, CloudError>(42)
+        })
         .await;
 
         assert!(result.is_err());
@@ -442,16 +436,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_timeout_error_passthrough() {
-        let result = with_timeout(
-            Duration::from_secs(5),
-            OperationType::Chat,
-            async {
-                Err::<i32, _>(CloudError::Api {
-                    status: 400,
-                    message: "bad request".to_string(),
-                })
-            },
-        )
+        let result = with_timeout(Duration::from_secs(5), OperationType::Chat, async {
+            Err::<i32, _>(CloudError::Api {
+                status: 400,
+                message: "bad request".to_string(),
+            })
+        })
         .await;
 
         assert!(matches!(result, Err(CloudError::Api { status: 400, .. })));

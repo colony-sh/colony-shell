@@ -86,19 +86,14 @@ mod inner {
                     Some(&self.config.scope),
                 )
                 .await
-                .map_err(|e| {
-                    AgentError::Protocol(format!("memory search failed: {}", e))
-                })?;
+                .map_err(|e| AgentError::Protocol(format!("memory search failed: {}", e)))?;
 
             let filtered: Vec<SearchResult> = results
                 .into_iter()
                 .filter(|r| r.distance <= self.config.relevance_threshold)
                 .collect();
 
-            debug!(
-                "Found {} relevant memories for query",
-                filtered.len()
-            );
+            debug!("Found {} relevant memories for query", filtered.len());
 
             Ok(filtered)
         }
@@ -181,15 +176,17 @@ mod inner {
                     })),
                 )
                 .await
-                .map_err(|e| {
-                    AgentError::Protocol(format!("memory store failed: {}", e))
-                })?;
+                .map_err(|e| AgentError::Protocol(format!("memory store failed: {}", e)))?;
 
             info!(
                 "Stored memory {} (importance: {:.2}): {}",
                 id,
                 importance,
-                if summary.len() > 80 { &summary[..80] } else { &summary }
+                if summary.len() > 80 {
+                    &summary[..80]
+                } else {
+                    &summary
+                }
             );
 
             Ok(Some(id))
@@ -221,8 +218,14 @@ mod inner {
 
         // Preference/configuration indicators
         let preference_words = [
-            "prefer", "always", "never", "remember", "important",
-            "configuration", "setting", "convention",
+            "prefer",
+            "always",
+            "never",
+            "remember",
+            "important",
+            "configuration",
+            "setting",
+            "convention",
         ];
         for word in &preference_words {
             if user_lower.contains(word) || response_lower.contains(word) {
@@ -233,8 +236,12 @@ mod inner {
 
         // Technical decisions
         let decision_words = [
-            "decided", "choosing", "approach", "architecture",
-            "pattern", "strategy",
+            "decided",
+            "choosing",
+            "approach",
+            "architecture",
+            "pattern",
+            "strategy",
         ];
         for word in &decision_words {
             if user_lower.contains(word) || response_lower.contains(word) {
@@ -244,9 +251,7 @@ mod inner {
         }
 
         // Error resolution
-        if user_lower.contains("error")
-            || user_lower.contains("fix")
-            || user_lower.contains("bug")
+        if user_lower.contains("error") || user_lower.contains("fix") || user_lower.contains("bug")
         {
             score += 0.1;
         }

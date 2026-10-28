@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ClientInfo, Implementation, ProtocolVersion, Tool,
 };
-use rmcp::service::{RunningService, RoleClient};
+use rmcp::service::{RoleClient, RunningService};
 use rmcp::transport::TokioChildProcess;
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
@@ -127,20 +127,17 @@ impl McpConnection {
             command.env(key, value);
         }
 
-        let transport = TokioChildProcess::new(command).map_err(|e| {
-            McpError::SpawnFailed {
-                name: self.config.name.clone(),
-                source: e,
-            }
+        let transport = TokioChildProcess::new(command).map_err(|e| McpError::SpawnFailed {
+            name: self.config.name.clone(),
+            source: e,
         })?;
 
-        let service =
-            rmcp::service::serve_client(ColonyClientHandler, transport)
-                .await
-                .map_err(|e| McpError::InitFailed {
-                    name: self.config.name.clone(),
-                    message: e.to_string(),
-                })?;
+        let service = rmcp::service::serve_client(ColonyClientHandler, transport)
+            .await
+            .map_err(|e| McpError::InitFailed {
+                name: self.config.name.clone(),
+                message: e.to_string(),
+            })?;
 
         info!(
             server = %self.config.name,
@@ -192,14 +189,14 @@ impl McpConnection {
         tool_name: &str,
         arguments: Option<serde_json::Map<String, Value>>,
     ) -> Result<CallToolResult> {
-        let service = self.service.as_ref().ok_or_else(|| McpError::NotConnected {
-            name: self.config.name.clone(),
-        })?;
+        let service = self
+            .service
+            .as_ref()
+            .ok_or_else(|| McpError::NotConnected {
+                name: self.config.name.clone(),
+            })?;
 
-        let tool_exists = self
-            .tools
-            .iter()
-            .any(|t| t.tool.name.as_ref() == tool_name);
+        let tool_exists = self.tools.iter().any(|t| t.tool.name.as_ref() == tool_name);
 
         if !tool_exists {
             return Err(McpError::ToolNotFound {
@@ -291,9 +288,12 @@ impl McpConnection {
 
     /// Refresh the tool list from the server
     pub async fn refresh_tools(&mut self) -> Result<()> {
-        let service = self.service.as_ref().ok_or_else(|| McpError::NotConnected {
-            name: self.config.name.clone(),
-        })?;
+        let service = self
+            .service
+            .as_ref()
+            .ok_or_else(|| McpError::NotConnected {
+                name: self.config.name.clone(),
+            })?;
 
         let tools_result =
             service

@@ -108,12 +108,7 @@ pub fn builtin_draw(args: &[String]) -> Result<BuiltinResult> {
 fn curl_get(api: &str, token: &str, path: &str) -> Option<String> {
     let url = format!("{api}{path}");
     let output = Command::new("curl")
-        .args([
-            "-s",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            &url,
-        ])
+        .args(["-s", "-H", &format!("Authorization: Bearer {token}"), &url])
         .output()
         .ok()?;
 
@@ -245,11 +240,7 @@ fn parse_draw_opts(args: &[String], defaults: DrawOpts) -> (DrawOpts, Vec<String
 }
 
 /// Build the JSON body for creating a whiteboard item.
-fn build_item_body(
-    item_type: &str,
-    properties: &serde_json::Value,
-    z_index: i32,
-) -> String {
+fn build_item_body(item_type: &str, properties: &serde_json::Value, z_index: i32) -> String {
     let body = serde_json::json!({
         "item_type": item_type,
         "properties": properties,
@@ -267,7 +258,11 @@ fn post_item(env: &DrawEnv, item_type: &str, body: &str) -> i32 {
     };
 
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp) {
-        let data = if v.get("data").is_some() { &v["data"] } else { &v };
+        let data = if v.get("data").is_some() {
+            &v["data"]
+        } else {
+            &v
+        };
         let id = data["id"].as_str().unwrap_or("?");
         println!("Created {item_type}: {id}");
     }
@@ -383,14 +378,18 @@ fn cmd_connector(env: &DrawEnv, args: &[String]) -> i32 {
     let from_id = match args.first() {
         Some(id) => id.clone(),
         None => {
-            eprintln!("Usage: draw connector <from-widget-id> <to-widget-id> [--color C] [--label L]");
+            eprintln!(
+                "Usage: draw connector <from-widget-id> <to-widget-id> [--color C] [--label L]"
+            );
             return 1;
         }
     };
     let to_id = match args.get(1) {
         Some(id) => id.clone(),
         None => {
-            eprintln!("Usage: draw connector <from-widget-id> <to-widget-id> [--color C] [--label L]");
+            eprintln!(
+                "Usage: draw connector <from-widget-id> <to-widget-id> [--color C] [--label L]"
+            );
             return 1;
         }
     };

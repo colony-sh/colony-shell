@@ -10,9 +10,9 @@ use crate::sources::{CommandSource, GitSource, PathSource};
 
 /// Shell builtins for the default engine.
 const BUILTINS: &[&str] = &[
-    "alias", "bg", "cd", "echo", "eval", "exec", "exit", "export", "fg", "hash", "history",
-    "jobs", "kill", "let", "local", "pwd", "read", "readonly", "return", "set", "shift",
-    "source", "test", "trap", "type", "ulimit", "umask", "unalias", "unset", "wait",
+    "alias", "bg", "cd", "echo", "eval", "exec", "exit", "export", "fg", "hash", "history", "jobs",
+    "kill", "let", "local", "pwd", "read", "readonly", "return", "set", "shift", "source", "test",
+    "trap", "type", "ulimit", "umask", "unalias", "unset", "wait",
 ];
 
 /// Orchestrates multiple recommendation sources, aggregates and ranks results.
@@ -160,10 +160,7 @@ mod tests {
 
     #[test]
     fn engine_returns_sorted_by_confidence() {
-        let history = HistorySource::new(vec![
-            "git status".to_string(),
-            "git commit".to_string(),
-        ]);
+        let history = HistorySource::new(vec!["git status".to_string(), "git commit".to_string()]);
         let mut engine = RecommendationEngine::new();
         engine.add_source(Box::new(history));
 
@@ -207,10 +204,7 @@ mod tests {
         use crate::sources::CommandSource;
 
         let history = HistorySource::new(vec!["git push origin main".to_string()]);
-        let commands = CommandSource::new(
-            vec![],
-            vec!["git".to_string(), "grep".to_string()],
-        );
+        let commands = CommandSource::new(vec![], vec!["git".to_string(), "grep".to_string()]);
 
         let mut engine = RecommendationEngine::new();
         engine.add_source(Box::new(history));

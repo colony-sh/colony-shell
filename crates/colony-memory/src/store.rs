@@ -707,15 +707,12 @@ mod tests {
         let store = MemoryStore::open(dir.path()).await.unwrap();
 
         let session = Scope::Session("list-test".to_string());
+        store.store("Entry 1", session.clone(), None).await.unwrap();
+        store.store("Entry 2", session.clone(), None).await.unwrap();
         store
-            .store("Entry 1", session.clone(), None)
+            .store("Global entry", Scope::Global, None)
             .await
             .unwrap();
-        store
-            .store("Entry 2", session.clone(), None)
-            .await
-            .unwrap();
-        store.store("Global entry", Scope::Global, None).await.unwrap();
 
         let scoped = store.list_scope(&session).await.unwrap();
         assert_eq!(scoped.len(), 2);

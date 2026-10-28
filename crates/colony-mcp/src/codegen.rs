@@ -107,9 +107,7 @@ impl McpCodegen {
     /// Check if generated code exists and is current for a schema hash
     pub fn is_cached(&self, tools: &[ToolInfo]) -> bool {
         let hash = self.compute_schema_hash(tools);
-        self.cache
-            .get(&hash)
-            .is_some_and(|path| path.exists())
+        self.cache.get(&hash).is_some_and(|path| path.exists())
     }
 
     /// Output directory for a server
@@ -200,10 +198,11 @@ impl McpCodegen {
         }
     }
 
-    fn extract_params(&self, schema: &Arc<serde_json::Map<String, serde_json::Value>>) -> Vec<ToolParam> {
-        let properties = schema
-            .get("properties")
-            .and_then(|v| v.as_object());
+    fn extract_params(
+        &self,
+        schema: &Arc<serde_json::Map<String, serde_json::Value>>,
+    ) -> Vec<ToolParam> {
+        let properties = schema.get("properties").and_then(|v| v.as_object());
 
         let required_fields: Vec<String> = schema
             .get("required")
@@ -244,8 +243,7 @@ impl McpCodegen {
 
         for tool in tools {
             hasher.update(tool.tool.name.as_bytes());
-            let schema_bytes =
-                serde_json::to_vec(&*tool.tool.input_schema).unwrap_or_default();
+            let schema_bytes = serde_json::to_vec(&*tool.tool.input_schema).unwrap_or_default();
             hasher.update(&schema_bytes);
         }
 
@@ -320,7 +318,10 @@ fn to_pascal_case(s: &str) -> String {
         .filter(|part| !part.is_empty())
         .map(|part| {
             let mut chars = part.chars();
-            let first = chars.next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+            let first = chars
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_default();
             format!("{}{}", first, chars.as_str())
         })
         .collect()
@@ -330,7 +331,10 @@ fn to_pascal_case(s: &str) -> String {
 fn to_camel_case(s: &str) -> String {
     let pascal = to_pascal_case(s);
     let mut chars = pascal.chars();
-    let first = chars.next().map(|c| c.to_lowercase().to_string()).unwrap_or_default();
+    let first = chars
+        .next()
+        .map(|c| c.to_lowercase().to_string())
+        .unwrap_or_default();
     format!("{}{}", first, chars.as_str())
 }
 
@@ -443,7 +447,10 @@ mod tests {
             serde_json::json!({"type": "string", "description": "File path"}),
         );
         schema.insert("type".to_string(), serde_json::json!("object"));
-        schema.insert("properties".to_string(), serde_json::Value::Object(properties));
+        schema.insert(
+            "properties".to_string(),
+            serde_json::Value::Object(properties),
+        );
         schema.insert("required".to_string(), serde_json::json!(["path"]));
 
         let tool = rmcp::model::Tool {

@@ -355,10 +355,7 @@ mod tests {
 
     #[test]
     fn test_default_models() {
-        assert_eq!(
-            ProviderType::Cloud.default_model(),
-            "claude-3.5-sonnet"
-        );
+        assert_eq!(ProviderType::Cloud.default_model(), "claude-3.5-sonnet");
         assert_eq!(
             ProviderType::Anthropic.default_model(),
             "claude-3-5-sonnet-20241022"

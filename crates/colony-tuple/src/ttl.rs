@@ -142,11 +142,7 @@ impl TtlTupleSpace {
     /// Write a timed tuple directly
     fn out_timed(&self, timed: TimedTuple) {
         let hash = timed.tuple.len() as u64;
-        self.tuples
-            .entry(hash)
-            .or_default()
-            .get_mut()
-            .push(timed);
+        self.tuples.entry(hash).or_default().get_mut().push(timed);
 
         let (_lock, condvar) = &*self.notify;
         condvar.notify_all();
@@ -256,10 +252,7 @@ mod tests {
 
     #[test]
     fn test_timed_tuple_with_ttl() {
-        let tt = TimedTuple::with_ttl(
-            Tuple::from(vec![Value::Int(1)]),
-            Duration::seconds(3600),
-        );
+        let tt = TimedTuple::with_ttl(Tuple::from(vec![Value::Int(1)]), Duration::seconds(3600));
         assert!(!tt.is_expired());
         assert!(tt.expires_at.is_some());
     }

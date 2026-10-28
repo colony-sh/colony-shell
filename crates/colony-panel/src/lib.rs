@@ -10,10 +10,10 @@ pub mod layout;
 pub mod protocol;
 pub mod slot;
 
+pub use host::{Focus, LayoutMode, PanelHost, PanelSpec, PositionGroup};
 pub use layout::{LayoutEngine, PanelConstraints, PanelId, PanelPosition, ResolvedLayout};
 pub use protocol::{
     FrameLine, FrameParser, InputEvent, PanelConfig, PanelMessage, ProtocolError, StyleSpec,
     TupleEmit,
 };
-pub use host::{Focus, LayoutMode, PanelHost, PanelSpec, PositionGroup};
 pub use slot::PanelSlot;
