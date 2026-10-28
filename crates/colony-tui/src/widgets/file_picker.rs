@@ -155,11 +155,7 @@ impl FilePickerWidget {
             })
             .collect();
 
-        let count_info = format!(
-            " {}/{} ",
-            self.filtered.len(),
-            self.entries.len()
-        );
+        let count_info = format!(" {}/{} ", self.filtered.len(), self.entries.len());
         let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -206,10 +202,7 @@ impl FilePickerWidget {
             if !self.show_hidden && name.starts_with('.') {
                 continue;
             }
-            let is_dir = entry
-                .file_type()
-                .map(|t| t.is_dir())
-                .unwrap_or(false);
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
             let fe = FileEntry {
                 name,
                 path: entry.path(),
@@ -286,9 +279,10 @@ mod tests {
         picker.insert_char('l');
 
         // Only entries containing "al" should match
-        assert!(picker.filtered.iter().all(|&idx| {
-            picker.entries[idx].name.to_lowercase().contains("al")
-        }));
+        assert!(picker
+            .filtered
+            .iter()
+            .all(|&idx| { picker.entries[idx].name.to_lowercase().contains("al") }));
 
         let _ = fs::remove_dir_all(&dir);
     }

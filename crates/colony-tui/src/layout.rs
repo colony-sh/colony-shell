@@ -69,8 +69,8 @@ impl TuiLayout {
         let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(0),                        // body
-                Constraint::Length(STATUS_BAR_HEIGHT),      // status bar
+                Constraint::Min(0),                    // body
+                Constraint::Length(STATUS_BAR_HEIGHT), // status bar
             ])
             .split(area);
 
@@ -81,8 +81,8 @@ impl TuiLayout {
         let body_vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(0),                        // content + sidebars
-                Constraint::Length(MIN_INPUT_HEIGHT),       // input area
+                Constraint::Min(0),                   // content + sidebars
+                Constraint::Length(MIN_INPUT_HEIGHT), // input area
             ])
             .split(body);
 
@@ -92,10 +92,10 @@ impl TuiLayout {
         // Horizontal split for sidebars
         let mut constraints = Vec::new();
 
-        let left_visible = state.left_sidebar_visible
-            && area.width > MIN_MAIN_WIDTH + state.left_sidebar_width;
-        let right_visible = state.right_sidebar_visible
-            && area.width > MIN_MAIN_WIDTH + state.right_sidebar_width;
+        let left_visible =
+            state.left_sidebar_visible && area.width > MIN_MAIN_WIDTH + state.left_sidebar_width;
+        let right_visible =
+            state.right_sidebar_visible && area.width > MIN_MAIN_WIDTH + state.right_sidebar_width;
 
         if left_visible {
             constraints.push(Constraint::Length(state.left_sidebar_width));
@@ -200,7 +200,9 @@ mod tests {
         assert!(layout.left_sidebar.is_none());
         assert!(layout.right_sidebar.is_some());
 
-        let right = layout.right_sidebar.expect("right sidebar should be present");
+        let right = layout
+            .right_sidebar
+            .expect("right sidebar should be present");
         assert_eq!(right.width, DEFAULT_SIDEBAR_WIDTH);
     }
 

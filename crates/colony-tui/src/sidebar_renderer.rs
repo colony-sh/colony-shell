@@ -123,7 +123,7 @@ fn sidebar_line_to_ratatui_line(line: &ComponentLine) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use colony_ui_core::component::StyledSpan;
+    use colony_ui_core::component::{Color as UiColor, SidebarLine, Style as UiStyle, StyledSpan};
 
     fn make_line(text: &str) -> ComponentLine {
         ComponentLine::new(vec![StyledSpan::plain(text.to_string())])
@@ -188,10 +188,7 @@ mod tests {
 
     #[test]
     fn test_to_lines_with_content() {
-        let output = SidebarOutput::visible(vec![
-            make_line("first"),
-            make_line("second"),
-        ]);
+        let output = SidebarOutput::visible(vec![make_line("first"), make_line("second")]);
         let lines = SidebarRenderer::to_lines(&output);
         assert_eq!(lines.len(), 2);
     }
@@ -208,7 +205,7 @@ mod tests {
     fn test_sidebar_line_to_ratatui_line_with_icon() {
         let line = SidebarLine::new(StyledSpan::plain("file.rs".to_string()))
             .with_icon(StyledSpan::new("M", UiStyle::default().fg(UiColor::Yellow)));
-        let rat_line = sidebar_line_to_ratatui_line(&line);
+        let rat_line = sidebar_line_to_ratatui_line(&line.into());
         // icon + space + text = 3 spans
         assert_eq!(rat_line.spans.len(), 3);
     }
@@ -217,16 +214,15 @@ mod tests {
     fn test_sidebar_line_to_ratatui_line_with_metadata() {
         let line = SidebarLine::new(StyledSpan::plain("server".to_string()))
             .with_metadata(StyledSpan::new("3 tools", UiStyle::default().dim()));
-        let rat_line = sidebar_line_to_ratatui_line(&line);
+        let rat_line = sidebar_line_to_ratatui_line(&line.into());
         // text + space + metadata = 3 spans
         assert_eq!(rat_line.spans.len(), 3);
     }
 
     #[test]
     fn test_sidebar_line_to_ratatui_line_with_indent() {
-        let line = SidebarLine::new(StyledSpan::plain("indented".to_string()))
-            .with_indent(2);
-        let rat_line = sidebar_line_to_ratatui_line(&line);
+        let line = SidebarLine::new(StyledSpan::plain("indented".to_string())).with_indent(2);
+        let rat_line = sidebar_line_to_ratatui_line(&line.into());
         // indent + text = 2 spans
         assert_eq!(rat_line.spans.len(), 2);
         // Indent should be 4 spaces (2 levels * 2 spaces)
@@ -239,7 +235,7 @@ mod tests {
             .with_icon(StyledSpan::new("M", UiStyle::default().fg(UiColor::Yellow)))
             .with_metadata(StyledSpan::new("+3", UiStyle::default().fg(UiColor::Green)))
             .with_indent(1);
-        let rat_line = sidebar_line_to_ratatui_line(&line);
+        let rat_line = sidebar_line_to_ratatui_line(&line.into());
         // indent + icon + space + text + space + metadata = 6 spans
         assert_eq!(rat_line.spans.len(), 6);
     }
@@ -250,7 +246,7 @@ mod tests {
             "styled".to_string(),
             UiStyle::default().fg(UiColor::Cyan).bold(),
         ));
-        let rat_line = sidebar_line_to_ratatui_line(&line);
+        let rat_line = sidebar_line_to_ratatui_line(&line.into());
         let span = &rat_line.spans[0];
         assert_eq!(span.style.fg, Some(RatColor::Cyan));
         assert!(span.style.add_modifier.contains(Modifier::BOLD));

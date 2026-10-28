@@ -253,10 +253,7 @@ mod tests {
 
     #[test]
     fn test_next_navigation() {
-        let mut h = EditorHistory::with_entries(vec![
-            "first".to_string(),
-            "second".to_string(),
-        ]);
+        let mut h = EditorHistory::with_entries(vec!["first".to_string(), "second".to_string()]);
 
         // Navigate to oldest
         h.prev("typing");
@@ -313,10 +310,7 @@ mod tests {
 
     #[test]
     fn test_search_case_insensitive() {
-        let h = EditorHistory::with_entries(vec![
-            "Git Status".to_string(),
-            "GIT PUSH".to_string(),
-        ]);
+        let h = EditorHistory::with_entries(vec!["Git Status".to_string(), "GIT PUSH".to_string()]);
 
         let results = h.search("git");
         assert_eq!(results.len(), 2);
@@ -358,9 +352,7 @@ mod tests {
 
     #[test]
     fn test_saved_input_preserved_during_navigation() {
-        let mut h = EditorHistory::with_entries(vec![
-            "old".to_string(),
-        ]);
+        let mut h = EditorHistory::with_entries(vec!["old".to_string()]);
 
         h.prev("my current work");
         assert_eq!(h.saved_input(), "my current work");

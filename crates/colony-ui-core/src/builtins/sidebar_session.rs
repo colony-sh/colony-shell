@@ -1,6 +1,4 @@
-use crate::component::{
-    SidebarComponent, SidebarLine, SidebarOutput, TuplePattern,
-};
+use crate::component::{SidebarComponent, SidebarLine, SidebarOutput, TuplePattern};
 use crate::context::ComponentContext;
 use crate::{Color, Style, StyledSpan};
 use colony_tuple::Value;
@@ -173,16 +171,10 @@ mod tests {
     }
 
     #[test]
-    fn test_session_position() {
-        let component = SessionSidebarComponent::new();
-        assert_eq!(component.position(), SidebarPosition::Right);
-    }
-
-    #[test]
     fn test_session_render_has_lines() {
         let component = SessionSidebarComponent::new();
         let ctx = test_context();
-        let output = component.render(&ctx);
+        let output = component.render_block(&ctx);
 
         assert!(output.visible);
         // Should have shell, pid, uptime, model, hostname, cwd = 6 lines
@@ -195,7 +187,7 @@ mod tests {
         let mut ctx = test_context();
         ctx.model = None;
         ctx.hostname = None;
-        let output = component.render(&ctx);
+        let output = component.render_block(&ctx);
 
         assert!(output.visible);
         // shell, pid, uptime, cwd = 4 lines (no model, no hostname)

@@ -119,10 +119,7 @@ impl SidebarComponent for ContextPanel {
 
             // Index + age metadata
             lines.push(ComponentLine::new(vec![
-                StyledSpan::new(
-                    format!("[{}]", i),
-                    Style::default().fg(Color::BrightBlack),
-                ),
+                StyledSpan::new(format!("[{}]", i), Style::default().fg(Color::BrightBlack)),
                 StyledSpan::new(
                     format!(" {}", age_str),
                     Style::default().fg(Color::BrightBlack).dim(),
@@ -158,12 +155,11 @@ fn format_age(duration: std::time::Duration) -> String {
 
 /// Truncate text to a maximum character length, appending "..." when truncated
 fn truncate_text(text: &str, max_chars: usize) -> String {
-    if text.len() <= max_chars {
+    if text.chars().count() <= max_chars {
         text.to_string()
     } else {
-        let mut truncated: String = text.chars().take(max_chars.saturating_sub(3)).collect();
-        truncated.push_str("...");
-        truncated
+        let kept: String = text.chars().take(max_chars.saturating_sub(3)).collect();
+        format!("{}...", kept.trim_end())
     }
 }
 

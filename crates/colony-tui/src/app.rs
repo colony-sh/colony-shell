@@ -792,8 +792,7 @@ impl App {
     /// Activate a confirmation dialog.
     pub fn activate_confirm(&mut self, prompt: impl Into<String>) {
         let widget = crate::widgets::ConfirmWidget::new(prompt);
-        self.prompt_widget
-            .activate(ActiveWidget::Confirm(widget));
+        self.prompt_widget.activate(ActiveWidget::Confirm(widget));
         self.keys.set_mode(Mode::PromptWidget);
     }
 
@@ -824,8 +823,7 @@ impl App {
         arguments: impl Into<String>,
         component_id: impl Into<String>,
     ) {
-        let widget =
-            crate::widgets::ToolApprovalWidget::new(tool_name, arguments, component_id);
+        let widget = crate::widgets::ToolApprovalWidget::new(tool_name, arguments, component_id);
         self.prompt_widget
             .activate(ActiveWidget::ToolApproval(widget));
         self.keys.set_mode(Mode::PromptWidget);

@@ -152,8 +152,7 @@ impl ContentArea {
     pub fn render(&self, frame: &mut Frame<'_>, area: Rect) {
         let lines = self.to_lines();
 
-        let block = Block::default()
-            .borders(Borders::NONE);
+        let block = Block::default().borders(Borders::NONE);
 
         let paragraph = Paragraph::new(lines)
             .block(block)
@@ -254,9 +253,9 @@ fn render_agent_block(
     collapsed: bool,
 ) {
     let (status_icon, status_color) = match status {
-        TaskStatus::Running => ("\u{25cf}", Color::Yellow),     // filled circle
-        TaskStatus::Complete => ("\u{2713}", Color::Green),      // check mark
-        TaskStatus::Failed => ("\u{2717}", Color::Red),          // x mark
+        TaskStatus::Running => ("\u{25cf}", Color::Yellow), // filled circle
+        TaskStatus::Complete => ("\u{2713}", Color::Green), // check mark
+        TaskStatus::Failed => ("\u{2717}", Color::Red),     // x mark
     };
 
     let prefix = if collapsed { "\u{25b6}" } else { "\u{25bc}" };
@@ -281,7 +280,11 @@ fn render_agent_block(
 
     for (i, step) in steps.iter().enumerate() {
         let is_last = i == steps.len() - 1;
-        let connector = if is_last { "\u{2514}\u{2500}" } else { "\u{251c}\u{2500}" };
+        let connector = if is_last {
+            "\u{2514}\u{2500}"
+        } else {
+            "\u{251c}\u{2500}"
+        };
 
         let (step_icon, step_color) = match step.status {
             TaskStatus::Running => ("\u{25cb}", Color::Yellow),
@@ -294,14 +297,8 @@ fn render_agent_block(
                 format!("  {} ", connector),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(
-                format!("{} ", step_icon),
-                Style::default().fg(step_color),
-            ),
-            Span::styled(
-                step.tool.clone(),
-                Style::default().fg(Color::Cyan),
-            ),
+            Span::styled(format!("{} ", step_icon), Style::default().fg(step_color)),
+            Span::styled(step.tool.clone(), Style::default().fg(Color::Cyan)),
             Span::raw(" "),
             Span::styled(
                 step.description.clone(),
@@ -395,11 +392,7 @@ mod tests {
     #[test]
     fn test_to_lines_shell_block() {
         let mut area = ContentArea::new();
-        area.push_shell_block(
-            "echo test".to_string(),
-            vec!["test".to_string()],
-            0,
-        );
+        area.push_shell_block("echo test".to_string(), vec!["test".to_string()], 0);
 
         let lines = area.to_lines();
         // command line + output line + blank separator
@@ -409,11 +402,7 @@ mod tests {
     #[test]
     fn test_to_lines_shell_block_collapsed() {
         let mut area = ContentArea::new();
-        area.push_shell_block(
-            "echo test".to_string(),
-            vec!["test".to_string()],
-            0,
-        );
+        area.push_shell_block("echo test".to_string(), vec!["test".to_string()], 0);
         area.toggle_collapse(0);
 
         let lines = area.to_lines();

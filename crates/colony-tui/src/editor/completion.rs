@@ -121,7 +121,11 @@ impl CompletionEngine {
             items.extend(complete_paths(prefix, &context.cwd));
         } else {
             // Command completion (builtins + PATH executables)
-            items.extend(complete_commands(prefix, &context.builtins, &context.path_dirs));
+            items.extend(complete_commands(
+                prefix,
+                &context.builtins,
+                &context.path_dirs,
+            ));
             // Also include history matches
             items.extend(complete_history(prefix, &context.history));
             // Git branch completion if we're in a git context
@@ -388,7 +392,10 @@ pub fn complete_git_branches(prefix: &str, cwd: &Path) -> Vec<CompletionItem> {
     stdout
         .lines()
         .filter_map(|line| {
-            let branch = line.trim().trim_start_matches("* ").trim_start_matches("remotes/");
+            let branch = line
+                .trim()
+                .trim_start_matches("* ")
+                .trim_start_matches("remotes/");
             if branch.contains("HEAD ->") {
                 return None;
             }

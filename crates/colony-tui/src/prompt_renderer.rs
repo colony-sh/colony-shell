@@ -137,7 +137,10 @@ mod tests {
 
     #[test]
     fn test_map_color_rgb() {
-        assert_eq!(map_color(&UiColor::Rgb(128, 64, 32)), RatColor::Rgb(128, 64, 32));
+        assert_eq!(
+            map_color(&UiColor::Rgb(128, 64, 32)),
+            RatColor::Rgb(128, 64, 32)
+        );
     }
 
     #[test]
@@ -205,9 +208,10 @@ mod tests {
 
     #[test]
     fn test_render_single_visible() {
-        let output = ComponentOutput::visible(vec![
-            StyledSpan::new("hello", UiStyle::default().fg(UiColor::Cyan)),
-        ]);
+        let output = ComponentOutput::visible(vec![StyledSpan::new(
+            "hello",
+            UiStyle::default().fg(UiColor::Cyan),
+        )]);
         let spans = PromptRenderer::render_single(&output);
         // 1 content span + 1 separator
         assert_eq!(spans.len(), 2);

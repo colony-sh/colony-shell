@@ -162,10 +162,7 @@ impl CompletionPopup {
 
         // Try to maintain selection on the same text
         self.selected = if let Some(ref text) = prev_selected_text {
-            self.items
-                .iter()
-                .position(|i| i.text == *text)
-                .or(Some(0))
+            self.items.iter().position(|i| i.text == *text).or(Some(0))
         } else {
             Some(0)
         };

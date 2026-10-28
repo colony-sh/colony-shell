@@ -116,10 +116,7 @@ mod tests {
         let w = ConfirmWidget::new("Delete file?");
         assert_eq!(w.prompt, "Delete file?");
         assert!(w.detail.is_none());
-        assert_eq!(
-            w.accept(),
-            Some(WidgetResult::Accept("yes".to_string()))
-        );
+        assert_eq!(w.accept(), Some(WidgetResult::Accept("yes".to_string())));
     }
 
     #[test]
@@ -134,16 +131,12 @@ mod tests {
         let mut w = ConfirmWidget::new("Continue?");
         w.toggle();
         w.toggle();
-        assert_eq!(
-            w.accept(),
-            Some(WidgetResult::Accept("yes".to_string()))
-        );
+        assert_eq!(w.accept(), Some(WidgetResult::Accept("yes".to_string())));
     }
 
     #[test]
     fn test_confirm_with_detail() {
-        let w = ConfirmWidget::new("Delete?")
-            .with_detail("This cannot be undone");
+        let w = ConfirmWidget::new("Delete?").with_detail("This cannot be undone");
         assert_eq!(w.detail.as_deref(), Some("This cannot be undone"));
     }
 }

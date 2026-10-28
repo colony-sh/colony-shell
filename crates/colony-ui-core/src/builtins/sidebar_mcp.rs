@@ -1,6 +1,4 @@
-use crate::component::{
-    SidebarComponent, SidebarLine, SidebarOutput, TuplePattern,
-};
+use crate::component::{SidebarComponent, SidebarLine, SidebarOutput, TuplePattern};
 use crate::context::ComponentContext;
 use crate::{Color, Style, StyledSpan};
 use colony_tuple::Value;
@@ -56,10 +54,10 @@ impl Default for McpSidebarComponent {
 
 fn status_indicator(status: McpServerStatus) -> (&'static str, Color) {
     match status {
-        McpServerStatus::Connected => ("\u{25cf}", Color::Green),     // filled circle
-        McpServerStatus::Connecting => ("\u{25cb}", Color::Yellow),   // open circle
+        McpServerStatus::Connected => ("\u{25cf}", Color::Green), // filled circle
+        McpServerStatus::Connecting => ("\u{25cb}", Color::Yellow), // open circle
         McpServerStatus::Disconnected => ("\u{25cb}", Color::BrightBlack), // dim open circle
-        McpServerStatus::Error => ("\u{25cf}", Color::Red),           // red filled circle
+        McpServerStatus::Error => ("\u{25cf}", Color::Red),       // red filled circle
     }
 }
 
@@ -135,7 +133,10 @@ impl SidebarComponent for McpSidebarComponent {
             })
             .collect();
 
-        SidebarOutput::from_sidebar_lines_with_data(lines, serde_json::json!({ "servers": server_data }))
+        SidebarOutput::from_sidebar_lines_with_data(
+            lines,
+            serde_json::json!({ "servers": server_data }),
+        )
     }
 }
 
@@ -166,11 +167,14 @@ mod tests {
     fn test_mcp_empty_servers() {
         let component = McpSidebarComponent::new();
         let ctx = test_context();
-        let output = component.render(&ctx);
+        let output = component.render_block(&ctx);
 
         assert!(output.visible);
         assert_eq!(output.lines.len(), 1);
-        assert!(output.lines[0].text.text.contains("No servers"));
+        assert!(output.lines[0]
+            .spans
+            .iter()
+            .any(|s| s.text.contains("No servers")));
     }
 
     #[test]
@@ -190,7 +194,7 @@ mod tests {
         ]);
 
         let ctx = test_context();
-        let output = component.render(&ctx);
+        let output = component.render_block(&ctx);
 
         assert!(output.visible);
         // 2 server header lines + 2 tools for first + 1 tool for second = 5 lines

@@ -4,8 +4,7 @@
 //! valid transitions between them.
 
 /// The current editing mode of the input editor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum EditorMode {
     /// Normal mode: navigation, motions, operators.
     #[default]
@@ -31,7 +30,10 @@ impl EditorMode {
 
     /// Returns whether the mode accepts arbitrary text input.
     pub fn is_text_entry(&self) -> bool {
-        matches!(self, EditorMode::Insert | EditorMode::Command | EditorMode::Search)
+        matches!(
+            self,
+            EditorMode::Insert | EditorMode::Command | EditorMode::Search
+        )
     }
 }
 
@@ -41,7 +43,6 @@ pub enum SearchDirection {
     Forward,
     Backward,
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -65,10 +65,10 @@ impl PromptComponent for LspComponent {
         };
 
         let (icon, color) = match server.status {
-            LspStatus::Running => ("\u{f085}", Color::Green),   // cog icon
+            LspStatus::Running => ("\u{f085}", Color::Green), // cog icon
             LspStatus::Starting => ("\u{f110}", Color::Yellow), // spinner
             LspStatus::Stopped => return ComponentOutput::hidden(),
-            LspStatus::Error(_) => ("\u{f071}", Color::Red),    // warning
+            LspStatus::Error(_) => ("\u{f071}", Color::Red), // warning
         };
 
         let text = format!("{} {} [{}]", icon, server.server_name, server.language);

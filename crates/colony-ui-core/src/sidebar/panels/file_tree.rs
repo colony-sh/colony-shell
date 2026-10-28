@@ -68,7 +68,11 @@ impl FileTreePanel {
     /// Render a node from tree state
     fn render_node(&self, node: &FileNode, tree: &TreeState, lines: &mut Vec<ComponentLine>) {
         let (icon, style) = if node.is_dir() {
-            let dir_icon = if node.expanded { "\u{f07c} " } else { "\u{f07b} " };
+            let dir_icon = if node.expanded {
+                "\u{f07c} "
+            } else {
+                "\u{f07b} "
+            };
             (dir_icon, Style::default().fg(Color::Blue).bold())
         } else {
             let (icon, color) = self.file_style(&node.extension);
@@ -293,8 +297,9 @@ mod tests {
         // Should have root + files
         assert!(output.lines.len() >= 3);
 
-        // Check root is first
-        assert!(output.lines[0].spans[0]
+        // ".." parent link comes first, then the root
+        assert_eq!(output.lines[0].spans[0].text, "..");
+        assert!(output.lines[1].spans[0]
             .text
             .contains(temp.path().file_name().unwrap().to_str().unwrap()));
     }

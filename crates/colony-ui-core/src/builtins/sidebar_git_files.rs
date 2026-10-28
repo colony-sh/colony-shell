@@ -1,6 +1,4 @@
-use crate::component::{
-    SidebarComponent, SidebarLine, SidebarOutput, TuplePattern,
-};
+use crate::component::{SidebarComponent, SidebarLine, SidebarOutput, TuplePattern};
 use crate::context::ComponentContext;
 use crate::{Color, Style, StyledSpan};
 use colony_tuple::Value;
@@ -234,15 +232,12 @@ fn render_file_list(entries: &[GitFileEntry]) -> SidebarOutput {
 
         for entry in &staged {
             lines.push(
-                SidebarLine::new(StyledSpan::new(
-                    entry.path.clone(),
-                    Style::default(),
-                ))
-                .with_icon(StyledSpan::new(
-                    entry.status.indicator(),
-                    Style::default().fg(entry.status.color()),
-                ))
-                .with_indent(1),
+                SidebarLine::new(StyledSpan::new(entry.path.clone(), Style::default()))
+                    .with_icon(StyledSpan::new(
+                        entry.status.indicator(),
+                        Style::default().fg(entry.status.color()),
+                    ))
+                    .with_indent(1),
             );
         }
     }
@@ -262,15 +257,12 @@ fn render_file_list(entries: &[GitFileEntry]) -> SidebarOutput {
 
         for entry in &unstaged {
             lines.push(
-                SidebarLine::new(StyledSpan::new(
-                    entry.path.clone(),
-                    Style::default(),
-                ))
-                .with_icon(StyledSpan::new(
-                    entry.status.indicator(),
-                    Style::default().fg(entry.status.color()),
-                ))
-                .with_indent(1),
+                SidebarLine::new(StyledSpan::new(entry.path.clone(), Style::default()))
+                    .with_icon(StyledSpan::new(
+                        entry.status.indicator(),
+                        Style::default().fg(entry.status.color()),
+                    ))
+                    .with_indent(1),
             );
         }
     }
@@ -369,7 +361,10 @@ mod tests {
         let output = render_file_list(&[]);
         assert!(output.visible);
         assert_eq!(output.lines.len(), 1);
-        assert!(output.lines[0].text.text.contains("clean"));
+        assert!(output.lines[0]
+            .spans
+            .iter()
+            .any(|s| s.text.contains("clean")));
     }
 
     #[test]

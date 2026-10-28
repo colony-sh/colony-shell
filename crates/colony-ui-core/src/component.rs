@@ -475,7 +475,7 @@ mod tests {
             SidebarLine::new(StyledSpan::plain("line 1")),
             SidebarLine::new(StyledSpan::plain("line 2")),
         ];
-        let output = SidebarOutput::visible(lines);
+        let output = SidebarOutput::from_sidebar_lines(lines);
         assert!(output.visible);
         assert_eq!(output.lines.len(), 2);
     }
@@ -490,7 +490,8 @@ mod tests {
     #[test]
     fn test_sidebar_output_with_data() {
         let lines = vec![SidebarLine::new(StyledSpan::plain("test"))];
-        let output = SidebarOutput::with_data(lines, serde_json::json!({"key": "value"}));
+        let output =
+            SidebarOutput::from_sidebar_lines_with_data(lines, serde_json::json!({"key": "value"}));
         assert!(output.visible);
         assert!(output.data.is_some());
     }

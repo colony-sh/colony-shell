@@ -488,7 +488,10 @@ mod tests {
         editor.handle_event(key(KeyCode::Char('i')));
         let action = editor.handle_event(key(KeyCode::Esc));
         assert_eq!(editor.mode(), EditorMode::Normal);
-        assert!(matches!(action, EditorAction::ModeChanged(EditorMode::Normal)));
+        assert!(matches!(
+            action,
+            EditorAction::ModeChanged(EditorMode::Normal)
+        ));
     }
 
     #[test]
@@ -499,7 +502,10 @@ mod tests {
 
         let action = editor.handle_event(key(KeyCode::Char('i')));
         assert_eq!(editor.mode(), EditorMode::Insert);
-        assert!(matches!(action, EditorAction::ModeChanged(EditorMode::Insert)));
+        assert!(matches!(
+            action,
+            EditorAction::ModeChanged(EditorMode::Insert)
+        ));
         assert_eq!(editor.buffer.cursor_col(), 2); // cursor stays
     }
 
@@ -611,7 +617,10 @@ mod tests {
         editor.handle_event(key(KeyCode::Char('i')));
         let action = editor.handle_event(key(KeyCode::Char('w')));
 
-        assert!(matches!(action, EditorAction::ModeChanged(EditorMode::Insert)));
+        assert!(matches!(
+            action,
+            EditorAction::ModeChanged(EditorMode::Insert)
+        ));
         assert_eq!(editor.mode(), EditorMode::Insert);
         assert_eq!(editor.buffer.contents(), "hello ");
     }
@@ -619,8 +628,14 @@ mod tests {
     #[test]
     fn test_history_navigation_insert_mode() {
         let mut editor = InputEditor::new();
-        assert_eq!(editor.handle_event(key(KeyCode::Up)), EditorAction::HistoryPrev);
-        assert_eq!(editor.handle_event(key(KeyCode::Down)), EditorAction::HistoryNext);
+        assert_eq!(
+            editor.handle_event(key(KeyCode::Up)),
+            EditorAction::HistoryPrev
+        );
+        assert_eq!(
+            editor.handle_event(key(KeyCode::Down)),
+            EditorAction::HistoryNext
+        );
     }
 
     #[test]
@@ -711,7 +726,10 @@ mod tests {
         editor.buffer = EditorBuffer::with_text("hello");
 
         let action = editor.handle_event(key(KeyCode::Char('o')));
-        assert!(matches!(action, EditorAction::ModeChanged(EditorMode::Insert)));
+        assert!(matches!(
+            action,
+            EditorAction::ModeChanged(EditorMode::Insert)
+        ));
         assert_eq!(editor.buffer.line_count(), 2);
         assert_eq!(editor.buffer.cursor_row(), 1);
     }

@@ -36,8 +36,7 @@ pub enum EditorAction {
 }
 
 /// Pending state for multi-key sequences in Normal mode.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PendingKey {
     #[default]
     None,
@@ -47,7 +46,6 @@ pub enum PendingKey {
     /// Operator + `i` (e.g., `di` waiting for `w`, `ci` waiting for `w`).
     OperatorInner(char),
 }
-
 
 /// Processes key events and produces editor actions.
 ///
@@ -128,12 +126,10 @@ impl KeyDispatcher {
 
             // Line motions
             (KeyModifiers::NONE, KeyCode::Char('0')) => KeyAction::LineStart,
-            (KeyModifiers::NONE, KeyCode::Char('$')) | (KeyModifiers::SHIFT, KeyCode::Char('$')) => {
-                KeyAction::LineEnd
-            }
-            (KeyModifiers::NONE, KeyCode::Char('^')) | (KeyModifiers::SHIFT, KeyCode::Char('^')) => {
-                KeyAction::FirstNonBlank
-            }
+            (KeyModifiers::NONE, KeyCode::Char('$'))
+            | (KeyModifiers::SHIFT, KeyCode::Char('$')) => KeyAction::LineEnd,
+            (KeyModifiers::NONE, KeyCode::Char('^'))
+            | (KeyModifiers::SHIFT, KeyCode::Char('^')) => KeyAction::FirstNonBlank,
 
             // Enter insert mode
             (KeyModifiers::NONE, KeyCode::Char('i')) => {
@@ -180,13 +176,13 @@ impl KeyDispatcher {
             (KeyModifiers::SHIFT, KeyCode::Char('G')) => KeyAction::BufferEnd,
 
             // Mode transitions
-            (KeyModifiers::NONE, KeyCode::Char(':')) | (KeyModifiers::SHIFT, KeyCode::Char(':')) => {
-                KeyAction::EnterCommandMode
-            }
+            (KeyModifiers::NONE, KeyCode::Char(':'))
+            | (KeyModifiers::SHIFT, KeyCode::Char(':')) => KeyAction::EnterCommandMode,
             (KeyModifiers::NONE, KeyCode::Char('/')) => {
                 KeyAction::EnterSearchMode(SearchDirection::Forward)
             }
-            (KeyModifiers::NONE, KeyCode::Char('?')) | (KeyModifiers::SHIFT, KeyCode::Char('?')) => {
+            (KeyModifiers::NONE, KeyCode::Char('?'))
+            | (KeyModifiers::SHIFT, KeyCode::Char('?')) => {
                 KeyAction::EnterSearchMode(SearchDirection::Backward)
             }
 
@@ -405,24 +401,48 @@ mod tests {
     #[test]
     fn test_normal_mode_movement() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('h')), EditorMode::Normal), KeyAction::MoveLeft);
-        assert_eq!(d.dispatch(key(KeyCode::Char('j')), EditorMode::Normal), KeyAction::MoveDown);
-        assert_eq!(d.dispatch(key(KeyCode::Char('k')), EditorMode::Normal), KeyAction::MoveUp);
-        assert_eq!(d.dispatch(key(KeyCode::Char('l')), EditorMode::Normal), KeyAction::MoveRight);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('h')), EditorMode::Normal),
+            KeyAction::MoveLeft
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('j')), EditorMode::Normal),
+            KeyAction::MoveDown
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('k')), EditorMode::Normal),
+            KeyAction::MoveUp
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('l')), EditorMode::Normal),
+            KeyAction::MoveRight
+        );
     }
 
     #[test]
     fn test_normal_mode_word_motions() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('w')), EditorMode::Normal), KeyAction::WordForward);
-        assert_eq!(d.dispatch(key(KeyCode::Char('b')), EditorMode::Normal), KeyAction::WordBackward);
-        assert_eq!(d.dispatch(key(KeyCode::Char('e')), EditorMode::Normal), KeyAction::WordEnd);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('w')), EditorMode::Normal),
+            KeyAction::WordForward
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('b')), EditorMode::Normal),
+            KeyAction::WordBackward
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('e')), EditorMode::Normal),
+            KeyAction::WordEnd
+        );
     }
 
     #[test]
     fn test_normal_mode_line_motions() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('0')), EditorMode::Normal), KeyAction::LineStart);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('0')), EditorMode::Normal),
+            KeyAction::LineStart
+        );
     }
 
     #[test]
@@ -474,72 +494,150 @@ mod tests {
     #[test]
     fn test_gg_sequence() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('g')), EditorMode::Normal), KeyAction::Pending);
-        assert_eq!(d.dispatch(key(KeyCode::Char('g')), EditorMode::Normal), KeyAction::BufferStart);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('g')), EditorMode::Normal),
+            KeyAction::Pending
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('g')), EditorMode::Normal),
+            KeyAction::BufferStart
+        );
     }
 
     #[test]
     fn test_ciw_sequence() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('c')), EditorMode::Normal), KeyAction::Pending);
-        assert_eq!(d.dispatch(key(KeyCode::Char('i')), EditorMode::Normal), KeyAction::Pending);
-        assert_eq!(d.dispatch(key(KeyCode::Char('w')), EditorMode::Normal), KeyAction::ChangeInnerWord);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('c')), EditorMode::Normal),
+            KeyAction::Pending
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('i')), EditorMode::Normal),
+            KeyAction::Pending
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('w')), EditorMode::Normal),
+            KeyAction::ChangeInnerWord
+        );
     }
 
     #[test]
     fn test_diw_sequence() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('d')), EditorMode::Normal), KeyAction::Pending);
-        assert_eq!(d.dispatch(key(KeyCode::Char('i')), EditorMode::Normal), KeyAction::Pending);
-        assert_eq!(d.dispatch(key(KeyCode::Char('w')), EditorMode::Normal), KeyAction::DeleteInnerWord);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('d')), EditorMode::Normal),
+            KeyAction::Pending
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('i')), EditorMode::Normal),
+            KeyAction::Pending
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('w')), EditorMode::Normal),
+            KeyAction::DeleteInnerWord
+        );
     }
 
     #[test]
     fn test_insert_mode_typing() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('a')), EditorMode::Insert), KeyAction::InsertChar('a'));
-        assert_eq!(d.dispatch(key(KeyCode::Char('z')), EditorMode::Insert), KeyAction::InsertChar('z'));
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('a')), EditorMode::Insert),
+            KeyAction::InsertChar('a')
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('z')), EditorMode::Insert),
+            KeyAction::InsertChar('z')
+        );
     }
 
     #[test]
     fn test_insert_mode_escape() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Esc), EditorMode::Insert), KeyAction::EnterNormalMode);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Esc), EditorMode::Insert),
+            KeyAction::EnterNormalMode
+        );
     }
 
     #[test]
     fn test_insert_mode_special_keys() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Backspace), EditorMode::Insert), KeyAction::DeleteCharBackward);
-        assert_eq!(d.dispatch(key(KeyCode::Delete), EditorMode::Insert), KeyAction::DeleteCharForward);
-        assert_eq!(d.dispatch(key(KeyCode::Tab), EditorMode::Insert), KeyAction::TriggerCompletion);
-        assert_eq!(d.dispatch(key(KeyCode::Up), EditorMode::Insert), KeyAction::HistoryPrev);
-        assert_eq!(d.dispatch(key(KeyCode::Down), EditorMode::Insert), KeyAction::HistoryNext);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Backspace), EditorMode::Insert),
+            KeyAction::DeleteCharBackward
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Delete), EditorMode::Insert),
+            KeyAction::DeleteCharForward
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Tab), EditorMode::Insert),
+            KeyAction::TriggerCompletion
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Up), EditorMode::Insert),
+            KeyAction::HistoryPrev
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Down), EditorMode::Insert),
+            KeyAction::HistoryNext
+        );
     }
 
     #[test]
     fn test_insert_mode_ctrl_keys() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(ctrl_key('w'), EditorMode::Insert), KeyAction::DeleteWordBackward);
-        assert_eq!(d.dispatch(ctrl_key('u'), EditorMode::Insert), KeyAction::DeleteToLineStart);
-        assert_eq!(d.dispatch(ctrl_key('c'), EditorMode::Insert), KeyAction::Cancel);
+        assert_eq!(
+            d.dispatch(ctrl_key('w'), EditorMode::Insert),
+            KeyAction::DeleteWordBackward
+        );
+        assert_eq!(
+            d.dispatch(ctrl_key('u'), EditorMode::Insert),
+            KeyAction::DeleteToLineStart
+        );
+        assert_eq!(
+            d.dispatch(ctrl_key('c'), EditorMode::Insert),
+            KeyAction::Cancel
+        );
     }
 
     #[test]
     fn test_command_mode() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('q')), EditorMode::Command), KeyAction::CommandInsertChar('q'));
-        assert_eq!(d.dispatch(key(KeyCode::Enter), EditorMode::Command), KeyAction::ExecuteCommand);
-        assert_eq!(d.dispatch(key(KeyCode::Esc), EditorMode::Command), KeyAction::EnterNormalMode);
-        assert_eq!(d.dispatch(key(KeyCode::Backspace), EditorMode::Command), KeyAction::CommandDeleteChar);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('q')), EditorMode::Command),
+            KeyAction::CommandInsertChar('q')
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Enter), EditorMode::Command),
+            KeyAction::ExecuteCommand
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Esc), EditorMode::Command),
+            KeyAction::EnterNormalMode
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Backspace), EditorMode::Command),
+            KeyAction::CommandDeleteChar
+        );
     }
 
     #[test]
     fn test_search_mode() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('f')), EditorMode::Search), KeyAction::SearchInsertChar('f'));
-        assert_eq!(d.dispatch(key(KeyCode::Enter), EditorMode::Search), KeyAction::ExecuteSearch);
-        assert_eq!(d.dispatch(key(KeyCode::Esc), EditorMode::Search), KeyAction::EnterNormalMode);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('f')), EditorMode::Search),
+            KeyAction::SearchInsertChar('f')
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Enter), EditorMode::Search),
+            KeyAction::ExecuteSearch
+        );
+        assert_eq!(
+            d.dispatch(key(KeyCode::Esc), EditorMode::Search),
+            KeyAction::EnterNormalMode
+        );
     }
 
     #[test]
@@ -563,21 +661,39 @@ mod tests {
     #[test]
     fn test_search_navigation_in_normal() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('n')), EditorMode::Normal), KeyAction::SearchNext);
-        assert_eq!(d.dispatch(shift_key('N'), EditorMode::Normal), KeyAction::SearchPrev);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('n')), EditorMode::Normal),
+            KeyAction::SearchNext
+        );
+        assert_eq!(
+            d.dispatch(shift_key('N'), EditorMode::Normal),
+            KeyAction::SearchPrev
+        );
     }
 
     #[test]
     fn test_undo_redo_normal() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('u')), EditorMode::Normal), KeyAction::Undo);
-        assert_eq!(d.dispatch(ctrl_key('r'), EditorMode::Normal), KeyAction::Redo);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('u')), EditorMode::Normal),
+            KeyAction::Undo
+        );
+        assert_eq!(
+            d.dispatch(ctrl_key('r'), EditorMode::Normal),
+            KeyAction::Redo
+        );
     }
 
     #[test]
     fn test_paste_normal() {
         let mut d = KeyDispatcher::new();
-        assert_eq!(d.dispatch(key(KeyCode::Char('p')), EditorMode::Normal), KeyAction::PasteAfter);
-        assert_eq!(d.dispatch(shift_key('P'), EditorMode::Normal), KeyAction::PasteBefore);
+        assert_eq!(
+            d.dispatch(key(KeyCode::Char('p')), EditorMode::Normal),
+            KeyAction::PasteAfter
+        );
+        assert_eq!(
+            d.dispatch(shift_key('P'), EditorMode::Normal),
+            KeyAction::PasteBefore
+        );
     }
 }

@@ -29,15 +29,13 @@ pub struct EditorBuffer {
 }
 
 /// Clipboard content for yank/paste.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Clipboard {
     #[default]
     Empty,
     Line(String),
     Text(String),
 }
-
 
 impl Default for EditorBuffer {
     fn default() -> Self {
@@ -181,10 +179,7 @@ impl EditorBuffer {
 
     pub fn move_to_first_non_blank(&mut self) {
         let line = &self.lines[self.cursor_row];
-        self.cursor_col = line
-            .chars()
-            .position(|c| !c.is_whitespace())
-            .unwrap_or(0);
+        self.cursor_col = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
     }
 
     pub fn move_to_buffer_start(&mut self) {
@@ -661,10 +656,7 @@ fn char_class(c: char) -> CharClass {
 
 /// Convert a character-column index to a byte index in a string.
 fn char_col_to_byte(s: &str, col: usize) -> usize {
-    s.char_indices()
-        .nth(col)
-        .map(|(i, _)| i)
-        .unwrap_or(s.len())
+    s.char_indices().nth(col).map(|(i, _)| i).unwrap_or(s.len())
 }
 
 #[cfg(test)]
@@ -889,7 +881,7 @@ mod tests {
         let mut buf = EditorBuffer::with_text("first\nthird");
         buf.set_cursor(0, 0);
         buf.delete_line(); // deletes "first", clipboard = Line("first")
-        // Now buffer is just "third" and clipboard has "first"
+                           // Now buffer is just "third" and clipboard has "first"
         buf.paste_after();
         assert_eq!(buf.line_count(), 2);
         assert_eq!(buf.lines()[1], "first");

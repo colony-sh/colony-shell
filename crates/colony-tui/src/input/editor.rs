@@ -100,9 +100,7 @@ impl Editor {
 
         // Delete word characters
         while pos > 0 {
-            let prev = self.buffer[..pos]
-                .char_indices()
-                .last();
+            let prev = self.buffer[..pos].char_indices().last();
             match prev {
                 Some((i, c)) if !c.is_whitespace() => pos = i,
                 _ => break,

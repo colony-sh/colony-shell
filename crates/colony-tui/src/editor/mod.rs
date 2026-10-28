@@ -46,10 +46,10 @@ pub mod mode;
 // Re-export primary types at module level for convenience.
 pub use buffer::EditorBuffer;
 pub use completion::{
-    CompletionContext, CompletionEngine, CompletionItem, CompletionKind, ghost_text,
+    ghost_text, CompletionContext, CompletionEngine, CompletionItem, CompletionKind,
 };
 pub use completion_popup::CompletionPopup;
-pub use highlight::{HighlightStyle, StyledSpan, highlight};
+pub use highlight::{highlight, HighlightStyle, StyledSpan};
 pub use history::EditorHistory;
 pub use input::InputEditor;
 pub use keybindings::EditorAction;

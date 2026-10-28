@@ -95,10 +95,7 @@ impl ToolApprovalWidget {
         if has_args {
             // Truncate long arguments for display
             let display_args = if self.arguments.len() > (width as usize - 12) {
-                format!(
-                    "{}...",
-                    &self.arguments[..width as usize - 15]
-                )
+                format!("{}...", &self.arguments[..width as usize - 15])
             } else {
                 self.arguments.clone()
             };
@@ -142,10 +139,7 @@ mod tests {
     #[test]
     fn test_tool_approval_defaults_to_approved() {
         let w = ToolApprovalWidget::new("bash", "echo hello", "agent-1");
-        assert_eq!(
-            w.accept(),
-            Some(WidgetResult::Accept("bash".to_string()))
-        );
+        assert_eq!(w.accept(), Some(WidgetResult::Accept("bash".to_string())));
     }
 
     #[test]
@@ -160,10 +154,7 @@ mod tests {
         let mut w = ToolApprovalWidget::new("bash", "", "agent-1");
         w.toggle();
         w.toggle();
-        assert_eq!(
-            w.accept(),
-            Some(WidgetResult::Accept("bash".to_string()))
-        );
+        assert_eq!(w.accept(), Some(WidgetResult::Accept("bash".to_string())));
     }
 
     #[test]

@@ -96,7 +96,11 @@ impl SidebarRenderer {
         }
 
         // Panel header
-        let collapse_icon = if panel.collapsed { "\u{25b6} " } else { "\u{25bc} " };
+        let collapse_icon = if panel.collapsed {
+            "\u{25b6} "
+        } else {
+            "\u{25bc} "
+        };
         let header = Line::from(vec![
             Span::styled(collapse_icon, Style::default().fg(Color::DarkGray)),
             Span::styled(
@@ -124,7 +128,13 @@ impl SidebarRenderer {
                 height: area.height - 1,
             };
 
-            Self::render_panel_content(frame, content_area, &panel.output, selected_index, scroll_offset);
+            Self::render_panel_content(
+                frame,
+                content_area,
+                &panel.output,
+                selected_index,
+                scroll_offset,
+            );
         }
     }
 
@@ -179,7 +189,11 @@ impl SidebarRenderer {
 
         // Expand/collapse indicator for tree nodes
         if line.expandable {
-            let indicator = if line.expanded { "\u{25bc} " } else { "\u{25b6} " };
+            let indicator = if line.expanded {
+                "\u{25bc} "
+            } else {
+                "\u{25b6} "
+            };
             spans.push(Span::styled(
                 indicator,
                 Style::default().fg(Color::DarkGray),
@@ -392,7 +406,10 @@ mod tests {
             .spans
             .iter()
             .any(|s| s.style.add_modifier.contains(Modifier::REVERSED));
-        assert!(has_reverse, "highlighted line should have REVERSED modifier");
+        assert!(
+            has_reverse,
+            "highlighted line should have REVERSED modifier"
+        );
 
         // Normal line should not
         let has_reverse_normal = normal

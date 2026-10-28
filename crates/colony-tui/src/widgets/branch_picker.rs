@@ -148,11 +148,7 @@ impl BranchPickerWidget {
             })
             .collect();
 
-        let count_info = format!(
-            " {}/{} ",
-            self.filtered.len(),
-            self.branches.len()
-        );
+        let count_info = format!(" {}/{} ", self.filtered.len(), self.branches.len());
         let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
