@@ -63,19 +63,16 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             runner: macos-latest
-            cross: false
 
           - target: x86_64-apple-darwin
             runner: macos-latest
-            cross: false
 
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            cross: false
 
+          # Native ARM runner: cross-compiling needs an arm64 libssl for native-tls.
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
-            cross: true
+            runner: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v4
@@ -86,20 +83,11 @@ jobs:
 
       - name: Install protoc (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libssl-dev pkg-config
 
       - name: Install protoc (macOS)
         if: runner.os == 'macOS'
         run: brew install protobuf
-
-      - name: Install cross-compilation toolchain (aarch64-linux)
-        if: matrix.cross
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            libc6-dev-arm64-cross
 
       # -- Rust toolchain -----------------------------------------------------
 
@@ -119,14 +107,6 @@ jobs:
           restore-keys: build-${{ matrix.target }}-
 
       # -- Build --------------------------------------------------------------
-
-      - name: Configure cross-compilation environment
-        if: matrix.cross
-        run: |
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
-          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
-          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> "$GITHUB_ENV"
-          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> "$GITHUB_ENV"
 
       - name: Build release binary
         run: cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
