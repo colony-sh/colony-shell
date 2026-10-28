@@ -1,10 +1,10 @@
 //! Pathname expansion (globbing)
 //!
 //! POSIX glob patterns:
-//! - * matches any string
-//! - ? matches any single character
-//! - [...] matches any character in brackets
-//! - [!...] or [^...] matches any character NOT in brackets
+//! - `*` matches any string
+//! - `?` matches any single character
+//! - `[...]` matches any character in brackets
+//! - `[!...]` or `[^...]` matches any character NOT in brackets
 //!
 //! Extended glob patterns (extglob):
 //! - ?(pattern-list) - matches zero or one occurrence

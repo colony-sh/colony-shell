@@ -79,6 +79,7 @@ pub enum ParamType {
 }
 
 /// Tool trait for implementing executable tools
+#[allow(clippy::double_must_use)] // async_trait marks methods that already return a must-use future
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;

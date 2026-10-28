@@ -2432,10 +2432,7 @@ impl Executor {
                                     let addend = value.parse::<i64>().unwrap_or(0);
                                     let result = (existing + addend).to_string();
                                     if !self.context.set_var(assignment.name.clone(), result) {
-                                        eprintln!(
-                                            "colony: {}: readonly variable",
-                                            &assignment.name
-                                        );
+                                        eprintln!("colony: {}: readonly variable", assignment.name);
                                         return Err(ExecutionError::Errexit(1));
                                     }
                                 } else {
@@ -2447,15 +2444,12 @@ impl Executor {
                                         .context
                                         .set_var(assignment.name.clone(), existing + &value)
                                     {
-                                        eprintln!(
-                                            "colony: {}: readonly variable",
-                                            &assignment.name
-                                        );
+                                        eprintln!("colony: {}: readonly variable", assignment.name);
                                         return Err(ExecutionError::Errexit(1));
                                     }
                                 }
                             } else if !self.context.set_var(assignment.name.clone(), value) {
-                                eprintln!("colony: {}: readonly variable", &assignment.name);
+                                eprintln!("colony: {}: readonly variable", assignment.name);
                                 return Err(ExecutionError::Errexit(1));
                             }
                         }
