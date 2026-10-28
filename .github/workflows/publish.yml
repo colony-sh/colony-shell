@@ -105,13 +105,3 @@ jobs:
 
           echo "Publishing colony (main binary)..."
           cargo publish -p colony-shell --allow-dirty || echo "Already published or failed"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            target/release/colony
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
