@@ -61,9 +61,16 @@ mod tests {
     }
 
     #[test]
-    fn test_tilde_user_not_implemented() {
+    fn test_tilde_user_expands_to_their_home() {
         let context = ExpansionContext::new();
-        let result = expand_tilde(Some("root"), &context);
+        let result = expand_tilde(Some("root"), &context).unwrap();
+        assert!(result.starts_with('/'));
+    }
+
+    #[test]
+    fn test_tilde_unknown_user_errors() {
+        let context = ExpansionContext::new();
+        let result = expand_tilde(Some("no-such-user-colony-test"), &context);
         assert!(result.is_err());
     }
 }

@@ -412,19 +412,15 @@ mod tests {
         assert_eq!(root.children.len(), 2);
     }
 
+    // One test, not two: parallel tests mutating the same env var race.
     #[test]
-    fn test_is_colony_terminal_when_unset() {
-        // Ensure the env var is not set for this test
+    fn test_is_colony_terminal() {
         std::env::remove_var("COLONY_TERMINAL");
         assert!(!is_colony_terminal());
-    }
 
-    #[test]
-    fn test_is_colony_terminal_when_set() {
-        // Temporarily set the env var
         std::env::set_var("COLONY_TERMINAL", "1");
         assert!(is_colony_terminal());
-        // Clean up
+
         std::env::remove_var("COLONY_TERMINAL");
     }
 }

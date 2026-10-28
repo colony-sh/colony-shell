@@ -62,11 +62,17 @@ fn read_env() -> Option<CanvasEnv> {
 
 /// Execute a `canvas` builtin invocation.
 pub fn builtin_canvas(args: &[String]) -> Result<BuiltinResult> {
+    let subcmd = args.first().map(String::as_str).unwrap_or("status");
+
+    // Help works off-canvas too
+    if matches!(subcmd, "help" | "--help" | "-h") {
+        print_help();
+        return Ok(BuiltinResult::Success(0));
+    }
+
     let Some(env) = read_env() else {
         return Ok(BuiltinResult::Failure(1));
     };
-
-    let subcmd = args.first().map(String::as_str).unwrap_or("status");
 
     let code = match subcmd {
         "status" => cmd_status(&env),
@@ -76,10 +82,6 @@ pub fn builtin_canvas(args: &[String]) -> Result<BuiltinResult> {
         "widget" => cmd_widget_crud(&env, &args[1..]),
         "tasks" => cmd_tasks(&env),
         "markdown" => cmd_markdown(&env, &args[1..]),
-        "help" | "--help" | "-h" => {
-            print_help();
-            0
-        }
         other => {
             eprintln!("canvas: unknown subcommand '{other}'. Try 'canvas help'.");
             1

@@ -65,11 +65,17 @@ fn read_env() -> Option<DrawEnv> {
 
 /// Execute a `draw` builtin invocation.
 pub fn builtin_draw(args: &[String]) -> Result<BuiltinResult> {
+    let subcmd = args.first().map(String::as_str).unwrap_or("help");
+
+    // Help works off-canvas too
+    if matches!(subcmd, "help" | "--help" | "-h") {
+        print_help();
+        return Ok(BuiltinResult::Success(0));
+    }
+
     let Some(env) = read_env() else {
         return Ok(BuiltinResult::Failure(1));
     };
-
-    let subcmd = args.first().map(String::as_str).unwrap_or("help");
 
     let code = match subcmd {
         "sticky" => cmd_sticky(&env, &args[1..]),
@@ -82,10 +88,6 @@ pub fn builtin_draw(args: &[String]) -> Result<BuiltinResult> {
         "list" => cmd_list(&env),
         "remove" => cmd_remove(&env, &args[1..]),
         "clear" => cmd_clear(&env),
-        "help" | "--help" | "-h" => {
-            print_help();
-            0
-        }
         other => {
             eprintln!("draw: unknown subcommand '{other}'. Try 'draw help'.");
             1
