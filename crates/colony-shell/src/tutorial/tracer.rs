@@ -200,8 +200,8 @@ impl TraceEmitter {
             TraceOutput::DiagSender(sender) => {
                 let summary = event.summary();
                 let severity = event.severity();
-                let entry = colony_channels::DiagEntry::new(severity, summary)
-                    .with_source("tracer");
+                let entry =
+                    colony_channels::DiagEntry::new(severity, summary).with_source("tracer");
                 let _ = sender.send(entry);
             }
             TraceOutput::Buffer(events) => {

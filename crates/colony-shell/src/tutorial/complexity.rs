@@ -5,8 +5,8 @@
 
 use crate::tutorial::events::ComplexityLevel;
 use colony_parser::{
-    CaseStatement, ForStatement, IfStatement, Pipeline, SimpleCommand, Statement, UntilStatement,
-    WhileStatement, Word, WordPart,
+    AssignmentValue, CaseStatement, ForStatement, IfStatement, Pipeline, SimpleCommand, Statement,
+    UntilStatement, WhileStatement, Word, WordPart,
 };
 
 /// Scores the complexity of a statement for pacing purposes
@@ -79,9 +79,17 @@ impl ComplexityScorer {
             score = score.max(ComplexityLevel::Medium);
         }
 
-        // Environment assignments
-        if !cmd.env_assignments.is_empty() {
+        // Environment assignments, plus any expansions in their values
+        for assignment in &cmd.env_assignments {
             score = score.max(ComplexityLevel::Medium);
+            let words = match &assignment.value {
+                AssignmentValue::Word(word) => std::slice::from_ref(word),
+                AssignmentValue::Array(words) => words.as_slice(),
+                AssignmentValue::AssocArray(_) => &[],
+            };
+            for word in words {
+                score = score.max(Self::score_word(word));
+            }
         }
 
         score
@@ -235,7 +243,15 @@ mod tests {
 
     #[test]
     fn test_pipeline() {
+        // Simple stages: pipeline boosts Low to Medium
         let stmt = parse_stmt("ls | grep foo | wc -l");
+        assert_eq!(ComplexityScorer::score(&stmt), ComplexityLevel::Medium);
+    }
+
+    #[test]
+    fn test_pipeline_with_complex_stage() {
+        // A Medium stage is boosted to High
+        let stmt = parse_stmt("ls | grep \"${pat:-foo}\"");
         assert_eq!(ComplexityScorer::score(&stmt), ComplexityLevel::High);
     }
 

@@ -281,42 +281,81 @@ impl TraceEvent {
                 format!("script start: {} ({} lines)", path.display(), lines)
             }
             Self::LineEnter { line, source } => format!("L{}: {}", line, source),
-            Self::Parse { line, ast_summary, .. } => format!("L{} parse: {}", line, ast_summary),
-            Self::Expand { line, phase, input, output, .. } => {
+            Self::Parse {
+                line, ast_summary, ..
+            } => format!("L{} parse: {}", line, ast_summary),
+            Self::Expand {
+                line,
+                phase,
+                input,
+                output,
+                ..
+            } => {
                 format!("L{} {} expand: {} -> {}", line, phase.name(), input, output)
             }
-            Self::Assign { line, name, value, .. } => {
+            Self::Assign {
+                line, name, value, ..
+            } => {
                 format!("L{} assign: {}={}", line, name, value)
             }
-            Self::Resolve { line, command, resolved } => {
+            Self::Resolve {
+                line,
+                command,
+                resolved,
+            } => {
                 format!("L{} resolve: {} -> {}", line, command, resolved.display())
             }
-            Self::Execute { line, command, args, .. } => {
+            Self::Execute {
+                line,
+                command,
+                args,
+                ..
+            } => {
                 format!("L{} exec: {} {}", line, command, args.join(" "))
             }
             Self::Builtin { line, name, args } => {
                 format!("L{} builtin: {} {}", line, name, args.join(" "))
             }
-            Self::Redirect { line, description, .. } => {
+            Self::Redirect {
+                line, description, ..
+            } => {
                 format!("L{} redirect: {}", line, description)
             }
-            Self::PipelineStage { line, stage, total_stages, command } => {
+            Self::PipelineStage {
+                line,
+                stage,
+                total_stages,
+                command,
+            } => {
                 format!("L{} pipe {}/{}: {}", line, stage, total_stages, command)
             }
-            Self::LoopEnter { line, loop_type, .. } => {
+            Self::LoopEnter {
+                line, loop_type, ..
+            } => {
                 format!("L{} loop enter: {:?}", line, loop_type)
             }
-            Self::LoopIteration { line, iteration, .. } => {
+            Self::LoopIteration {
+                line, iteration, ..
+            } => {
                 format!("L{} loop iter #{}", line, iteration)
             }
             Self::LoopExit { line, iterations } => {
                 format!("L{} loop exit after {} iters", line, iterations)
             }
-            Self::Branch { line, branch_type, taken, .. } => {
+            Self::Branch {
+                line,
+                branch_type,
+                taken,
+                ..
+            } => {
                 format!("L{} branch {:?}: {}", line, branch_type, taken)
             }
             Self::FunctionCall { line, name, .. } => format!("L{} call: {}()", line, name),
-            Self::FunctionReturn { line, name, exit_code } => {
+            Self::FunctionReturn {
+                line,
+                name,
+                exit_code,
+            } => {
                 format!("L{} return: {}() -> {}", line, name, exit_code)
             }
             Self::ExitStatus { line, code, signal } => match signal {
@@ -328,7 +367,10 @@ impl TraceEvent {
             Self::LineExit { line, duration_us } => {
                 format!("L{} done ({}us)", line, duration_us)
             }
-            Self::ScriptEnd { exit_code, duration_ms } => {
+            Self::ScriptEnd {
+                exit_code,
+                duration_ms,
+            } => {
                 format!("script end: exit={} ({}ms)", exit_code, duration_ms)
             }
             Self::Error { line, message } => format!("L{} ERROR: {}", line, message),
@@ -386,7 +428,7 @@ mod tests {
             explanation: "$1 is unset, using default value".to_string(),
         };
 
-        let json = serde_json::to_string_pretty(&event).unwrap();
+        let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"phase\":\"parameter\""));
     }
 }
