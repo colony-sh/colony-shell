@@ -159,6 +159,7 @@ pub fn serialize_function_for_export(func: &colony_parser::FunctionDef) -> Strin
 ///
 /// Builtins with state changes emit tuples to the tuple space for reactive updates.
 /// Tuples are scoped by session_id to enable multi-tab/window isolation.
+#[allow(clippy::too_many_arguments)]
 pub fn execute_builtin(
     cmd: &SimpleCommand,
     context: &mut ExpansionContext,
@@ -3076,10 +3077,10 @@ fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                 while j < chars.len() {
                     match chars[j] {
                         't' => strip_newlines = true,
-                        'n' | 'O' | 's' | 'd' => {
+                        'n' | 'O' | 's' | 'd'
                             // These options need arguments
                             // Check if the rest of the string is the argument
-                            if j + 1 < chars.len() {
+                            if j + 1 < chars.len() => {
                                 let rest: String = chars[j + 1..].iter().collect();
                                 match chars[j] {
                                     'n' => count_limit = rest.parse().unwrap_or(0),
@@ -3095,11 +3096,7 @@ fn builtin_mapfile(args: &[String], context: &mut ExpansionContext) -> Result<Bu
                                     _ => {}
                                 }
                                 break; // consumed rest of the arg
-                            } else {
-                                eprintln!("mapfile: {}: invalid option", s);
-                                return Ok(BuiltinResult::Failure(1));
                             }
-                        }
                         _ => {
                             eprintln!("mapfile: {}: invalid option", s);
                             return Ok(BuiltinResult::Failure(1));
@@ -5707,7 +5704,7 @@ fn builtin_history(
                     Ok(stats) => {
                         let since = stats
                             .earliest_timestamp
-                            .and_then(|ts| chrono::DateTime::from_timestamp_millis(ts))
+                            .and_then(chrono::DateTime::from_timestamp_millis)
                             .map(|dt| dt.format("%Y-%m-%d").to_string())
                             .unwrap_or_else(|| "N/A".to_string());
                         println!("Commands: {} (since {})", stats.total_commands, since);
@@ -6483,7 +6480,7 @@ fn colony_publish(args: &[String]) -> Result<BuiltinResult> {
     let dir = if let Some(path) = args.first() {
         PathBuf::from(path)
     } else {
-        std::env::current_dir().map_err(|e| ExecutionError::IoError(e))?
+        std::env::current_dir().map_err(ExecutionError::IoError)?
     };
 
     if let Err(e) = colony_recipe::validate_recipe_dir(&dir) {
@@ -6500,7 +6497,7 @@ fn colony_publish(args: &[String]) -> Result<BuiltinResult> {
 
     let api_key = std::env::var("COLONY_API_KEY")
         .ok()
-        .or_else(|| read_config_api_key());
+        .or_else(read_config_api_key);
 
     let Some(_api_key) = api_key else {
         eprintln!("colony publish: authentication required");
@@ -8015,7 +8012,7 @@ mod tests {
         assert_eq!(result.unwrap().exit_code(), 0);
 
         let new_path = env::var("PATH").unwrap();
-        let last_entry = new_path.split(':').last().unwrap();
+        let last_entry = new_path.split(':').next_back().unwrap();
         assert_eq!(last_entry, test_dir);
 
         env::set_var("PATH", original_path);
@@ -8598,7 +8595,7 @@ mod tests {
     fn test_import_skips_invalid_env_value() {
         let func_name = "bad_import_fn";
         let env_value = "not a function definition";
-        let mut context = ExpansionContext::new();
+        let context = ExpansionContext::new();
 
         if env_value.starts_with("() {") {
             panic!("Test setup error");

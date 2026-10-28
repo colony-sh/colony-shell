@@ -99,12 +99,9 @@ pub async fn run(
 
         // Consume trace events
         while let Ok(event) = event_rx.try_recv() {
-            match &event {
-                TraceEvent::LineEnter { line, .. } => {
-                    source_pane.set_current_line(*line);
-                    info_pane.clear();
-                }
-                _ => {}
+            if let TraceEvent::LineEnter { line, .. } = &event {
+                source_pane.set_current_line(*line);
+                info_pane.clear();
             }
             info_pane.push_event(&event);
         }

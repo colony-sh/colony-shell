@@ -378,9 +378,7 @@ fn flush_tool_calls<S>(state: &mut SseState<S>) -> Option<ProviderStreamEvent> {
         .iter()
         .position(|a| !a.id.is_empty());
 
-    let Some(idx) = pos else {
-        return None;
-    };
+    let idx = pos?;
 
     let acc = state.tool_accumulators.remove(idx);
     if idx < state.started.len() {

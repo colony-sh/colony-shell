@@ -392,7 +392,7 @@ mod tests {
         let line = ComponentLine::new(vec![StyledSpan::plain("indented")]).with_indent(2);
         let ratatui_line = SidebarRenderer::component_line_to_ratatui(&line, 80, false, 0);
         // Should have indent + content
-        assert!(ratatui_line.spans.len() >= 1);
+        assert!(!ratatui_line.spans.is_empty());
     }
 
     #[test]

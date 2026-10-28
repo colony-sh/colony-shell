@@ -103,14 +103,8 @@ impl CompletionPopup {
         }
 
         let new_idx = match self.selected {
-            Some(idx) => {
-                if idx + 1 < self.items.len() {
-                    idx + 1
-                } else {
-                    0 // Wrap around
-                }
-            }
-            None => 0,
+            Some(idx) if idx + 1 < self.items.len() => idx + 1,
+            Some(_) | None => 0, // Wrap around
         };
 
         self.selected = Some(new_idx);

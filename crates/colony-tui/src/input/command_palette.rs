@@ -374,7 +374,7 @@ impl CommandPalette {
             .collect();
 
         // Sort by score (higher first)
-        scored.sort_by(|a, b| b.1.cmp(&a.1));
+        scored.sort_by_key(|s| std::cmp::Reverse(s.1));
 
         self.results = scored.into_iter().map(|(idx, _)| idx).collect();
     }
@@ -452,7 +452,7 @@ mod tests {
 
         palette.activate();
         assert!(palette.is_active());
-        assert!(palette.results().len() > 0);
+        assert!(!palette.results().is_empty());
     }
 
     #[test]

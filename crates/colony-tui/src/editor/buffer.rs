@@ -238,7 +238,7 @@ impl EditorBuffer {
                     .position(|c| !c.is_whitespace())
                     .unwrap_or(0);
             } else {
-                self.cursor_col = len.saturating_sub(1).max(0);
+                self.cursor_col = len.saturating_sub(1);
             }
         } else {
             self.cursor_col = col;

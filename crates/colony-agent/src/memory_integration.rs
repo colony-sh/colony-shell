@@ -6,11 +6,11 @@
 
 #[cfg(feature = "memory")]
 mod inner {
-    use crate::provider::{Message, MessageContent, MessageRole};
+
     use crate::AgentError;
     use colony_memory::{MemoryStore, Scope, SearchResult};
     use std::sync::Arc;
-    use tracing::{debug, info, warn};
+    use tracing::{debug, info};
 
     /// Configuration for memory integration
     #[derive(Debug, Clone)]
@@ -190,16 +190,6 @@ mod inner {
             );
 
             Ok(Some(id))
-        }
-
-        /// Check if memory is enabled
-        pub(crate) fn is_enabled(&self) -> bool {
-            self.config.enabled
-        }
-
-        /// Get the memory config
-        pub(crate) fn config(&self) -> &MemoryConfig {
-            &self.config
         }
     }
 

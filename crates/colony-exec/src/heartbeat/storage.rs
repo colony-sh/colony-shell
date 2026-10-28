@@ -127,7 +127,7 @@ impl HeartbeatStore {
             .map_err(|e| HeartbeatError::Database(format!("prepare recent: {e}")))?;
 
         let rows = stmt
-            .query_map(rusqlite::params![limit as i64], |row| Self::row_to_run(row))
+            .query_map(rusqlite::params![limit as i64], Self::row_to_run)
             .map_err(|e| HeartbeatError::Database(format!("query recent: {e}")))?;
 
         let mut runs = Vec::new();

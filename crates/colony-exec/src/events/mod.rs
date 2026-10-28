@@ -288,8 +288,8 @@ fn cmd_list() -> BuiltinResult {
     }
 
     eprintln!(
-        "{:<10} {:<6} {:<20} {:<30} {:<8} {}",
-        "ID", "ON", "PATTERN", "HANDLER", "TYPE", "FILTER"
+        "{:<10} {:<6} {:<20} {:<30} {:<8} FILTER",
+        "ID", "ON", "PATTERN", "HANDLER", "TYPE"
     );
     eprintln!("{}", "-".repeat(90));
 

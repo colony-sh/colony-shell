@@ -2,11 +2,11 @@
 //!
 //! Usage:
 //!   context show [--tokens]     Show current context summary
-//!   context add <text>          Add knowledge entry
-//!   context add --file <path>   Add file content
-//!   context remove <id>         Remove entry by ID (prefix match)
+//!   context add \<text\>          Add knowledge entry
+//!   context add --file \<path\>   Add file content
+//!   context remove \<id\>         Remove entry by ID (prefix match)
 //!   context clear [--all]       Clear non-pinned entries (--all for everything)
-//!   context pin <id>            Pin an entry
+//!   context pin \<id\>            Pin an entry
 //!   context prune <max_tokens>  Prune to fit token budget
 
 use crate::entry::{ContextEntry, ContextKind};
@@ -28,13 +28,13 @@ pub fn execute(args: &[&str], store: &ContextStore, project_id: &str) -> Builtin
 
     match *subcmd {
         "show" => {
-            let tokens_flag = args.iter().any(|a| *a == "--tokens");
+            let tokens_flag = args.contains(&"--tokens");
             execute_show(store, project_id, tokens_flag)
         }
         "add" => execute_add(&args[1..], store, project_id),
         "remove" => execute_remove(&args[1..], store, project_id),
         "clear" => {
-            let all = args.iter().any(|a| *a == "--all");
+            let all = args.contains(&"--all");
             execute_clear(store, project_id, all)
         }
         "pin" => execute_pin(&args[1..], store, project_id),

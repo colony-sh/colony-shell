@@ -6,8 +6,8 @@ use colony_agent::{Agent, AgentConfig, ModelRouter, ProviderType};
 ///   llm status         - Show current model info
 ///   llm list           - List available providers
 ///   llm use <p:m>      - Switch model
-///   llm ask <prompt>   - Direct LLM call with prompt text
-///   llm <prompt>       - Shorthand for `llm ask <prompt>`
+///   llm ask \<prompt\>   - Direct LLM call with prompt text
+///   llm \<prompt\>       - Shorthand for `llm ask <prompt>`
 pub(crate) async fn handle_llm_command(line: &str, agent: &mut Option<Agent>) {
     let parts: Vec<&str> = line.split_whitespace().collect();
 

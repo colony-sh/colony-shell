@@ -1,9 +1,9 @@
 //! The `sidebar` builtin command.
 //!
 //! Usage:
-//!   sidebar <position> [options] <command>   # add a panel
+//!   sidebar \<position\> \[options\] \<command\>   # add a panel
 //!   sidebar reset                             # clear all panels
-//!   sidebar reset <position>                  # clear panels at position
+//!   sidebar reset \<position\>                  # clear panels at position
 
 use colony_panel::PanelPosition;
 use serde::{Deserialize, Serialize};

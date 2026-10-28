@@ -310,7 +310,7 @@ pub enum WordPart {
     CommandSubRaw(String),
     /// Arithmetic expansion: $((expr)) - raw string, evaluated during expansion
     ArithRaw(String),
-    /// Inline expression expansion: $[expr]
+    /// Inline expression expansion: $\[expr\]
     ExprSub(Box<Expression>),
     /// Tilde expansion: ~ or ~user
     Tilde(Option<String>),

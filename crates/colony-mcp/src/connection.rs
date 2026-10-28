@@ -324,6 +324,17 @@ impl McpConnection {
     }
 }
 
+impl std::fmt::Debug for McpConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpConnection")
+            .field("name", &self.config.name)
+            .field("state", &self.state)
+            .field("tools", &self.tools.len())
+            .field("reconnect_attempts", &self.reconnect_attempts)
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,16 +402,5 @@ mod tests {
         assert!(debug.contains("McpConnection"));
         assert!(debug.contains("debug-test"));
         assert!(debug.contains("Disconnected"));
-    }
-}
-
-impl std::fmt::Debug for McpConnection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("McpConnection")
-            .field("name", &self.config.name)
-            .field("state", &self.state)
-            .field("tools", &self.tools.len())
-            .field("reconnect_attempts", &self.reconnect_attempts)
-            .finish()
     }
 }

@@ -132,7 +132,7 @@ impl CompletionEngine {
             items.extend(complete_git_branches(prefix, &context.cwd));
         }
 
-        items.sort_by(|a, b| b.score.cmp(&a.score));
+        items.sort_by_key(|item| std::cmp::Reverse(item.score));
         items
     }
 }

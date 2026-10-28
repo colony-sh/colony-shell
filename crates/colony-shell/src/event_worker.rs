@@ -360,7 +360,7 @@ mod tests {
             value: "5".to_string(),
         };
         assert!(check_conditions(
-            &[cond.clone()],
+            std::slice::from_ref(&cond),
             &serde_json::json!({ "count": 5 })
         ));
         assert!(check_conditions(
@@ -377,7 +377,7 @@ mod tests {
             value: "5".to_string(),
         };
         assert!(check_conditions(
-            &[cond.clone()],
+            std::slice::from_ref(&cond),
             &serde_json::json!({ "count": 5 })
         ));
         assert!(check_conditions(

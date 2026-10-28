@@ -40,29 +40,18 @@ impl EventHandler {
             loop {
                 // Poll for terminal events
                 if event::poll(tick_rate).unwrap_or(false) {
-                    match event::read() {
-                        Ok(event::Event::Key(key)) => {
-                            if event_tx.send(Event::Key(key)).is_err() {
-                                break;
-                            }
-                        }
-                        Ok(event::Event::Mouse(mouse)) => {
-                            if event_tx.send(Event::Mouse(mouse)).is_err() {
-                                break;
-                            }
-                        }
-                        Ok(event::Event::Resize(w, h)) => {
-                            if event_tx.send(Event::Resize(w, h)).is_err() {
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                } else {
-                    // Send tick event when no input
-                    if event_tx.send(Event::Tick).is_err() {
+                    let ev = match event::read() {
+                        Ok(event::Event::Key(key)) => Event::Key(key),
+                        Ok(event::Event::Mouse(mouse)) => Event::Mouse(mouse),
+                        Ok(event::Event::Resize(w, h)) => Event::Resize(w, h),
+                        _ => continue,
+                    };
+                    if event_tx.send(ev).is_err() {
                         break;
                     }
+                } else if event_tx.send(Event::Tick).is_err() {
+                    // Tick when there's no input
+                    break;
                 }
             }
         });

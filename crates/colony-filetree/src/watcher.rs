@@ -200,15 +200,14 @@ impl FileSystemWatcher {
             EventKind::Access(_) => {
                 // Ignore access events
             }
-            EventKind::Other => {
+            EventKind::Other
                 // Check for rename (paths will have from and to)
-                if event.paths.len() >= 2 {
+                if event.paths.len() >= 2 => {
                     results.push(WatchEvent::Renamed {
                         from: event.paths[0].clone(),
                         to: event.paths[1].clone(),
                     });
                 }
-            }
             _ => {}
         }
 

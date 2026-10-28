@@ -23,7 +23,7 @@ impl EvictionPolicy for LruEvictionPolicy {
 
         let excess = entries.len() - self.max_entries;
         let mut sorted: Vec<&MemoryEntry> = entries.iter().collect();
-        sorted.sort_by(|a, b| a.accessed_at.cmp(&b.accessed_at));
+        sorted.sort_by_key(|a| a.accessed_at);
 
         sorted.iter().take(excess).map(|e| e.id.as_str()).collect()
     }

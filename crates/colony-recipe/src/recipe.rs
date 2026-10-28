@@ -45,7 +45,7 @@ impl Recipe {
     }
 }
 
-/// Recipe metadata (the [recipe] section in TOML)
+/// Recipe metadata (the \[recipe\] section in TOML)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecipeMeta {
     pub name: String,

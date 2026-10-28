@@ -1,6 +1,6 @@
 //! flux - Process manager builtin for colony-shell
 //!
-//! Ported from https://github.com/VG-dev1/flux (MIT licensed).
+//! Ported from <https://github.com/VG-dev1/flux> (MIT licensed).
 //!
 //! Default mode: process listing with structured output on fd 5 (JSON),
 //! tuples on fd 4, and formatted text on stdout.
@@ -270,12 +270,12 @@ pub fn sort_processes(processes: &mut [ProcessInfo], sort_by: SortBy) {
                 .partial_cmp(&a.cpu)
                 .unwrap_or(std::cmp::Ordering::Equal)
         }),
-        SortBy::Mem => processes.sort_by(|a, b| b.memory_mb.cmp(&a.memory_mb)),
-        SortBy::Pid => processes.sort_by(|a, b| a.pid.cmp(&b.pid)),
+        SortBy::Mem => processes.sort_by_key(|p| std::cmp::Reverse(p.memory_mb)),
+        SortBy::Pid => processes.sort_by_key(|a| a.pid),
         SortBy::Name => {
-            processes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            processes.sort_by_key(|a| a.name.to_lowercase());
         }
-        SortBy::Port => processes.sort_by(|a, b| a.port.cmp(&b.port)),
+        SortBy::Port => processes.sort_by_key(|a| a.port),
     }
 }
 
@@ -525,7 +525,7 @@ fn run_nuke_mode(processes: &[ProcessInfo], signal: Signal) -> Result<BuiltinRes
 
 /// flux - Process manager builtin
 ///
-/// Usage: flux [flags]
+/// Usage: flux \[flags\]
 ///   --filter/-f NAME   Filter processes by name
 ///   --signal/-s SIG    Signal to send (default KILL)
 ///   --sort FIELD        Sort by cpu/mem/pid/name/port

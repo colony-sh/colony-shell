@@ -508,8 +508,8 @@ fn cmd_list(env: &DrawEnv) -> i32 {
     };
 
     println!(
-        "{:<10} {:<12} {:<14} {:<12} {}",
-        "ID", "TYPE", "POSITION", "SIZE", "Z"
+        "{:<10} {:<12} {:<14} {:<12} Z",
+        "ID", "TYPE", "POSITION", "SIZE"
     );
 
     for item in items {

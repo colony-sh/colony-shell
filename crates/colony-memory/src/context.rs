@@ -73,7 +73,7 @@ impl MemoryBackedContext {
     /// Retrieve the most recent entries in this scope, sorted newest-first.
     pub async fn retrieve_recent(&self, limit: usize) -> Result<Vec<ConversationTurn>> {
         let mut entries = self.store.list_scope(&self.scope).await?;
-        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.created_at));
         entries.truncate(limit);
         Ok(entries_to_turns(entries))
     }

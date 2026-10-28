@@ -19,42 +19,52 @@ path = "src/main.rs"
 [[bin]]
 name = "filetree"
 path = "../colony-filetree-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "filedetails"
 path = "../colony-filedetails-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "preview"
 path = "../colony-preview-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "gitstatus"
 path = "../colony-gitstatus-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "gitstage"
 path = "../colony-gitstage-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "jobs-panel"
 path = "../colony-jobs-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "history-panel"
 path = "../colony-history-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "env-panel"
 path = "../colony-env-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "logs-panel"
 path = "../colony-logs-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [[bin]]
 name = "session-panel"
 path = "../colony-session-bin/src/main.rs"
+doc = false # documented by its own crate
 
 [dependencies]
 colony-parser.workspace = true

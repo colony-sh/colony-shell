@@ -150,6 +150,6 @@ mod tests {
 
     #[test]
     fn test_osc_observer_default() {
-        let _observer = OscObserver::default();
+        let _observer = OscObserver;
     }
 }

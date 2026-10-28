@@ -208,16 +208,6 @@ mod inner {
             }
         }
 
-        /// Get a reference to the underlying tuple space
-        pub(crate) fn space(&self) -> &TupleSpace {
-            &self.space
-        }
-
-        /// Get a reference to the subscription manager
-        pub(crate) fn subscriptions(&self) -> &SubscriptionManager {
-            &self.subscriptions
-        }
-
         /// Get the number of active subscriptions
         pub fn active_subscription_count(&self) -> usize {
             self.active_subscriptions.len()

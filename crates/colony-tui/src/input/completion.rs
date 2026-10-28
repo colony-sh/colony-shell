@@ -93,7 +93,8 @@ impl GhostCompletion {
         self.collect_path_suggestions(input);
 
         // Sort by priority (higher first)
-        self.suggestions.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.suggestions
+            .sort_by_key(|s| std::cmp::Reverse(s.priority));
 
         // Set current suggestion
         self.current = self.suggestions.first().cloned();

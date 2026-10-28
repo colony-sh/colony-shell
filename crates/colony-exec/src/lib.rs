@@ -1587,673 +1587,6 @@ fn cmp_strings(op: &colony_parser::BinaryOp, left: &str, right: &str) -> bool {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use colony_expand::Variable;
-
-    fn exec_single(source: &str) -> Executor {
-        let program = colony_parser::parse(source).expect("parse failed");
-        let mut exec = Executor::new(ExpansionContext::new());
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        rt.block_on(
-            exec.execute_statement_recursive(program.statements.first().expect("missing stmt")),
-        )
-        .expect("execute failed");
-        exec
-    }
-
-    fn exec_program(source: &str) -> Executor {
-        let program = colony_parser::parse(source).expect("parse failed");
-        let mut exec = Executor::new(ExpansionContext::new());
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        for stmt in &program.statements {
-            rt.block_on(exec.execute_statement_recursive(stmt))
-                .expect("execute failed");
-        }
-        exec
-    }
-
-    fn exec_program_result(source: &str) -> Result<Executor> {
-        let program = colony_parser::parse(source).expect("parse failed");
-        let mut exec = Executor::new(ExpansionContext::new());
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        for stmt in &program.statements {
-            rt.block_on(exec.execute_statement_recursive(stmt))?;
-        }
-        Ok(exec)
-    }
-
-    #[test]
-    fn var_decl_list_literal() {
-        let exec = exec_single("var nums = [1, 2, 3]");
-        match exec.context().get_variable("nums") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(
-                    values,
-                    &vec!["1".to_string(), "2".to_string(), "3".to_string()]
-                );
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_dict_literal() {
-        let exec = exec_single(r#"var conf = {foo: "bar", ["baz"]: 2}"#);
-        match exec.context().get_variable("conf") {
-            Some(Variable::AssocArray(map)) => {
-                assert_eq!(map.get("foo").map(String::as_str), Some("bar"));
-                assert_eq!(map.get("baz").map(String::as_str), Some("2"));
-            }
-            other => panic!("expected assoc array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_field_access() {
-        let exec = exec_single(r#"var x = {foo: 1}.foo"#);
-        match exec.context().get_variable("x") {
-            Some(Variable::String(value)) => assert_eq!(value, "1"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_index_access() {
-        let exec = exec_single("var y = [10, 20][1]");
-        match exec.context().get_variable("y") {
-            Some(Variable::String(value)) => assert_eq!(value, "20"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_null_coalesce() {
-        let exec = exec_single("var z = missing ?? 5");
-        match exec.context().get_variable("z") {
-            Some(Variable::String(value)) => assert_eq!(value, "5"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_ternary() {
-        let exec = exec_single("var t = true ? 1 : 2");
-        match exec.context().get_variable("t") {
-            Some(Variable::String(value)) => assert_eq!(value, "1"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_tuple_literal() {
-        let exec = exec_single("var tup = (1, 2)");
-        match exec.context().get_variable("tup") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_func_len() {
-        let exec = exec_single("var n = len([1, 2, 3])");
-        match exec.context().get_variable("n") {
-            Some(Variable::String(value)) => assert_eq!(value, "3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_func_upper() {
-        let exec = exec_single(r#"var v = upper("hi")"#);
-        match exec.context().get_variable("v") {
-            Some(Variable::String(value)) => assert_eq!(value, "HI"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_func_bool() {
-        let exec = exec_single(r#"var b = bool("")"#);
-        match exec.context().get_variable("b") {
-            Some(Variable::String(value)) => assert_eq!(value, "false"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_func_join() {
-        let exec = exec_single(r#"var j = join("-", [1, 2, 3])"#);
-        match exec.context().get_variable("j") {
-            Some(Variable::String(value)) => assert_eq!(value, "1-2-3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_func_split() {
-        let exec = exec_single(r#"var s = split(":", "a:b:c")"#);
-        match exec.context().get_variable("s") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(
-                    values,
-                    &vec!["a".to_string(), "b".to_string(), "c".to_string()]
-                );
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_func_keys_values() {
-        let exec = exec_single(r#"var k = keys({foo: 1, bar: 2})"#);
-        match exec.context().get_variable("k") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"foo".to_string()));
-                assert!(values.contains(&"bar".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-
-        let exec = exec_single(r#"var v = values({foo: 1, bar: 2})"#);
-        match exec.context().get_variable("v") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"1".to_string()));
-                assert!(values.contains(&"2".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_method_join_split() {
-        let exec = exec_single(r#"var j = [1, 2, 3].join("-")"#);
-        match exec.context().get_variable("j") {
-            Some(Variable::String(value)) => assert_eq!(value, "1-2-3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-
-        let exec = exec_single(r#"var s = "a:b:c".split(":")"#);
-        match exec.context().get_variable("s") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(
-                    values,
-                    &vec!["a".to_string(), "b".to_string(), "c".to_string()]
-                );
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_method_keys_values() {
-        let exec = exec_single(r#"var k = {foo: 1, bar: 2}.keys()"#);
-        match exec.context().get_variable("k") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"foo".to_string()));
-                assert!(values.contains(&"bar".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-
-        let exec = exec_single(r#"var v = {foo: 1, bar: 2}.values()"#);
-        match exec.context().get_variable("v") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"1".to_string()));
-                assert!(values.contains(&"2".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_optional_method_chain() {
-        let exec = exec_single(r#"var k = missing?.keys()"#);
-        match exec.context().get_variable("k") {
-            Some(Variable::String(value)) => assert_eq!(value, ""),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_optional_index_field_chain() {
-        let exec = exec_single(r#"var v = missing?.items[0].name?.len()"#);
-        match exec.context().get_variable("v") {
-            Some(Variable::String(value)) => assert_eq!(value, ""),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_method_on_null_errors() {
-        let program = colony_parser::parse("var k = missing.keys()").expect("parse failed");
-        let mut exec = Executor::new(ExpansionContext::new());
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        let result = rt.block_on(
-            exec.execute_statement_recursive(program.statements.first().expect("missing stmt")),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn var_decl_optional_call() {
-        let exec = exec_single("var v = len?([1, 2, 3])");
-        match exec.context().get_variable("v") {
-            Some(Variable::String(value)) => assert_eq!(value, "3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_direct_method_call() {
-        let exec = exec_single("var n = items.len()");
-        match exec.context().get_variable("n") {
-            Some(Variable::String(value)) => assert_eq!(value, "0"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_array_method_len() {
-        let exec = exec_program("var nums = [1, 2, 3]; var n = nums.len()");
-        match exec.context().get_variable("n") {
-            Some(Variable::String(value)) => assert_eq!(value, "3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_dict_method_keys_values() {
-        let exec = exec_program("var m = {foo: 1, bar: 2}; var k = m.keys(); var v = m.values()");
-        match exec.context().get_variable("k") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"foo".to_string()));
-                assert!(values.contains(&"bar".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-
-        match exec.context().get_variable("v") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"1".to_string()));
-                assert!(values.contains(&"2".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_optional_dict_method_chain() {
-        let exec = exec_program("var k = m?.keys(); var v = m?.values()");
-        match exec.context().get_variable("k") {
-            Some(Variable::String(value)) => assert_eq!(value, ""),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("v") {
-            Some(Variable::String(value)) => assert_eq!(value, ""),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_optional_dict_method_chain_present() {
-        let exec = exec_program("var m = {foo: 1, bar: 2}; var k = m?.keys(); var v = m?.values()");
-        match exec.context().get_variable("k") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"foo".to_string()));
-                assert!(values.contains(&"bar".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-        match exec.context().get_variable("v") {
-            Some(Variable::Array(values)) => {
-                assert!(values.contains(&"1".to_string()));
-                assert!(values.contains(&"2".to_string()));
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_dict_get_has_methods() {
-        let exec = exec_program(
-            r#"var m = {foo: 1, bar: 2}; var g = m.get("foo"); var d = m.get("missing", 9); var h = m.has("bar")"#,
-        );
-        match exec.context().get_variable("g") {
-            Some(Variable::String(value)) => assert_eq!(value, "1"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("d") {
-            Some(Variable::String(value)) => assert_eq!(value, "9"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("h") {
-            Some(Variable::String(value)) => assert_eq!(value, "true"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_string_methods() {
-        let exec = exec_program(
-            r#"var s = "  hi  "; var t = s.trim(); var r = s.replace("hi", "yo"); var c = s.contains("hi")"#,
-        );
-        match exec.context().get_variable("t") {
-            Some(Variable::String(value)) => assert_eq!(value, "hi"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("r") {
-            Some(Variable::String(value)) => assert!(value.contains("yo")),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("c") {
-            Some(Variable::String(value)) => assert_eq!(value, "true"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_list_methods() {
-        let exec = exec_program(
-            r#"var nums = [1, 2, 3]; var f = nums.first(); var l = nums.last(); var p = nums.push(4); var popped = nums.pop()"#,
-        );
-        match exec.context().get_variable("f") {
-            Some(Variable::String(value)) => assert_eq!(value, "1"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("l") {
-            Some(Variable::String(value)) => assert_eq!(value, "3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("p") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(
-                    values,
-                    &vec![
-                        "1".to_string(),
-                        "2".to_string(),
-                        "3".to_string(),
-                        "4".to_string()
-                    ]
-                );
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-        match exec.context().get_variable("popped") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(values, &vec!["[1, 2]".to_string(), "3".to_string()]);
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_numeric_coercion() {
-        let exec = exec_program(
-            r#"var a = "3" + 2; var b = 10 - "4"; var c = "6" * 2; var d = "8" / 2; var e = "9" // 2; var f = "7" % 2"#,
-        );
-        match exec.context().get_variable("a") {
-            Some(Variable::String(value)) => assert_eq!(value, "5"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("b") {
-            Some(Variable::String(value)) => assert_eq!(value, "6"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("c") {
-            Some(Variable::String(value)) => assert_eq!(value, "12"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("d") {
-            Some(Variable::String(value)) => assert_eq!(value, "4"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("e") {
-            Some(Variable::String(value)) => assert_eq!(value, "4"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("f") {
-            Some(Variable::String(value)) => assert_eq!(value, "1"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_float_string_coercion() {
-        let exec = exec_program(
-            r#"var a = "3.5" + 2.0; var b = 10.0 - "4.25"; var c = "2.5" * 2; var d = "7.5" / 2.5"#,
-        );
-        match exec.context().get_variable("a") {
-            Some(Variable::String(value)) => assert_eq!(value, "5.5"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("b") {
-            Some(Variable::String(value)) => assert_eq!(value, "5.75"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("c") {
-            Some(Variable::String(value)) => assert_eq!(value, "5"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("d") {
-            Some(Variable::String(value)) => assert_eq!(value, "3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_list_insert_remove_slice() {
-        let exec = exec_program(
-            r#"var nums = [1, 2, 3]; var i = nums.insert(1, 9); var r = nums.remove(0); var s = nums.slice(1, 3)"#,
-        );
-        match exec.context().get_variable("i") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(
-                    values,
-                    &vec![
-                        "1".to_string(),
-                        "9".to_string(),
-                        "2".to_string(),
-                        "3".to_string()
-                    ]
-                );
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-        match exec.context().get_variable("r") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(values, &vec!["[2, 3]".to_string(), "1".to_string()]);
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-        match exec.context().get_variable("s") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(values, &vec!["2".to_string(), "3".to_string()]);
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_tuple_destructure_pop() {
-        let exec = exec_program(r#"var nums = [1, 2, 3]; var (rest, last) = nums.pop()"#);
-        match exec.context().get_variable("rest") {
-            Some(Variable::Array(values)) => {
-                assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
-            }
-            other => panic!("expected array, got {:?}", other),
-        }
-        match exec.context().get_variable("last") {
-            Some(Variable::String(value)) => assert_eq!(value, "3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_tuple_destructure_longer() {
-        let exec = exec_program(r#"var (a, b, c) = (1, 2, 3)"#);
-        match exec.context().get_variable("a") {
-            Some(Variable::String(value)) => assert_eq!(value, "1"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("b") {
-            Some(Variable::String(value)) => assert_eq!(value, "2"),
-            other => panic!("expected string, got {:?}", other),
-        }
-        match exec.context().get_variable("c") {
-            Some(Variable::String(value)) => assert_eq!(value, "3"),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_optional_chain_null() {
-        let exec = exec_single(r#"var v = missing?.foo"#);
-        match exec.context().get_variable("v") {
-            Some(Variable::String(value)) => assert_eq!(value, ""),
-            other => panic!("expected string, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn var_decl_unwrap_error() {
-        let program = colony_parser::parse("var v = missing!").expect("parse failed");
-        let mut exec = Executor::new(ExpansionContext::new());
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        let result = rt.block_on(
-            exec.execute_statement_recursive(program.statements.first().expect("missing stmt")),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn try_catch_handles_command_not_found() {
-        let exec = exec_program(r#"try { missing_command } catch { var handled = 1 }"#);
-        match exec.context().get_variable("handled") {
-            Some(Variable::String(value)) => assert_eq!(value, "1"),
-            other => panic!("expected handled, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn try_finally_runs_on_success() {
-        let exec = exec_program(r#"try { var a = 1 } finally { var b = 2 }"#);
-        match exec.context().get_variable("b") {
-            Some(Variable::String(value)) => assert_eq!(value, "2"),
-            other => panic!("expected b, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn try_catch_type_mismatch_propagates() {
-        let result =
-            exec_program_result(r#"try { missing_command } catch OtherError { var handled = 1 }"#);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn expand_inline_expression_in_word() {
-        use colony_expand::Expander;
-        use colony_parser::Statement;
-
-        let program = colony_parser::parse(r#"echo $[1 + 2] $["a" + "b"]"#).unwrap();
-        let stmt = program.statements.first().unwrap();
-        let cmd = match stmt {
-            Statement::SimpleCommand(cmd) => cmd,
-            Statement::List(list) => match &*list.first {
-                Statement::Pipeline(pipeline) => match pipeline.elements.first() {
-                    Some(element) => match &*element.command {
-                        Statement::SimpleCommand(cmd) => cmd,
-                        other => panic!("expected simple command, got {:?}", other),
-                    },
-                    None => panic!("expected pipeline element"),
-                },
-                other => panic!("expected pipeline, got {:?}", other),
-            },
-            other => panic!("expected simple command, got {:?}", other),
-        };
-
-        let mut expander = Expander::with_executor_and_expr(
-            ExpansionContext::new(),
-            |_, _| Ok(String::new()),
-            |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
-        );
-
-        let first = expander.expand_word(&cmd.args[0]).unwrap();
-        assert_eq!(first[0].text, "3");
-
-        let second = expander.expand_word(&cmd.args[1]).unwrap();
-        assert_eq!(second[0].text, "ab");
-    }
-
-    // --- Control flow behavioral tests ---
-    // Note: break/continue as shell keywords are handled by colony-shell's
-    // control_flow module, not colony-exec. Tests here cover what colony-exec
-    // handles directly: for iteration, while conditions, and function return.
-
-    #[test]
-    fn for_loop_iterates_all_words() {
-        let exec = exec_program("x=0; for i in 1 2 3; do x=$i; done");
-        assert_eq!(
-            exec.context().get_var_or_env("x"),
-            Some("3".to_string()),
-            "for loop should iterate through all words, x ends at last value"
-        );
-    }
-
-    #[test]
-    fn for_loop_sets_variable_each_iteration() {
-        // Accumulate values to prove each iteration runs
-        let exec = exec_program("result=''; for i in a b c; do result=\"${result}${i}\"; done");
-        assert_eq!(
-            exec.context().get_var_or_env("result"),
-            Some("abc".to_string()),
-        );
-    }
-
-    #[test]
-    fn while_loop_terminates_on_condition() {
-        let exec = exec_program("i=0; while [ $i -lt 3 ]; do i=$((i+1)); done");
-        assert_eq!(exec.context().get_var_or_env("i"), Some("3".to_string()),);
-    }
-
-    #[test]
-    fn while_false_body_never_runs() {
-        let exec = exec_program("x=untouched; while false; do x=changed; done");
-        assert_eq!(
-            exec.context().get_var_or_env("x"),
-            Some("untouched".to_string()),
-        );
-    }
-
-    #[test]
-    fn function_return_propagates_exit_code() {
-        let exec = exec_program("myfunc() { return 42; }; myfunc");
-        assert_eq!(exec.context().last_exit_status(), 42);
-    }
-
-    #[test]
-    fn function_return_zero_on_success() {
-        let exec = exec_program("myfunc() { return 0; }; myfunc");
-        assert_eq!(exec.context().last_exit_status(), 0);
-    }
-
-    #[test]
-    fn if_true_branch_executes() {
-        let exec = exec_program("if true; then x=yes; else x=no; fi");
-        assert_eq!(exec.context().get_var_or_env("x"), Some("yes".to_string()),);
-    }
-
-    #[test]
-    fn if_false_takes_else_branch() {
-        let exec = exec_program("if false; then x=yes; else x=no; fi");
-        assert_eq!(exec.context().get_var_or_env("x"), Some("no".to_string()),);
-    }
-}
-
 /// Main executor for shell commands
 pub struct Executor {
     context: ExpansionContext,
@@ -3896,7 +3229,7 @@ impl Executor {
                                 )));
                             }
 
-                            for (name, value) in names.iter().zip(values.into_iter()) {
+                            for (name, value) in names.iter().zip(values) {
                                 let var = eval_value_to_variable(value)?;
                                 self.apply_var_decl(name, var, attrs, decl.kind)?;
                             }
@@ -4943,4 +4276,671 @@ fn is_recoverable_error(e: &ExecutionError) -> bool {
             | ExecutionError::AmbiguousRedirect
             | ExecutionError::InvalidRedirect(_)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use colony_expand::Variable;
+
+    fn exec_single(source: &str) -> Executor {
+        let program = colony_parser::parse(source).expect("parse failed");
+        let mut exec = Executor::new(ExpansionContext::new());
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        rt.block_on(
+            exec.execute_statement_recursive(program.statements.first().expect("missing stmt")),
+        )
+        .expect("execute failed");
+        exec
+    }
+
+    fn exec_program(source: &str) -> Executor {
+        let program = colony_parser::parse(source).expect("parse failed");
+        let mut exec = Executor::new(ExpansionContext::new());
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        for stmt in &program.statements {
+            rt.block_on(exec.execute_statement_recursive(stmt))
+                .expect("execute failed");
+        }
+        exec
+    }
+
+    fn exec_program_result(source: &str) -> Result<Executor> {
+        let program = colony_parser::parse(source).expect("parse failed");
+        let mut exec = Executor::new(ExpansionContext::new());
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        for stmt in &program.statements {
+            rt.block_on(exec.execute_statement_recursive(stmt))?;
+        }
+        Ok(exec)
+    }
+
+    #[test]
+    fn var_decl_list_literal() {
+        let exec = exec_single("var nums = [1, 2, 3]");
+        match exec.context().get_variable("nums") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(
+                    values,
+                    &vec!["1".to_string(), "2".to_string(), "3".to_string()]
+                );
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_dict_literal() {
+        let exec = exec_single(r#"var conf = {foo: "bar", ["baz"]: 2}"#);
+        match exec.context().get_variable("conf") {
+            Some(Variable::AssocArray(map)) => {
+                assert_eq!(map.get("foo").map(String::as_str), Some("bar"));
+                assert_eq!(map.get("baz").map(String::as_str), Some("2"));
+            }
+            other => panic!("expected assoc array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_field_access() {
+        let exec = exec_single(r#"var x = {foo: 1}.foo"#);
+        match exec.context().get_variable("x") {
+            Some(Variable::String(value)) => assert_eq!(value, "1"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_index_access() {
+        let exec = exec_single("var y = [10, 20][1]");
+        match exec.context().get_variable("y") {
+            Some(Variable::String(value)) => assert_eq!(value, "20"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_null_coalesce() {
+        let exec = exec_single("var z = missing ?? 5");
+        match exec.context().get_variable("z") {
+            Some(Variable::String(value)) => assert_eq!(value, "5"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_ternary() {
+        let exec = exec_single("var t = true ? 1 : 2");
+        match exec.context().get_variable("t") {
+            Some(Variable::String(value)) => assert_eq!(value, "1"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_tuple_literal() {
+        let exec = exec_single("var tup = (1, 2)");
+        match exec.context().get_variable("tup") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_func_len() {
+        let exec = exec_single("var n = len([1, 2, 3])");
+        match exec.context().get_variable("n") {
+            Some(Variable::String(value)) => assert_eq!(value, "3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_func_upper() {
+        let exec = exec_single(r#"var v = upper("hi")"#);
+        match exec.context().get_variable("v") {
+            Some(Variable::String(value)) => assert_eq!(value, "HI"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_func_bool() {
+        let exec = exec_single(r#"var b = bool("")"#);
+        match exec.context().get_variable("b") {
+            Some(Variable::String(value)) => assert_eq!(value, "false"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_func_join() {
+        let exec = exec_single(r#"var j = join("-", [1, 2, 3])"#);
+        match exec.context().get_variable("j") {
+            Some(Variable::String(value)) => assert_eq!(value, "1-2-3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_func_split() {
+        let exec = exec_single(r#"var s = split(":", "a:b:c")"#);
+        match exec.context().get_variable("s") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(
+                    values,
+                    &vec!["a".to_string(), "b".to_string(), "c".to_string()]
+                );
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_func_keys_values() {
+        let exec = exec_single(r#"var k = keys({foo: 1, bar: 2})"#);
+        match exec.context().get_variable("k") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"foo".to_string()));
+                assert!(values.contains(&"bar".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+
+        let exec = exec_single(r#"var v = values({foo: 1, bar: 2})"#);
+        match exec.context().get_variable("v") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"1".to_string()));
+                assert!(values.contains(&"2".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_method_join_split() {
+        let exec = exec_single(r#"var j = [1, 2, 3].join("-")"#);
+        match exec.context().get_variable("j") {
+            Some(Variable::String(value)) => assert_eq!(value, "1-2-3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+
+        let exec = exec_single(r#"var s = "a:b:c".split(":")"#);
+        match exec.context().get_variable("s") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(
+                    values,
+                    &vec!["a".to_string(), "b".to_string(), "c".to_string()]
+                );
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_method_keys_values() {
+        let exec = exec_single(r#"var k = {foo: 1, bar: 2}.keys()"#);
+        match exec.context().get_variable("k") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"foo".to_string()));
+                assert!(values.contains(&"bar".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+
+        let exec = exec_single(r#"var v = {foo: 1, bar: 2}.values()"#);
+        match exec.context().get_variable("v") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"1".to_string()));
+                assert!(values.contains(&"2".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_optional_method_chain() {
+        let exec = exec_single(r#"var k = missing?.keys()"#);
+        match exec.context().get_variable("k") {
+            Some(Variable::String(value)) => assert_eq!(value, ""),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_optional_index_field_chain() {
+        let exec = exec_single(r#"var v = missing?.items[0].name?.len()"#);
+        match exec.context().get_variable("v") {
+            Some(Variable::String(value)) => assert_eq!(value, ""),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_method_on_null_errors() {
+        let program = colony_parser::parse("var k = missing.keys()").expect("parse failed");
+        let mut exec = Executor::new(ExpansionContext::new());
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let result = rt.block_on(
+            exec.execute_statement_recursive(program.statements.first().expect("missing stmt")),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn var_decl_optional_call() {
+        let exec = exec_single("var v = len?([1, 2, 3])");
+        match exec.context().get_variable("v") {
+            Some(Variable::String(value)) => assert_eq!(value, "3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_direct_method_call() {
+        let exec = exec_single("var n = items.len()");
+        match exec.context().get_variable("n") {
+            Some(Variable::String(value)) => assert_eq!(value, "0"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_array_method_len() {
+        let exec = exec_program("var nums = [1, 2, 3]; var n = nums.len()");
+        match exec.context().get_variable("n") {
+            Some(Variable::String(value)) => assert_eq!(value, "3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_dict_method_keys_values() {
+        let exec = exec_program("var m = {foo: 1, bar: 2}; var k = m.keys(); var v = m.values()");
+        match exec.context().get_variable("k") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"foo".to_string()));
+                assert!(values.contains(&"bar".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+
+        match exec.context().get_variable("v") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"1".to_string()));
+                assert!(values.contains(&"2".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_optional_dict_method_chain() {
+        let exec = exec_program("var k = m?.keys(); var v = m?.values()");
+        match exec.context().get_variable("k") {
+            Some(Variable::String(value)) => assert_eq!(value, ""),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("v") {
+            Some(Variable::String(value)) => assert_eq!(value, ""),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_optional_dict_method_chain_present() {
+        let exec = exec_program("var m = {foo: 1, bar: 2}; var k = m?.keys(); var v = m?.values()");
+        match exec.context().get_variable("k") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"foo".to_string()));
+                assert!(values.contains(&"bar".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+        match exec.context().get_variable("v") {
+            Some(Variable::Array(values)) => {
+                assert!(values.contains(&"1".to_string()));
+                assert!(values.contains(&"2".to_string()));
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_dict_get_has_methods() {
+        let exec = exec_program(
+            r#"var m = {foo: 1, bar: 2}; var g = m.get("foo"); var d = m.get("missing", 9); var h = m.has("bar")"#,
+        );
+        match exec.context().get_variable("g") {
+            Some(Variable::String(value)) => assert_eq!(value, "1"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("d") {
+            Some(Variable::String(value)) => assert_eq!(value, "9"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("h") {
+            Some(Variable::String(value)) => assert_eq!(value, "true"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_string_methods() {
+        let exec = exec_program(
+            r#"var s = "  hi  "; var t = s.trim(); var r = s.replace("hi", "yo"); var c = s.contains("hi")"#,
+        );
+        match exec.context().get_variable("t") {
+            Some(Variable::String(value)) => assert_eq!(value, "hi"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("r") {
+            Some(Variable::String(value)) => assert!(value.contains("yo")),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("c") {
+            Some(Variable::String(value)) => assert_eq!(value, "true"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_list_methods() {
+        let exec = exec_program(
+            r#"var nums = [1, 2, 3]; var f = nums.first(); var l = nums.last(); var p = nums.push(4); var popped = nums.pop()"#,
+        );
+        match exec.context().get_variable("f") {
+            Some(Variable::String(value)) => assert_eq!(value, "1"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("l") {
+            Some(Variable::String(value)) => assert_eq!(value, "3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("p") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(
+                    values,
+                    &vec![
+                        "1".to_string(),
+                        "2".to_string(),
+                        "3".to_string(),
+                        "4".to_string()
+                    ]
+                );
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+        match exec.context().get_variable("popped") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(values, &vec!["[1, 2]".to_string(), "3".to_string()]);
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_numeric_coercion() {
+        let exec = exec_program(
+            r#"var a = "3" + 2; var b = 10 - "4"; var c = "6" * 2; var d = "8" / 2; var e = "9" // 2; var f = "7" % 2"#,
+        );
+        match exec.context().get_variable("a") {
+            Some(Variable::String(value)) => assert_eq!(value, "5"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("b") {
+            Some(Variable::String(value)) => assert_eq!(value, "6"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("c") {
+            Some(Variable::String(value)) => assert_eq!(value, "12"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("d") {
+            Some(Variable::String(value)) => assert_eq!(value, "4"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("e") {
+            Some(Variable::String(value)) => assert_eq!(value, "4"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("f") {
+            Some(Variable::String(value)) => assert_eq!(value, "1"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_float_string_coercion() {
+        let exec = exec_program(
+            r#"var a = "3.5" + 2.0; var b = 10.0 - "4.25"; var c = "2.5" * 2; var d = "7.5" / 2.5"#,
+        );
+        match exec.context().get_variable("a") {
+            Some(Variable::String(value)) => assert_eq!(value, "5.5"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("b") {
+            Some(Variable::String(value)) => assert_eq!(value, "5.75"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("c") {
+            Some(Variable::String(value)) => assert_eq!(value, "5"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("d") {
+            Some(Variable::String(value)) => assert_eq!(value, "3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_list_insert_remove_slice() {
+        let exec = exec_program(
+            r#"var nums = [1, 2, 3]; var i = nums.insert(1, 9); var r = nums.remove(0); var s = nums.slice(1, 3)"#,
+        );
+        match exec.context().get_variable("i") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(
+                    values,
+                    &vec![
+                        "1".to_string(),
+                        "9".to_string(),
+                        "2".to_string(),
+                        "3".to_string()
+                    ]
+                );
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+        match exec.context().get_variable("r") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(values, &vec!["[2, 3]".to_string(), "1".to_string()]);
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+        match exec.context().get_variable("s") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(values, &vec!["2".to_string(), "3".to_string()]);
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_tuple_destructure_pop() {
+        let exec = exec_program(r#"var nums = [1, 2, 3]; var (rest, last) = nums.pop()"#);
+        match exec.context().get_variable("rest") {
+            Some(Variable::Array(values)) => {
+                assert_eq!(values, &vec!["1".to_string(), "2".to_string()]);
+            }
+            other => panic!("expected array, got {:?}", other),
+        }
+        match exec.context().get_variable("last") {
+            Some(Variable::String(value)) => assert_eq!(value, "3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_tuple_destructure_longer() {
+        let exec = exec_program(r#"var (a, b, c) = (1, 2, 3)"#);
+        match exec.context().get_variable("a") {
+            Some(Variable::String(value)) => assert_eq!(value, "1"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("b") {
+            Some(Variable::String(value)) => assert_eq!(value, "2"),
+            other => panic!("expected string, got {:?}", other),
+        }
+        match exec.context().get_variable("c") {
+            Some(Variable::String(value)) => assert_eq!(value, "3"),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_optional_chain_null() {
+        let exec = exec_single(r#"var v = missing?.foo"#);
+        match exec.context().get_variable("v") {
+            Some(Variable::String(value)) => assert_eq!(value, ""),
+            other => panic!("expected string, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn var_decl_unwrap_error() {
+        let program = colony_parser::parse("var v = missing!").expect("parse failed");
+        let mut exec = Executor::new(ExpansionContext::new());
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let result = rt.block_on(
+            exec.execute_statement_recursive(program.statements.first().expect("missing stmt")),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn try_catch_handles_command_not_found() {
+        let exec = exec_program(r#"try { missing_command } catch { var handled = 1 }"#);
+        match exec.context().get_variable("handled") {
+            Some(Variable::String(value)) => assert_eq!(value, "1"),
+            other => panic!("expected handled, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn try_finally_runs_on_success() {
+        let exec = exec_program(r#"try { var a = 1 } finally { var b = 2 }"#);
+        match exec.context().get_variable("b") {
+            Some(Variable::String(value)) => assert_eq!(value, "2"),
+            other => panic!("expected b, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn try_catch_type_mismatch_propagates() {
+        let result =
+            exec_program_result(r#"try { missing_command } catch OtherError { var handled = 1 }"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn expand_inline_expression_in_word() {
+        use colony_expand::Expander;
+        use colony_parser::Statement;
+
+        let program = colony_parser::parse(r#"echo $[1 + 2] $["a" + "b"]"#).unwrap();
+        let stmt = program.statements.first().unwrap();
+        let cmd = match stmt {
+            Statement::SimpleCommand(cmd) => cmd,
+            Statement::List(list) => match &*list.first {
+                Statement::Pipeline(pipeline) => match pipeline.elements.first() {
+                    Some(element) => match &*element.command {
+                        Statement::SimpleCommand(cmd) => cmd,
+                        other => panic!("expected simple command, got {:?}", other),
+                    },
+                    None => panic!("expected pipeline element"),
+                },
+                other => panic!("expected pipeline, got {:?}", other),
+            },
+            other => panic!("expected simple command, got {:?}", other),
+        };
+
+        let mut expander = Expander::with_executor_and_expr(
+            ExpansionContext::new(),
+            |_, _| Ok(String::new()),
+            |expr, ctx| crate::eval_expression_to_string(expr, ctx).map_err(|e| e.to_string()),
+        );
+
+        let first = expander.expand_word(&cmd.args[0]).unwrap();
+        assert_eq!(first[0].text, "3");
+
+        let second = expander.expand_word(&cmd.args[1]).unwrap();
+        assert_eq!(second[0].text, "ab");
+    }
+
+    // --- Control flow behavioral tests ---
+    // Note: break/continue as shell keywords are handled by colony-shell's
+    // control_flow module, not colony-exec. Tests here cover what colony-exec
+    // handles directly: for iteration, while conditions, and function return.
+
+    #[test]
+    fn for_loop_iterates_all_words() {
+        let exec = exec_program("x=0; for i in 1 2 3; do x=$i; done");
+        assert_eq!(
+            exec.context().get_var_or_env("x"),
+            Some("3".to_string()),
+            "for loop should iterate through all words, x ends at last value"
+        );
+    }
+
+    #[test]
+    fn for_loop_sets_variable_each_iteration() {
+        // Accumulate values to prove each iteration runs
+        let exec = exec_program("result=''; for i in a b c; do result=\"${result}${i}\"; done");
+        assert_eq!(
+            exec.context().get_var_or_env("result"),
+            Some("abc".to_string()),
+        );
+    }
+
+    #[test]
+    fn while_loop_terminates_on_condition() {
+        let exec = exec_program("i=0; while [ $i -lt 3 ]; do i=$((i+1)); done");
+        assert_eq!(exec.context().get_var_or_env("i"), Some("3".to_string()),);
+    }
+
+    #[test]
+    fn while_false_body_never_runs() {
+        let exec = exec_program("x=untouched; while false; do x=changed; done");
+        assert_eq!(
+            exec.context().get_var_or_env("x"),
+            Some("untouched".to_string()),
+        );
+    }
+
+    #[test]
+    fn function_return_propagates_exit_code() {
+        let exec = exec_program("myfunc() { return 42; }; myfunc");
+        assert_eq!(exec.context().last_exit_status(), 42);
+    }
+
+    #[test]
+    fn function_return_zero_on_success() {
+        let exec = exec_program("myfunc() { return 0; }; myfunc");
+        assert_eq!(exec.context().last_exit_status(), 0);
+    }
+
+    #[test]
+    fn if_true_branch_executes() {
+        let exec = exec_program("if true; then x=yes; else x=no; fi");
+        assert_eq!(exec.context().get_var_or_env("x"), Some("yes".to_string()),);
+    }
+
+    #[test]
+    fn if_false_takes_else_branch() {
+        let exec = exec_program("if false; then x=yes; else x=no; fi");
+        assert_eq!(exec.context().get_var_or_env("x"), Some("no".to_string()),);
+    }
 }

@@ -20,6 +20,8 @@ use super::converter;
 use super::importer;
 
 /// Result of the wizard run.
+// Callers ignore the result today; kept so a caller can act on the choices.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct WizardResult {
     /// Whether the wizard completed successfully.

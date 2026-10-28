@@ -142,11 +142,7 @@ pub fn handle_status(serve_state: &ServeState) -> Result<BuiltinResult> {
     let duration_us = serve_state.stats.total_duration_us.load(Ordering::Relaxed);
 
     let state_str = if running { "running" } else { "stopped" };
-    let avg_ms = if total > 0 {
-        duration_us / total / 1000
-    } else {
-        0
-    };
+    let avg_ms = duration_us.checked_div(total).unwrap_or(0) / 1000;
 
     println!("State:    {state_str}");
     println!("Address:  {}:{}", config.host, config.port);
@@ -512,9 +508,7 @@ pub fn handle_workers(serve_state: &ServeState) -> Result<BuiltinResult> {
 
     let info = rt.block_on(async {
         let pool_guard = serve_state.rack_pool.read().await;
-        let Some(ref pool) = *pool_guard else {
-            return None;
-        };
+        let pool = (*pool_guard).as_ref()?;
         Some(pool.worker_info().await)
     });
 
@@ -529,8 +523,8 @@ pub fn handle_workers(serve_state: &ServeState) -> Result<BuiltinResult> {
     }
 
     println!(
-        "  {:<6} {:<8} {:<8} {:<12} {}",
-        "IDX", "PID", "STATUS", "REQUESTS", "UPTIME"
+        "  {:<6} {:<8} {:<8} {:<12} UPTIME",
+        "IDX", "PID", "STATUS", "REQUESTS"
     );
     for w in &workers {
         let pid_str = w.pid.map_or("-".to_string(), |p| p.to_string());

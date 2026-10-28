@@ -433,7 +433,7 @@ mod tests {
         };
 
         let codegen = McpCodegen::with_output_dir(PathBuf::from("/tmp/test")).unwrap();
-        let hash1 = codegen.compute_schema_hash(&[info.clone()]);
+        let hash1 = codegen.compute_schema_hash(std::slice::from_ref(&info));
         let hash2 = codegen.compute_schema_hash(&[info]);
         assert_eq!(hash1, hash2);
     }

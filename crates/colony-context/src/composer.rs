@@ -119,7 +119,7 @@ impl ContextSection {
 }
 
 /// Result of context composition.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ComposedContext {
     pub sections: Vec<ContextSection>,
     pub total_tokens: usize,
@@ -142,16 +142,6 @@ impl ComposedContext {
             return 0.0;
         }
         self.total_tokens as f64 / self.budget as f64
-    }
-}
-
-impl Default for ComposedContext {
-    fn default() -> Self {
-        Self {
-            sections: Vec::new(),
-            total_tokens: 0,
-            budget: 0,
-        }
     }
 }
 

@@ -280,8 +280,8 @@ fn cmd_widgets(env: &CanvasEnv) -> i32 {
     };
 
     println!(
-        "{:<10} {:<12} {:<14} {:<12} {}",
-        "ID", "TYPE", "POSITION", "SIZE", "NAME"
+        "{:<10} {:<12} {:<14} {:<12} NAME",
+        "ID", "TYPE", "POSITION", "SIZE"
     );
 
     for w in widgets {

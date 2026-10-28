@@ -35,42 +35,6 @@ pub struct ImportResult {
     pub line_count: usize,
 }
 
-impl ImportResult {
-    /// Count items by category for display purposes.
-    pub fn item_counts(&self) -> ItemCounts {
-        let mut counts = ItemCounts::default();
-        for item in &self.items {
-            match item {
-                ImportedItem::Alias { .. } => counts.aliases += 1,
-                ImportedItem::Export { .. } => counts.exports += 1,
-                ImportedItem::PathEntry(_) => counts.path_entries += 1,
-                ImportedItem::Function { .. } => counts.functions += 1,
-                ImportedItem::ToolInit { .. } => counts.tool_inits += 1,
-                ImportedItem::Skipped { .. } => counts.skipped += 1,
-            }
-        }
-        counts
-    }
-}
-
-/// Counts of items by category.
-#[derive(Debug, Default)]
-pub struct ItemCounts {
-    pub aliases: usize,
-    pub exports: usize,
-    pub path_entries: usize,
-    pub functions: usize,
-    pub tool_inits: usize,
-    pub skipped: usize,
-}
-
-impl ItemCounts {
-    /// Total number of successfully imported items (excludes skipped).
-    pub fn imported_total(&self) -> usize {
-        self.aliases + self.exports + self.path_entries + self.functions + self.tool_inits
-    }
-}
-
 /// Detect available shell config files in the user's home directory.
 ///
 /// Returns paths that actually exist on disk, in priority order
@@ -792,24 +756,6 @@ function mkcd() {
         let result = parse_config(Path::new("/nonexistent/file"));
         assert_eq!(result.line_count, 0);
         assert!(result.items.is_empty());
-    }
-
-    #[test]
-    fn item_counts_correct() {
-        let items = parse_lines(
-            "alias ll='ls -la'\nexport EDITOR=vim\nexport PATH=\"/usr/bin:$PATH\"\nsetopt FOO\n",
-        );
-        let result = ImportResult {
-            source_file: PathBuf::from("test"),
-            items,
-            line_count: 4,
-        };
-        let counts = result.item_counts();
-        assert_eq!(counts.aliases, 1);
-        assert_eq!(counts.exports, 1);
-        assert_eq!(counts.path_entries, 1);
-        assert_eq!(counts.skipped, 1);
-        assert_eq!(counts.imported_total(), 3);
     }
 
     #[test]

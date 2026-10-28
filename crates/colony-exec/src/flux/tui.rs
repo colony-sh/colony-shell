@@ -385,10 +385,8 @@ pub fn run_tui_mode(
                                     }
                                 }
                             }
-                            KeyCode::Enter => {
-                                if !selected_pids.is_empty() {
-                                    show_confirm = true;
-                                }
+                            KeyCode::Enter if !selected_pids.is_empty() => {
+                                show_confirm = true;
                             }
                             _ => {}
                         }

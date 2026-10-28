@@ -283,20 +283,19 @@ impl Default for McpConnectionPool {
     }
 }
 
+impl std::fmt::Debug for McpConnectionPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpConnectionPool")
+            .field("servers", &self.connections.len())
+            .field("connected", &self.connected_count())
+            .field("tools", &self.tool_count())
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use colony_config::McpServer;
-
-    fn test_server(name: &str) -> McpServer {
-        McpServer {
-            name: name.to_string(),
-            command: "echo".to_string(),
-            args: vec![],
-            env: Default::default(),
-            auto_start: true,
-        }
-    }
 
     #[test]
     fn new_pool_is_empty() {
@@ -348,15 +347,5 @@ mod tests {
         assert!(debug.contains("servers"));
         assert!(debug.contains("connected"));
         assert!(debug.contains("tools"));
-    }
-}
-
-impl std::fmt::Debug for McpConnectionPool {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("McpConnectionPool")
-            .field("servers", &self.connections.len())
-            .field("connected", &self.connected_count())
-            .field("tools", &self.tool_count())
-            .finish()
     }
 }

@@ -338,8 +338,10 @@ max_turns = 25
         let recipe = full_recipe();
         let recipe_config = RecipeAgentConfig::from_recipe(&recipe);
 
-        let mut overrides = AgentConfigOverrides::default();
-        overrides.auto_approve_patterns = Some(vec!["*".to_string()]);
+        let overrides = AgentConfigOverrides {
+            auto_approve_patterns: Some(vec!["*".to_string()]),
+            ..Default::default()
+        };
 
         let agent_config = recipe_config.merge_with_overrides(&overrides);
         assert_eq!(agent_config.auto_approve_patterns, vec!["*"]);
