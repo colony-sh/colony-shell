@@ -1,0 +1,24 @@
+[package]
+name = "colony-events"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "colony-events"
+path = "src/main.rs"
+
+[dependencies]
+colony-exec = { path = "../colony-exec" }
+colony-tuple = { path = "../colony-tuple" }
+tokio = { workspace = true }
+rusqlite = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dirs = { workspace = true }
+signal-hook = { workspace = true }
+thiserror = { workspace = true }
+libc = "0.2"
