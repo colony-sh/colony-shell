@@ -13,7 +13,7 @@ description = "File tree state management and watching for Colony Shell"
 notify.workspace = true
 
 # Git integration
-git2 = "0.19"
+git2 = { version = "0.19", default-features = false } # local status only; no https/ssh, so no OpenSSL
 
 # Internal crates
 colony-tuple = { workspace = true }
