@@ -2226,3 +2226,4 @@
 [2026-10-29 18:40] COMPLETE: F080 canvas reads via the Bellman bridge door.
 [2026-10-29 18:40] NOTE: Nerve sets BELLMAN_DOOR_ROOT and BELLMAN_JOIN_CODE per terminal but not BELLMAN_ROOM yet; canvas reads need it. The owner-<pid>.sock link ships in bellman 0.7.0 (origin/main); 0.6.0 bridges only serve <pid>.sock.
 [2026-10-29 18:40] NEXT: Port announce, widget CRUD, markdown and draw to PUT/DELETE /rooms/<id>/surface/<key> once bellman#466 is released.
+[2026-10-29 19:10] PROGRESS: colony-nerve TerminalWidgetView now sets BELLMAN_ROOM (the canvas's bellmanSessionId) beside BELLMAN_JOIN_CODE. Added to the uncommitted canvas-env refactor in Nerve main's working tree, not committed (user chose). Nerve builds.
