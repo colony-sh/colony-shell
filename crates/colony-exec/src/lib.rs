@@ -8,6 +8,7 @@
 //! - Signal handling (future: job control)
 
 mod alias;
+pub mod bellman_door;
 pub mod buffers;
 pub mod builtin_redirect;
 mod builtins;
