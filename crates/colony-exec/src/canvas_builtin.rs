@@ -20,6 +20,9 @@
 
 use std::process::Command;
 
+use serde_json::Value;
+
+use crate::bellman_door::{self, DoorError};
 use crate::builtins::BuiltinResult;
 use crate::Result;
 
@@ -70,14 +73,23 @@ pub fn builtin_canvas(args: &[String]) -> Result<BuiltinResult> {
         return Ok(BuiltinResult::Success(0));
     }
 
+    // The reads go through the Bellman bridge door; the writes stay on Phoenix until the
+    // door's surface writes (bellman-sh/bellman#466) are released.
+    if matches!(subcmd, "status" | "participants" | "widgets") {
+        return Ok(match door_read(subcmd) {
+            Ok(()) => BuiltinResult::Success(0),
+            Err(e) => {
+                eprintln!("canvas: {e}");
+                BuiltinResult::Failure(1)
+            }
+        });
+    }
+
     let Some(env) = read_env() else {
         return Ok(BuiltinResult::Failure(1));
     };
 
     let code = match subcmd {
-        "status" => cmd_status(&env),
-        "participants" => cmd_participants(&env),
-        "widgets" => cmd_widgets(&env),
         "announce" => cmd_announce(&env, &args[1..]),
         "widget" => cmd_widget_crud(&env, &args[1..]),
         "tasks" => cmd_tasks(&env),
@@ -192,125 +204,92 @@ fn curl_delete(api: &str, token: &str, path: &str) -> Option<String> {
 // Subcommands
 // ---------------------------------------------------------------------------
 
-fn cmd_status(env: &CanvasEnv) -> i32 {
-    let path = format!("/api/canvases/{}", env.canvas_id);
-    let Some(json) = curl_get(&env.api, &env.token, &path) else {
-        eprintln!("canvas: failed to fetch canvas status");
-        return 1;
+/// Print `status`, `participants` or `widgets` for `BELLMAN_ROOM`, read off the door.
+fn door_read(subcmd: &str) -> std::result::Result<(), DoorError> {
+    let room = bellman_door::room()?;
+    let socket = bellman_door::find()?;
+    let surface_path = format!("/rooms/{}/surface", bellman_door::segment(&room));
+    let lines = match subcmd {
+        "participants" => {
+            let rooms = bellman_door::get(&socket, "/rooms", &room)?;
+            participant_lines(&rooms, &room).ok_or_else(|| DoorError::NoSeat(room.clone()))?
+        }
+        "widgets" => widget_lines(&bellman_door::get(&socket, &surface_path, &room)?),
+        _ => status_lines(&bellman_door::get(&socket, &surface_path, &room)?, &room),
     };
-
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) else {
-        println!("{json}");
-        return 0;
-    };
-
-    let data = if v.get("data").is_some() {
-        &v["data"]
-    } else {
-        &v
-    };
-    let name = data["name"].as_str().unwrap_or("unknown");
-    let id_display = if env.canvas_id.len() >= 8 {
-        &env.canvas_id[..8]
-    } else {
-        &env.canvas_id
-    };
-    println!("Canvas: {name} ({id_display})");
-
-    if let Some(widgets) = data["widgets"].as_array() {
-        println!("Widgets: {}", widgets.len());
+    for line in lines {
+        println!("{line}");
     }
-
-    0
+    Ok(())
 }
 
-fn cmd_participants(env: &CanvasEnv) -> i32 {
-    let path = format!("/api/canvases/{}/participants", env.canvas_id);
-    let Some(json) = curl_get(&env.api, &env.token, &path) else {
-        eprintln!("canvas: failed to fetch participants");
-        return 1;
-    };
-
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) else {
-        println!("{json}");
-        return 0;
-    };
-
-    let Some(participants) = v["participants"].as_array() else {
-        println!("{json}");
-        return 0;
-    };
-
-    for p in participants {
-        let kind = if p["is_agent"].as_bool().unwrap_or(false) {
-            "AGENT"
-        } else {
-            "HUMAN"
-        };
-        let name = p["display_name"].as_str().unwrap_or("unknown");
-        let status = p["status"].as_str().unwrap_or("online");
-        let detail = p["detail"].as_str().unwrap_or("\u{2014}");
-        println!("{kind:<6} {name:<15} {status:<12} {detail}");
-    }
-
-    0
+/// `GET /rooms/<id>/surface` as the room's name and how many items its canvas holds.
+fn status_lines(surface: &Value, room: &str) -> Vec<String> {
+    let name = surface["room"]["text"]["data"]["room"]
+        .as_str()
+        .map_or_else(|| "unnamed".to_string(), |n| bellman_door::clean(n, 80));
+    let items = surface["surface"]["items"].as_array().map_or(0, Vec::len);
+    vec![format!("Room: {name} ({room})"), format!("Items: {items}")]
 }
 
-fn cmd_widgets(env: &CanvasEnv) -> i32 {
-    let path = format!("/api/canvases/{}", env.canvas_id);
-    let Some(json) = curl_get(&env.api, &env.token, &path) else {
-        eprintln!("canvas: failed to fetch widgets");
-        return 1;
+/// `GET /rooms` as one line per active member of `room`, or `None` when the bridge holds no seat there.
+fn participant_lines(rooms: &Value, room: &str) -> Option<Vec<String>> {
+    let found = rooms["rooms"]
+        .as_array()?
+        .iter()
+        .find(|r| r["session_id"].as_str() == Some(room))?;
+    let text = |v: &Value, max| {
+        v.as_str()
+            .map_or_else(|| "\u{2014}".to_string(), |s| bellman_door::clean(s, max))
     };
+    let lines = found["members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| m["active"].as_bool() != Some(false))
+        .map(|m| {
+            let kind = if m["agent"].is_null() {
+                "HUMAN"
+            } else {
+                "AGENT"
+            };
+            let role = text(&m["room_role"], 10);
+            let status = text(&m["status"], 10);
+            let label = text(&m["label"], 60);
+            let id = text(&m["member_id"], 20);
+            format!("{kind:<6} {role:<10} {status:<10} {label} ({id})")
+        })
+        .collect();
+    Some(lines)
+}
 
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) else {
-        println!("{json}");
-        return 0;
-    };
-
-    let data = if v.get("data").is_some() {
-        &v["data"]
-    } else {
-        &v
-    };
-
-    let Some(widgets) = data["widgets"].as_array() else {
-        eprintln!("canvas: no widgets in response");
-        return 1;
-    };
-
-    println!(
-        "{:<10} {:<12} {:<14} {:<12} NAME",
-        "ID", "TYPE", "POSITION", "SIZE"
+/// `GET /rooms/<id>/surface` as a table of the canvas items, each item's `data` out of its envelope.
+fn widget_lines(surface: &Value) -> Vec<String> {
+    let header = format!(
+        "{:<24} {:<8} {:<12} {:<10} TITLE",
+        "KEY", "KIND", "POSITION", "SIZE"
     );
-
-    for w in widgets {
-        let id = w["id"].as_str().unwrap_or("?");
-        let plugin = w["plugin_id"].as_str().unwrap_or("?");
-        let x = w["position_x"]
-            .as_f64()
-            .or_else(|| w["placement"]["x"].as_f64())
-            .unwrap_or(0.0);
-        let y = w["position_y"]
-            .as_f64()
-            .or_else(|| w["placement"]["y"].as_f64())
-            .unwrap_or(0.0);
-        let width = w["width"]
-            .as_f64()
-            .or_else(|| w["placement"]["width"].as_f64())
-            .unwrap_or(0.0);
-        let height = w["height"]
-            .as_f64()
-            .or_else(|| w["placement"]["height"].as_f64())
-            .unwrap_or(0.0);
-        let id_short = &id[..8.min(id.len())];
-        println!(
-            "{id_short:<10} {plugin:<12} {x:.0},{y:.0}{:<6} {width:.0}x{height:.0}{:<4} \u{2014}",
-            "", ""
-        );
-    }
-
-    0
+    let rows = surface["surface"]["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            let d = &item["data"];
+            let key = bellman_door::clean(d["key"].as_str().unwrap_or("?"), 24);
+            let kind = bellman_door::clean(d["kind"].as_str().unwrap_or("?"), 8);
+            let title = bellman_door::clean(d["title"].as_str().unwrap_or(""), 60);
+            let p = &d["placement"];
+            let pos = match (p["x"].as_f64(), p["y"].as_f64()) {
+                (Some(x), Some(y)) => format!("{x:.0},{y:.0}"),
+                _ => "\u{2014}".to_string(),
+            };
+            let size = match (p["w"].as_f64(), p["h"].as_f64()) {
+                (Some(w), Some(h)) => format!("{w:.0}x{h:.0}"),
+                _ => "\u{2014}".to_string(),
+            };
+            format!("{key:<24} {kind:<8} {pos:<12} {size:<10} {title}")
+        });
+    std::iter::once(header).chain(rows).collect()
 }
 
 fn cmd_announce(env: &CanvasEnv, args: &[String]) -> i32 {
@@ -551,7 +530,12 @@ fn print_help() {
     println!("  markdown <id>                   Read markdown widget");
     println!("  help                            This help");
     println!();
+    println!("status, participants and widgets read the Bellman room through the local");
+    println!("bridge door. The other subcommands still use the Colony API.");
+    println!();
     println!("Environment:");
+    println!("  BELLMAN_ROOM             Bellman room (session) id");
+    println!("  BELLMAN_DOOR_ROOT        Bridge door folder (default ~/.claude/bellman/door)");
     println!("  COLONY_API               Base URL (e.g. https://api.colony.sh)");
     println!("  COLONY_SESSION_TOKEN     Auth bearer token");
     println!("  COLONY_CANVAS_ID         Current canvas UUID");
@@ -595,9 +579,65 @@ mod tests {
         std::env::remove_var("COLONY_SESSION_TOKEN");
         std::env::remove_var("COLONY_CANVAS_ID");
 
-        let result = builtin_canvas(&["status".to_string()]);
+        let result = builtin_canvas(&["tasks".to_string()]);
         let br = result.expect("should not error");
         assert_eq!(br, BuiltinResult::Failure(1));
+    }
+
+    fn surface() -> Value {
+        serde_json::json!({
+            "session_id": "qs_room",
+            "room": {"text": {"trust": "untrusted", "data": {"room": "planning\u{1b}[2J"}}},
+            "surface": {"cursor": 3, "items": [
+                {"trust": "untrusted", "data": {"key": "plan", "kind": "text", "title": "The plan",
+                    "placement": {"x": 720, "y": 240, "w": 420, "h": 1000}}},
+                {"trust": "untrusted", "data": {"key": "note", "kind": "html", "title": "Loose",
+                    "placement": {"x": -97, "y": 0}}}
+            ]}
+        })
+    }
+
+    #[test]
+    fn test_status_lines_name_and_count() {
+        assert_eq!(
+            status_lines(&surface(), "qs_room"),
+            vec!["Room: planning[2J (qs_room)", "Items: 2"]
+        );
+    }
+
+    #[test]
+    fn test_widget_lines_table() {
+        let lines = widget_lines(&surface());
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].starts_with("KEY"));
+        assert_eq!(
+            lines[1],
+            format!(
+                "{:<24} {:<8} {:<12} {:<10} The plan",
+                "plan", "text", "720,240", "420x1000"
+            )
+        );
+        assert!(lines[2].contains("-97,0") && lines[2].contains('\u{2014}'));
+    }
+
+    #[test]
+    fn test_participant_lines_active_members_of_the_room() {
+        let rooms = serde_json::json!({"rooms": [
+            {"session_id": "qs_other", "members": []},
+            {"session_id": "qs_room", "members": [
+                {"member_id": "m_1", "label": "ada", "agent": null, "room_role": "planner", "status": "idle", "active": true},
+                {"member_id": "m_2", "label": "bot", "agent": {"model": "x"}, "room_role": "coder", "status": "working", "active": true},
+                {"member_id": "m_3", "label": "gone", "agent": null, "room_role": "coder", "active": false}
+            ]}
+        ]});
+        let lines = participant_lines(&rooms, "qs_room").expect("room is listed");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            lines[0],
+            format!("{:<6} {:<10} {:<10} ada (m_1)", "HUMAN", "planner", "idle")
+        );
+        assert!(lines[1].starts_with("AGENT  coder"));
+        assert_eq!(participant_lines(&rooms, "qs_missing"), None);
     }
 
     #[test]

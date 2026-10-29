@@ -1708,6 +1708,20 @@
         "Fix options: (a) serialize heredoc pipe setup, (b) use select/epoll for coordination.",
         "Risk: High — requires execution pipeline refactoring for FD management."
       ]
+    },
+    {
+      "id": "F080",
+      "name": "Canvas reads via Bellman bridge door",
+      "description": "Move the read-only `canvas` subcommands off Phoenix (api.colony.sh, being retired) onto the local Bellman bridge door: a unix socket at $BELLMAN_DOOR_ROOT/<bridge pid>.sock, or owner-<Claude Code pid>.sock found by walking up parent pids. Room id from BELLMAN_ROOM. No user token in the terminal env. Write subcommands (announce, widget CRUD, markdown) and `draw` stay on Phoenix until the door's PUT/DELETE surface routes (bellman-sh/bellman#466) are released.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": [],
+      "notes": [
+        "Started 2026-10-29: door route mapping, door client over curl --unix-socket",
+        "2026-10-29: status + widgets -> GET /rooms/<id>/surface; participants -> GET /rooms (members of BELLMAN_ROOM). tasks has no Bellman equivalent and stays on Phoenix.",
+        "Completed 2026-10-29: crates/colony-exec/src/bellman_door.rs (discovery, GET, peer-text cleaning); 10 unit tests + tests/scripts/bash-compat/56_canvas_door.bats (fake door) pass; checked live against a real 0.6.0 bridge.",
+        "Next: announce/widget CRUD/markdown and draw onto PUT/DELETE /rooms/<id>/surface/<key> once bellman#466 ships (merged, not in a release as of v0.6.0)."
+      ]
     }
   ]
 }
