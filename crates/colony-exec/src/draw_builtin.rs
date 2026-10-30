@@ -1,698 +1,391 @@
-//! Draw builtin -- create whiteboard items on the Colony canvas.
+//! Draw builtin -- draw on the Bellman room's canvas.
 //!
-//! The `draw` builtin creates visual primitives on the canvas whiteboard
-//! layer: sticky notes, rectangles, ellipses, lines, connectors, text
-//! labels, and frames.  Each subcommand maps to a POST to the whiteboard
-//! items endpoint, and the response includes the created item's UUID.
+//! Each subcommand writes one canvas item through the local Bellman bridge door
+//! (see [`crate::bellman_door`]); the room is `BELLMAN_ROOM`. Items are named by key,
+//! `<kind>-<8 hex>` unless `--key` gives one, and the key is what `remove` and
+//! `connector` take.
 //!
 //! # Subcommands
 //!
-//! | Subcommand | Description |
+//! | Subcommand | Bellman item |
 //! |---|---|
-//! | `sticky <text>` | Create a sticky note |
-//! | `rect` | Draw a rectangle |
-//! | `ellipse` | Draw an ellipse |
-//! | `line` | Draw a line |
-//! | `connector <from> <to>` | Draw a connector between widgets |
-//! | `text <label>` | Place a text label |
-//! | `frame` | Draw a grouping frame |
-//! | `list` | List whiteboard items |
-//! | `remove <id>` | Remove a whiteboard item |
-//! | `clear` | Remove all whiteboard items |
+//! | `sticky <text>` | `text` card |
+//! | `text <label>` | `text` card |
+//! | `rect [label]`, `ellipse [label]` | `shape` |
+//! | `line --from X,Y --to X,Y` | `shape` of form `line` |
+//! | `connector <from-key> <to-key>` | `connector` |
+//! | `frame [label]` | `frame` |
+//! | `list` | List the canvas items |
+//! | `remove <key>` | Remove an item |
+//! | `clear` | Remove every item this seat wrote |
 //! | `help` | Print help text |
 
-use std::process::Command;
+use serde_json::{json, Value};
 
+use crate::bellman_door::{self, Door};
 use crate::builtins::BuiltinResult;
+use crate::canvas_builtin::{parse_pair, parse_size, widget_lines};
 use crate::Result;
 
-/// Configuration extracted from the environment for draw API calls.
-struct DrawEnv {
-    api: String,
-    token: String,
-    canvas_id: String,
-}
+/// What a subcommand gives back: `Err` is the message to print after `draw: `.
+type Outcome = std::result::Result<(), String>;
 
-/// Read the required environment variables or print an error and return `None`.
-fn read_env() -> Option<DrawEnv> {
-    let api = match std::env::var("COLONY_API") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("draw: not on a canvas (COLONY_API not set)");
-            return None;
-        }
-    };
-    let token = match std::env::var("COLONY_SESSION_TOKEN") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("draw: no auth token (COLONY_SESSION_TOKEN not set)");
-            return None;
-        }
-    };
-    let canvas_id = match std::env::var("COLONY_CANVAS_ID") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("draw: no canvas ID (COLONY_CANVAS_ID not set)");
-            return None;
-        }
-    };
-    Some(DrawEnv {
-        api,
-        token,
-        canvas_id,
-    })
-}
+/// A shape's colours on Bellman: these names, or a hex `#rgb` / `#rrggbb`.
+const COLORS: [&str; 6] = ["slate", "blue", "green", "amber", "red", "violet"];
 
 /// Execute a `draw` builtin invocation.
 pub fn builtin_draw(args: &[String]) -> Result<BuiltinResult> {
-    let subcmd = args.first().map(String::as_str).unwrap_or("help");
+    let subcmd = args.first().map_or("help", String::as_str);
+    let rest = args.get(1..).unwrap_or_default();
 
-    // Help works off-canvas too
-    if matches!(subcmd, "help" | "--help" | "-h") {
-        print_help();
-        return Ok(BuiltinResult::Success(0));
-    }
-
-    let Some(env) = read_env() else {
-        return Ok(BuiltinResult::Failure(1));
-    };
-
-    let code = match subcmd {
-        "sticky" => cmd_sticky(&env, &args[1..]),
-        "rect" => cmd_shape(&env, "rect", &args[1..]),
-        "ellipse" => cmd_shape(&env, "ellipse", &args[1..]),
-        "line" => cmd_line(&env, &args[1..]),
-        "connector" => cmd_connector(&env, &args[1..]),
-        "text" => cmd_text(&env, &args[1..]),
-        "frame" => cmd_frame(&env, &args[1..]),
-        "list" => cmd_list(&env),
-        "remove" => cmd_remove(&env, &args[1..]),
-        "clear" => cmd_clear(&env),
-        other => {
-            eprintln!("draw: unknown subcommand '{other}'. Try 'draw help'.");
-            1
+    let outcome = match subcmd {
+        "help" | "--help" | "-h" => {
+            print_help();
+            Ok(())
         }
+        "sticky" => card("sticky", rest),
+        "text" => card("text", rest),
+        "rect" | "ellipse" => shape(subcmd, rest),
+        "line" => line(rest),
+        "connector" => connector(rest),
+        "frame" => frame(rest),
+        "list" => Door::open()
+            .and_then(|door| door.surface())
+            .map(|surface| widget_lines(&surface).iter().for_each(|l| println!("{l}")))
+            .map_err(String::from),
+        "remove" => remove(rest),
+        "clear" => clear(),
+        other => Err(format!("unknown subcommand '{other}'. Try 'draw help'.")),
     };
 
-    if code == 0 {
-        Ok(BuiltinResult::Success(0))
-    } else {
-        Ok(BuiltinResult::Failure(code))
-    }
+    Ok(match outcome {
+        Ok(()) => BuiltinResult::Success(0),
+        Err(e) => {
+            eprintln!("draw: {e}");
+            BuiltinResult::Failure(1)
+        }
+    })
 }
 
-// ---------------------------------------------------------------------------
-// HTTP helpers (same curl approach as canvas_builtin)
-// ---------------------------------------------------------------------------
-
-fn curl_get(api: &str, token: &str, path: &str) -> Option<String> {
-    let url = format!("{api}{path}");
-    let output = Command::new("curl")
-        .args(["-s", "-H", &format!("Authorization: Bearer {token}"), &url])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-fn curl_post(api: &str, token: &str, path: &str, body: &str) -> Option<String> {
-    let url = format!("{api}{path}");
-    let output = Command::new("curl")
-        .args([
-            "-s",
-            "-X",
-            "POST",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            body,
-            &url,
-        ])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-fn curl_delete(api: &str, token: &str, path: &str) -> Option<String> {
-    let url = format!("{api}{path}");
-    let output = Command::new("curl")
-        .args([
-            "-s",
-            "-X",
-            "DELETE",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            &url,
-        ])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Common argument parsing
-// ---------------------------------------------------------------------------
-
-/// Parse common draw options: --position X,Y --size WxH --color COLOR --z N
+/// The options every subcommand shares, and the words left over.
+#[derive(Debug, Default)]
 struct DrawOpts {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    color: String,
-    z_index: i32,
+    position: Option<(f64, f64)>,
+    size: Option<(f64, f64)>,
+    color: Option<String>,
+    key: Option<String>,
+    /// `line`'s ends.
+    from: Option<(f64, f64)>,
+    to: Option<(f64, f64)>,
+    /// `connector`'s label.
+    label: Option<String>,
+    words: Vec<String>,
 }
 
-impl Default for DrawOpts {
-    fn default() -> Self {
-        Self {
-            x: 100.0,
-            y: 100.0,
-            width: 200.0,
-            height: 150.0,
-            color: "yellow".to_string(),
-            z_index: 0,
-        }
-    }
-}
-
-fn parse_draw_opts(args: &[String], defaults: DrawOpts) -> (DrawOpts, Vec<String>) {
-    let mut opts = defaults;
-    let mut remaining = Vec::new();
-    let mut i = 0;
-
-    while i < args.len() {
-        match args[i].as_str() {
+/// Parse `--position X,Y` (`--pos`, `-p`), `--size WxH` (`-s`), `--color C` (`-c`), `--key K`,
+/// and `line`'s `--from X,Y` / `--to X,Y` and `connector`'s `--label L` (`-l`).
+fn parse_draw_opts(args: &[String]) -> std::result::Result<DrawOpts, String> {
+    let mut opts = DrawOpts::default();
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        let mut value = || it.next().ok_or_else(|| format!("{arg} needs a value"));
+        match arg.as_str() {
             "--position" | "--pos" | "-p" => {
-                i += 1;
-                if let Some(pos) = args.get(i) {
-                    if let Some((px, py)) = pos.split_once(',') {
-                        opts.x = px.parse().unwrap_or(opts.x);
-                        opts.y = py.parse().unwrap_or(opts.y);
-                    }
+                let v = value()?;
+                opts.position =
+                    Some(parse_pair(v, ',').ok_or_else(|| format!("position '{v}' is not X,Y"))?);
+            }
+            "--size" | "-s" => opts.size = Some(parse_size(value()?)?),
+            "--color" | "-c" => opts.color = Some(check_color(value()?)?),
+            "--key" => opts.key = Some(value()?.clone()),
+            "--from" | "--to" => {
+                let v = value()?;
+                let point = parse_pair(v, ',').ok_or_else(|| format!("point '{v}' is not X,Y"))?;
+                if arg == "--from" {
+                    opts.from = Some(point);
+                } else {
+                    opts.to = Some(point);
                 }
             }
-            "--size" | "-s" => {
-                i += 1;
-                if let Some(size) = args.get(i) {
-                    if let Some((sw, sh)) = size.split_once('x') {
-                        opts.width = sw.parse().unwrap_or(opts.width);
-                        opts.height = sh.parse().unwrap_or(opts.height);
-                    }
-                }
-            }
-            "--color" | "-c" => {
-                i += 1;
-                if let Some(c) = args.get(i) {
-                    opts.color = c.clone();
-                }
-            }
-            "--z" => {
-                i += 1;
-                if let Some(z) = args.get(i) {
-                    opts.z_index = z.parse().unwrap_or(0);
-                }
-            }
-            _ => {
-                remaining.push(args[i].clone());
-            }
+            "--label" | "-l" => opts.label = Some(value()?.clone()),
+            _ => opts.words.push(arg.clone()),
         }
-        i += 1;
     }
-
-    (opts, remaining)
+    Ok(opts)
 }
 
-/// Build the JSON body for creating a whiteboard item.
-fn build_item_body(item_type: &str, properties: &serde_json::Value, z_index: i32) -> String {
-    let body = serde_json::json!({
-        "item_type": item_type,
-        "properties": properties,
-        "z_index": z_index,
-    });
-    body.to_string()
-}
-
-/// Post an item to the whiteboard and print the result.
-fn post_item(env: &DrawEnv, item_type: &str, body: &str) -> i32 {
-    let path = format!("/api/canvases/{}/whiteboard", env.canvas_id);
-    let Some(resp) = curl_post(&env.api, &env.token, &path, body) else {
-        eprintln!("draw: failed to create {item_type}");
-        return 1;
-    };
-
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp) {
-        let data = if v.get("data").is_some() {
-            &v["data"]
-        } else {
-            &v
-        };
-        let id = data["id"].as_str().unwrap_or("?");
-        println!("Created {item_type}: {id}");
-    }
-
-    0
-}
-
-// ---------------------------------------------------------------------------
-// Subcommands
-// ---------------------------------------------------------------------------
-
-fn cmd_sticky(env: &DrawEnv, args: &[String]) -> i32 {
-    let defaults = DrawOpts {
-        width: 200.0,
-        height: 200.0,
-        color: "yellow".to_string(),
-        ..DrawOpts::default()
-    };
-    let (opts, remaining) = parse_draw_opts(args, defaults);
-    let text = if remaining.is_empty() {
-        String::new()
+/// A colour Bellman takes, or why not.
+fn check_color(color: &str) -> std::result::Result<String, String> {
+    let hex = color
+        .strip_prefix('#')
+        .is_some_and(|h| matches!(h.len(), 3 | 6) && h.chars().all(|c| c.is_ascii_hexdigit()));
+    if COLORS.contains(&color) || hex {
+        Ok(color.to_string())
     } else {
-        remaining.join(" ")
-    };
-
-    let props = serde_json::json!({
-        "x": opts.x,
-        "y": opts.y,
-        "width": opts.width,
-        "height": opts.height,
-        "color": opts.color,
-        "text": text,
-    });
-
-    let body = build_item_body("sticky", &props, opts.z_index);
-    post_item(env, "sticky", &body)
-}
-
-fn cmd_shape(env: &DrawEnv, shape: &str, args: &[String]) -> i32 {
-    let (opts, _) = parse_draw_opts(args, DrawOpts::default());
-
-    let props = serde_json::json!({
-        "x": opts.x,
-        "y": opts.y,
-        "width": opts.width,
-        "height": opts.height,
-        "color": opts.color,
-    });
-
-    let body = build_item_body(shape, &props, opts.z_index);
-    post_item(env, shape, &body)
-}
-
-fn cmd_line(env: &DrawEnv, args: &[String]) -> i32 {
-    // draw line --from X1,Y1 --to X2,Y2 [--color C] [--z N]
-    let mut x1 = 0.0_f64;
-    let mut y1 = 0.0_f64;
-    let mut x2 = 100.0_f64;
-    let mut y2 = 100.0_f64;
-    let mut color = "black".to_string();
-    let mut z_index = 0;
-
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--from" => {
-                i += 1;
-                if let Some(pos) = args.get(i) {
-                    if let Some((px, py)) = pos.split_once(',') {
-                        x1 = px.parse().unwrap_or(0.0);
-                        y1 = py.parse().unwrap_or(0.0);
-                    }
-                }
-            }
-            "--to" => {
-                i += 1;
-                if let Some(pos) = args.get(i) {
-                    if let Some((px, py)) = pos.split_once(',') {
-                        x2 = px.parse().unwrap_or(100.0);
-                        y2 = py.parse().unwrap_or(100.0);
-                    }
-                }
-            }
-            "--color" | "-c" => {
-                i += 1;
-                if let Some(c) = args.get(i) {
-                    color = c.clone();
-                }
-            }
-            "--z" => {
-                i += 1;
-                if let Some(z) = args.get(i) {
-                    z_index = z.parse().unwrap_or(0);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
+        Err(format!(
+            "colour '{color}' is not one of {} or a hex colour like #3b82f6",
+            COLORS.join(", ")
+        ))
     }
-
-    let props = serde_json::json!({
-        "x1": x1, "y1": y1,
-        "x2": x2, "y2": y2,
-        "color": color,
-    });
-
-    let body = build_item_body("line", &props, z_index);
-    post_item(env, "line", &body)
 }
 
-fn cmd_connector(env: &DrawEnv, args: &[String]) -> i32 {
-    // draw connector <from-widget-id> <to-widget-id> [--color C] [--label L] [--z N]
-    let from_id = match args.first() {
-        Some(id) => id.clone(),
-        None => {
-            eprintln!(
-                "Usage: draw connector <from-widget-id> <to-widget-id> [--color C] [--label L]"
-            );
-            return 1;
-        }
-    };
-    let to_id = match args.get(1) {
-        Some(id) => id.clone(),
-        None => {
-            eprintln!(
-                "Usage: draw connector <from-widget-id> <to-widget-id> [--color C] [--label L]"
-            );
-            return 1;
-        }
-    };
+/// `{x, y, w, h}` from the options, with these defaults.
+fn placement(opts: &DrawOpts, (x, y): (f64, f64), (w, h): (f64, f64)) -> Value {
+    let (x, y) = opts.position.unwrap_or((x, y));
+    let (w, h) = opts.size.unwrap_or((w, h));
+    json!({"x": x, "y": y, "w": w, "h": h})
+}
 
-    let mut color = "black".to_string();
-    let mut label = String::new();
-    let mut z_index = 0;
+/// Write `item` under the options' key or a fresh one, and say so.
+fn write(opts: &DrawOpts, prefix: &str, item: &Value) -> Outcome {
+    let key = opts
+        .key
+        .clone()
+        .unwrap_or_else(|| bellman_door::new_key(prefix));
+    Door::open()?.put(&key, item)?;
+    println!("Created {prefix}: {key}");
+    Ok(())
+}
 
-    let mut i = 2;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--color" | "-c" => {
-                i += 1;
-                if let Some(c) = args.get(i) {
-                    color = c.clone();
-                }
-            }
-            "--label" | "-l" => {
-                i += 1;
-                if let Some(l) = args.get(i) {
-                    label = l.clone();
-                }
-            }
-            "--z" => {
-                i += 1;
-                if let Some(z) = args.get(i) {
-                    z_index = z.parse().unwrap_or(0);
-                }
-            }
-            _ => {}
-        }
-        i += 1;
+/// `sticky <text>` and `text <label>`: a text card. Without `--position`, Bellman places it.
+fn card(name: &str, args: &[String]) -> Outcome {
+    let opts = parse_draw_opts(args)?;
+    if opts.words.is_empty() {
+        return Err(format!(
+            "usage: draw {name} <text> [--position X,Y] [--size WxH] [--key K]"
+        ));
     }
-
-    let props = serde_json::json!({
-        "from_id": from_id,
-        "to_id": to_id,
-        "color": color,
-        "label": label,
-    });
-
-    let body = build_item_body("connector", &props, z_index);
-    post_item(env, "connector", &body)
+    if opts.color.is_some() {
+        return Err("text cards have no colour on Bellman".to_string());
+    }
+    let mut item = json!({"kind": "text", "body": opts.words.join(" ")});
+    match (opts.position, opts.size) {
+        (Some(_), _) => item["placement"] = placement(&opts, (0.0, 0.0), (320.0, 200.0)),
+        (None, Some(_)) => return Err("--size needs --position".to_string()),
+        (None, None) => {}
+    }
+    write(&opts, name, &item)
 }
 
-fn cmd_text(env: &DrawEnv, args: &[String]) -> i32 {
-    let defaults = DrawOpts {
-        width: 300.0,
-        height: 50.0,
-        color: "black".to_string(),
-        ..DrawOpts::default()
+/// `rect [label]` and `ellipse [label]`.
+fn shape(form: &str, args: &[String]) -> Outcome {
+    let opts = parse_draw_opts(args)?;
+    let mut item = json!({
+        "kind": "shape",
+        "shape": {"form": form, "color": opts.color.as_deref().unwrap_or("slate")},
+        "placement": placement(&opts, (100.0, 100.0), (200.0, 150.0)),
+    });
+    if !opts.words.is_empty() {
+        item["title"] = json!(opts.words.join(" "));
+    }
+    write(&opts, form, &item)
+}
+
+/// `line --from X1,Y1 --to X2,Y2 [--color C] [--key K]`: a `line` shape over the box between the
+/// two points, flipped when it runs from bottom-left to top-right.
+fn line(args: &[String]) -> Outcome {
+    let opts = parse_draw_opts(args)?;
+    let (Some(from), Some(to)) = (opts.from, opts.to) else {
+        return Err("usage: draw line --from X1,Y1 --to X2,Y2 [--color C] [--key K]".to_string());
     };
-    let (opts, remaining) = parse_draw_opts(args, defaults);
-    let text = if remaining.is_empty() {
-        eprintln!("Usage: draw text <label> [--position X,Y] [--color C]");
-        return 1;
+    write(&opts, "line", &line_item(from, to, opts.color.as_deref()))
+}
+
+/// The `line` shape between two points.
+/// ponytail: a line's box keeps no direction, so an arrow form would need `flip` for both diagonals; add when draw gets arrows.
+fn line_item((x1, y1): (f64, f64), (x2, y2): (f64, f64), color: Option<&str>) -> Value {
+    json!({
+        "kind": "shape",
+        "shape": {
+            "form": "line",
+            "color": color.unwrap_or("slate"),
+            "flip": (x2 - x1) * (y2 - y1) < 0.0,
+        },
+        // Bellman refuses a zero size, so a level or upright line gets one unit of height or width.
+        "placement": {
+            "x": x1.min(x2),
+            "y": y1.min(y2),
+            "w": (x2 - x1).abs().max(1.0),
+            "h": (y2 - y1).abs().max(1.0),
+        },
+    })
+}
+
+/// `connector <from-key> <to-key> [--label L] [--key K]`.
+fn connector(args: &[String]) -> Outcome {
+    const USAGE: &str = "usage: draw connector <from-key> <to-key> [--label L] [--key K]";
+    let opts = parse_draw_opts(args)?;
+    let [from, to] = opts.words.as_slice() else {
+        return Err(USAGE.to_string());
+    };
+    for end in [from, to] {
+        if !bellman_door::is_key(end) {
+            return Err(bellman_door::DoorError::BadKey(end.clone()).into());
+        }
+    }
+    let mut item = json!({"kind": "connector", "ends": {"from": from, "to": to}});
+    if let Some(label) = &opts.label {
+        item["title"] = json!(label);
+    }
+    write(&opts, "connector", &item)
+}
+
+/// `frame [label]`: a frame needs a title, so an unlabelled one is "Frame".
+fn frame(args: &[String]) -> Outcome {
+    let opts = parse_draw_opts(args)?;
+    if opts.color.is_some() {
+        return Err("frames have no colour on Bellman".to_string());
+    }
+    let title = if opts.words.is_empty() {
+        "Frame".to_string()
     } else {
-        remaining.join(" ")
+        opts.words.join(" ")
     };
-
-    let props = serde_json::json!({
-        "x": opts.x,
-        "y": opts.y,
-        "width": opts.width,
-        "height": opts.height,
-        "color": opts.color,
-        "text": text,
+    let item = json!({
+        "kind": "frame",
+        "title": title,
+        "placement": placement(&opts, (100.0, 100.0), (600.0, 400.0)),
     });
-
-    let body = build_item_body("text", &props, opts.z_index);
-    post_item(env, "text", &body)
+    write(&opts, "frame", &item)
 }
 
-fn cmd_frame(env: &DrawEnv, args: &[String]) -> i32 {
-    let defaults = DrawOpts {
-        width: 600.0,
-        height: 400.0,
-        color: "gray".to_string(),
-        ..DrawOpts::default()
-    };
-    let (opts, remaining) = parse_draw_opts(args, defaults);
-    let label = remaining.join(" ");
-
-    let props = serde_json::json!({
-        "x": opts.x,
-        "y": opts.y,
-        "width": opts.width,
-        "height": opts.height,
-        "color": opts.color,
-        "label": label,
-    });
-
-    let body = build_item_body("frame", &props, opts.z_index);
-    post_item(env, "frame", &body)
+fn remove(args: &[String]) -> Outcome {
+    let key = args.first().ok_or("usage: draw remove <key>")?;
+    Door::open()?.delete(key)?;
+    println!("Removed {key}");
+    Ok(())
 }
 
-fn cmd_list(env: &DrawEnv) -> i32 {
-    let path = format!("/api/canvases/{}/whiteboard", env.canvas_id);
-    let Some(json) = curl_get(&env.api, &env.token, &path) else {
-        eprintln!("draw: failed to list whiteboard items");
-        return 1;
-    };
-
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) else {
-        println!("{json}");
-        return 0;
-    };
-
-    let items = if let Some(arr) = v["data"].as_array() {
-        arr
-    } else if let Some(arr) = v.as_array() {
-        arr
-    } else {
-        println!("{json}");
-        return 0;
-    };
-
-    println!(
-        "{:<10} {:<12} {:<14} {:<12} Z",
-        "ID", "TYPE", "POSITION", "SIZE"
-    );
-
-    for item in items {
-        let id = item["id"].as_str().unwrap_or("?");
-        let item_type = item["item_type"].as_str().unwrap_or("?");
-        let props = &item["properties"];
-        let x = props["x"].as_f64().unwrap_or(0.0);
-        let y = props["y"].as_f64().unwrap_or(0.0);
-        let w = props["width"].as_f64().unwrap_or(0.0);
-        let h = props["height"].as_f64().unwrap_or(0.0);
-        let z = item["z_index"].as_i64().unwrap_or(0);
-        let id_short = &id[..8.min(id.len())];
-        println!(
-            "{id_short:<10} {item_type:<12} {x:.0},{y:.0}{:<6} {w:.0}x{h:.0}{:<4} {z}",
-            "", ""
-        );
+/// `clear`: remove the items this bridge's seat wrote last. The canvas is the whole room's, so
+/// other members' items stay.
+fn clear() -> Outcome {
+    let door = Door::open()?;
+    let seat = door.seat()?;
+    let keys = own_keys(&door.surface()?, &seat);
+    for (done, key) in keys.iter().enumerate() {
+        door.delete(key)
+            .map_err(|e| format!("{e} (removed {done} of {} first)", keys.len()))?;
     }
-
-    0
+    println!("Removed {} items this seat wrote.", keys.len());
+    Ok(())
 }
 
-fn cmd_remove(env: &DrawEnv, args: &[String]) -> i32 {
-    let Some(id) = args.first() else {
-        eprintln!("Usage: draw remove <item-id>");
-        return 1;
-    };
-    let path = format!("/api/canvases/{}/whiteboard/{id}", env.canvas_id);
-    curl_delete(&env.api, &env.token, &path);
-    println!("Removed whiteboard item {id}");
-    0
-}
-
-fn cmd_clear(env: &DrawEnv) -> i32 {
-    let path = format!("/api/canvases/{}/whiteboard", env.canvas_id);
-    curl_delete(&env.api, &env.token, &path);
-    println!("Cleared all whiteboard items");
-    0
+/// The keys of the items whose envelope names `seat` as their origin.
+fn own_keys(surface: &Value, seat: &str) -> Vec<String> {
+    surface["surface"]["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|i| i["origin"]["memberId"].as_str() == Some(seat))
+        .filter_map(|i| i["data"]["key"].as_str().map(String::from))
+        .collect()
 }
 
 fn print_help() {
     println!("Usage: draw <subcommand>");
     println!();
     println!("Subcommands:");
-    println!("  sticky <text>                   Create a sticky note");
-    println!("  rect                            Draw a rectangle");
-    println!("  ellipse                         Draw an ellipse");
+    println!("  sticky <text>                   Create a text card");
+    println!("  text <label>                    Create a text card");
+    println!("  rect [label]                    Draw a rectangle");
+    println!("  ellipse [label]                 Draw an ellipse");
     println!("  line --from X,Y --to X,Y        Draw a line");
-    println!("  connector <from-id> <to-id>     Connect two widgets");
-    println!("  text <label>                    Place a text label");
+    println!("  connector <from-key> <to-key>   Connect two items [--label L]");
     println!("  frame [label]                   Draw a grouping frame");
-    println!("  list                            List whiteboard items");
-    println!("  remove <id>                     Remove item");
-    println!("  clear                           Remove all items");
+    println!("  list                            List canvas items");
+    println!("  remove <key>                    Remove an item");
+    println!("  clear                           Remove every item this seat wrote");
     println!("  help                            This help");
     println!();
     println!("Common options:");
     println!("  --position X,Y  (or --pos, -p)  Position on canvas");
-    println!("  --size WxH      (or -s)          Dimensions");
-    println!("  --color COLOR   (or -c)          Color name");
-    println!("  --z N                             Z-index layer");
+    println!("  --size WxH      (or -s)         Dimensions");
+    println!(
+        "  --color C       (or -c)         Shape colour: {} or #rrggbb",
+        COLORS.join(", ")
+    );
+    println!("  --key K                         Item key (default <kind>-<8 hex>)");
     println!();
-    println!("Environment:");
-    println!("  COLONY_API               Base URL (e.g. https://api.colony.sh)");
-    println!("  COLONY_SESSION_TOKEN     Auth bearer token");
-    println!("  COLONY_CANVAS_ID         Current canvas UUID");
+    println!("Writes go through the local Bellman bridge door to the room in BELLMAN_ROOM.");
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(ToString::to_string).collect()
+    }
+
     #[test]
     fn test_help_returns_success() {
-        let result = builtin_draw(&["help".to_string()]);
-        let br = result.expect("should not error");
+        let br = builtin_draw(&args(&["help"])).expect("should not error");
         assert_eq!(br, BuiltinResult::Success(0));
     }
 
     #[test]
     fn test_unknown_subcommand_returns_failure() {
-        std::env::set_var("COLONY_API", "http://localhost:4000");
-        std::env::set_var("COLONY_SESSION_TOKEN", "test-token");
-        std::env::set_var("COLONY_CANVAS_ID", "test-canvas-id");
-
-        let result = builtin_draw(&["bogus".to_string()]);
-        let br = result.expect("should not error");
-        assert_eq!(br, BuiltinResult::Failure(1));
-
-        std::env::remove_var("COLONY_API");
-        std::env::remove_var("COLONY_SESSION_TOKEN");
-        std::env::remove_var("COLONY_CANVAS_ID");
-    }
-
-    #[test]
-    fn test_missing_env_returns_failure() {
-        std::env::remove_var("COLONY_API");
-        std::env::remove_var("COLONY_SESSION_TOKEN");
-        std::env::remove_var("COLONY_CANVAS_ID");
-
-        let result = builtin_draw(&["sticky".to_string(), "hello".to_string()]);
-        let br = result.expect("should not error");
+        let br = builtin_draw(&args(&["bogus"])).expect("should not error");
         assert_eq!(br, BuiltinResult::Failure(1));
     }
 
     #[test]
-    fn test_parse_draw_opts_defaults() {
-        let args: Vec<String> = vec!["hello".to_string(), "world".to_string()];
-        let (opts, remaining) = parse_draw_opts(&args, DrawOpts::default());
-        assert!((opts.x - 100.0).abs() < f64::EPSILON);
-        assert!((opts.y - 100.0).abs() < f64::EPSILON);
-        assert_eq!(remaining, vec!["hello", "world"]);
+    fn test_parse_draw_opts() {
+        let opts = parse_draw_opts(&args(&[
+            "hello", "-p", "50,75", "--size", "300x200", "-c", "#3B8", "--key", "k1", "world",
+        ]))
+        .unwrap();
+        assert_eq!(opts.position, Some((50.0, 75.0)));
+        assert_eq!(opts.size, Some((300.0, 200.0)));
+        assert_eq!(opts.color.as_deref(), Some("#3B8"));
+        assert_eq!(opts.key.as_deref(), Some("k1"));
+        assert_eq!(opts.words, vec!["hello", "world"]);
+        assert!(parse_draw_opts(&args(&["--color", "yellow"]))
+            .unwrap_err()
+            .contains("slate"));
+        assert!(parse_draw_opts(&args(&["--size"]))
+            .unwrap_err()
+            .contains("needs a value"));
     }
 
     #[test]
-    fn test_parse_draw_opts_with_position_and_color() {
-        let args: Vec<String> = vec![
-            "--position".to_string(),
-            "50,75".to_string(),
-            "--color".to_string(),
-            "red".to_string(),
-            "label".to_string(),
-        ];
-        let (opts, remaining) = parse_draw_opts(&args, DrawOpts::default());
-        assert!((opts.x - 50.0).abs() < f64::EPSILON);
-        assert!((opts.y - 75.0).abs() < f64::EPSILON);
-        assert_eq!(opts.color, "red");
-        assert_eq!(remaining, vec!["label"]);
+    fn test_line_item_box_and_flip() {
+        let down = line_item((10.0, 10.0), (110.0, 60.0), None);
+        assert_eq!(
+            down["placement"],
+            json!({"x": 10.0, "y": 10.0, "w": 100.0, "h": 50.0})
+        );
+        assert_eq!(down["shape"]["flip"], json!(false));
+        let up = line_item((10.0, 60.0), (110.0, 10.0), Some("red"));
+        assert_eq!(up["placement"]["y"], json!(10.0));
+        assert_eq!(
+            up["shape"],
+            json!({"form": "line", "color": "red", "flip": true})
+        );
+        let level = line_item((0.0, 5.0), (40.0, 5.0), None);
+        assert_eq!(level["placement"]["h"], json!(1.0));
     }
 
     #[test]
-    fn test_parse_draw_opts_with_size() {
-        let args: Vec<String> = vec!["--size".to_string(), "300x250".to_string()];
-        let (opts, _) = parse_draw_opts(&args, DrawOpts::default());
-        assert!((opts.width - 300.0).abs() < f64::EPSILON);
-        assert!((opts.height - 250.0).abs() < f64::EPSILON);
+    fn test_usage_errors_need_no_door() {
+        assert!(card("text", &[]).is_err());
+        assert!(card("sticky", &args(&["hi", "-c", "red"]))
+            .unwrap_err()
+            .contains("no colour"));
+        assert!(line(&args(&["--from", "0,0"])).is_err());
+        assert!(connector(&args(&["only-one"])).is_err());
+        assert!(connector(&args(&["a", "Bad/Key"]))
+            .unwrap_err()
+            .contains("bad key"));
+        assert!(remove(&[]).is_err());
     }
 
     #[test]
-    fn test_connector_no_args_returns_failure() {
-        std::env::set_var("COLONY_API", "http://localhost:4000");
-        std::env::set_var("COLONY_SESSION_TOKEN", "test-token");
-        std::env::set_var("COLONY_CANVAS_ID", "test-canvas-id");
-
-        let result = builtin_draw(&["connector".to_string()]);
-        let br = result.expect("should not error");
-        assert_eq!(br, BuiltinResult::Failure(1));
-
-        std::env::remove_var("COLONY_API");
-        std::env::remove_var("COLONY_SESSION_TOKEN");
-        std::env::remove_var("COLONY_CANVAS_ID");
-    }
-
-    #[test]
-    fn test_text_no_args_returns_failure() {
-        std::env::set_var("COLONY_API", "http://localhost:4000");
-        std::env::set_var("COLONY_SESSION_TOKEN", "test-token");
-        std::env::set_var("COLONY_CANVAS_ID", "test-canvas-id");
-
-        let result = builtin_draw(&["text".to_string()]);
-        let br = result.expect("should not error");
-        assert_eq!(br, BuiltinResult::Failure(1));
-
-        std::env::remove_var("COLONY_API");
-        std::env::remove_var("COLONY_SESSION_TOKEN");
-        std::env::remove_var("COLONY_CANVAS_ID");
-    }
-
-    #[test]
-    fn test_remove_no_args_returns_failure() {
-        std::env::set_var("COLONY_API", "http://localhost:4000");
-        std::env::set_var("COLONY_SESSION_TOKEN", "test-token");
-        std::env::set_var("COLONY_CANVAS_ID", "test-canvas-id");
-
-        let result = builtin_draw(&["remove".to_string()]);
-        let br = result.expect("should not error");
-        assert_eq!(br, BuiltinResult::Failure(1));
-
-        std::env::remove_var("COLONY_API");
-        std::env::remove_var("COLONY_SESSION_TOKEN");
-        std::env::remove_var("COLONY_CANVAS_ID");
+    fn test_own_keys_only_this_seat() {
+        let surface = json!({"surface": {"items": [
+            {"origin": {"memberId": "m_me"}, "data": {"key": "mine"}},
+            {"origin": {"memberId": "m_other"}, "data": {"key": "theirs"}},
+        ]}});
+        assert_eq!(own_keys(&surface, "m_me"), vec!["mine"]);
     }
 }

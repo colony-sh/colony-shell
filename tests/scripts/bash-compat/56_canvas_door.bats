@@ -7,35 +7,7 @@ setup() {
     command -v python3 >/dev/null || skip "python3 not installed"
     # Short path: a Unix socket path is at most 104 bytes.
     door_root="$(mktemp -d /tmp/door.XXXXXX)"
-    cat > "$BATS_TEST_TMPDIR/door.py" <<'EOF'
-import http.server, json, os, socketserver, sys
-
-ROOM = "qs_test-room"
-SURFACE = {"session_id": ROOM,
-           "room": {"text": {"trust": "untrusted", "data": {"room": "planning"}}},
-           "surface": {"cursor": 2, "items": [
-               {"trust": "untrusted", "data": {"key": "plan", "kind": "text", "title": "The plan",
-                                               "placement": {"x": 10, "y": 20, "w": 300, "h": 400}}}]}}
-ROOMS = {"rooms": [{"session_id": ROOM, "members": [
-    {"member_id": "m_1", "label": "ada", "agent": None, "room_role": "planner", "status": "idle", "active": True}]}]}
-
-class Door(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        body = {"/rooms": ROOMS, f"/rooms/{ROOM}/surface": SURFACE}.get(self.path)
-        data = json.dumps(body or {"error": "not_found"}).encode()
-        self.send_response(200 if body else 404)
-        self.send_header("content-type", "application/json")
-        self.send_header("content-length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-    def log_message(self, *args):
-        pass
-    def address_string(self):
-        return "door"
-
-socketserver.UnixStreamServer(os.path.join(sys.argv[1], f"{os.getpid()}.sock"), Door).serve_forever()
-EOF
-    python3 -I "$BATS_TEST_TMPDIR/door.py" "$door_root" &
+    python3 -I "$BATS_TEST_DIRNAME/fake_door.py" "$door_root" &
     door_pid=$!
     for _ in $(seq 50); do [ -S "$door_root/$door_pid.sock" ] && break; sleep 0.1; done
     export BELLMAN_DOOR_ROOT="$door_root"
