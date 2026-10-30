@@ -297,7 +297,7 @@ fn widget_place(args: &[String], verb: &str, what: &str) -> Outcome {
         return Err(usage());
     };
     let door = Door::open()?;
-    let mut item = writable(&door.item(key)?);
+    let mut item = writable(&door.own_item(key)?["data"]);
     let mut placement = item
         .remove("placement")
         .and_then(|p| p.as_object().cloned())
@@ -330,12 +330,15 @@ fn widget_config(args: &[String]) -> Outcome {
         .first()
         .ok_or("usage: canvas widget config <key> [json]")?;
     let door = Door::open()?;
-    let item = writable(&door.item(key)?);
     let Some(patch) = args.get(1) else {
-        let pretty = serde_json::to_string_pretty(&item).map_err(|e| e.to_string())?;
+        let item = door.item(key)?;
+        let pretty =
+            serde_json::to_string_pretty(&writable(&item["data"])).map_err(|e| e.to_string())?;
+        println!("{}", bellman_door::provenance(&item));
         println!("{}", bellman_door::clean_block(&pretty));
         return Ok(());
     };
+    let item = writable(&door.own_item(key)?["data"]);
     let patch: Value =
         serde_json::from_str(patch).map_err(|e| format!("config is not JSON: {e}"))?;
     let merged = merge(item, &patch).ok_or("config must be a JSON object")?;
@@ -371,13 +374,14 @@ fn merge(mut item: Map<String, Value>, patch: &Value) -> Option<Map<String, Valu
     Some(item)
 }
 
-/// `markdown <key>`: the item's body, safe to print.
+/// `markdown <key>`: the item's body, safe to print, under a line naming who wrote it.
 fn markdown(args: &[String]) -> Outcome {
     let key = args.first().ok_or("usage: canvas markdown <key>")?;
     let item = Door::open()?.item(key)?;
-    let body = item["body"]
+    let body = item["data"]["body"]
         .as_str()
         .ok_or_else(|| format!("item {key} has no body"))?;
+    println!("{}", bellman_door::provenance(&item));
     println!("{}", bellman_door::clean_block(body));
     Ok(())
 }
