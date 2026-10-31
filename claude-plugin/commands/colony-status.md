@@ -16,13 +16,13 @@ else
   echo "Not running in Colony Shell"
 fi
 
-if [ -n "$COLONY_CANVAS_ID" ]; then
+if [ -n "$BELLMAN_ROOM" ]; then
   echo ""
   echo "=== Canvas ==="
-  canvas status 2>/dev/null || echo "Canvas builtins not available"
+  canvas status 2>&1 || true
   echo ""
   echo "=== Participants ==="
-  canvas participants 2>/dev/null || echo "Cannot fetch participants"
+  canvas participants 2>&1 || true
 fi
 ```
 
