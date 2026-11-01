@@ -1,221 +1,86 @@
-//! Canvas builtin -- interact with Colony Nerve canvas from the shell.
+//! Canvas builtin -- read and write the Bellman room's canvas from the shell.
 //!
-//! Reads `COLONY_API`, `COLONY_SESSION_TOKEN`, and `COLONY_CANVAS_ID` from
-//! the environment and makes REST calls via `curl`.  This avoids adding an
-//! HTTP client dependency to colony-exec; curl is universally available on
-//! macOS and Linux.
+//! Everything but `tasks` goes through the local Bellman bridge door (see
+//! [`crate::bellman_door`]): the room is `BELLMAN_ROOM`, and the terminal holds no
+//! token. `tasks` still reads the Colony API (`COLONY_API`, `COLONY_SESSION_TOKEN`,
+//! `COLONY_CANVAS_ID`) via `curl`: Bellman has no task board.
 //!
 //! # Subcommands
 //!
 //! | Subcommand | Description |
 //! |---|---|
-//! | `status` | Show canvas info |
-//! | `participants` | List humans + agents |
-//! | `widgets` | List all widgets |
-//! | `announce <text>` | Broadcast working status |
-//! | `widget create\|move\|resize\|remove\|config` | Widget CRUD |
-//! | `tasks` | Read task board |
-//! | `markdown <id>` | Read markdown widget |
+//! | `status` | Show the room and how many canvas items it has |
+//! | `participants` | List the room's humans and agents |
+//! | `widgets` | List the canvas items |
+//! | `announce <text>` | Post this seat's status card |
+//! | `widget create\|move\|resize\|remove\|config` | Canvas item CRUD |
+//! | `tasks` | Read the Colony task board |
+//! | `markdown <key>` | Print an item's body |
 //! | `help` | Print help text |
 
 use std::process::Command;
 
-use serde_json::Value;
+use serde_json::{json, Map, Value};
 
-use crate::bellman_door::{self, DoorError};
+use crate::bellman_door::{self, Door};
 use crate::builtins::BuiltinResult;
 use crate::Result;
 
-/// Configuration extracted from the environment for canvas API calls.
-struct CanvasEnv {
-    api: String,
-    token: String,
-    canvas_id: String,
-}
+/// What a subcommand gives back: `Err` is the message to print after `canvas: `.
+type Outcome = std::result::Result<(), String>;
 
-/// Read the required environment variables or print an error and return `None`.
-fn read_env() -> Option<CanvasEnv> {
-    let api = match std::env::var("COLONY_API") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("canvas: not on a canvas (COLONY_API not set)");
-            return None;
-        }
-    };
-    let token = match std::env::var("COLONY_SESSION_TOKEN") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("canvas: no auth token (COLONY_SESSION_TOKEN not set)");
-            return None;
-        }
-    };
-    let canvas_id = match std::env::var("COLONY_CANVAS_ID") {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("canvas: no canvas ID (COLONY_CANVAS_ID not set)");
-            return None;
-        }
-    };
-    Some(CanvasEnv {
-        api,
-        token,
-        canvas_id,
-    })
-}
+/// The kinds `canvas widget create` makes: the card kinds that carry a body.
+const CARD_KINDS: [&str; 4] = ["text", "link", "diagram", "html"];
+
+/// The item fields a write may carry back (`SurfaceItemShape` in bellman `src/surface.ts`,
+/// less `key`, which the path gives, and `frame`, which is never stored). The schema is strict,
+/// so what a read adds (`cursor`, `at`, `approved_by`, ...) must not go back.
+const WRITABLE: [&str; 8] = [
+    "kind",
+    "title",
+    "body",
+    "ends",
+    "placement",
+    "blob",
+    "shape",
+    "locked",
+];
 
 /// Execute a `canvas` builtin invocation.
 pub fn builtin_canvas(args: &[String]) -> Result<BuiltinResult> {
-    let subcmd = args.first().map(String::as_str).unwrap_or("status");
+    let subcmd = args.first().map_or("status", String::as_str);
+    let rest = args.get(1..).unwrap_or_default();
 
-    // Help works off-canvas too
-    if matches!(subcmd, "help" | "--help" | "-h") {
-        print_help();
-        return Ok(BuiltinResult::Success(0));
-    }
-
-    // The reads go through the Bellman bridge door; the writes stay on Phoenix until the
-    // door's surface writes (bellman-sh/bellman#466) are released.
-    if matches!(subcmd, "status" | "participants" | "widgets") {
-        return Ok(match door_read(subcmd) {
-            Ok(()) => BuiltinResult::Success(0),
-            Err(e) => {
-                eprintln!("canvas: {e}");
-                BuiltinResult::Failure(1)
-            }
-        });
-    }
-
-    let Some(env) = read_env() else {
-        return Ok(BuiltinResult::Failure(1));
-    };
-
-    let code = match subcmd {
-        "announce" => cmd_announce(&env, &args[1..]),
-        "widget" => cmd_widget_crud(&env, &args[1..]),
-        "tasks" => cmd_tasks(&env),
-        "markdown" => cmd_markdown(&env, &args[1..]),
-        other => {
-            eprintln!("canvas: unknown subcommand '{other}'. Try 'canvas help'.");
-            1
+    let outcome = match subcmd {
+        "help" | "--help" | "-h" => {
+            print_help();
+            Ok(())
         }
+        "status" | "participants" | "widgets" => door_read(subcmd),
+        "announce" => announce(rest),
+        "widget" => widget(rest),
+        "markdown" => markdown(rest),
+        "tasks" => tasks(),
+        other => Err(format!("unknown subcommand '{other}'. Try 'canvas help'.")),
     };
 
-    if code == 0 {
-        Ok(BuiltinResult::Success(0))
-    } else {
-        Ok(BuiltinResult::Failure(code))
-    }
+    Ok(match outcome {
+        Ok(()) => BuiltinResult::Success(0),
+        Err(e) => {
+            eprintln!("canvas: {e}");
+            BuiltinResult::Failure(1)
+        }
+    })
 }
-
-// ---------------------------------------------------------------------------
-// HTTP helpers
-// ---------------------------------------------------------------------------
-
-/// Perform a GET request via curl. Returns the response body on success.
-fn curl_get(api: &str, token: &str, path: &str) -> Option<String> {
-    let url = format!("{api}{path}");
-    let output = Command::new("curl")
-        .args(["-s", "-H", &format!("Authorization: Bearer {token}"), &url])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-/// Perform a POST request via curl with a JSON body.
-fn curl_post(api: &str, token: &str, path: &str, body: &str) -> Option<String> {
-    let url = format!("{api}{path}");
-    let output = Command::new("curl")
-        .args([
-            "-s",
-            "-X",
-            "POST",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            body,
-            &url,
-        ])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-/// Perform a PATCH request via curl with a JSON body.
-fn curl_patch(api: &str, token: &str, path: &str, body: &str) -> Option<String> {
-    let url = format!("{api}{path}");
-    let output = Command::new("curl")
-        .args([
-            "-s",
-            "-X",
-            "PATCH",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            body,
-            &url,
-        ])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-/// Perform a DELETE request via curl.
-fn curl_delete(api: &str, token: &str, path: &str) -> Option<String> {
-    let url = format!("{api}{path}");
-    let output = Command::new("curl")
-        .args([
-            "-s",
-            "-X",
-            "DELETE",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            &url,
-        ])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Subcommands
-// ---------------------------------------------------------------------------
 
 /// Print `status`, `participants` or `widgets` for `BELLMAN_ROOM`, read off the door.
-fn door_read(subcmd: &str) -> std::result::Result<(), DoorError> {
-    let room = bellman_door::room()?;
-    let socket = bellman_door::find()?;
-    let surface_path = format!("/rooms/{}/surface", bellman_door::segment(&room));
+fn door_read(subcmd: &str) -> Outcome {
+    let door = Door::open()?;
     let lines = match subcmd {
-        "participants" => {
-            let rooms = bellman_door::get(&socket, "/rooms", &room)?;
-            participant_lines(&rooms, &room).ok_or_else(|| DoorError::NoSeat(room.clone()))?
-        }
-        "widgets" => widget_lines(&bellman_door::get(&socket, &surface_path, &room)?),
-        _ => status_lines(&bellman_door::get(&socket, &surface_path, &room)?, &room),
+        "participants" => participant_lines(&door.rooms()?, door.room())
+            .ok_or_else(|| bellman_door::DoorError::NoSeat(door.room().to_string()))?,
+        "widgets" => widget_lines(&door.surface()?),
+        _ => status_lines(&door.surface()?, door.room()),
     };
     for line in lines {
         println!("{line}");
@@ -224,7 +89,7 @@ fn door_read(subcmd: &str) -> std::result::Result<(), DoorError> {
 }
 
 /// `GET /rooms/<id>/surface` as the room's name and how many items its canvas holds.
-fn status_lines(surface: &Value, room: &str) -> Vec<String> {
+pub(crate) fn status_lines(surface: &Value, room: &str) -> Vec<String> {
     let name = surface["room"]["text"]["data"]["room"]
         .as_str()
         .map_or_else(|| "unnamed".to_string(), |n| bellman_door::clean(n, 80));
@@ -233,7 +98,7 @@ fn status_lines(surface: &Value, room: &str) -> Vec<String> {
 }
 
 /// `GET /rooms` as one line per active member of `room`, or `None` when the bridge holds no seat there.
-fn participant_lines(rooms: &Value, room: &str) -> Option<Vec<String>> {
+pub(crate) fn participant_lines(rooms: &Value, room: &str) -> Option<Vec<String>> {
     let found = rooms["rooms"]
         .as_array()?
         .iter()
@@ -264,9 +129,9 @@ fn participant_lines(rooms: &Value, room: &str) -> Option<Vec<String>> {
 }
 
 /// `GET /rooms/<id>/surface` as a table of the canvas items, each item's `data` out of its envelope.
-fn widget_lines(surface: &Value) -> Vec<String> {
+pub(crate) fn widget_lines(surface: &Value) -> Vec<String> {
     let header = format!(
-        "{:<24} {:<8} {:<12} {:<10} TITLE",
+        "{:<24} {:<10} {:<12} {:<10} TITLE",
         "KEY", "KIND", "POSITION", "SIZE"
     );
     let rows = surface["surface"]["items"]
@@ -276,7 +141,7 @@ fn widget_lines(surface: &Value) -> Vec<String> {
         .map(|item| {
             let d = &item["data"];
             let key = bellman_door::clean(d["key"].as_str().unwrap_or("?"), 24);
-            let kind = bellman_door::clean(d["kind"].as_str().unwrap_or("?"), 8);
+            let kind = bellman_door::clean(d["kind"].as_str().unwrap_or("?"), 10);
             let title = bellman_door::clean(d["title"].as_str().unwrap_or(""), 60);
             let p = &d["placement"];
             let pos = match (p["x"].as_f64(), p["y"].as_f64()) {
@@ -287,301 +152,373 @@ fn widget_lines(surface: &Value) -> Vec<String> {
                 (Some(w), Some(h)) => format!("{w:.0}x{h:.0}"),
                 _ => "\u{2014}".to_string(),
             };
-            format!("{key:<24} {kind:<8} {pos:<12} {size:<10} {title}")
+            format!("{key:<24} {kind:<10} {pos:<12} {size:<10} {title}")
         });
     std::iter::once(header).chain(rows).collect()
 }
 
-fn cmd_announce(env: &CanvasEnv, args: &[String]) -> i32 {
-    if args.is_empty() {
-        eprintln!("Usage: canvas announce <status text>");
-        eprintln!("       canvas announce --files file1.rs file2.rs");
-        eprintln!("       canvas announce --clear");
-        return 1;
-    }
+/// `announce <text> [--files f...]` writes this seat's status card, `announce-<member id>`;
+/// `announce --clear` removes it.
+fn announce(args: &[String]) -> Outcome {
+    const USAGE: &str = "usage: canvas announce <status text> [--files f1 f2 ...] | --clear";
+    let Some(first) = args.first() else {
+        return Err(USAGE.to_string());
+    };
+    let door = Door::open()?;
+    let seat = door.seat()?;
+    let key = announce_key(&seat);
 
-    if args[0] == "--clear" {
-        let body = r#"{"status": "idle", "detail": null, "files": []}"#;
-        let path = format!("/api/canvases/{}/announce", env.canvas_id);
-        curl_post(&env.api, &env.token, &path, body);
-        println!("Status cleared.");
-        return 0;
-    }
-
-    let mut detail = String::new();
-    let mut files: Vec<String> = Vec::new();
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--files" {
-            i += 1;
-            while i < args.len() && !args[i].starts_with("--") {
-                files.push(args[i].clone());
-                i += 1;
+    if first == "--clear" {
+        match door.item(&key) {
+            Err(bellman_door::DoorError::NoItem(_)) => println!("Nothing to clear."),
+            Err(e) => return Err(e.into()),
+            Ok(_) => {
+                door.delete(&key)?;
+                println!("Status cleared.");
             }
-        } else {
-            if !detail.is_empty() {
-                detail.push(' ');
-            }
-            detail.push_str(&args[i]);
-            i += 1;
         }
+        return Ok(());
     }
 
-    let files_json: Vec<String> = files.iter().map(|f| format!("\"{f}\"")).collect();
-    let escaped_detail = detail.replace('"', "\\\"");
-    let body = format!(
-        r#"{{"status": "working", "detail": "{escaped_detail}", "files": [{}]}}"#,
-        files_json.join(",")
+    let (detail, files) = split_files(args);
+    if detail.is_empty() && files.is_empty() {
+        return Err(USAGE.to_string());
+    }
+    let mut text = detail.clone();
+    if !files.is_empty() {
+        if !text.is_empty() {
+            text.push_str("\n\n");
+        }
+        text.push_str(&format!("Files: {}", files.join(", ")));
+    }
+    door.put(
+        &key,
+        &json!({"kind": "text", "title": "Working on", "body": text}),
+    )?;
+    println!(
+        "Announced: {}",
+        if detail.is_empty() { &text } else { &detail }
     );
-    let path = format!("/api/canvases/{}/announce", env.canvas_id);
-    curl_post(&env.api, &env.token, &path, &body);
-    println!("Announced: {detail}");
-    0
+    Ok(())
 }
 
-fn cmd_widget_crud(env: &CanvasEnv, args: &[String]) -> i32 {
-    let subcmd = args.first().map(String::as_str).unwrap_or("help");
-
-    match subcmd {
-        "create" => widget_create(env, &args[1..]),
-        "move" => widget_move(env, &args[1..]),
-        "resize" => widget_resize(env, &args[1..]),
-        "remove" => widget_remove(env, &args[1..]),
-        "config" => widget_config(env, &args[1..]),
-        _ => {
-            eprintln!("Usage: canvas widget <create|move|resize|remove|config> ...");
-            1
-        }
-    }
+/// The status card's key for a seat: `announce-` and the member id, as a valid key.
+fn announce_key(member_id: &str) -> String {
+    let id: String = member_id
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .take(22)
+        .collect();
+    format!("announce-{id}")
 }
 
-fn widget_create(env: &CanvasEnv, args: &[String]) -> i32 {
-    let Some(widget_type) = args.first() else {
-        eprintln!("Usage: canvas widget create <type> [--title X] [--position X,Y] [--size WxH]");
-        return 1;
-    };
-
-    let mut title = String::new();
-    let mut x = 100.0_f64;
-    let mut y = 100.0_f64;
-    let mut w = 400.0_f64;
-    let mut h = 300.0_f64;
-
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--title" => {
-                i += 1;
-                title = args.get(i).cloned().unwrap_or_default();
-            }
-            "--position" => {
-                i += 1;
-                if let Some(pos) = args.get(i) {
-                    if let Some((px, py)) = pos.split_once(',') {
-                        x = px.parse().unwrap_or(100.0);
-                        y = py.parse().unwrap_or(100.0);
-                    }
-                }
-            }
-            "--size" => {
-                i += 1;
-                if let Some(size) = args.get(i) {
-                    if let Some((sw, sh)) = size.split_once('x') {
-                        w = sw.parse().unwrap_or(400.0);
-                        h = sh.parse().unwrap_or(300.0);
-                    }
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-
-    let _ = title; // Reserved for future use in config_data
-    let body = format!(
-        r#"{{"plugin_id": "{widget_type}", "position_x": {x}, "position_y": {y}, "width": {w}, "height": {h}, "config_data": {{}}}}"#,
-    );
-    let path = format!("/api/canvases/{}/widgets", env.canvas_id);
-
-    let Some(resp) = curl_post(&env.api, &env.token, &path, &body) else {
-        eprintln!("canvas: failed to create widget");
-        return 1;
-    };
-
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&resp) {
-        let data = if v.get("data").is_some() {
-            &v["data"]
+/// `announce`'s words, and the names after `--files` (up to the next `--` flag).
+fn split_files(args: &[String]) -> (String, Vec<String>) {
+    let mut words = Vec::new();
+    let mut files = Vec::new();
+    let mut in_files = false;
+    for arg in args {
+        if arg == "--files" {
+            in_files = true;
+        } else if in_files && !arg.starts_with("--") {
+            files.push(arg.clone());
         } else {
-            &v
-        };
-        let id = data["id"].as_str().unwrap_or("?");
-        println!("Created {widget_type} widget: {id}");
+            in_files = false;
+            words.push(arg.as_str());
+        }
+    }
+    (words.join(" "), files)
+}
+
+fn widget(args: &[String]) -> Outcome {
+    let rest = args.get(1..).unwrap_or_default();
+    match args.first().map(String::as_str) {
+        Some("create") => widget_create(rest),
+        Some("move") => widget_place(rest, "move", "<x,y>"),
+        Some("resize") => widget_place(rest, "resize", "<WxH>"),
+        Some("remove") => {
+            let key = rest.first().ok_or("usage: canvas widget remove <key>")?;
+            Door::open()?.delete(key)?;
+            println!("Removed item {key}");
+            Ok(())
+        }
+        Some("config") => widget_config(rest),
+        _ => Err("usage: canvas widget <create|move|resize|remove|config> ...".to_string()),
+    }
+}
+
+/// `widget create <kind> --body B [--title T] [--key K] [--position X,Y [--size WxH]]`.
+fn widget_create(args: &[String]) -> Outcome {
+    const USAGE: &str = "usage: canvas widget create <text|link|diagram|html> --body B [--title T] [--key K] [--position X,Y] [--size WxH]";
+    let kind = args.first().ok_or(USAGE)?;
+    if !CARD_KINDS.contains(&kind.as_str()) {
+        return Err(format!(
+            "canvas widget create makes text, link, diagram or html items, not '{kind}'; use draw for shapes, frames and connectors"
+        ));
+    }
+    let opt = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let body = opt("--body").ok_or_else(|| format!("a {kind} item needs --body"))?;
+    let key = opt("--key").unwrap_or_else(|| bellman_door::new_key(kind));
+
+    let mut item = json!({"kind": kind, "body": body});
+    if let Some(title) = opt("--title") {
+        item["title"] = json!(title);
+    }
+    match (opt("--position"), opt("--size")) {
+        (Some(pos), size) => {
+            let (x, y) = parse_pair(&pos, ',').ok_or("--position takes X,Y")?;
+            let mut placement = json!({"x": x, "y": y});
+            if let Some(size) = size {
+                let (w, h) = parse_size(&size)?;
+                placement["w"] = json!(w);
+                placement["h"] = json!(h);
+            }
+            item["placement"] = placement;
+        }
+        (None, Some(_)) => return Err("--size needs --position".to_string()),
+        (None, None) => {} // Bellman places it in the next free grid slot.
     }
 
-    0
+    Door::open()?.put(&key, &item)?;
+    println!("Created {kind} item: {key}");
+    Ok(())
 }
 
-fn widget_move(env: &CanvasEnv, args: &[String]) -> i32 {
-    let Some(id) = args.first() else {
-        eprintln!("Usage: canvas widget move <id> <x,y>");
-        return 1;
+/// `widget move <key> <x,y>` and `widget resize <key> <WxH>`: the item rewritten with a new placement.
+fn widget_place(args: &[String], verb: &str, what: &str) -> Outcome {
+    let usage = || format!("usage: canvas widget {verb} <key> {what}");
+    let (Some(key), Some(value)) = (args.first(), args.get(1)) else {
+        return Err(usage());
     };
-    let Some(pos) = args.get(1) else {
-        eprintln!("Usage: canvas widget move <id> <x,y>");
-        return 1;
-    };
-    let (px, py) = pos.split_once(',').unwrap_or(("0", "0"));
-    let body = format!(r#"{{"position_x": {px}, "position_y": {py}}}"#);
-    let path = format!("/api/widgets/{id}");
-    curl_patch(&env.api, &env.token, &path, &body);
-    println!("Moved {id} to {pos}");
-    0
-}
-
-fn widget_resize(env: &CanvasEnv, args: &[String]) -> i32 {
-    let Some(id) = args.first() else {
-        eprintln!("Usage: canvas widget resize <id> <WxH>");
-        return 1;
-    };
-    let Some(size) = args.get(1) else {
-        eprintln!("Usage: canvas widget resize <id> <WxH>");
-        return 1;
-    };
-    let (w, h) = size.split_once('x').unwrap_or(("400", "300"));
-    let body = format!(r#"{{"width": {w}, "height": {h}}}"#);
-    let path = format!("/api/widgets/{id}");
-    curl_patch(&env.api, &env.token, &path, &body);
-    println!("Resized {id} to {size}");
-    0
-}
-
-fn widget_remove(env: &CanvasEnv, args: &[String]) -> i32 {
-    let Some(id) = args.first() else {
-        eprintln!("Usage: canvas widget remove <id>");
-        return 1;
-    };
-    let path = format!("/api/widgets/{id}");
-    curl_delete(&env.api, &env.token, &path);
-    println!("Removed widget {id}");
-    0
-}
-
-fn widget_config(env: &CanvasEnv, args: &[String]) -> i32 {
-    let Some(id) = args.first() else {
-        eprintln!("Usage: canvas widget config <id> [json]");
-        return 1;
-    };
-
-    if let Some(json_body) = args.get(1) {
-        // PATCH config
-        let body = format!(r#"{{"config_data": {json_body}}}"#);
-        let path = format!("/api/widgets/{id}");
-        curl_patch(&env.api, &env.token, &path, &body);
-        println!("Updated config for {id}");
+    let door = Door::open()?;
+    let mut item = writable(&door.own_item(key)?["data"]);
+    let mut placement = item
+        .remove("placement")
+        .and_then(|p| p.as_object().cloned())
+        .unwrap_or_default();
+    if verb == "move" {
+        let (x, y) = parse_pair(value, ',').ok_or_else(usage)?;
+        placement.insert("x".into(), json!(x));
+        placement.insert("y".into(), json!(y));
     } else {
-        // GET config
-        let path = format!("/api/widgets/{id}/content");
-        if let Some(resp) = curl_get(&env.api, &env.token, &path) {
-            println!("{resp}");
+        if !placement.contains_key("x") {
+            return Err(format!("item {key} has no position yet; move it first"));
+        }
+        let (w, h) = parse_size(value)?;
+        placement.insert("w".into(), json!(w));
+        placement.insert("h".into(), json!(h));
+    }
+    item.insert("placement".into(), Value::Object(placement));
+    door.put(key, &Value::Object(item))?;
+    println!(
+        "{} {key} to {value}",
+        if verb == "move" { "Moved" } else { "Resized" }
+    );
+    Ok(())
+}
+
+/// `widget config <key>` prints the item's writable fields; `widget config <key> <json>` merges
+/// a JSON object into them (a `null` field removes it) and writes the item back.
+fn widget_config(args: &[String]) -> Outcome {
+    let key = args
+        .first()
+        .ok_or("usage: canvas widget config <key> [json]")?;
+    let door = Door::open()?;
+    let Some(patch) = args.get(1) else {
+        let item = door.item(key)?;
+        let pretty =
+            serde_json::to_string_pretty(&writable(&item["data"])).map_err(|e| e.to_string())?;
+        println!("{}", bellman_door::provenance(&item));
+        println!("{}", bellman_door::clean_block(&pretty));
+        return Ok(());
+    };
+    let item = writable(&door.own_item(key)?["data"]);
+    let patch: Value =
+        serde_json::from_str(patch).map_err(|e| format!("config is not JSON: {e}"))?;
+    let merged = merge(item, &patch).ok_or("config must be a JSON object")?;
+    door.put(key, &Value::Object(merged))?;
+    println!("Updated {key}");
+    Ok(())
+}
+
+/// The fields of a read item that a write may send back, `null`s left out.
+fn writable(data: &Value) -> Map<String, Value> {
+    WRITABLE
+        .iter()
+        .filter_map(|&k| {
+            data.get(k)
+                .filter(|v| !v.is_null())
+                .map(|v| (k.to_string(), v.clone()))
+        })
+        .collect()
+}
+
+/// `patch`'s fields over `item`: a `null` removes the field, and `key` is left to the path.
+fn merge(mut item: Map<String, Value>, patch: &Value) -> Option<Map<String, Value>> {
+    for (k, v) in patch.as_object()? {
+        if k == "key" {
+            continue;
+        }
+        if v.is_null() {
+            item.remove(k);
+        } else {
+            item.insert(k.clone(), v.clone());
         }
     }
-
-    0
+    Some(item)
 }
 
-fn cmd_tasks(env: &CanvasEnv) -> i32 {
-    let path = format!("/api/canvases/{}/tasks", env.canvas_id);
-    let Some(json) = curl_get(&env.api, &env.token, &path) else {
-        eprintln!("canvas: failed to fetch tasks");
-        return 1;
-    };
-    println!("{json}");
-    0
+/// `markdown <key>`: the item's body, safe to print, under a line naming who wrote it.
+fn markdown(args: &[String]) -> Outcome {
+    let key = args.first().ok_or("usage: canvas markdown <key>")?;
+    let item = Door::open()?.item(key)?;
+    let body = item["data"]["body"]
+        .as_str()
+        .ok_or_else(|| format!("item {key} has no body"))?;
+    println!("{}", bellman_door::provenance(&item));
+    println!("{}", bellman_door::clean_block(body));
+    Ok(())
 }
 
-fn cmd_markdown(env: &CanvasEnv, args: &[String]) -> i32 {
-    let Some(id) = args.first() else {
-        eprintln!("Usage: canvas markdown <widget-id>");
-        return 1;
+/// `X<sep>Y` as two numbers.
+pub(crate) fn parse_pair(text: &str, sep: char) -> Option<(f64, f64)> {
+    let (a, b) = text.split_once(sep)?;
+    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+}
+
+/// `WxH`, both positive (Bellman refuses a zero size).
+pub(crate) fn parse_size(text: &str) -> std::result::Result<(f64, f64), String> {
+    parse_pair(text, 'x')
+        .filter(|&(w, h)| w > 0.0 && h > 0.0)
+        .ok_or_else(|| format!("size '{text}' is not WxH with both above zero"))
+}
+
+/// `tasks`: the Colony task board, still on the Colony API (Bellman has none).
+fn tasks() -> Outcome {
+    let var = |name: &str| {
+        std::env::var(name).map_err(|_| format!("{name} not set (tasks still read the Colony API)"))
     };
-    let path = format!("/api/widgets/{id}/content");
-    if let Some(json) = curl_get(&env.api, &env.token, &path) {
-        println!("{json}");
+    let api = var("COLONY_API")?;
+    let token = var("COLONY_SESSION_TOKEN")?;
+    let canvas_id = var("COLONY_CANVAS_ID")?;
+    let output = Command::new("curl")
+        .args(["-s", "-f", "-H", &format!("Authorization: Bearer {token}")])
+        .arg(format!("{api}/api/canvases/{canvas_id}/tasks"))
+        .output()
+        .map_err(|e| format!("failed to run curl: {e}"))?;
+    if !output.status.success() {
+        return Err("failed to fetch tasks".to_string());
     }
-    0
+    println!("{}", String::from_utf8_lossy(&output.stdout));
+    Ok(())
 }
 
 fn print_help() {
     println!("Usage: canvas <subcommand>");
     println!();
     println!("Subcommands:");
-    println!("  status                          Show canvas info");
+    println!("  status                          Show the room and its item count");
     println!("  participants                    List humans + agents");
-    println!("  widgets                         List all widgets");
-    println!("  announce <text>                 Broadcast working status");
+    println!("  widgets                         List canvas items");
+    println!("  announce <text>                 Post this seat's status card");
     println!("  announce --files f1 f2          Announce with file list");
-    println!("  announce --clear                Clear status");
-    println!("  widget create <type> [opts]     Create widget");
-    println!("  widget move <id> <x,y>          Move widget");
-    println!("  widget resize <id> <WxH>        Resize widget");
-    println!("  widget remove <id>              Remove widget");
-    println!("  widget config <id> [json]       Read/write config");
-    println!("  tasks                           Read task board");
-    println!("  markdown <id>                   Read markdown widget");
+    println!("  announce --clear                Remove the status card");
+    println!("  widget create <kind> --body B   Create a text, link, diagram or html item");
+    println!("         [--title T] [--key K] [--position X,Y] [--size WxH]");
+    println!("  widget move <key> <x,y>         Move an item");
+    println!("  widget resize <key> <WxH>       Resize an item");
+    println!("  widget remove <key>             Remove an item");
+    println!("  widget config <key> [json]      Print an item, or merge JSON into it");
+    println!("  tasks                           Read the Colony task board");
+    println!("  markdown <key>                  Print an item's body");
     println!("  help                            This help");
     println!();
-    println!("status, participants and widgets read the Bellman room through the local");
-    println!("bridge door. The other subcommands still use the Colony API.");
+    println!("Everything but tasks goes through the local Bellman bridge door.");
     println!();
     println!("Environment:");
     println!("  BELLMAN_ROOM             Bellman room (session) id");
     println!("  BELLMAN_DOOR_ROOT        Bridge door folder (default ~/.claude/bellman/door)");
-    println!("  COLONY_API               Base URL (e.g. https://api.colony.sh)");
-    println!("  COLONY_SESSION_TOKEN     Auth bearer token");
-    println!("  COLONY_CANVAS_ID         Current canvas UUID");
+    println!("  COLONY_API, COLONY_SESSION_TOKEN, COLONY_CANVAS_ID   for tasks only");
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(ToString::to_string).collect()
+    }
+
     #[test]
     fn test_help_returns_success() {
-        let result = builtin_canvas(&["help".to_string()]);
-        let br = result.expect("should not error");
+        let br = builtin_canvas(&args(&["help"])).expect("should not error");
         assert_eq!(br, BuiltinResult::Success(0));
     }
 
     #[test]
     fn test_unknown_subcommand_returns_failure() {
-        // Set dummy env vars so we don't fail on env check
-        std::env::set_var("COLONY_API", "http://localhost:4000");
-        std::env::set_var("COLONY_SESSION_TOKEN", "test-token");
-        std::env::set_var("COLONY_CANVAS_ID", "test-canvas-id");
-
-        let result = builtin_canvas(&["bogus".to_string()]);
-        let br = result.expect("should not error");
+        let br = builtin_canvas(&args(&["bogus"])).expect("should not error");
         assert_eq!(br, BuiltinResult::Failure(1));
-
-        // Clean up
-        std::env::remove_var("COLONY_API");
-        std::env::remove_var("COLONY_SESSION_TOKEN");
-        std::env::remove_var("COLONY_CANVAS_ID");
     }
 
     #[test]
-    fn test_missing_env_returns_failure() {
-        std::env::remove_var("COLONY_API");
-        std::env::remove_var("COLONY_SESSION_TOKEN");
-        std::env::remove_var("COLONY_CANVAS_ID");
+    fn test_usage_errors_need_no_door() {
+        assert!(announce(&[]).is_err());
+        assert!(widget(&[]).is_err());
+        assert!(widget_create(&args(&["shape"]))
+            .unwrap_err()
+            .contains("use draw"));
+        assert!(widget_create(&args(&["text"]))
+            .unwrap_err()
+            .contains("needs --body"));
+        assert!(widget_place(&args(&["k"]), "move", "<x,y>").is_err());
+        assert!(markdown(&[]).is_err());
+    }
 
-        let result = builtin_canvas(&["tasks".to_string()]);
-        let br = result.expect("should not error");
-        assert_eq!(br, BuiltinResult::Failure(1));
+    #[test]
+    fn test_announce_key_and_files() {
+        assert_eq!(announce_key("m_9A5fe64f"), "announce-m_9a5fe64f");
+        assert!(bellman_door::is_key(&announce_key(&"m_x".repeat(20))));
+        let (detail, files) = split_files(&args(&[
+            "fixing", "--files", "a.rs", "b.rs", "--x", "parser",
+        ]));
+        assert_eq!(detail, "fixing --x parser");
+        assert_eq!(files, vec!["a.rs", "b.rs"]);
+    }
+
+    #[test]
+    fn test_writable_drops_read_only_and_null_fields() {
+        let data = json!({"key": "k", "kind": "text", "body": "b", "title": null, "cursor": 7,
+            "at": "t", "approved_by": null, "placement": {"x": 1, "y": 2}});
+        let item = writable(&data);
+        assert_eq!(
+            Value::Object(item),
+            json!({"kind": "text", "body": "b", "placement": {"x": 1, "y": 2}})
+        );
+    }
+
+    #[test]
+    fn test_merge_sets_removes_and_ignores_key() {
+        let item = writable(&json!({"kind": "text", "body": "b", "title": "t"}));
+        let merged = merge(item, &json!({"body": "new", "title": null, "key": "other"})).unwrap();
+        assert_eq!(
+            Value::Object(merged),
+            json!({"kind": "text", "body": "new"})
+        );
+        assert_eq!(merge(Map::new(), &json!([1])), None);
+    }
+
+    #[test]
+    fn test_parse_size_refuses_zero() {
+        assert_eq!(parse_size("300x200"), Ok((300.0, 200.0)));
+        assert!(parse_size("0x200").is_err());
+        assert!(parse_size("300").is_err());
     }
 
     fn surface() -> Value {
@@ -613,7 +550,7 @@ mod tests {
         assert_eq!(
             lines[1],
             format!(
-                "{:<24} {:<8} {:<12} {:<10} The plan",
+                "{:<24} {:<10} {:<12} {:<10} The plan",
                 "plan", "text", "720,240", "420x1000"
             )
         );

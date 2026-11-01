@@ -1722,6 +1722,20 @@
         "Completed 2026-10-29: crates/colony-exec/src/bellman_door.rs (discovery, GET, peer-text cleaning); 10 unit tests + tests/scripts/bash-compat/56_canvas_door.bats (fake door) pass; checked live against a real 0.6.0 bridge.",
         "Next: announce/widget CRUD/markdown and draw onto PUT/DELETE /rooms/<id>/surface/<key> once bellman#466 ships (merged, not in a release as of v0.6.0)."
       ]
+    },
+    {
+      "id": "F081",
+      "name": "Canvas and draw writes via Bellman bridge door",
+      "description": "Move the canvas write subcommands (announce, widget create/move/resize/remove/config, markdown) and the draw builtin off Phoenix onto the Bellman door's PUT/DELETE /rooms/<id>/surface/<key> routes (bellman v0.7.0). canvas tasks has no Bellman equivalent and stays on Phoenix.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": [
+        "F080"
+      ],
+      "notes": [
+        "Started 2026-10-29: mapping Phoenix widgets/whiteboard items onto Bellman surface kinds",
+        "Completed 2026-10-30: announce, widget create/move/resize/remove/config, markdown and draw write through the door; 57_canvas_door_writes.bats 4/4; full BATS adds no failures over main (72 vs 76, the 4 being the new write tests)"
+      ]
     }
   ]
 }

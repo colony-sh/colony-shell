@@ -1,7 +1,7 @@
 {
   "name": "colony",
   "displayName": "Colony Integration",
-  "description": "Gives Claude awareness of Colony Shell environment and Colony Nerve canvas. Activates when COLONY_SHELL or COLONY_CANVAS_ID env vars are detected.",
+  "description": "Gives Claude awareness of Colony Shell environment and Colony Nerve canvas. Activates when COLONY_SHELL or BELLMAN_ROOM env vars are detected.",
   "version": "0.1.0",
   "author": {
     "name": "Colony",
