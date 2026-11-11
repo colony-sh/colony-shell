@@ -1783,38 +1783,92 @@ impl Executor {
         &self.heartbeat_scheduler
     }
 
+    /// The HEARTBEAT.md found from `$PWD`, as a canonical path.
+    fn heartbeat_checklist(
+        &self,
+    ) -> std::result::Result<std::path::PathBuf, heartbeat::HeartbeatError> {
+        let cwd = self
+            .context
+            .get_var_or_env("PWD")
+            .unwrap_or_else(|| ".".to_string());
+        let path = self
+            .heartbeat_scheduler
+            .discover(std::path::Path::new(&cwd))?;
+        Ok(path.canonicalize()?)
+    }
+
+    /// Append `kind` (set or paused) for `path` unless the log already says so.
+    /// Returns whether an event was appended.
+    fn set_heartbeat(
+        &self,
+        path: &std::path::Path,
+        kind: &str,
+    ) -> std::result::Result<bool, heartbeat::HeartbeatError> {
+        let db = |e: colony_tuple::StorageError| heartbeat::HeartbeatError::Database(e.to_string());
+        let log = colony_tuple::EventLog::open_default().map_err(db)?;
+        let active = heartbeat::active_checklists(&log)?.contains(path);
+        if active == (kind == heartbeat::HEARTBEAT_SET) {
+            return Ok(false);
+        }
+        let actor = self
+            .context
+            .get_var_or_env("USER")
+            .unwrap_or_else(|| "shell".to_string());
+        let data = serde_json::json!({ "checklist": path.display().to_string() });
+        log.append(&actor, kind, None, None, data).map_err(db)?;
+        Ok(true)
+    }
+
     /// Execute the heartbeat builtin subcommands.
     fn execute_heartbeat_builtin(&self, args: &[String]) -> Result<ExitStatus> {
         let subcmd = args.first().map(String::as_str).unwrap_or("");
 
         match subcmd {
             "start" => {
-                let cwd = self
-                    .context
-                    .get_var_or_env("PWD")
-                    .unwrap_or_else(|| ".".to_string());
-
-                match self
-                    .heartbeat_scheduler
-                    .discover(std::path::Path::new(&cwd))
-                {
-                    Ok(path) => {
-                        eprintln!("heartbeat: discovered {}", path.display());
+                let path = match self.heartbeat_checklist() {
+                    Ok(path) => path,
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        return Ok(ExitStatus::new(1));
                     }
+                };
+                match self.set_heartbeat(&path, heartbeat::HEARTBEAT_SET) {
+                    Ok(true) => {}
+                    Ok(false) => eprintln!("heartbeat: {} already has a heartbeat", path.display()),
                     Err(e) => {
                         eprintln!("heartbeat: {e}");
                         return Ok(ExitStatus::new(1));
                     }
                 }
-
-                match self.heartbeat_scheduler.start() {
-                    Ok(()) => {
-                        let config = self.heartbeat_scheduler.config();
-                        eprintln!(
-                            "heartbeat: scheduler started (interval={}s, mode={})",
-                            config.interval_secs, config.mode,
-                        );
+                if let Err(e) = events::ensure_daemon() {
+                    eprintln!("heartbeat: {e}");
+                    return Ok(ExitStatus::new(1));
+                }
+                let config = self.heartbeat_scheduler.config();
+                eprintln!(
+                    "heartbeat: {} runs in the colony-events daemon (interval={}s, mode={})",
+                    path.display(),
+                    config.interval_secs,
+                    config.mode,
+                );
+                Ok(ExitStatus::new(0))
+            }
+            "stop" => {
+                let path = match self.heartbeat_checklist() {
+                    Ok(path) => path,
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        return Ok(ExitStatus::new(1));
+                    }
+                };
+                match self.set_heartbeat(&path, heartbeat::HEARTBEAT_PAUSED) {
+                    Ok(true) => {
+                        eprintln!("heartbeat: stopped {}", path.display());
                         Ok(ExitStatus::new(0))
+                    }
+                    Ok(false) => {
+                        eprintln!("heartbeat: {} has no heartbeat", path.display());
+                        Ok(ExitStatus::new(1))
                     }
                     Err(e) => {
                         eprintln!("heartbeat: {e}");
@@ -1822,16 +1876,6 @@ impl Executor {
                     }
                 }
             }
-            "stop" => match self.heartbeat_scheduler.stop() {
-                Ok(()) => {
-                    eprintln!("heartbeat: scheduler stopped");
-                    Ok(ExitStatus::new(0))
-                }
-                Err(e) => {
-                    eprintln!("heartbeat: {e}");
-                    Ok(ExitStatus::new(1))
-                }
-            },
             "run" => {
                 let first = self.heartbeat_scheduler.checklist_path().is_none();
                 let cwd = self
@@ -1863,34 +1907,49 @@ impl Executor {
                 }
             }
             "status" => {
-                let status = self.heartbeat_scheduler.status();
-                if status.running {
-                    println!("Heartbeat: running");
-                } else {
-                    println!("Heartbeat: stopped");
+                let active = colony_tuple::EventLog::open_default()
+                    .map_err(|e| heartbeat::HeartbeatError::Database(e.to_string()))
+                    .and_then(|log| heartbeat::active_checklists(&log));
+                let active = match active {
+                    Ok(active) => active,
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        return Ok(ExitStatus::new(1));
+                    }
+                };
+                match events::daemon_pid() {
+                    Some(pid) => println!("Daemon: running (pid {pid})"),
+                    None => println!("Daemon: not running"),
                 }
-                if let Some(ref path) = status.checklist_path {
-                    println!("Checklist: {}", path.display());
+                if active.is_empty() {
+                    println!("No heartbeats.");
                 }
-                println!("Interval: {}s", status.interval_secs);
-                println!("Mode: {}", status.mode);
-                if let Some(ref last) = status.last_run {
-                    println!("Last run: {} ({})", last.status, last.id);
+                let recent =
+                    heartbeat::HeartbeatStore::open(&heartbeat::HeartbeatStore::default_path())
+                        .and_then(|store| store.recent_runs(200))
+                        .unwrap_or_default();
+                for path in &active {
+                    let (config, _) = std::fs::read_to_string(path)
+                        .map(|text| heartbeat::parse_heartbeat(&text))
+                        .unwrap_or_default();
+                    println!(
+                        "Heartbeat: {} (interval={}s, mode={})",
+                        path.display(),
+                        config.interval_secs,
+                        config.mode
+                    );
+                    let path_str = path.display().to_string();
+                    if let Some(last) = recent.iter().find(|r| r.checklist_path == path_str) {
+                        println!("Last run: {} ({})", last.status, last.id);
+                    }
                 }
                 Ok(ExitStatus::new(0))
             }
             "interval" => {
-                let Some(dur_str) = args.get(1) else {
-                    eprintln!("heartbeat interval: missing duration (e.g. 5m, 1h)");
-                    return Ok(ExitStatus::new(1));
-                };
-                let Some(secs) = heartbeat::parse_duration(dur_str) else {
-                    eprintln!("heartbeat interval: invalid duration '{dur_str}'");
-                    return Ok(ExitStatus::new(1));
-                };
-                self.heartbeat_scheduler.set_interval(secs);
-                eprintln!("heartbeat: interval set to {secs}s");
-                Ok(ExitStatus::new(0))
+                eprintln!(
+                    "heartbeat interval: set `interval:` in HEARTBEAT.md; the daemon re-reads it every tick"
+                );
+                Ok(ExitStatus::new(1))
             }
             "log" => {
                 let Some(store) = self.heartbeat_scheduler.store() else {

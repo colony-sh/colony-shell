@@ -1,7 +1,8 @@
 //! Runs a heartbeat tick through `colony-agent`.
 //!
-//! `colony-exec` owns the heartbeat scheduler but cannot depend on `colony-agent`, so the
-//! shell installs this as the scheduler's agent callback at startup ([`install`]).
+//! `colony-exec` owns the heartbeat scheduler but cannot depend on `colony-agent`, so each
+//! binary that runs heartbeats (the shell, the `colony-events` daemon) installs this as the
+//! scheduler's agent callback at startup ([`install`]).
 //!
 //! A run gets a fresh agent with the heartbeat system prompt and only the tools its
 //! [`SecurityMode`] allows that need no approval: a heartbeat runs with nobody at the
@@ -14,11 +15,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::tool::{builtins, Tool, ToolExecutionError, ToolOutput, ToolParam};
+use crate::{Agent, AgentConfig, BudgetWarning, TokenBudget, ToolClassification, ToolRegistry};
 use async_trait::async_trait;
-use colony_agent::tool::{builtins, Tool, ToolExecutionError, ToolOutput, ToolParam};
-use colony_agent::{
-    Agent, AgentConfig, BudgetWarning, TokenBudget, ToolClassification, ToolRegistry,
-};
 use colony_exec::heartbeat::{
     build_checklist_prompt, build_system_prompt, derive_status, extract_findings,
     set_default_agent_callback, HeartbeatConfig, HeartbeatError, HeartbeatRun, HeartbeatStatus,
@@ -110,7 +109,7 @@ async fn run_agent(
 
 /// Turn the model until it stops calling tools, runs out of tool calls or budget.
 /// Returns everything the model wrote.
-async fn turns(agent: &mut Agent, prompt: String) -> colony_agent::Result<String> {
+async fn turns(agent: &mut Agent, prompt: String) -> crate::Result<String> {
     let max_calls = agent.config().max_tool_calls.unwrap_or(u32::MAX);
     let mut input = prompt;
     let mut output = String::new();

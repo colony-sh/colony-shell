@@ -13,6 +13,10 @@
 //!   startup to avoid circular dependencies with `colony-agent`.
 //! - The scheduler runs as a background tokio task with a configurable
 //!   interval, re-reading HEARTBEAT.md frontmatter each tick for hot-reload.
+//! - Which checklists have a heartbeat is state in the machine's event log
+//!   ([`HEARTBEAT_SET`], [`HEARTBEAT_PAUSED`]). The `colony-events` daemon replays
+//!   it ([`apply`]) and runs a scheduler for each, so heartbeats outlive the shell.
+//!   Every tick appends [`HEARTBEAT_FIRED`] and [`HEARTBEAT_ANSWERED`].
 
 pub mod dashboard;
 pub mod parser;
@@ -25,10 +29,55 @@ pub use runner::{build_checklist_prompt, build_system_prompt, derive_status, ext
 pub use storage::HeartbeatStore;
 pub use types::*;
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use colony_tuple::{Event, EventLog};
 use tokio::sync::watch;
+
+/// Event: a checklist was given a heartbeat. Data: `{"checklist": <path>}`.
+pub const HEARTBEAT_SET: &str = "HeartbeatSet";
+/// Event: a checklist's heartbeat was stopped. Data: `{"checklist": <path>}`.
+pub const HEARTBEAT_PAUSED: &str = "HeartbeatPaused";
+/// Event: a tick started. Data: `{"checklist": <path>}`.
+pub const HEARTBEAT_FIRED: &str = "HeartbeatFired";
+/// Event: a tick ended. Cause: its [`HEARTBEAT_FIRED`]. Data: checklist, run, status, findings.
+pub const HEARTBEAT_ANSWERED: &str = "HeartbeatAnswered";
+
+/// Fold one event into the set of checklists that have a heartbeat.
+pub fn apply(active: &mut BTreeSet<PathBuf>, event: &Event) {
+    let Some(path) = event.data.get("checklist").and_then(|v| v.as_str()) else {
+        return;
+    };
+    match event.kind.as_str() {
+        HEARTBEAT_SET => {
+            active.insert(PathBuf::from(path));
+        }
+        HEARTBEAT_PAUSED => {
+            active.remove(Path::new(path));
+        }
+        _ => {}
+    }
+}
+
+/// The checklists that have a heartbeat, by replaying the whole log.
+pub fn active_checklists(log: &EventLog) -> Result<BTreeSet<PathBuf>, HeartbeatError> {
+    let mut active = BTreeSet::new();
+    let mut last = 0;
+    loop {
+        let page = log.after(last, 1000).map_err(db_error)?;
+        let Some(tail) = page.last() else {
+            return Ok(active);
+        };
+        last = tail.seq;
+        page.iter().for_each(|ev| apply(&mut active, ev));
+    }
+}
+
+fn db_error(e: impl std::fmt::Display) -> HeartbeatError {
+    HeartbeatError::Database(e.to_string())
+}
 
 /// Callback type for agent invocation.
 ///
@@ -210,7 +259,8 @@ impl HeartbeatScheduler {
 
         let store = state.store.clone();
         let tuple_space = state.tuple_space.clone();
-        let _session_id = state.session_id.clone();
+        // Who the log says fired the beat: the shell's session or "daemon".
+        let actor = state.session_id.clone();
 
         // Drop the lock before doing I/O
         drop(state);
@@ -229,7 +279,36 @@ impl HeartbeatScheduler {
             ));
         }
 
-        let mut run = callback(&config, &path, body)?;
+        let log = EventLog::open_default()
+            .map_err(|e| tracing::warn!("heartbeat: event log unavailable: {e}"))
+            .ok();
+        let checklist = serde_json::json!({ "checklist": path.display().to_string() });
+        let fired = log.as_ref().and_then(|log| {
+            log.append(&actor, HEARTBEAT_FIRED, None, None, checklist.clone())
+                .map_err(|e| tracing::warn!("heartbeat: could not log the beat: {e}"))
+                .ok()
+        });
+
+        let outcome = callback(&config, &path, body);
+        if let Some(log) = &log {
+            let data = match &outcome {
+                Ok(run) => serde_json::json!({
+                    "checklist": checklist["checklist"],
+                    "run": run.id,
+                    "status": run.status.to_string(),
+                    "findings": run.findings.len(),
+                }),
+                Err(e) => serde_json::json!({
+                    "checklist": checklist["checklist"],
+                    "status": "error",
+                    "error": e.to_string(),
+                }),
+            };
+            if let Err(e) = log.append(&actor, HEARTBEAT_ANSWERED, None, fired, data) {
+                tracing::warn!("heartbeat: could not log the answer: {e}");
+            }
+        }
+        let mut run = outcome?;
         // The scheduler owns these facts, not the agent.
         run.checklist_path = path.display().to_string();
         run.interval_secs = config.interval_secs;
@@ -504,6 +583,27 @@ mod tests {
 
         let status = scheduler.status();
         assert_eq!(status.interval_secs, 300);
+    }
+
+    #[test]
+    fn test_active_checklists_follow_set_and_paused() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+        let set = |p: &str| serde_json::json!({ "checklist": p });
+        log.append("a", HEARTBEAT_SET, None, None, set("/x/HEARTBEAT.md"))
+            .unwrap();
+        log.append("a", HEARTBEAT_SET, None, None, set("/y/HEARTBEAT.md"))
+            .unwrap();
+        log.append("a", HEARTBEAT_FIRED, None, None, set("/z/HEARTBEAT.md"))
+            .unwrap();
+        log.append("a", HEARTBEAT_PAUSED, None, None, set("/x/HEARTBEAT.md"))
+            .unwrap();
+        let active: Vec<_> = active_checklists(&log).unwrap().into_iter().collect();
+        assert_eq!(active, [PathBuf::from("/y/HEARTBEAT.md")]);
+
+        log.append("a", HEARTBEAT_SET, None, None, set("/x/HEARTBEAT.md"))
+            .unwrap();
+        assert_eq!(active_checklists(&log).unwrap().len(), 2);
     }
 
     #[test]

@@ -20,8 +20,12 @@
 //! - Reloads listeners every 5s (or on SIGHUP)
 //! - Max 64 concurrent handlers, 30s timeout per handler
 //! - Logs executions to `event_handler_runs` table
-//! - PID file at `~/.colony/events/router.pid`
+//! - PID file at `~/.colony/events/router.pid`; one daemon per user, held by a lock on
+//!   `~/.colony/events/router.lock`
 //! - Graceful shutdown on SIGTERM
+//! - Owns the heartbeats: replays `HeartbeatSet`/`HeartbeatPaused` from the machine's
+//!   event log at start and as they are appended, and runs a heartbeat scheduler for
+//!   each checklist, so beats fire with no shell open
 
 #[allow(dead_code)]
 mod dashboard;
@@ -30,11 +34,13 @@ mod handler;
 use colony_exec::events::{
     daemon_pid_path, evaluate_filter, parse_filter, EventListener, EventRegistry, FilterExpr,
 };
+use colony_exec::heartbeat::{self, HeartbeatScheduler};
+use colony_tuple::EventLog;
 use handler::{make_handler_run, spawn_handler};
 
 use rusqlite::Connection;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -73,6 +79,28 @@ async fn main() {
         .init();
 
     info!("colony-events daemon starting");
+
+    // One daemon per user: a second one would fire every heartbeat twice.
+    let _lock = match take_lock() {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            info!("another colony-events daemon is running; exiting");
+            return;
+        }
+        Err(e) => {
+            error!("Failed to take the daemon lock: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    colony_agent::heartbeat::install();
+    let log = match EventLog::open_default() {
+        Ok(log) => log,
+        Err(e) => {
+            error!("Failed to open the event log: {e}");
+            std::process::exit(1);
+        }
+    };
 
     // Open the reflection DB (listener registry + run logging)
     let registry_path = EventRegistry::default_path();
@@ -162,7 +190,7 @@ async fn main() {
     );
 
     // Run the event loop
-    run_event_loop(&registry, &tuple_db, shutdown, reload).await;
+    run_event_loop(&registry, &tuple_db, &log, shutdown, reload).await;
 
     // Cleanup
     remove_pid_file();
@@ -173,9 +201,12 @@ async fn main() {
 async fn run_event_loop(
     registry: &EventRegistry,
     tuple_db: &Connection,
+    log: &EventLog,
     shutdown: Arc<AtomicBool>,
     reload: Arc<AtomicBool>,
 ) {
+    let mut heartbeats = Heartbeats::default();
+    heartbeats.catch_up(log);
     let mut listeners = load_listeners(registry);
     let mut compiled_filters: HashMap<String, FilterExpr> = compile_filters(&listeners);
     let mut last_seen_id: i64 = get_max_rowid(tuple_db);
@@ -214,6 +245,8 @@ async fn run_event_loop(
             last_reload = Instant::now();
             debug!("Reloaded {} listeners", listeners.len());
         }
+
+        heartbeats.catch_up(log);
 
         // Prune old runs periodically
         if last_prune.elapsed() > Duration::from_secs(PRUNE_INTERVAL_SECS) {
@@ -375,6 +408,110 @@ fn compile_filters(listeners: &[EventListener]) -> HashMap<String, FilterExpr> {
         }
     }
     filters
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeats
+// ---------------------------------------------------------------------------
+
+/// The heartbeats this daemon runs: the checklists the event log says have one, each
+/// with its own scheduler.
+#[derive(Default)]
+struct Heartbeats {
+    /// The last event read.
+    seq: i64,
+    /// What the log says, folded.
+    wanted: BTreeSet<PathBuf>,
+    /// The schedulers running now.
+    running: HashMap<PathBuf, HeartbeatScheduler>,
+}
+
+impl Heartbeats {
+    /// Read the events appended since the last call, then start and stop schedulers to
+    /// match. The first call replays the whole log.
+    fn catch_up(&mut self, log: &EventLog) {
+        let mut changed = false;
+        loop {
+            let page = match log.after(self.seq, 1000) {
+                Ok(page) => page,
+                Err(e) => {
+                    warn!("Failed to read the event log: {e}");
+                    return;
+                }
+            };
+            let Some(tail) = page.last() else { break };
+            self.seq = tail.seq;
+            for ev in &page {
+                heartbeat::apply(&mut self.wanted, ev);
+                changed |= matches!(
+                    ev.kind.as_str(),
+                    heartbeat::HEARTBEAT_SET | heartbeat::HEARTBEAT_PAUSED
+                );
+            }
+        }
+        if changed {
+            self.reconcile();
+        }
+    }
+
+    fn reconcile(&mut self) {
+        self.running.retain(|path, scheduler| {
+            let keep = self.wanted.contains(path);
+            if !keep {
+                let _ = scheduler.stop();
+                info!("Heartbeat stopped: {}", path.display());
+            }
+            keep
+        });
+        for path in &self.wanted {
+            if self.running.contains_key(path) {
+                continue;
+            }
+            match start_heartbeat(path) {
+                Ok(scheduler) => {
+                    info!("Heartbeat started: {}", path.display());
+                    self.running.insert(path.clone(), scheduler);
+                }
+                Err(e) => warn!("Heartbeat for {} not started: {e}", path.display()),
+            }
+        }
+    }
+}
+
+fn start_heartbeat(path: &Path) -> Result<HeartbeatScheduler, heartbeat::HeartbeatError> {
+    let scheduler = HeartbeatScheduler::new("daemon");
+    let found = scheduler.discover(path.parent().unwrap_or(path))?;
+    if found != path {
+        // The checklist is gone and discovery walked up to another one.
+        return Err(heartbeat::HeartbeatError::NotFound);
+    }
+    scheduler.start()?;
+    Ok(scheduler)
+}
+
+/// Take the per-user daemon lock. `None` when another daemon holds it. The lock lasts
+/// as long as the returned file is open, and the OS drops it if the daemon dies.
+fn take_lock() -> std::io::Result<Option<std::fs::File>> {
+    use std::os::unix::io::AsRawFd;
+    let path = daemon_pid_path().with_file_name("router.lock");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)?;
+    // SAFETY: flock on a file descriptor we own and keep open; it has no other effect.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        return Ok(Some(file));
+    }
+    let err = std::io::Error::last_os_error();
+    if err.kind() == std::io::ErrorKind::WouldBlock {
+        Ok(None)
+    } else {
+        Err(err)
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -69,12 +69,3 @@ db() {
     [[ "$output" != *"no agent callback configured"* ]]
     [ "$(db 'SELECT status FROM heartbeat_runs')" = "error" ]
 }
-
-@test "the background scheduler runs ticks through colony-agent" {
-    printf -- '---\ninterval: 1s\ntimeout: 5s\n---\n\n- [ ] Check\n' > HEARTBEAT.md
-
-    run "$COLONY" -c 'heartbeat start; sleep 3.5; heartbeat status'
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"Last run: pass"* ]]
-    [ "$(db "SELECT COUNT(*) >= 2 FROM heartbeat_runs WHERE status = 'pass'")" = "1" ]
-}

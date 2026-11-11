@@ -1760,6 +1760,18 @@
         "Started 2026-11-11: heartbeat run confirmed to fail with 'no agent callback configured' after start, and 'no HEARTBEAT.md found' without start",
         "Completed 2026-11-11: callback installed process-wide; 58_heartbeat_agent.bats 4/4 against a fake local Ollama; colony-agent 112 and colony-exec 550 lib tests pass; clippy -D warnings clean. F082 is taken by the parked event-log work (branch colony/f082-event-log, uncommitted)"
       ]
+        },
+    {
+      "id": "F084",
+      "name": "Heartbeats run in the colony-events daemon, which starts at login",
+      "description": "Colony first slice, build step 3: `heartbeat start`/`stop` append HeartbeatSet/HeartbeatPaused to the event log and hand the checklist to the colony-events daemon, which replays the log and runs the existing scheduler for each checklist with no shell open. Each tick appends HeartbeatFired/HeartbeatAnswered. One daemon per user (flock). `on --daemon install` writes and loads a launchd agent (macOS) or systemd user unit (Linux).",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": ["F082", "F083"],
+      "notes": [
+        "Started 2026-11-11: heartbeat runner moved from colony-shell to colony-agent::heartbeat so the daemon can install it",
+        "Completed 2026-11-11: 60_heartbeat_daemon.bats 5/5; `on --daemon install` itself not run here (it would change this machine's login items); only --print is tested"
+      ]
     }
   ]
 }

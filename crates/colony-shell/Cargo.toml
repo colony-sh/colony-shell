@@ -109,8 +109,6 @@ dirs.workspace = true
 
 # For onboarding wizard
 chrono = "0.4"
-uuid.workspace = true
-async-trait = "0.1"
 toml = "0.8"
 
 [features]

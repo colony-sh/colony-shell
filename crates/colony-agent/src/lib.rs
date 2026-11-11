@@ -25,6 +25,7 @@ pub mod approval;
 pub mod cancellation;
 pub mod context;
 pub mod detector;
+pub mod heartbeat;
 pub mod memory_integration;
 pub mod persistence;
 pub mod planning;
