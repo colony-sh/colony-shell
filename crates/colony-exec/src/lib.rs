@@ -13,6 +13,7 @@ pub mod buffers;
 pub mod builtin_redirect;
 mod builtins;
 pub mod canvas_builtin;
+pub mod colony_log_builtin;
 mod command;
 mod command_sub;
 pub mod draw_builtin;

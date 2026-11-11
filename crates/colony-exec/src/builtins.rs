@@ -6270,10 +6270,12 @@ fn get_builtin_names() -> Vec<&'static str> {
 ///   colony publish                  Publish current directory as a recipe
 ///   colony recipe list              List installed recipes
 ///   colony recipe show <name>       Show recipe details
+///   colony log [--last N|--after S] Print the machine's event log
+///   colony open <colony://address>  Show what an address names
 fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
     if args.is_empty() {
         eprintln!("colony: missing subcommand");
-        eprintln!("Usage: colony <install|publish|recipe|plugin|onboard> [args...]");
+        eprintln!("Usage: colony <install|publish|recipe|plugin|onboard|log|open> [args...]");
         return Ok(BuiltinResult::Failure(1));
     }
 
@@ -6285,6 +6287,8 @@ fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
         "publish" => colony_publish(sub_args),
         "recipe" => colony_recipe(sub_args),
         "plugin" => colony_plugin(sub_args),
+        "log" => crate::colony_log_builtin::colony_log(sub_args),
+        "open" => crate::colony_log_builtin::colony_open(sub_args),
         "onboard" => {
             // The actual wizard is handled by the REPL layer (colony-shell crate)
             // which intercepts "colony onboard" before it reaches the executor.
@@ -6295,7 +6299,7 @@ fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
         }
         _ => {
             eprintln!("colony: unknown subcommand '{}'", subcommand);
-            eprintln!("Usage: colony <install|publish|recipe|plugin|onboard> [args...]");
+            eprintln!("Usage: colony <install|publish|recipe|plugin|onboard|log|open> [args...]");
             Ok(BuiltinResult::Failure(1))
         }
     }

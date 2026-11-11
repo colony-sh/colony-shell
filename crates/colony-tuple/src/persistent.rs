@@ -76,7 +76,7 @@ impl Default for PersistentConfig {
 }
 
 /// Get default database path: ~/.config/colony/tuple-space.db
-fn default_db_path() -> PathBuf {
+pub(crate) fn default_db_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let config_dir = Path::new(&home).join(".config").join("colony");
     config_dir.join("tuple-space.db")

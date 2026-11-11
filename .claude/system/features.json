@@ -1738,6 +1738,18 @@
       ]
         },
     {
+      "id": "F082",
+      "name": "Colony event log and colony:// addresses",
+      "description": "Colony first slice, build step 2: one append-only, totally ordered event log per machine (an events table in ~/.config/colony/tuple-space.db beside the tuple space; UPDATE and DELETE refused by triggers) and colony:// addresses for agents, runs, outputs, diffs, viewports and events, resolved from the shell by `colony log` and `colony open`.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": ["F083"],
+      "notes": [
+        "Started 2026-11-11: built before the room reordered the build order, parked, then rebased onto F083 as step 2",
+        "Completed 2026-11-11: 9 colony-tuple unit tests, 59_colony_log.bats 6/6. Nothing writes events yet: the scheduler and agents start writing them in steps 3 and 4"
+      ]
+    },
+    {
       "id": "F083",
       "name": "Heartbeat scheduler runs through colony-agent",
       "description": "Colony first slice, build step 1: the heartbeat scheduler's agent callback is set from colony-shell, so a heartbeat tick runs a colony-agent Agent limited to its SecurityMode's tools, honouring timeout, max_tool_calls and token_budget, and the HeartbeatRun is stored and emitted as before. Runs stay in notify mode.",
