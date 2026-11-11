@@ -290,6 +290,83 @@ fn build_input_schema(params: &[ToolParam]) -> Value {
     })
 }
 
+/// Most result lines `search` returns.
+const SEARCH_MAX_LINES: usize = 50;
+/// Longest a single result line may be before it is cut.
+const SEARCH_MAX_LINE_BYTES: usize = 4096;
+/// Longest `search` may run.
+const SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Run `cmd` and return at most `max` lines of its stdout, each cut to
+/// [`SEARCH_MAX_LINE_BYTES`]. The child is killed once enough lines are read or `limit`
+/// passes, so a search over a huge tree costs neither unbounded memory nor time.
+async fn first_lines(
+    cmd: &mut tokio::process::Command,
+    max: usize,
+    limit: std::time::Duration,
+) -> std::io::Result<Vec<String>> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+
+    let mut child = cmd
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()?;
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let mut reader = tokio::io::BufReader::new(stdout);
+    let mut lines = Vec::new();
+    let read = async {
+        let mut buf = Vec::new();
+        while lines.len() < max {
+            buf.clear();
+            // Reads at most one line, but a line can be huge: cap what is kept per line.
+            let n = (&mut reader)
+                .take(SEARCH_MAX_LINE_BYTES as u64 + 1)
+                .read_until(b'\n', &mut buf)
+                .await?;
+            if n == 0 {
+                break;
+            }
+            if !buf.ends_with(b"\n") && n > SEARCH_MAX_LINE_BYTES {
+                // Skip the rest of an overlong line.
+                let mut rest = Vec::new();
+                reader.read_until(b'\n', &mut rest).await?;
+            }
+            let text = String::from_utf8_lossy(&buf[..buf.len().min(SEARCH_MAX_LINE_BYTES)]);
+            lines.push(text.trim_end_matches('\n').to_string());
+        }
+        Ok::<_, std::io::Error>(())
+    };
+    // A timeout is not an error: return what was found so far.
+    if let Ok(result) = tokio::time::timeout(limit, read).await {
+        result?;
+    }
+    let _ = child.kill().await;
+    Ok(lines)
+}
+
+/// The `grep` or `find` command for a search. Arguments go straight to the program, never
+/// through a shell: pattern and path come from the model. `-e` keeps the pattern from being
+/// read as an option, and a relative path gets `./` so find never reads it as an action
+/// (`-delete`, `!`, `(`).
+fn search_command(mode: &str, pattern: &str, path: &str) -> tokio::process::Command {
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("./{path}")
+    };
+    let mut cmd;
+    if mode == "files" {
+        cmd = tokio::process::Command::new("find");
+        cmd.args([path.as_str(), "-name", pattern]);
+    } else {
+        cmd = tokio::process::Command::new("grep");
+        cmd.args(["-rn", "-e", pattern, "--", path.as_str()]);
+    }
+    cmd
+}
+
 /// Built-in tool implementations
 pub mod builtins {
     use super::*;
@@ -509,35 +586,16 @@ pub mod builtins {
                 .and_then(|v| v.as_str())
                 .unwrap_or("content");
 
-            // Arguments go straight to the program, never through a shell: pattern and path
-            // come from the model. `--` and `-e` stop either being read as an option.
-            let mut cmd = match mode {
-                "files" => {
-                    let mut cmd = tokio::process::Command::new("find");
-                    cmd.args(["--", path, "-name", pattern]);
-                    cmd
-                }
-                _ => {
-                    let mut cmd = tokio::process::Command::new("grep");
-                    cmd.args(["-rn", "-e", pattern, "--", path]);
-                    cmd
-                }
-            };
-            let output = cmd
-                .stdin(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .output()
+            let mut cmd = search_command(mode, pattern, path);
+            let matches = first_lines(&mut cmd, SEARCH_MAX_LINES, SEARCH_TIMEOUT)
                 .await
                 .map_err(|e| {
                     ToolExecutionError::ExecutionFailed(format!("search failed: {}", e))
                 })?;
 
-            let results = String::from_utf8_lossy(&output.stdout).to_string();
-            let matches: Vec<&str> = results.lines().take(50).collect();
-
             Ok(ToolOutput::success(serde_json::json!({
-                "matches": matches,
                 "count": matches.len(),
+                "matches": matches,
                 "pattern": pattern,
                 "mode": mode,
             })))
@@ -750,6 +808,49 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(found.data["count"], 1);
+    }
+
+    #[test]
+    fn test_search_path_is_never_a_find_action() {
+        for path in ["-delete", "!", "(", "-exec"] {
+            let cmd = search_command("files", "*", path);
+            let args: Vec<_> = cmd.as_std().get_args().collect();
+            assert_eq!(args[0], format!("./{path}").as_str(), "{path}");
+        }
+        let cmd = search_command("files", "*", "/abs");
+        assert_eq!(cmd.as_std().get_args().next().unwrap(), "/abs");
+        let cmd = search_command("content", "-v", "-r");
+        let args: Vec<_> = cmd.as_std().get_args().collect();
+        assert_eq!(args, ["-rn", "-e", "-v", "--", "./-r"]);
+    }
+
+    #[tokio::test]
+    async fn test_first_lines_stops_early_and_cuts_long_lines() {
+        let mut cmd = tokio::process::Command::new("sh");
+        cmd.args(["-c", "head -c 10000 /dev/zero | tr '\\0' a; echo; yes"]);
+        let started = std::time::Instant::now();
+        let lines = first_lines(&mut cmd, 3, std::time::Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(4),
+            "did not stop early"
+        );
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].len(), SEARCH_MAX_LINE_BYTES);
+        assert_eq!(lines[1], "y");
+
+        let mut cmd = tokio::process::Command::new("sleep");
+        cmd.arg("10");
+        let started = std::time::Instant::now();
+        let lines = first_lines(&mut cmd, 3, std::time::Duration::from_millis(200))
+            .await
+            .unwrap();
+        assert!(lines.is_empty());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "timeout ignored"
+        );
     }
 
     #[tokio::test]
