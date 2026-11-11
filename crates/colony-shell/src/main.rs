@@ -2,6 +2,7 @@ mod cli;
 mod config;
 #[allow(dead_code)]
 mod event_worker;
+mod heartbeat_agent;
 mod init;
 mod onboarding;
 #[cfg_attr(feature = "tui", allow(dead_code, unused_imports))]
@@ -15,5 +16,6 @@ mod widget_server;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
+    heartbeat_agent::install();
     shell::run().await
 }

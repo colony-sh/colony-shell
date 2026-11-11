@@ -35,16 +35,26 @@ pub struct OllamaProvider {
     base_url: String,
 }
 
+/// The server URL for an `OLLAMA_HOST` value.
+fn base_url_from(host: Option<&str>) -> String {
+    match host.map(str::trim).filter(|h| !h.is_empty()) {
+        None => "http://localhost:11434".to_string(),
+        Some(h) if h.contains("://") => h.trim_end_matches('/').to_string(),
+        Some(h) => format!("http://{}", h.trim_end_matches('/')),
+    }
+}
+
 impl OllamaProvider {
     /// Create provider with model name
     ///
-    /// Default base_url: http://localhost:11434
+    /// Base URL: `OLLAMA_HOST` when set (`host:port` or a full URL, as the Ollama CLI
+    /// accepts it), else http://localhost:11434.
     /// Common models: llama3, mistral, codellama, phi3
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
             model: model.into(),
-            base_url: "http://localhost:11434".to_string(),
+            base_url: base_url_from(std::env::var("OLLAMA_HOST").ok().as_deref()),
         }
     }
 
@@ -376,6 +386,20 @@ mod tests {
         assert_eq!(provider.provider_name(), "ollama");
         assert_eq!(provider.model_name(), "llama3");
         assert!(provider.supports_streaming());
+    }
+
+    #[test]
+    fn test_base_url_from_ollama_host() {
+        assert_eq!(base_url_from(None), "http://localhost:11434");
+        assert_eq!(base_url_from(Some(" ")), "http://localhost:11434");
+        assert_eq!(
+            base_url_from(Some("127.0.0.1:9999")),
+            "http://127.0.0.1:9999"
+        );
+        assert_eq!(
+            base_url_from(Some("https://gpu:11434/")),
+            "https://gpu:11434"
+        );
     }
 
     #[test]

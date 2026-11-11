@@ -241,6 +241,12 @@ impl ToolRegistry {
     pub fn tool_names(&self) -> Vec<&str> {
         self.tools.keys().map(|s| s.as_str()).collect()
     }
+
+    /// Keep only the tools for which `keep(name, classification)` is true.
+    pub fn retain(&mut self, mut keep: impl FnMut(&str, ToolClassification) -> bool) {
+        self.tools
+            .retain(|name, tool| keep(name, tool.classification));
+    }
 }
 
 impl Default for ToolRegistry {

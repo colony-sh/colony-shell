@@ -25,19 +25,31 @@ pub use runner::{build_checklist_prompt, build_system_prompt, derive_status, ext
 pub use storage::HeartbeatStore;
 pub use types::*;
 
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tokio::sync::watch;
 
 /// Callback type for agent invocation.
 ///
-/// Takes the heartbeat config and the checklist content string,
-/// returns a `HeartbeatRun` record. The callback is provided by
+/// Takes the heartbeat config, the HEARTBEAT.md path and the checklist body (the file
+/// less its frontmatter), returns a `HeartbeatRun` record. The callback is provided by
 /// `colony-shell` at startup to bridge the dependency gap between
-/// `colony-exec` and `colony-agent`.
+/// `colony-exec` and `colony-agent`. It is called from a blocking context, never on an
+/// async worker, so it may block for the whole run.
 pub type AgentCallback =
-    dyn Fn(&HeartbeatConfig, &str) -> Result<HeartbeatRun, HeartbeatError> + Send + Sync;
+    dyn Fn(&HeartbeatConfig, &Path, &str) -> Result<HeartbeatRun, HeartbeatError> + Send + Sync;
+
+/// The callback every scheduler uses when none was set on it.
+static DEFAULT_AGENT_CALLBACK: OnceLock<Arc<AgentCallback>> = OnceLock::new();
+
+/// Set the process-wide agent callback, once, at startup. Later calls are ignored.
+///
+/// Executors are created in many places (subshells, scripts, the REPL), so the shell sets
+/// the callback here once instead of on each scheduler.
+pub fn set_default_agent_callback(callback: Arc<AgentCallback>) {
+    let _ = DEFAULT_AGENT_CALLBACK.set(callback);
+}
 
 /// Shared state for the heartbeat scheduler, accessible from builtins.
 #[derive(Clone)]
@@ -171,6 +183,15 @@ impl HeartbeatScheduler {
         Ok(())
     }
 
+    /// Execute a single heartbeat tick immediately, discovering HEARTBEAT.md from
+    /// `start_dir` first if the scheduler has not found one yet.
+    pub fn run_once_from(&self, start_dir: &Path) -> Result<HeartbeatRun, HeartbeatError> {
+        if self.checklist_path().is_none() {
+            self.discover(start_dir)?;
+        }
+        self.run_once()
+    }
+
     /// Execute a single heartbeat tick immediately.
     pub fn run_once(&self) -> Result<HeartbeatRun, HeartbeatError> {
         let state = self.inner.lock().expect("scheduler mutex poisoned");
@@ -179,9 +200,13 @@ impl HeartbeatScheduler {
             return Err(HeartbeatError::NotFound);
         };
 
-        let callback = state.agent_callback.clone().ok_or_else(|| {
-            HeartbeatError::NoProvider("no agent callback configured".to_string())
-        })?;
+        let callback = state
+            .agent_callback
+            .clone()
+            .or_else(|| DEFAULT_AGENT_CALLBACK.get().cloned())
+            .ok_or_else(|| {
+                HeartbeatError::NoProvider("no agent callback configured".to_string())
+            })?;
 
         let store = state.store.clone();
         let tuple_space = state.tuple_space.clone();
@@ -204,7 +229,10 @@ impl HeartbeatScheduler {
             ));
         }
 
-        let run = callback(&config, &content)?;
+        let mut run = callback(&config, &path, body)?;
+        // The scheduler owns these facts, not the agent.
+        run.checklist_path = path.display().to_string();
+        run.interval_secs = config.interval_secs;
 
         // Store the run
         if let Some(ref store) = store {
@@ -333,8 +361,12 @@ impl HeartbeatScheduler {
                         interval.tick().await; // consume immediate tick
                     }
 
-                    // Execute tick
-                    match self.run_once() {
+                    // Execute tick off the async worker: a run blocks for its whole length.
+                    let scheduler = self.clone();
+                    let outcome = tokio::task::spawn_blocking(move || scheduler.run_once())
+                        .await
+                        .unwrap_or_else(|e| Err(HeartbeatError::Agent(format!("tick panicked: {e}"))));
+                    match outcome {
                         Ok(run) => {
                             tracing::info!(
                                 "Heartbeat tick complete: status={}, findings={}, duration={}ms",

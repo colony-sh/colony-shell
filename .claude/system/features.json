@@ -1736,6 +1736,18 @@
         "Started 2026-10-29: mapping Phoenix widgets/whiteboard items onto Bellman surface kinds",
         "Completed 2026-10-30: announce, widget create/move/resize/remove/config, markdown and draw write through the door; 57_canvas_door_writes.bats 4/4; full BATS adds no failures over main (72 vs 76, the 4 being the new write tests)"
       ]
+        },
+    {
+      "id": "F083",
+      "name": "Heartbeat scheduler runs through colony-agent",
+      "description": "Colony first slice, build step 1: the heartbeat scheduler's agent callback is set from colony-shell, so a heartbeat tick runs a colony-agent Agent limited to its SecurityMode's tools, honouring timeout, max_tool_calls and token_budget, and the HeartbeatRun is stored and emitted as before. Runs stay in notify mode.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": [],
+      "notes": [
+        "Started 2026-11-11: heartbeat run confirmed to fail with 'no agent callback configured' after start, and 'no HEARTBEAT.md found' without start",
+        "Completed 2026-11-11: callback installed process-wide; 58_heartbeat_agent.bats 4/4 against a fake local Ollama; colony-agent 112 and colony-exec 550 lib tests pass; clippy -D warnings clean. F082 is taken by the parked event-log work (branch colony/f082-event-log, uncommitted)"
+      ]
     }
   ]
 }

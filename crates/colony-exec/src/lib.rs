@@ -1831,7 +1831,12 @@ impl Executor {
                     Ok(ExitStatus::new(1))
                 }
             },
-            "run" => match self.heartbeat_scheduler.run_once() {
+            "run" => match self.heartbeat_scheduler.run_once_from(std::path::Path::new(
+                &self
+                    .context
+                    .get_var_or_env("PWD")
+                    .unwrap_or_else(|| ".".to_string()),
+            )) {
                 Ok(run) => {
                     println!("Run {}: {} ({}ms)", run.id, run.status, run.duration_ms);
                     for finding in &run.findings {

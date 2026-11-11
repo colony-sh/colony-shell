@@ -70,6 +70,18 @@ impl ProviderType {
 }
 
 impl ModelRouter {
+    /// A router over a given provider, for tests.
+    #[cfg(test)]
+    pub(crate) fn with_provider(provider: Box<dyn ModelProvider>) -> Self {
+        Self {
+            provider,
+            config: RouterConfig {
+                provider_type: ProviderType::Ollama,
+                model_name: "test".to_string(),
+            },
+        }
+    }
+
     /// Create router with auto-detected provider
     ///
     /// Detection order:
