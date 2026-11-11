@@ -34,9 +34,10 @@ db() {
 
     run "$COLONY" -c 'heartbeat run'
     [ "$status" -eq 0 ]
-    [[ "${lines[0]}" == "Run "*": warn ("*"ms)" ]]
-    [ "${lines[1]}" = "  PASS: build is green" ]
-    [ "${lines[2]}" = "  WARN: two TODOs left" ]
+    [[ "${lines[0]}" == "heartbeat: discovered "*"/project/HEARTBEAT.md" ]]
+    [[ "${lines[1]}" == "Run "*": warn ("*"ms)" ]]
+    [ "${lines[2]}" = "  PASS: build is green" ]
+    [ "${lines[3]}" = "  WARN: two TODOs left" ]
 
     # The model got the heartbeat system prompt and the checklist body, not the frontmatter.
     request="$(cat "$work/ollama/requests.jsonl")"
@@ -53,7 +54,7 @@ db() {
 
     run "$COLONY" -c 'heartbeat run'
     [ "$status" -eq 0 ]
-    [[ "${lines[0]}" == "Run "*": timeout ("*"ms)" ]]
+    [[ "${lines[1]}" == "Run "*": timeout ("*"ms)" ]]
     [[ "$output" == *"no answer within 1s"* ]]
     [ "$(db 'SELECT status FROM heartbeat_runs')" = "timeout" ]
 }
@@ -63,7 +64,7 @@ db() {
     export OLLAMA_HOST="127.0.0.1:1"
 
     run "$COLONY" -c 'heartbeat run'
-    [[ "${lines[0]}" == "Run "*": error ("*"ms)" ]]
+    [[ "${lines[1]}" == "Run "*": error ("*"ms)" ]]
     [[ "$output" == *"Ollama request failed"* ]]
     [[ "$output" != *"no agent callback configured"* ]]
     [ "$(db 'SELECT status FROM heartbeat_runs')" = "error" ]

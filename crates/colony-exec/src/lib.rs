@@ -1831,27 +1831,36 @@ impl Executor {
                     Ok(ExitStatus::new(1))
                 }
             },
-            "run" => match self.heartbeat_scheduler.run_once_from(std::path::Path::new(
-                &self
+            "run" => {
+                let first = self.heartbeat_scheduler.checklist_path().is_none();
+                let cwd = self
                     .context
                     .get_var_or_env("PWD")
-                    .unwrap_or_else(|| ".".to_string()),
-            )) {
-                Ok(run) => {
-                    println!("Run {}: {} ({}ms)", run.id, run.status, run.duration_ms);
-                    for finding in &run.findings {
-                        println!("  {}: {}", finding.severity, finding.message);
-                    }
-                    if run.findings.is_empty() && !run.raw_output.is_empty() {
-                        println!("{}", run.raw_output);
-                    }
-                    Ok(ExitStatus::new(0))
+                    .unwrap_or_else(|| ".".to_string());
+                let outcome = self
+                    .heartbeat_scheduler
+                    .run_once_from(std::path::Path::new(&cwd));
+                // Say which checklist ran the first time one is found, as `start` does.
+                if let (true, Some(path)) = (first, self.heartbeat_scheduler.checklist_path()) {
+                    eprintln!("heartbeat: discovered {}", path.display());
                 }
-                Err(e) => {
-                    eprintln!("heartbeat: {e}");
-                    Ok(ExitStatus::new(1))
+                match outcome {
+                    Ok(run) => {
+                        println!("Run {}: {} ({}ms)", run.id, run.status, run.duration_ms);
+                        for finding in &run.findings {
+                            println!("  {}: {}", finding.severity, finding.message);
+                        }
+                        if run.findings.is_empty() && !run.raw_output.is_empty() {
+                            println!("{}", run.raw_output);
+                        }
+                        Ok(ExitStatus::new(0))
+                    }
+                    Err(e) => {
+                        eprintln!("heartbeat: {e}");
+                        Ok(ExitStatus::new(1))
+                    }
                 }
-            },
+            }
             "status" => {
                 let status = self.heartbeat_scheduler.status();
                 if status.running {

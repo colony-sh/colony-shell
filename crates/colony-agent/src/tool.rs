@@ -509,14 +509,23 @@ pub mod builtins {
                 .and_then(|v| v.as_str())
                 .unwrap_or("content");
 
-            let command = match mode {
-                "files" => format!("find {} -name '{}' 2>/dev/null | head -50", path, pattern),
-                _ => format!("grep -rn '{}' {} 2>/dev/null | head -50", pattern, path),
+            // Arguments go straight to the program, never through a shell: pattern and path
+            // come from the model. `--` and `-e` stop either being read as an option.
+            let mut cmd = match mode {
+                "files" => {
+                    let mut cmd = tokio::process::Command::new("find");
+                    cmd.args(["--", path, "-name", pattern]);
+                    cmd
+                }
+                _ => {
+                    let mut cmd = tokio::process::Command::new("grep");
+                    cmd.args(["-rn", "-e", pattern, "--", path]);
+                    cmd
+                }
             };
-
-            let output = tokio::process::Command::new("sh")
-                .arg("-c")
-                .arg(&command)
+            let output = cmd
+                .stdin(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
                 .output()
                 .await
                 .map_err(|e| {
@@ -524,7 +533,7 @@ pub mod builtins {
                 })?;
 
             let results = String::from_utf8_lossy(&output.stdout).to_string();
-            let matches: Vec<&str> = results.lines().collect();
+            let matches: Vec<&str> = results.lines().take(50).collect();
 
             Ok(ToolOutput::success(serde_json::json!({
                 "matches": matches,
@@ -700,6 +709,47 @@ mod tests {
             .await
             .unwrap();
         assert!(result.success);
+    }
+
+    #[tokio::test]
+    async fn test_search_never_runs_a_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("pwned");
+        std::fs::write(dir.path().join("a.txt"), "needle\n").unwrap();
+        let tool = builtins::Search;
+        for mode in ["content", "files"] {
+            for (pattern, path) in [
+                (
+                    format!("x' . ; touch '{}' ; echo '", marker.display()),
+                    dir.path().display().to_string(),
+                ),
+                (
+                    "needle".to_string(),
+                    format!("{} ; touch {}", dir.path().display(), marker.display()),
+                ),
+                (
+                    "needle".to_string(),
+                    format!("$(touch {})", marker.display()),
+                ),
+            ] {
+                let params = serde_json::json!({"pattern": pattern, "path": path, "mode": mode});
+                tool.execute(params).await.unwrap();
+                assert!(!marker.exists(), "{mode}: {pattern} / {path}");
+            }
+        }
+
+        let found = tool
+            .execute(
+                serde_json::json!({"pattern": "needle", "path": dir.path(), "mode": "content"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(found.data["count"], 1);
+        let found = tool
+            .execute(serde_json::json!({"pattern": "*.txt", "path": dir.path(), "mode": "files"}))
+            .await
+            .unwrap();
+        assert_eq!(found.data["count"], 1);
     }
 
     #[tokio::test]

@@ -5,14 +5,17 @@
 //!
 //! A run gets a fresh agent with the heartbeat system prompt and only the tools its
 //! [`SecurityMode`] allows that need no approval: a heartbeat runs with nobody at the
-//! terminal, so a tool that would ask is not offered. It honours the checklist's
+//! terminal, so a tool that would ask is not offered. Those tools (`file_read`, `search`)
+//! only reach paths inside the checklist's directory. It honours the checklist's
 //! `timeout`, `max_tool_calls` and `token_budget`, and turns the model's output into
 //! findings with the scheduler's own extractor.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
+use colony_agent::tool::{builtins, Tool, ToolExecutionError, ToolOutput, ToolParam};
 use colony_agent::{
     Agent, AgentConfig, BudgetWarning, TokenBudget, ToolClassification, ToolRegistry,
 };
@@ -61,9 +64,14 @@ async fn run_agent(
     let mut agent = Agent::with_config(agent_config(config))
         .await
         .map_err(|e| HeartbeatError::NoProvider(e.to_string()))?;
-    restrict_tools(agent.tools_mut(), config.mode);
+    let root = path
+        .parent()
+        .unwrap_or(path)
+        .canonicalize()
+        .map_err(HeartbeatError::Io)?;
+    *agent.tools_mut() = unattended_tools(config.mode, &root);
 
-    let cwd = path.parent().unwrap_or(path).display().to_string();
+    let cwd = root.display().to_string();
     let prompt = build_checklist_prompt(checklist, None, &cwd, None);
     let limit = Duration::from_secs(config.timeout_secs);
 
@@ -134,12 +142,78 @@ fn agent_config(config: &HeartbeatConfig) -> AgentConfig {
     }
 }
 
-/// Keep the tools `mode` allows that run without approval.
+/// The tools an unattended run in `mode` gets: those `mode` allows that need no approval,
+/// each confined to `root`.
 // ponytail: approval tools are dropped, not routed to a person; asks that park a run come in step 6
-fn restrict_tools(tools: &mut ToolRegistry, mode: SecurityMode) {
+fn unattended_tools(mode: SecurityMode, root: &Path) -> ToolRegistry {
     let allowed = mode.allowed_tools();
+    let mut tools = ToolRegistry::new();
+    let candidates: [Box<dyn Tool>; 2] = [Box::new(builtins::FileRead), Box::new(builtins::Search)];
+    for inner in candidates {
+        if allowed.contains(&inner.name()) {
+            let tool = Confined {
+                inner,
+                root: root.to_path_buf(),
+            };
+            tools.register_tool(Box::new(tool), ToolClassification::Programmatic);
+        }
+    }
     tools
-        .retain(|name, class| allowed.contains(&name) && class == ToolClassification::Programmatic);
+}
+
+/// A tool whose `path` argument must resolve inside `root` (canonical). A relative path is
+/// taken from `root`; a missing one means `root`. Symlinks are resolved before the check.
+// ponytail: secrets inside the project (.env) stay readable; add a deny list if checklists need it
+struct Confined {
+    inner: Box<dyn Tool>,
+    root: PathBuf,
+}
+
+impl Confined {
+    fn resolve(&self, path: Option<&str>) -> Result<PathBuf, String> {
+        let path = self.root.join(path.unwrap_or("."));
+        let real = path
+            .canonicalize()
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        if real.starts_with(&self.root) {
+            Ok(real)
+        } else {
+            Err(format!(
+                "{} is outside {}, the only directory this run may read",
+                path.display(),
+                self.root.display()
+            ))
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for Confined {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn description(&self) -> &str {
+        self.inner.description()
+    }
+
+    fn parameters(&self) -> Vec<ToolParam> {
+        self.inner.parameters()
+    }
+
+    async fn execute(
+        &self,
+        mut params: serde_json::Value,
+    ) -> Result<ToolOutput, ToolExecutionError> {
+        let path = params.get("path").and_then(serde_json::Value::as_str);
+        match self.resolve(path) {
+            Ok(real) => {
+                params["path"] = serde_json::Value::String(real.display().to_string());
+                self.inner.execute(params).await
+            }
+            Err(why) => Ok(ToolOutput::failure(why)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -154,12 +228,58 @@ mod tests {
             SecurityMode::Active,
             SecurityMode::Full,
         ] {
-            let mut tools = ToolRegistry::with_builtins();
-            restrict_tools(&mut tools, mode);
+            let tools = unattended_tools(mode, Path::new("/"));
             let mut names = tools.tool_names();
             names.sort_unstable();
             assert_eq!(names, ["file_read", "search"], "{mode}");
         }
+    }
+
+    #[tokio::test]
+    async fn unattended_tools_only_reach_the_checklist_directory() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("project");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("in.txt"), "inside").unwrap();
+        std::fs::write(outer.path().join("out.txt"), "outside").unwrap();
+        std::os::unix::fs::symlink(outer.path().join("out.txt"), root.join("link.txt")).unwrap();
+        let root = root.canonicalize().unwrap();
+        let tools = unattended_tools(SecurityMode::Notify, &root);
+        let read = |path: &str| tools.execute("file_read", serde_json::json!({ "path": path }));
+
+        let ok = read("in.txt").await.unwrap();
+        assert!(
+            ok.success && ok.data.to_string().contains("inside"),
+            "{ok:?}"
+        );
+        let ok = read(root.join("in.txt").to_str().unwrap()).await.unwrap();
+        assert!(ok.success);
+
+        let outside = outer.path().join("out.txt");
+        for path in [
+            "../out.txt",
+            "link.txt",
+            outside.to_str().unwrap(),
+            "/etc/hosts",
+        ] {
+            let refused = read(path).await.unwrap();
+            assert!(!refused.success, "{path} was read");
+            assert!(!refused.data.to_string().contains("outside"), "{path}");
+        }
+
+        let found = tools
+            .execute("search", serde_json::json!({ "pattern": "inside" }))
+            .await
+            .unwrap();
+        assert_eq!(found.data["count"], 1, "{found:?}");
+        let refused = tools
+            .execute(
+                "search",
+                serde_json::json!({ "pattern": "outside", "path": ".." }),
+            )
+            .await
+            .unwrap();
+        assert!(!refused.success);
     }
 
     #[test]
