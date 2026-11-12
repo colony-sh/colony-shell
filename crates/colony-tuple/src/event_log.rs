@@ -62,6 +62,11 @@ pub struct EventLog {
 }
 
 impl EventLog {
+    /// The machine's SQLite file.
+    pub fn default_path() -> std::path::PathBuf {
+        default_db_path()
+    }
+
     /// Open the log in the machine's SQLite file, creating it if needed.
     pub fn open_default() -> Result<Self, StorageError> {
         Self::open(&default_db_path())
@@ -151,6 +156,14 @@ impl EventLog {
                 "{SELECT} WHERE subject = ?1 OR substr(subject, 1, length(?2)) = ?2 ORDER BY seq"
             ),
             params![exact, under],
+        )
+    }
+
+    /// The last `limit` events of `kind`, newest first.
+    pub fn of_kind(&self, kind: &str, limit: usize) -> Result<Vec<Event>, StorageError> {
+        self.query(
+            &format!("{SELECT} WHERE kind = ?1 ORDER BY seq DESC LIMIT ?2"),
+            params![kind, limit_param(limit)],
         )
     }
 
@@ -392,6 +405,24 @@ mod tests {
         let ev = log.latest(&out).unwrap().unwrap();
         assert_eq!(ev.data["content"], "new");
         assert!(log.latest(&run("x", 1)).unwrap().is_none());
+    }
+
+    #[test]
+    fn of_kind_is_newest_first() {
+        let (log, _dir) = temp_log();
+        for i in 0..3 {
+            log.append("x", "Report", None, None, json!({ "i": i }))
+                .unwrap();
+            log.append("x", "Other", None, None, Value::Null).unwrap();
+        }
+        let reports = log.of_kind("Report", 2).unwrap();
+        assert_eq!(
+            reports
+                .iter()
+                .map(|e| e.data["i"].as_i64().unwrap())
+                .collect::<Vec<_>>(),
+            [2, 1]
+        );
     }
 
     #[test]

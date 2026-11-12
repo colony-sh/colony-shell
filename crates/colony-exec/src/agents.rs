@@ -27,8 +27,93 @@ use crate::heartbeat::{parse_duration, SecurityMode, HEARTBEAT_ANSWERED, HEARTBE
 pub const AGENT_CREATED: &str = "AgentCreated";
 /// Event: an agent's state changed. Subject: the agent. Data: `{from, to, run?}`.
 pub const AGENT_STATE_CHANGED: &str = "AgentStateChanged";
-/// Event: a run produced an output. Subject: the output's address. Data: `{content}`.
+/// Event: a run produced an output. Subject: the output's address. Data: `{content}`, and
+/// `{tool, input}` for a tool call's result.
 pub const OUTPUT_RECORDED: &str = "OutputRecorded";
+/// Event: a run reported to a viewport. Subject: the run. Data: its [`Report`].
+pub const REPORT_POSTED: &str = "ReportPosted";
+
+/// The viewport every agent reports to, for now.
+pub const REPORTS_VIEW: &str = "reports";
+
+/// How a report wants to be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportStatus {
+    Fine,
+    Attention,
+    Blocked,
+    /// It has an ask waiting on you. Nothing asks yet.
+    NeedsYou,
+}
+
+/// What an agent sends you after a run that acted or missed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Report {
+    pub headline: String,
+    pub status: ReportStatus,
+    pub body: String,
+    /// `colony://` addresses of the outputs behind it.
+    pub evidence: Vec<String>,
+    /// Questions for you. Empty until asks land.
+    #[serde(default)]
+    pub asks: Vec<serde_json::Value>,
+    /// The viewport it is posted to.
+    pub view: String,
+}
+
+/// Longest headline kept, in characters.
+const HEADLINE_MAX: usize = 120;
+
+impl Report {
+    /// The report for a run's model text. `missed` marks a run that did not finish.
+    /// The model may set the headline and status with `HEADLINE:` and `STATUS:` lines;
+    /// otherwise the headline is the first WARN or ALERT finding, or the first line.
+    pub fn from_output(text: &str, missed: bool, evidence: Vec<String>) -> Self {
+        let tagged = |tag: &str| {
+            text.lines().find_map(|l| {
+                let l = l.trim();
+                l.get(..tag.len())
+                    .filter(|p| p.eq_ignore_ascii_case(tag))
+                    .map(|_| l[tag.len()..].trim().to_string())
+            })
+        };
+        let headline = tagged("HEADLINE:")
+            .or_else(|| tagged("ALERT:"))
+            .or_else(|| tagged("WARN:"))
+            .or_else(|| {
+                text.lines()
+                    .map(str::trim)
+                    .find(|l| !l.is_empty())
+                    .map(String::from)
+            })
+            .filter(|h| !h.is_empty())
+            .unwrap_or_else(|| "The run wrote nothing".to_string());
+        let status = match tagged("STATUS:").map(|s| s.to_ascii_lowercase()) {
+            _ if missed => ReportStatus::Blocked,
+            Some(s) if s == "fine" => ReportStatus::Fine,
+            Some(s) if s == "blocked" => ReportStatus::Blocked,
+            _ => ReportStatus::Attention,
+        };
+        Self {
+            headline: cut(&headline, HEADLINE_MAX),
+            status,
+            body: text.trim().to_string(),
+            evidence,
+            asks: Vec::new(),
+            view: REPORTS_VIEW.to_string(),
+        }
+    }
+}
+
+fn cut(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max - 1).collect();
+    out.push('\u{2026}');
+    out
+}
 
 /// What an agent is told to do, and with what.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -569,6 +654,47 @@ mod tests {
         )
         .unwrap();
         assert_eq!(tokens_today(&log, "a").unwrap(), 35);
+    }
+
+    #[test]
+    fn a_report_takes_its_headline_from_the_model_or_its_findings() {
+        let ev = vec!["colony://local/agent/a/run/1/output/1".to_string()];
+        let r = Report::from_output(
+            "PASS: one\nWARN: two threads found\nmore",
+            false,
+            ev.clone(),
+        );
+        assert_eq!(r.headline, "two threads found");
+        assert_eq!(r.status, ReportStatus::Attention);
+        assert_eq!(r.evidence, ev);
+
+        let r = Report::from_output(
+            "Headline: Drafted 3 replies\nSTATUS: fine\nWARN: x",
+            false,
+            ev.clone(),
+        );
+        assert_eq!(
+            (r.headline.as_str(), r.status),
+            ("Drafted 3 replies", ReportStatus::Fine)
+        );
+
+        let r = Report::from_output("STATUS: fine", true, vec![]);
+        assert_eq!(
+            r.status,
+            ReportStatus::Blocked,
+            "a missed run is blocked whatever it says"
+        );
+
+        let r = Report::from_output("", false, vec![]);
+        assert_eq!(r.headline, "The run wrote nothing");
+        let long = "x".repeat(300);
+        assert_eq!(
+            Report::from_output(&long, false, vec![])
+                .headline
+                .chars()
+                .count(),
+            HEADLINE_MAX
+        );
     }
 
     #[test]

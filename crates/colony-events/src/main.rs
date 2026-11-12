@@ -95,6 +95,22 @@ async fn main() {
     };
 
     colony_agent::heartbeat::install();
+
+    // The reports viewport. A daemon that cannot serve it still runs the heartbeats.
+    match colony_exec::viewport::bind_addr() {
+        Ok(addr) => {
+            if !addr.ip().is_loopback() {
+                warn!("Viewport on {addr}: reachable beyond this machine, with no login");
+            }
+            let db = colony_tuple::EventLog::default_path();
+            tokio::spawn(async move {
+                if let Err(e) = colony_exec::viewport::serve(addr, db).await {
+                    warn!("Viewport not served on {addr}: {e}");
+                }
+            });
+        }
+        Err(e) => warn!("Viewport not served: {e}"),
+    }
     let log = match EventLog::open_default() {
         Ok(log) => log,
         Err(e) => {
@@ -195,6 +211,7 @@ async fn main() {
 
     // Cleanup
     remove_pid_file();
+    let _ = std::fs::remove_file(colony_exec::viewport::url_file());
     info!("Daemon stopped");
 }
 

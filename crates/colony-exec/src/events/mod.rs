@@ -533,6 +533,9 @@ fn cmd_daemon(subcmd: &str, rest: &[String]) -> BuiltinResult {
         "status" => {
             if let Some(pid) = daemon_pid() {
                 eprintln!("Event router daemon: running (pid {pid})");
+                if let Ok(url) = std::fs::read_to_string(crate::viewport::url_file()) {
+                    eprintln!("Viewport: {}", url.trim());
+                }
 
                 // Show listener count
                 if let Ok(registry) = open_registry() {

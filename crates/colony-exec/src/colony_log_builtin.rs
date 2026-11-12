@@ -74,7 +74,15 @@ pub fn colony_open(args: &[String]) -> Result<BuiltinResult> {
         Scope::Output { .. } | Scope::Diff { .. } => log
             .latest(&addr)
             .map(|ev| ev.and_then(|ev| show_content(&ev))),
-        Scope::Agent(_) | Scope::Run { .. } | Scope::View(_) => log.about(&addr).map(|events| {
+        Scope::View(name) => log
+            .of_kind(crate::agents::REPORT_POSTED, 1000)
+            .map(|mut events| {
+                events.retain(|ev| ev.data["view"] == name.as_str());
+                events.reverse();
+                events.iter().for_each(|ev| println!("{}", line(ev)));
+                (!events.is_empty()).then_some(())
+            }),
+        Scope::Agent(_) | Scope::Run { .. } => log.about(&addr).map(|events| {
             events.iter().for_each(|ev| println!("{}", line(ev)));
             (!events.is_empty()).then_some(())
         }),

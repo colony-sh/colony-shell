@@ -1817,6 +1817,17 @@
       "notes": [
         "Completed 2026-11-12: live heartbeat run with the key from the keychain: pass in 9.8s, the model used search; 4 new provider unit tests"
       ]
+        },
+    {
+      "id": "F089",
+      "name": "Reports with evidence, and the reports viewport",
+      "description": "Colony first slice, build step 5: a named agent's run that acted or missed posts a ReportPosted event (headline, status fine|attention|blocked|needs_you, body, evidence addresses, asks) to the reports viewport; idle runs post nothing. Each tool call a run makes is recorded as an output (output/2.., with tool and input) and listed as evidence beside the model's text (output/1). The colony-events daemon serves the viewport (COLONY_VIEW_ADDR, default 127.0.0.1:7337): needs-you first, then the feed; evidence links open the exact output.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": ["F085", "F088"],
+      "notes": [
+        "Completed 2026-11-12: 63_reports_viewport.bats 6/6; read-only (answering is step 6); phone reach = bind the machine's private-network address"
+      ]
     }
   ]
 }

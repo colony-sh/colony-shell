@@ -202,6 +202,7 @@ impl HeartbeatStore {
             checklist_path,
             interval_secs,
             tokens_used: 0,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -225,6 +226,7 @@ mod tests {
             checklist_path: "/tmp/HEARTBEAT.md".to_string(),
             interval_secs: 1800,
             tokens_used: 0,
+            tool_calls: Vec::new(),
         }
     }
 

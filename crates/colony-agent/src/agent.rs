@@ -39,6 +39,17 @@ pub struct Agent {
     llm_channel_tx: Option<mpsc::UnboundedSender<LlmMessage>>,
     /// Tool calls the model has asked for since this agent was created, refused ones included.
     tool_calls: u32,
+    /// Every tool call that ran, in order, with its result.
+    tool_log: Vec<ToolRecord>,
+}
+
+/// One tool call that ran: what was asked and what came back.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ToolRecord {
+    pub name: String,
+    pub input: serde_json::Value,
+    /// The tool's result as the model saw it (JSON text).
+    pub output: String,
 }
 
 /// Agent configuration
@@ -237,6 +248,7 @@ impl Agent {
             observer: None,
             llm_channel_tx: None,
             tool_calls: 0,
+            tool_log: Vec::new(),
         })
     }
 
@@ -582,6 +594,11 @@ impl Agent {
         output_tokens
     }
 
+    /// Every tool call that ran so far, with its result.
+    pub fn tool_log(&self) -> &[ToolRecord] {
+        &self.tool_log
+    }
+
     /// Tool calls the model has asked for so far, refused ones included.
     pub fn tool_call_count(&self) -> u32 {
         self.tool_calls
@@ -629,6 +646,7 @@ impl Agent {
             .classification(&tool_name)
             .ok_or_else(|| AgentError::ToolExecution(format!("unknown tool: {}", tool_name)))?;
 
+        let asked = input.clone();
         let result = if self.approval.needs_approval(&tool_name, classification)
             && !self.tools.is_auto_approved(&tool_name)
         {
@@ -652,6 +670,11 @@ impl Agent {
         };
 
         let result_str = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
+        self.tool_log.push(ToolRecord {
+            name: tool_name.clone(),
+            input: asked,
+            output: result_str.clone(),
+        });
 
         // Emit tool result to LLM channel (fd 4) for conversation logging
         self.emit_to_llm_channel(
@@ -830,6 +853,9 @@ mod tests {
             "{}",
             results[2]
         );
+        assert_eq!(agent.tool_log().len(), 2, "a refused call does not run");
+        assert_eq!(agent.tool_log()[0].name, "file_read");
+        assert!(agent.tool_log()[0].output.contains("secret-free note"));
     }
 
     #[tokio::test]

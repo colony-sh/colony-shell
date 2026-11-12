@@ -17,6 +17,7 @@ setup() {
     export OLLAMA_HOST="127.0.0.1:$(cat "$work/ollama/port")"
     export COLONY_MODEL_PROVIDER=ollama
     export COLONY_MODEL_NAME=fake
+    export COLONY_VIEW_ADDR=127.0.0.1:0
     unset ANTHROPIC_API_KEY OPENAI_API_KEY COLONY_API_KEY
     cd "$work/project"
 }

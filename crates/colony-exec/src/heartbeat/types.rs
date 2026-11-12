@@ -165,6 +165,18 @@ pub struct HeartbeatRun {
     /// Tokens the run used, estimated. Not stored in `heartbeat_runs`; the event log has it.
     #[serde(default)]
     pub tokens_used: u64,
+    /// The tool calls the run made, in order. Not stored in `heartbeat_runs`; a named
+    /// agent's run records each as an output in the event log.
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCall>,
+}
+
+/// One tool call a run made.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub tool: String,
+    pub input: serde_json::Value,
+    pub output: String,
 }
 
 /// Errors that can occur during heartbeat operations.

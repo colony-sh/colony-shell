@@ -521,7 +521,9 @@ mod agent_beat {
 
     use super::{db_error, HeartbeatError, HeartbeatRun, HeartbeatStatus};
     use super::{HEARTBEAT_ANSWERED, HEARTBEAT_FIRED};
-    use crate::agents::{self, AgentState, Agents, AGENT_STATE_CHANGED, OUTPUT_RECORDED};
+    use crate::agents::{
+        self, AgentState, Agents, Report, AGENT_STATE_CHANGED, OUTPUT_RECORDED, REPORT_POSTED,
+    };
 
     /// A beat in progress.
     pub(super) struct Beat {
@@ -575,14 +577,23 @@ mod agent_beat {
                 "daily token budget spent ({spent} of {})",
                 agent.spec.daily_tokens
             );
-            log.append(
+            let answered = log
+                .append(
+                    actor,
+                    HEARTBEAT_ANSWERED,
+                    Some(&run_addr),
+                    Some(fired),
+                    json!({ "outcome": "missed", "reason": why, "tokens": 0 }),
+                )
+                .map_err(db_error)?;
+            let evidence = vec![format!("colony://local/event/{answered}")];
+            post(
+                log,
                 actor,
-                HEARTBEAT_ANSWERED,
-                Some(&run_addr),
-                Some(fired),
-                json!({ "outcome": "missed", "reason": why, "tokens": 0 }),
-            )
-            .map_err(db_error)?;
+                &run_addr,
+                answered,
+                Report::from_output(&why, true, evidence),
+            )?;
             return Err(agent_err(why));
         }
         log.append(
@@ -609,8 +620,21 @@ mod agent_beat {
         })
     }
 
-    /// Answer a beat: record its output and answer, then put the agent back to sleep
-    /// unless something else (a pause) changed its state meanwhile.
+    fn post(
+        log: &EventLog,
+        actor: &str,
+        run_addr: &Address,
+        cause: i64,
+        report: Report,
+    ) -> Result<(), HeartbeatError> {
+        let data = serde_json::to_value(report).map_err(|e| agent_err(e.to_string()))?;
+        log.append(actor, REPORT_POSTED, Some(run_addr), Some(cause), data)
+            .map_err(db_error)?;
+        Ok(())
+    }
+
+    /// Answer a beat: record its outputs, its answer and, unless it was idle, its report;
+    /// then put the agent back to sleep unless something else (a pause) changed its state.
     pub(super) fn end(
         log: &EventLog,
         actor: &str,
@@ -618,43 +642,70 @@ mod agent_beat {
         outcome_of_run: &Result<HeartbeatRun, HeartbeatError>,
     ) -> Result<(), HeartbeatError> {
         let run_addr = agents::run_address(&beat.name, beat.run);
-        let answer = match outcome_of_run {
+        let mut evidence = Vec::new();
+        let mut record = |n: u64, data: serde_json::Value| -> Result<(), HeartbeatError> {
+            let addr = Address::local(Scope::Output {
+                agent: beat.name.clone(),
+                run: beat.run,
+                n,
+            });
+            log.append(actor, OUTPUT_RECORDED, Some(&addr), Some(beat.fired), data)
+                .map_err(db_error)?;
+            evidence.push(addr.to_string());
+            Ok(())
+        };
+        let (answer, text, missed) = match outcome_of_run {
             Ok(run) => {
                 if !run.raw_output.is_empty() {
-                    let output = Address::local(Scope::Output {
-                        agent: beat.name.clone(),
-                        run: beat.run,
-                        n: 1,
-                    });
-                    log.append(
-                        actor,
-                        OUTPUT_RECORDED,
-                        Some(&output),
-                        Some(beat.fired),
-                        json!({ "content": run.raw_output }),
-                    )
-                    .map_err(db_error)?;
+                    record(1, json!({ "content": run.raw_output }))?;
                 }
-                json!({
+                for (n, call) in (2..).zip(&run.tool_calls) {
+                    record(
+                        n,
+                        json!({ "content": call.output, "tool": call.tool, "input": call.input }),
+                    )?;
+                }
+                let answer = json!({
                     "outcome": outcome(run.status),
                     "status": run.status.to_string(),
                     "run": run.id,
                     "findings": run.findings.len(),
                     "tokens": run.tokens_used,
-                })
+                });
+                (
+                    answer,
+                    run.raw_output.clone(),
+                    outcome(run.status) == "missed",
+                )
             }
-            Err(e) => {
-                json!({ "outcome": "missed", "status": "error", "error": e.to_string(), "tokens": 0 })
-            }
+            Err(e) => (
+                json!({ "outcome": "missed", "status": "error", "error": e.to_string(), "tokens": 0 }),
+                e.to_string(),
+                true,
+            ),
         };
-        log.append(
-            actor,
-            HEARTBEAT_ANSWERED,
-            Some(&run_addr),
-            Some(beat.fired),
-            answer,
-        )
-        .map_err(db_error)?;
+        let idle = answer["outcome"] == "idle";
+        let answered = log
+            .append(
+                actor,
+                HEARTBEAT_ANSWERED,
+                Some(&run_addr),
+                Some(beat.fired),
+                answer,
+            )
+            .map_err(db_error)?;
+        if !idle {
+            if evidence.is_empty() {
+                evidence.push(format!("colony://local/event/{answered}"));
+            }
+            post(
+                log,
+                actor,
+                &run_addr,
+                answered,
+                Report::from_output(&text, missed, evidence),
+            )?;
+        }
 
         let all = Agents::from_log(log).map_err(agent_err)?;
         if let Some(agent) = all

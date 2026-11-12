@@ -70,7 +70,9 @@ pub fn build_system_prompt() -> String {
      WARN: <description>\n\
      ALERT: <description>\n\n\
      Use PASS for checks that succeed, WARN for non-critical issues, \
-     and ALERT for critical problems that need immediate attention."
+     and ALERT for critical problems that need immediate attention.\n\n\
+     If you found or did something worth reporting, start your answer with one line:\n\
+     HEADLINE: <what happened, in one sentence>"
         .to_string()
 }
 

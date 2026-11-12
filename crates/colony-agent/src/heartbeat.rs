@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use colony_exec::heartbeat::{
     build_checklist_prompt, build_system_prompt, derive_status, extract_findings,
     set_default_agent_callback, HeartbeatConfig, HeartbeatError, HeartbeatRun, HeartbeatStatus,
-    SecurityMode,
+    SecurityMode, ToolCall,
 };
 
 /// The message that sends the model back to work after its tools have answered.
@@ -104,6 +104,15 @@ async fn run_agent(
         raw_output,
         tokens_used: agent.usage_stats().total_input_tokens
             + agent.usage_stats().total_output_tokens,
+        tool_calls: agent
+            .tool_log()
+            .iter()
+            .map(|t| ToolCall {
+                tool: t.name.clone(),
+                input: t.input.clone(),
+                output: t.output.clone(),
+            })
+            .collect(),
         // The scheduler fills these in.
         checklist_path: String::new(),
         interval_secs: 0,
@@ -120,8 +129,12 @@ async fn turns(agent: &mut Agent, prompt: String) -> crate::Result<String> {
         let before = agent.tool_call_count();
         let text = agent.process_full(input).await?;
         if !text.is_empty() {
+            // Turns are joined by a line break, with none added at the end: the run's
+            // output is recorded as evidence and must be exactly what the model wrote.
+            if !output.is_empty() {
+                output.push('\n');
+            }
             output.push_str(&text);
-            output.push('\n');
         }
         let called_tools = agent.tool_call_count() > before;
         if !called_tools

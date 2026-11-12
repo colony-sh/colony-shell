@@ -36,6 +36,7 @@ pub mod secret_builtin;
 pub mod serve;
 pub mod sidebar;
 pub mod special_files;
+pub mod viewport;
 mod xtrace;
 
 #[cfg(test)]
