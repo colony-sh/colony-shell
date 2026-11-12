@@ -1483,6 +1483,7 @@ dependencies = [
  "colony-protocol",
  "colony-recipe",
  "colony-reflection",
+ "colony-secure",
  "colony-tuple",
  "dirs 5.0.1",
  "futures",
@@ -4355,6 +4356,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
  "log",
+ "security-framework 2.11.1",
+ "security-framework 3.5.1",
  "zeroize",
 ]
 

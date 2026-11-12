@@ -14,6 +14,7 @@ colony-exec.workspace = true
 colony-channels.workspace = true
 colony-cloud-sdk = { workspace = true, optional = true }
 colony-reflection.workspace = true
+colony-secure = { path = "../colony-secure" }
 colony-memory = { workspace = true, optional = true }
 colony-tuple = { workspace = true, optional = true }
 colony-focus = { workspace = true, optional = true }

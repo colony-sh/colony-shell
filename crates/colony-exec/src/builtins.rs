@@ -6301,6 +6301,7 @@ fn builtin_colony(args: &[String]) -> Result<BuiltinResult> {
         "publish" => colony_publish(sub_args),
         "recipe" => colony_recipe(sub_args),
         "plugin" => colony_plugin(sub_args),
+        "secret" => crate::secret_builtin::colony_secret(sub_args),
         "log" => crate::colony_log_builtin::colony_log(sub_args),
         "open" => crate::colony_log_builtin::colony_open(sub_args),
         "onboard" => {

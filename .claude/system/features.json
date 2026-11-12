@@ -1784,6 +1784,17 @@
         "Started 2026-11-11: agent model in colony-exec/src/agents.rs, folded from the log",
         "Completed 2026-11-11: 61_named_agents.bats 6/6; notes are a field with no writer yet (proposal and approval need the viewport, step 5)"
       ]
+        },
+    {
+      "id": "F086",
+      "name": "Provider API keys in the OS keychain",
+      "description": "`colony secret set|has|rm <NAME>` stores API keys as keychain items (service `colony`, account = the variable name). colony-agent's provider detection uses the environment variable when set, else the keychain item, so the colony-events daemon started at login can use Anthropic or OpenAI without a key on disk. macOS only: keyring's apple-native backend is now enabled; before this every keyring call in the repo went to its in-memory mock store.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": ["F084"],
+      "notes": [
+        "Completed 2026-11-12: 62_colony_secret.bats 4/4 (no keychain writes), colony-secure secrets tests 3; real set/read not run here (it writes to the user's keychain)"
+      ]
     }
   ]
 }

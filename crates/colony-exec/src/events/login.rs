@@ -2,9 +2,10 @@
 //! unit on Linux.
 //!
 //! `on --daemon install` writes the file and loads it; `--print` shows it and changes
-//! nothing. The daemon gets no API keys: a key in a plist or unit file would sit on disk in
-//! plain text. Provider settings that are not secret (`COLONY_MODEL_PROVIDER`,
-//! `COLONY_MODEL_NAME`, `OLLAMA_HOST`) are copied from the installing shell.
+//! nothing. The file holds no API keys: a key in a plist or unit file would sit on disk in
+//! plain text. The daemon reads keys from the OS keychain (`colony secret set`). Provider
+//! settings that are not secret (`COLONY_MODEL_PROVIDER`, `COLONY_MODEL_NAME`,
+//! `OLLAMA_HOST`) are copied from the installing shell.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

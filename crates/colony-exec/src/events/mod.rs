@@ -465,7 +465,10 @@ fn cmd_login(subcmd: &str, rest: &[String]) -> BuiltinResult {
             let _ = stop_daemon();
             login::install(&item).map(|()| {
                 eprintln!("colony-events starts at login: {}", item.path.display());
-                eprintln!("It gets no API keys; set a provider that needs none, or see its log at ~/.colony/events/daemon.log");
+                eprintln!(
+                    "It reads API keys from the keychain: colony secret set ANTHROPIC_API_KEY"
+                );
+                eprintln!("Its log: ~/.colony/events/daemon.log");
             })
         }
         ("uninstall", []) => login::uninstall(&item).map(|()| {
