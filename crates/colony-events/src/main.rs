@@ -31,6 +31,7 @@
 mod dashboard;
 mod handler;
 
+use colony_exec::agents::{self, AgentState, Agents};
 use colony_exec::events::{
     daemon_pid_path, evaluate_filter, parse_filter, EventListener, EventRegistry, FilterExpr,
 };
@@ -414,8 +415,8 @@ fn compile_filters(listeners: &[EventListener]) -> HashMap<String, FilterExpr> {
 // Heartbeats
 // ---------------------------------------------------------------------------
 
-/// The heartbeats this daemon runs: the checklists the event log says have one, each
-/// with its own scheduler.
+/// The heartbeats this daemon runs: the checklists the event log says have one, and the
+/// named agents that are awake, each with its own scheduler.
 #[derive(Default)]
 struct Heartbeats {
     /// The last event read.
@@ -424,6 +425,10 @@ struct Heartbeats {
     wanted: BTreeSet<PathBuf>,
     /// The schedulers running now.
     running: HashMap<PathBuf, HeartbeatScheduler>,
+    /// Every named agent, folded from the log.
+    agents: Agents,
+    /// A scheduler per awake agent.
+    agents_running: HashMap<String, HeartbeatScheduler>,
 }
 
 impl Heartbeats {
@@ -443,9 +448,13 @@ impl Heartbeats {
             self.seq = tail.seq;
             for ev in &page {
                 heartbeat::apply(&mut self.wanted, ev);
+                self.agents.apply(ev);
                 changed |= matches!(
                     ev.kind.as_str(),
-                    heartbeat::HEARTBEAT_SET | heartbeat::HEARTBEAT_PAUSED
+                    heartbeat::HEARTBEAT_SET
+                        | heartbeat::HEARTBEAT_PAUSED
+                        | agents::AGENT_CREATED
+                        | agents::AGENT_STATE_CHANGED
                 );
             }
         }
@@ -455,6 +464,7 @@ impl Heartbeats {
     }
 
     fn reconcile(&mut self) {
+        self.reconcile_agents();
         self.running.retain(|path, scheduler| {
             let keep = self.wanted.contains(path);
             if !keep {
@@ -476,6 +486,54 @@ impl Heartbeats {
             }
         }
     }
+}
+
+impl Heartbeats {
+    /// Run a scheduler for each sleeping or running agent; stop the rest.
+    // ponytail: an agent the log says is running when the daemon starts died mid-run; it is
+    // treated as asleep until failure handling (step 8) answers that run missed.
+    fn reconcile_agents(&mut self) {
+        let awake = |state: AgentState| matches!(state, AgentState::Sleeping | AgentState::Running);
+        let agents = &self.agents;
+        self.agents_running.retain(|name, scheduler| {
+            let keep = agents.get(name).is_some_and(|a| awake(a.state));
+            if !keep {
+                let _ = scheduler.stop();
+                info!("Agent {name}: heartbeat stopped");
+            }
+            keep
+        });
+        for agent in self.agents.iter().filter(|a| awake(a.state)) {
+            if self.agents_running.contains_key(&agent.name) {
+                continue;
+            }
+            let now = chrono::Utc::now().timestamp_millis();
+            let due = agent.next_beat_ms().unwrap_or(now);
+            let first = Duration::from_millis(u64::try_from(due - now).unwrap_or(0));
+            match start_agent(&agent.name, first) {
+                Ok(scheduler) => {
+                    info!("Agent {}: next beat in {}s", agent.name, first.as_secs());
+                    self.agents_running.insert(agent.name.clone(), scheduler);
+                }
+                Err(e) => warn!("Agent {}: heartbeat not started: {e}", agent.name),
+            }
+        }
+    }
+}
+
+fn start_agent(
+    name: &str,
+    first: Duration,
+) -> Result<HeartbeatScheduler, heartbeat::HeartbeatError> {
+    let path = agents::checklist_path(name);
+    let scheduler = HeartbeatScheduler::new("daemon");
+    scheduler.set_agent(name);
+    let found = scheduler.discover(path.parent().unwrap_or(&path))?;
+    if found != path {
+        return Err(heartbeat::HeartbeatError::NotFound);
+    }
+    scheduler.start_after(first)?;
+    Ok(scheduler)
 }
 
 fn start_heartbeat(path: &Path) -> Result<HeartbeatScheduler, heartbeat::HeartbeatError> {

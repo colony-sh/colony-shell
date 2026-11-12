@@ -58,6 +58,9 @@ pub struct HeartbeatConfig {
     pub timeout_secs: u64,
     pub max_tool_calls: u32,
     pub token_budget: u32,
+    /// The only directory a run's tools may read. `None`: the checklist's directory.
+    #[serde(default)]
+    pub workdir: Option<std::path::PathBuf>,
 }
 
 impl Default for HeartbeatConfig {
@@ -69,6 +72,7 @@ impl Default for HeartbeatConfig {
             timeout_secs: 60,
             max_tool_calls: 20,
             token_budget: 10_000,
+            workdir: None,
         }
     }
 }
@@ -158,6 +162,9 @@ pub struct HeartbeatRun {
     pub raw_output: String,
     pub checklist_path: String,
     pub interval_secs: u64,
+    /// Tokens the run used, estimated. Not stored in `heartbeat_runs`; the event log has it.
+    #[serde(default)]
+    pub tokens_used: u64,
 }
 
 /// Errors that can occur during heartbeat operations.

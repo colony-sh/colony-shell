@@ -1772,6 +1772,18 @@
         "Started 2026-11-11: heartbeat runner moved from colony-shell to colony-agent::heartbeat so the daemon can install it",
         "Completed 2026-11-11: 60_heartbeat_daemon.bats 5/5; `on --daemon install` itself not run here (it would change this machine's login items); only --print is tested"
       ]
+        },
+    {
+      "id": "F085",
+      "name": "Named agents with a lifecycle and a heartbeat each",
+      "description": "Colony first slice, build step 4: `agent new <name> --every <dur> --charter <text>` creates a named agent whose charter, grants (security mode, one readable directory), per-run and daily budgets and state (sleeping, running, parked, paused, retired) live in the event log as events about colony://local/agent/<name>. The daemon runs one heartbeat per awake agent; each beat is a run at colony://local/agent/<name>/run/<n> with its output recorded and its answer (idle, acted, missed) logged. `agent list`, `agent pause|resume|retire`.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": ["F084"],
+      "notes": [
+        "Started 2026-11-11: agent model in colony-exec/src/agents.rs, folded from the log",
+        "Completed 2026-11-11: 61_named_agents.bats 6/6; notes are a field with no writer yet (proposal and approval need the viewport, step 5)"
+      ]
     }
   ]
 }

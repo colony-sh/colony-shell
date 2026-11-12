@@ -117,9 +117,18 @@ fn start_daemon() -> Result<(), String> {
 
     match result {
         Ok(_child) => {
-            // Give the daemon a moment to start and write PID file
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            Ok(())
+            // Wait for the daemon to write its PID file, so a caller that stops it next
+            // (or a test teardown) can find it.
+            for _ in 0..50 {
+                if daemon_pid().is_some() {
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(format!(
+                "started {}, but it wrote no PID file within 5s; see ~/.colony/events/",
+                binary.display()
+            ))
         }
         Err(e) => Err(format!(
             "failed to start colony-events daemon ({}): {e}",

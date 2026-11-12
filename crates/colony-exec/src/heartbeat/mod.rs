@@ -129,6 +129,8 @@ struct SchedulerState {
     tuple_space: Option<colony_tuple::TupleSpace>,
     /// Session ID for tuple scoping.
     session_id: String,
+    /// The named agent this scheduler beats for, if any.
+    agent: Option<String>,
 }
 
 impl HeartbeatScheduler {
@@ -147,6 +149,7 @@ impl HeartbeatScheduler {
                 started_at: None,
                 tuple_space: None,
                 session_id: session_id.to_string(),
+                agent: None,
             })),
         }
     }
@@ -155,6 +158,14 @@ impl HeartbeatScheduler {
     pub fn set_agent_callback(&self, callback: Arc<AgentCallback>) {
         let mut state = self.inner.lock().expect("scheduler mutex poisoned");
         state.agent_callback = Some(callback);
+    }
+
+    /// Beat for the named agent `name`: each tick is one of its runs. A tick fires only
+    /// while the log says the agent is sleeping, and records its state changes, its run,
+    /// the run's output and its answer as events about the agent.
+    pub fn set_agent(&self, name: &str) {
+        let mut state = self.inner.lock().expect("scheduler mutex poisoned");
+        state.agent = Some(name.to_string());
     }
 
     /// Set the tuple space for emitting tuples.
@@ -184,8 +195,20 @@ impl HeartbeatScheduler {
         Ok(path)
     }
 
-    /// Start the background scheduler task.
+    /// Start the background scheduler task. The first tick comes one interval from now.
     pub fn start(&self) -> Result<(), HeartbeatError> {
+        let interval_secs = {
+            let state = self.inner.lock().expect("scheduler mutex poisoned");
+            state
+                .interval_override
+                .unwrap_or(state.config.interval_secs)
+        };
+        self.start_after(std::time::Duration::from_secs(interval_secs))
+    }
+
+    /// Start the background scheduler task with its first tick after `first`, then one
+    /// every interval. The daemon uses this to keep a beat's time across restarts.
+    pub fn start_after(&self, first: std::time::Duration) -> Result<(), HeartbeatError> {
         let mut state = self.inner.lock().expect("scheduler mutex poisoned");
 
         if state.running {
@@ -208,7 +231,7 @@ impl HeartbeatScheduler {
 
         tokio::spawn(async move {
             scheduler
-                .background_loop(path, interval_secs, stop_rx)
+                .background_loop(path, interval_secs, first, stop_rx)
                 .await;
         });
 
@@ -261,6 +284,7 @@ impl HeartbeatScheduler {
         let tuple_space = state.tuple_space.clone();
         // Who the log says fired the beat: the shell's session or "daemon".
         let actor = state.session_id.clone();
+        let agent = state.agent.clone();
 
         // Drop the lock before doing I/O
         drop(state);
@@ -277,6 +301,24 @@ impl HeartbeatScheduler {
             return Err(HeartbeatError::Agent(
                 "checklist is empty, skipping".to_string(),
             ));
+        }
+
+        if let Some(name) = &agent {
+            // An agent's state is the log: no log, no beat.
+            let log = EventLog::open_default().map_err(db_error)?;
+            let beat = agent_beat::start(&log, &actor, name)?;
+            let outcome = callback(&config, &path, body);
+            agent_beat::end(&log, &actor, &beat, &outcome)?;
+            let mut run = outcome?;
+            run.checklist_path = path.display().to_string();
+            run.interval_secs = config.interval_secs;
+            if let Some(ref store) = store {
+                store.insert_run(&run)?;
+            }
+            let mut state = self.inner.lock().expect("scheduler mutex poisoned");
+            state.last_run = Some(run.clone());
+            state.config = config;
+            return Ok(run);
         }
 
         let log = EventLog::open_default()
@@ -415,30 +457,25 @@ impl HeartbeatScheduler {
         }
     }
 
-    /// The background loop that runs on each interval tick.
+    /// The background loop: the first tick after `first`, then one every interval.
     async fn background_loop(
         &self,
         path: PathBuf,
         initial_interval_secs: u64,
+        first: std::time::Duration,
         mut stop_rx: watch::Receiver<bool>,
     ) {
         let mut interval_secs = initial_interval_secs;
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
-
-        // Skip the first immediate tick (the scheduler just started)
-        interval.tick().await;
+        let mut wait = first;
 
         loop {
             tokio::select! {
-                _ = interval.tick() => {
+                () = tokio::time::sleep(wait) => {
                     // Check for interval changes (hot-reload)
                     if let Some(new_interval) = self.check_interval_change(&path, interval_secs) {
                         interval_secs = new_interval;
-                        interval = tokio::time::interval(
-                            std::time::Duration::from_secs(interval_secs),
-                        );
-                        interval.tick().await; // consume immediate tick
                     }
+                    wait = std::time::Duration::from_secs(interval_secs);
 
                     // Execute tick off the async worker: a run blocks for its whole length.
                     let scheduler = self.clone();
@@ -474,6 +511,166 @@ impl HeartbeatScheduler {
         // Mark as stopped
         let mut state = self.inner.lock().expect("scheduler mutex poisoned");
         state.running = false;
+    }
+}
+
+/// The events one beat of a named agent writes.
+mod agent_beat {
+    use colony_tuple::{Address, EventLog, Scope};
+    use serde_json::json;
+
+    use super::{db_error, HeartbeatError, HeartbeatRun, HeartbeatStatus};
+    use super::{HEARTBEAT_ANSWERED, HEARTBEAT_FIRED};
+    use crate::agents::{self, AgentState, Agents, AGENT_STATE_CHANGED, OUTPUT_RECORDED};
+
+    /// A beat in progress.
+    pub(super) struct Beat {
+        name: String,
+        run: u64,
+        fired: i64,
+    }
+
+    /// What a beat's status means for the agent's answer.
+    fn outcome(status: HeartbeatStatus) -> &'static str {
+        match status {
+            HeartbeatStatus::Pass => "idle",
+            HeartbeatStatus::Warn | HeartbeatStatus::Alert | HeartbeatStatus::Unstructured => {
+                "acted"
+            }
+            HeartbeatStatus::Timeout | HeartbeatStatus::Error => "missed",
+        }
+    }
+
+    fn agent_err(msg: String) -> HeartbeatError {
+        HeartbeatError::Agent(msg)
+    }
+
+    /// Fire a beat: the agent goes from sleeping to running, and its next run starts.
+    /// A beat past the daily budget is fired and answered missed at once.
+    pub(super) fn start(log: &EventLog, actor: &str, name: &str) -> Result<Beat, HeartbeatError> {
+        let all = Agents::from_log(log).map_err(agent_err)?;
+        let agent = all
+            .get(name)
+            .ok_or_else(|| agent_err(format!("no agent named {name}")))?;
+        if agent.state != AgentState::Sleeping {
+            return Err(agent_err(format!(
+                "{name} is {}, beat skipped",
+                agent.state
+            )));
+        }
+        let run = agent.runs + 1;
+        let run_addr = agents::run_address(name, run);
+        let spent = agents::tokens_today(log, name).map_err(agent_err)?;
+        if spent >= agent.spec.daily_tokens {
+            let fired = log
+                .append(
+                    actor,
+                    HEARTBEAT_FIRED,
+                    Some(&run_addr),
+                    None,
+                    json!({ "beat": run }),
+                )
+                .map_err(db_error)?;
+            let why = format!(
+                "daily token budget spent ({spent} of {})",
+                agent.spec.daily_tokens
+            );
+            log.append(
+                actor,
+                HEARTBEAT_ANSWERED,
+                Some(&run_addr),
+                Some(fired),
+                json!({ "outcome": "missed", "reason": why, "tokens": 0 }),
+            )
+            .map_err(db_error)?;
+            return Err(agent_err(why));
+        }
+        log.append(
+            actor,
+            AGENT_STATE_CHANGED,
+            Some(&agent.address()),
+            None,
+            json!({ "from": AgentState::Sleeping, "to": AgentState::Running, "run": run }),
+        )
+        .map_err(db_error)?;
+        let fired = log
+            .append(
+                actor,
+                HEARTBEAT_FIRED,
+                Some(&run_addr),
+                None,
+                json!({ "beat": run }),
+            )
+            .map_err(db_error)?;
+        Ok(Beat {
+            name: name.to_string(),
+            run,
+            fired,
+        })
+    }
+
+    /// Answer a beat: record its output and answer, then put the agent back to sleep
+    /// unless something else (a pause) changed its state meanwhile.
+    pub(super) fn end(
+        log: &EventLog,
+        actor: &str,
+        beat: &Beat,
+        outcome_of_run: &Result<HeartbeatRun, HeartbeatError>,
+    ) -> Result<(), HeartbeatError> {
+        let run_addr = agents::run_address(&beat.name, beat.run);
+        let answer = match outcome_of_run {
+            Ok(run) => {
+                if !run.raw_output.is_empty() {
+                    let output = Address::local(Scope::Output {
+                        agent: beat.name.clone(),
+                        run: beat.run,
+                        n: 1,
+                    });
+                    log.append(
+                        actor,
+                        OUTPUT_RECORDED,
+                        Some(&output),
+                        Some(beat.fired),
+                        json!({ "content": run.raw_output }),
+                    )
+                    .map_err(db_error)?;
+                }
+                json!({
+                    "outcome": outcome(run.status),
+                    "status": run.status.to_string(),
+                    "run": run.id,
+                    "findings": run.findings.len(),
+                    "tokens": run.tokens_used,
+                })
+            }
+            Err(e) => {
+                json!({ "outcome": "missed", "status": "error", "error": e.to_string(), "tokens": 0 })
+            }
+        };
+        log.append(
+            actor,
+            HEARTBEAT_ANSWERED,
+            Some(&run_addr),
+            Some(beat.fired),
+            answer,
+        )
+        .map_err(db_error)?;
+
+        let all = Agents::from_log(log).map_err(agent_err)?;
+        if let Some(agent) = all
+            .get(&beat.name)
+            .filter(|a| a.state == AgentState::Running)
+        {
+            log.append(
+                actor,
+                AGENT_STATE_CHANGED,
+                Some(&agent.address()),
+                None,
+                json!({ "from": AgentState::Running, "to": AgentState::Sleeping, "run": beat.run }),
+            )
+            .map_err(db_error)?;
+        }
+        Ok(())
     }
 }
 

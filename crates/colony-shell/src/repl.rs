@@ -358,8 +358,13 @@ pub(crate) async fn run_repl(
                     break;
                 }
 
-                // Agent builtin — intercept here because agent lives in REPL, not executor
-                if line == "agent" || line.starts_with("agent ") {
+                // The chat agent's subcommands live in the REPL; named-agent ones
+                // (new, list, pause, ...) fall through to the executor's `agent` builtin.
+                let agent_sub = line
+                    .strip_prefix("agent")
+                    .filter(|r| r.is_empty() || r.starts_with(' '))
+                    .map(|r| r.split_whitespace().next().unwrap_or("status"));
+                if agent_sub.is_some_and(|sub| !colony_exec::agents::SUBCOMMANDS.contains(&sub)) {
                     handle_agent_builtin(line, &mut agent).await;
                     continue;
                 }

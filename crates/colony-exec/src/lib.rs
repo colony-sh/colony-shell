@@ -7,6 +7,7 @@
 //! - Exit status capture
 //! - Signal handling (future: job control)
 
+pub mod agents;
 mod alias;
 pub mod bellman_door;
 pub mod buffers;

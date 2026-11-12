@@ -133,6 +133,7 @@ fn is_builtin_base(name: &str) -> bool {
             | "diag"
             | "canvas"
             | "draw"
+            | "agent"
     )
 }
 
@@ -378,6 +379,19 @@ pub fn execute_builtin(
         "diag" => builtin_diag(&args, channels),
         "canvas" => crate::canvas_builtin::builtin_canvas(&args),
         "draw" => crate::draw_builtin::builtin_draw(&args),
+        "agent" => {
+            let actor = context
+                .get_var_or_env("USER")
+                .unwrap_or_else(|| "shell".to_string());
+            let cwd = context
+                .get_var_or_env("PWD")
+                .unwrap_or_else(|| ".".to_string());
+            Ok(crate::agents::builtin_agent(
+                &args,
+                &actor,
+                std::path::Path::new(&cwd),
+            ))
+        }
         _ => unreachable!("is_builtin returned true but no handler"),
     };
 

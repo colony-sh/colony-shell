@@ -63,9 +63,10 @@ async fn run_agent(
     let mut agent = Agent::with_config(agent_config(config))
         .await
         .map_err(|e| HeartbeatError::NoProvider(e.to_string()))?;
-    let root = path
-        .parent()
-        .unwrap_or(path)
+    let root = config
+        .workdir
+        .as_deref()
+        .unwrap_or_else(|| path.parent().unwrap_or(path))
         .canonicalize()
         .map_err(HeartbeatError::Io)?;
     *agent.tools_mut() = unattended_tools(config.mode, &root);
@@ -101,6 +102,8 @@ async fn run_agent(
         status,
         findings,
         raw_output,
+        tokens_used: agent.usage_stats().total_input_tokens
+            + agent.usage_stats().total_output_tokens,
         // The scheduler fills these in.
         checklist_path: String::new(),
         interval_secs: 0,
