@@ -12,6 +12,8 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   BINARY_NAME: colony
+  # The event router and heartbeat daemon; `heartbeat start` and `agent new` start it.
+  DAEMON_NAME: colony-events
   # Debug info for the whole workspace fills the ubuntu runner's disk.
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
@@ -108,8 +110,8 @@ jobs:
 
       # -- Build --------------------------------------------------------------
 
-      - name: Build release binary
-        run: cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
+      - name: Build release binaries
+        run: cargo build --release --bin ${{ env.BINARY_NAME }} --bin ${{ env.DAEMON_NAME }} --target ${{ matrix.target }}
 
       # -- Package ------------------------------------------------------------
 
@@ -124,8 +126,9 @@ jobs:
 
           mkdir -p "${STAGING}"
 
-          # Copy binary
+          # Copy binaries: colony finds colony-events next to itself
           cp "target/${{ matrix.target }}/release/${BINARY_NAME}" "${STAGING}/"
+          cp "target/${{ matrix.target }}/release/${DAEMON_NAME}" "${STAGING}/"
 
           # Copy claude-plugin directory
           cp -r claude-plugin/ "${STAGING}/claude-plugin"
@@ -314,7 +317,7 @@ jobs:
             end
 
             def install
-              bin.install "colony"
+              bin.install "colony", "colony-events"
 
               # Install Claude Code plugin
               if Dir.exist?("claude-plugin")

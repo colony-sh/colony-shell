@@ -1795,6 +1795,17 @@
       "notes": [
         "Completed 2026-11-12: 62_colony_secret.bats 4/4 (no keychain writes), colony-secure secrets tests 3; real set/read not run here (it writes to the user's keychain)"
       ]
+        },
+    {
+      "id": "F087",
+      "name": "Ship colony-events with colony",
+      "description": "release.yml builds colony-events beside colony and puts both in every tarball; the Homebrew formula installs both; scripts/build.sh builds and installs both. colony finds colony-events next to itself, so heartbeat start and agent new can start the daemon on an installed Colony.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": ["F084"],
+      "notes": [
+        "Completed 2026-11-12: local release build of both binaries; colony-events links only system libraries (otool). The workflow itself runs on the next tag"
+      ]
     }
   ]
 }

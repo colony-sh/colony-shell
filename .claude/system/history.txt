@@ -2287,3 +2287,5 @@
 [2026-11-12 09:20] TEST: 62_colony_secret.bats 4/4 (usage, bad names, empty value, never-stored name; nothing written to the keychain); colony-secure 29 (3 new); colony-agent 118, colony-exec 558, colony-events 9, colony-tuple 61; BATS 54-62 53/53; clippy clean. A real keychain round trip was not run: it writes to the owner's login keychain.
 [2026-11-12 09:20] BUG: colony-exec command_sub::tests::test_simple_command_substitution also hangs intermittently (seen once), like pipeline::tests::test_simple_pipeline. Both spawn children; untouched by this work.
 [2026-11-12 09:20] COMPLETE: F086.
+[2026-11-12 12:10] COMPLETE: F087 (ship colony-events). Owner approved. release.yml builds --bin colony --bin colony-events and packages both; formula `bin.install "colony", "colony-events"`; scripts/build.sh builds/installs both. Local release build OK; colony-events links only system libraries. The workflow change is unexercised until the next tag.
+[2026-11-12 12:10] NOTE: owner stored ANTHROPIC_API_KEY with `colony secret set`; `colony secret has` reads it back with the variable unset.
