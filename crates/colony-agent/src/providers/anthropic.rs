@@ -95,8 +95,10 @@ impl AnthropicProvider {
                 description: t.description.clone(),
                 input_schema: t.input_schema.clone(),
                 cache_control: None,
-                disable_user_input: Some(false),
-                input_examples: Some(vec![]),
+                // The Messages API refuses fields it does not know on a custom tool
+                // ("Extra inputs are not permitted"); None keeps them out of the JSON.
+                disable_user_input: None,
+                input_examples: None,
             })
             .collect()
     }
@@ -114,10 +116,11 @@ impl ModelProvider for AnthropicProvider {
             .build(&self.model, request.max_tokens);
         let stream = self.client.send_streaming(sdk_request).await?;
 
-        let unified_stream = stream.map(|event_result| {
-            event_result
+        let unified_stream = stream.scan(ToolCalls::default(), |calls, event_result| {
+            let event = event_result
                 .map_err(AgentError::from)
-                .and_then(Self::convert_stream_event)
+                .and_then(|event| calls.convert(event));
+            futures::future::ready(Some(event))
         });
 
         Ok(Box::pin(unified_stream))
@@ -147,59 +150,64 @@ impl ModelProvider for AnthropicProvider {
     }
 }
 
-impl AnthropicProvider {
-    /// Convert Claude SDK stream events to unified format
-    fn convert_stream_event(event: ClaudeStreamEvent) -> Result<ProviderStreamEvent> {
-        match event {
-            ClaudeStreamEvent::ContentBlockDelta { delta, index, .. } => {
-                if let Some(text) = delta.text() {
-                    Ok(ProviderStreamEvent::TextDelta {
-                        text: text.to_string(),
-                        index,
-                    })
-                } else {
-                    // Skip non-text deltas
-                    Ok(ProviderStreamEvent::TextDelta {
-                        text: String::new(),
-                        index: 0,
-                    })
-                }
-            }
+/// Tool calls being streamed, by content-block index. A tool's input arrives as pieces of
+/// JSON (`input_json_delta`) between its block's start and stop; the call is complete, and
+/// reported as [`ProviderStreamEvent::ToolCallComplete`], only at the stop.
+#[derive(Default)]
+struct ToolCalls {
+    open: std::collections::HashMap<usize, (String, String, String)>,
+}
 
+impl ToolCalls {
+    /// Convert one SDK stream event. Events with nothing to report become an empty text delta.
+    fn convert(&mut self, event: ClaudeStreamEvent) -> Result<ProviderStreamEvent> {
+        let nothing = |index| ProviderStreamEvent::TextDelta {
+            text: String::new(),
+            index,
+        };
+        match event {
             ClaudeStreamEvent::ContentBlockStart {
-                content_block,
+                content_block: claude_sdk::ContentBlock::ToolUse { id, name, .. },
                 index,
             } => {
-                if let claude_sdk::ContentBlock::ToolUse { id, name, .. } = content_block {
-                    Ok(ProviderStreamEvent::ToolCallStart {
-                        id: id.clone(),
-                        name: name.clone(),
-                    })
-                } else {
-                    Ok(ProviderStreamEvent::TextDelta {
-                        text: String::new(),
+                self.open
+                    .insert(index, (id.clone(), name.clone(), String::new()));
+                Ok(ProviderStreamEvent::ToolCallStart { id, name })
+            }
+            ClaudeStreamEvent::ContentBlockDelta { delta, index } => {
+                if let Some(text) = delta.text() {
+                    return Ok(ProviderStreamEvent::TextDelta {
+                        text: text.to_string(),
                         index,
-                    })
+                    });
                 }
+                if let (Some(json), Some((_, _, input))) =
+                    (delta.partial_json(), self.open.get_mut(&index))
+                {
+                    input.push_str(json);
+                }
+                // Thinking and signature deltas are not shown.
+                Ok(nothing(index))
             }
-
             ClaudeStreamEvent::ContentBlockStop { index } => {
-                // Block complete - no-op for now
-                Ok(ProviderStreamEvent::TextDelta {
-                    text: String::new(),
-                    index,
-                })
+                let Some((id, name, input)) = self.open.remove(&index) else {
+                    return Ok(nothing(index));
+                };
+                // A tool with no parameters streams no JSON at all.
+                let input = if input.trim().is_empty() {
+                    serde_json::json!({})
+                } else {
+                    serde_json::from_str(&input).map_err(|e| {
+                        AgentError::Protocol(format!("tool {name}: input is not JSON: {e}"))
+                    })?
+                };
+                Ok(ProviderStreamEvent::ToolCallComplete { id, name, input })
             }
-
             ClaudeStreamEvent::MessageStop => Ok(ProviderStreamEvent::Done),
-
-            _ => {
-                // Other events (ping, metadata) - ignore
-                Ok(ProviderStreamEvent::TextDelta {
-                    text: String::new(),
-                    index: 0,
-                })
-            }
+            ClaudeStreamEvent::Error { error } => Ok(ProviderStreamEvent::Error {
+                message: format!("{error:?}"),
+            }),
+            _ => Ok(nothing(0)),
         }
     }
 }
@@ -207,6 +215,93 @@ impl AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sse(json: serde_json::Value) -> ClaudeStreamEvent {
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn a_streamed_tool_call_completes_with_its_assembled_input() {
+        let mut calls = ToolCalls::default();
+        let events = [
+            sse(
+                serde_json::json!({"type": "content_block_start", "index": 1,
+                "content_block": {"type": "tool_use", "id": "t1", "name": "file_read", "input": {}}}),
+            ),
+            sse(
+                serde_json::json!({"type": "content_block_delta", "index": 1,
+                "delta": {"type": "input_json_delta", "partial_json": "{\"path\": \"REA"}}),
+            ),
+            sse(
+                serde_json::json!({"type": "content_block_delta", "index": 1,
+                "delta": {"type": "input_json_delta", "partial_json": "DME.md\"}"}}),
+            ),
+            sse(serde_json::json!({"type": "content_block_stop", "index": 1})),
+        ];
+        let out: Vec<_> = events
+            .into_iter()
+            .map(|e| calls.convert(e).unwrap())
+            .collect();
+        assert!(
+            matches!(&out[0], ProviderStreamEvent::ToolCallStart { name, .. } if name == "file_read")
+        );
+        let ProviderStreamEvent::ToolCallComplete { id, name, input } = &out[3] else {
+            panic!("no completed call: {out:?}");
+        };
+        assert_eq!((id.as_str(), name.as_str()), ("t1", "file_read"));
+        assert_eq!(input, &serde_json::json!({"path": "README.md"}));
+    }
+
+    #[test]
+    fn a_tool_call_with_no_input_completes_with_an_empty_object() {
+        let mut calls = ToolCalls::default();
+        calls
+            .convert(sse(
+                serde_json::json!({"type": "content_block_start", "index": 0,
+                "content_block": {"type": "tool_use", "id": "t", "name": "search", "input": {}}}),
+            ))
+            .unwrap();
+        let done = calls
+            .convert(sse(
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+            ))
+            .unwrap();
+        assert!(
+            matches!(done, ProviderStreamEvent::ToolCallComplete { input, .. } if input == serde_json::json!({}))
+        );
+    }
+
+    #[test]
+    fn text_blocks_still_stream_as_text() {
+        let mut calls = ToolCalls::default();
+        let ev = calls
+            .convert(sse(
+                serde_json::json!({"type": "content_block_delta", "index": 0,
+                "delta": {"type": "text_delta", "text": "PASS: ok"}}),
+            ))
+            .unwrap();
+        assert!(matches!(ev, ProviderStreamEvent::TextDelta { text, .. } if text == "PASS: ok"));
+        let stop = calls
+            .convert(sse(
+                serde_json::json!({"type": "content_block_stop", "index": 0}),
+            ))
+            .unwrap();
+        assert!(matches!(stop, ProviderStreamEvent::TextDelta { text, .. } if text.is_empty()));
+    }
+
+    #[test]
+    fn tools_carry_only_fields_the_messages_api_accepts() {
+        let provider = AnthropicProvider::new("k", "m");
+        let tools = provider.convert_tools(&[ToolDefinition {
+            name: "file_read".into(),
+            description: "read".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+        }]);
+        let json = serde_json::to_value(&tools[0]).unwrap();
+        let mut keys: Vec<_> = json.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["description", "input_schema", "name"]);
+    }
 
     #[test]
     fn test_provider_creation() {

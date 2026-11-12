@@ -2289,3 +2289,9 @@
 [2026-11-12 09:20] COMPLETE: F086.
 [2026-11-12 12:10] COMPLETE: F087 (ship colony-events). Owner approved. release.yml builds --bin colony --bin colony-events and packages both; formula `bin.install "colony", "colony-events"`; scripts/build.sh builds/installs both. Local release build OK; colony-events links only system libraries. The workflow change is unexercised until the next tag.
 [2026-11-12 12:10] NOTE: owner stored ANTHROPIC_API_KEY with `colony secret set`; `colony secret has` reads it back with the variable unset.
+[2026-11-12 12:30] TEST: first live run. Owner approved a heartbeat run on Anthropic with the key from the keychain (ANTHROPIC_API_KEY unset). Three failures in turn, each fixed (F088):
+[2026-11-12 12:30] BUG: 400 "tools.0.custom.disable_user_input: Extra inputs are not permitted": the Anthropic provider set disable_user_input and input_examples on every tool. Both now None (skipped in the JSON).
+[2026-11-12 12:30] BUG: 404 "model: claude-3-5-sonnet-20241022": that model was retired 2025-10-28. Default Anthropic model is now claude-opus-5-5. Cloud's "claude-3.5-sonnet" default untouched (not an Anthropic API id).
+[2026-11-12 12:30] BUG: run ended "unstructured" with no output: the provider dropped input_json_delta and never emitted ToolCallComplete, so a model that called a tool got nothing back and the turn ended empty. Any Anthropic tool use in colony-agent was broken. ToolCalls now assembles each tool_use block's JSON and completes it at content_block_stop; stream Error events are no longer swallowed.
+[2026-11-12 12:30] TEST: live run then passed in 9.8s ("PASS: README.md is in ... (the file search returned 1 match)"). colony-agent 122 (4 new), colony-exec 558, BATS 58-62 24/24, clippy clean.
+[2026-11-12 12:30] COMPLETE: F088.

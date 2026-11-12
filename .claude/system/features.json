@@ -1806,6 +1806,17 @@
       "notes": [
         "Completed 2026-11-12: local release build of both binaries; colony-events links only system libraries (otool). The workflow itself runs on the next tag"
       ]
+        },
+    {
+      "id": "F088",
+      "name": "Anthropic provider works on the current API: tools and model",
+      "description": "Three bugs found running the first live heartbeat on Anthropic: tool definitions carried disable_user_input/input_examples, which the Messages API rejects (400); the default model claude-3-5-sonnet-20241022 is retired (404); and streamed tool calls were never completed (input_json_delta was dropped, ToolCallComplete never emitted), so no Anthropic tool ever ran. Default is now claude-opus-5-5.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": ["F086"],
+      "notes": [
+        "Completed 2026-11-12: live heartbeat run with the key from the keychain: pass in 9.8s, the model used search; 4 new provider unit tests"
+      ]
     }
   ]
 }

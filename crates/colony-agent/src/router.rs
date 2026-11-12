@@ -52,7 +52,8 @@ impl ProviderType {
     pub fn default_model(&self) -> &'static str {
         match self {
             Self::Cloud => "claude-3.5-sonnet",
-            Self::Anthropic => "claude-3-5-sonnet-20241022",
+            // claude-3-5-sonnet-20241022 was retired on 2025-10-28; requests to it 404.
+            Self::Anthropic => "claude-opus-5-5",
             Self::OpenAI => "gpt-4-turbo",
             Self::Ollama => "llama3",
         }
@@ -374,10 +375,7 @@ mod tests {
     #[test]
     fn test_default_models() {
         assert_eq!(ProviderType::Cloud.default_model(), "claude-3.5-sonnet");
-        assert_eq!(
-            ProviderType::Anthropic.default_model(),
-            "claude-3-5-sonnet-20241022"
-        );
+        assert_eq!(ProviderType::Anthropic.default_model(), "claude-opus-5-5");
         assert_eq!(ProviderType::OpenAI.default_model(), "gpt-4-turbo");
         assert_eq!(ProviderType::Ollama.default_model(), "llama3");
     }
