@@ -65,6 +65,9 @@ pub struct HeartbeatConfig {
     /// named agent with an image, never by the checklist.
     #[serde(skip)]
     pub container: Option<String>,
+    /// Set to stop the run at once. Set by the scheduler, never by the checklist.
+    #[serde(skip)]
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for HeartbeatConfig {
@@ -78,6 +81,7 @@ impl Default for HeartbeatConfig {
             token_budget: 10_000,
             workdir: None,
             container: None,
+            cancel: None,
         }
     }
 }

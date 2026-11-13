@@ -233,6 +233,13 @@ async fn run_event_loop(
     shutdown: Arc<AtomicBool>,
     reload: Arc<AtomicBool>,
 ) {
+    match heartbeat::recover(log, "daemon") {
+        Ok(dead) if !dead.is_empty() => {
+            info!("Recovered runs that died with the last daemon: {dead:?}")
+        }
+        Ok(_) => {}
+        Err(e) => warn!("Failed to recover dead runs: {e}"),
+    }
     let mut heartbeats = Heartbeats::default();
     heartbeats.catch_up(log);
     let mut listeners = load_listeners(registry);
@@ -523,8 +530,8 @@ impl Heartbeats {
 impl Heartbeats {
     /// Run a scheduler for each sleeping or running agent and stop the rest; go on with
     /// each parked run whose asks are all answered.
-    // ponytail: an agent the log says is running when the daemon starts died mid-run; it is
-    // treated as asleep until failure handling (step 8) answers that run missed.
+    // An agent running here is this daemon's own run: `heartbeat::recover` answered any left
+    // by an earlier daemon before the first reconcile.
     fn reconcile_agents(&mut self) {
         for agent in self.agents.iter().filter(|a| a.ready_to_resume()) {
             if self.resuming.contains_key(&agent.name) {

@@ -594,7 +594,7 @@ fn print_help() {
     println!(
         "agent new <name> --every <dur> --charter <text> [--in <dir>] [--mode notify|active|full]"
     );
-    println!("                 [--timeout <dur>] [--daily-tokens <n>]");
+    println!("                 [--timeout <dur>] [--run-tokens <n>] [--daily-tokens <n>]");
     println!("                 [--image run|<image> [--allow-host <host>]...]");
     println!("                 --image runs each run in a fresh container that can reach only");
     println!("                 the --allow-host hosts; `run` is the image scripts/build-run-image.sh makes");
@@ -668,6 +668,11 @@ fn cmd_new(log: &EventLog, args: &[String], actor: &str, cwd: &Path) -> Result<(
                 });
             }
             "--allow-host" => spec.grants.push(crate::sandbox::check_grant(value)?),
+            "--run-tokens" => {
+                spec.token_budget = value
+                    .parse()
+                    .map_err(|_| format!("bad token count '{value}'"))?;
+            }
             "--daily-tokens" => {
                 spec.daily_tokens = value
                     .parse()

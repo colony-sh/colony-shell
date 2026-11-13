@@ -1916,6 +1916,20 @@
         "Started 2026-11-13: user picked: build colony for Linux in rust:1-bookworm (grant: docker.io, crates.io); allowlist proxy; keep the rootful podman machine and harden each container",
         "Completed 2026-11-13: 65_container_runs.bats 4/4; BATS 54-65 68/68"
       ]
+    },
+    {
+      "id": "F092",
+      "name": "Failure handling and restart",
+      "description": "Colony first slice, build step 8. At start the daemon answers every run the log still shows running (it died with the last daemon): missed (RunResumed if it was a resumed run), a blocked report, its container, proxy and network removed with ContainerRemoved, and the agent back to sleep. During a run a watch asks podman every second whether the container is still running; if not, the run is cancelled at once and answered missed. Time and token budgets stop a run, answer missed and post a blocked report (agent new --run-tokens). Secret files (.env, .env.* but .env.example, *.pem/.key/.p12/.pfx, SSH private keys, credentials.json, .npmrc, .netrc, .pypirc, .aws/.ssh/.gnupg) are left out of the run's staged workdir, and the skipped paths are recorded on ContainerStarted. Container names carry a hash of the event log's path, so two logs never share one.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": [
+        "F091"
+      ],
+      "notes": [
+        "Started 2026-11-13",
+        "Completed 2026-11-13: 66_failure_restart.bats 6/6; BATS 54-66 74/74. The secret-file exclusion came from the room (relayed for Jesse)."
+      ]
     }
   ]
 }

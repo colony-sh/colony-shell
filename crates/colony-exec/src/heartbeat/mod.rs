@@ -123,7 +123,15 @@ fn run_beat(
         Err(e) => (Err(e), Vec::new()),
         Ok(sandbox) => {
             config.container = sandbox.as_ref().map(|s| s.container.clone());
-            let outcome = callback(&config, path, body);
+            let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            config.cancel = Some(std::sync::Arc::clone(&cancel));
+            let watch = sandbox.as_ref().map(|s| s.watch(cancel));
+            let mut outcome = callback(&config, path, body);
+            if watch.is_some_and(crate::sandbox::Watch::stop) {
+                outcome = Err(HeartbeatError::Agent(
+                    "the run's container stopped mid-run; the run was ended".to_string(),
+                ));
+            }
             let evidence = sandbox
                 .map(|s| agent_beat::close_sandbox(log, actor, beat, &s))
                 .unwrap_or_default();
@@ -132,6 +140,23 @@ fn run_beat(
     };
     agent_beat::finish(log, actor, beat, kind, &outcome, evidence)?;
     Ok(outcome)
+}
+
+/// Answer every run that died with the daemon. Call it when the daemon starts, before any
+/// beat: an agent the log says is running has no run in this process, so its run ended
+/// when the last daemon stopped. Each is answered missed (with `RunResumed` if it was a
+/// resumed run), posts a blocked report, has its container removed, and goes back to
+/// sleep. Returns the agents recovered.
+pub fn recover(log: &EventLog, actor: &str) -> Result<Vec<String>, HeartbeatError> {
+    let all = crate::agents::Agents::from_log(log).map_err(HeartbeatError::Agent)?;
+    let dead: Vec<_> = all
+        .iter()
+        .filter(|a| a.state == crate::agents::AgentState::Running)
+        .collect();
+    for agent in &dead {
+        agent_beat::recover(log, actor, agent)?;
+    }
+    Ok(dead.iter().map(|a| a.name.clone()).collect())
 }
 
 fn db_error(e: impl std::fmt::Display) -> HeartbeatError {
@@ -793,8 +818,7 @@ mod agent_beat {
         )
         .map_err(|e| agent_err(format!("the run's container did not start: {e}")))?;
         let run_addr = agents::run_address(&beat.name, beat.run);
-        let data =
-            json!({ "container": sandbox.container, "image": image, "grants": beat.spec.grants });
+        let data = json!({ "container": sandbox.container, "image": image, "grants": beat.spec.grants, "skipped": sandbox.skipped });
         if let Err(e) = log.append(
             actor,
             CONTAINER_STARTED,
@@ -862,6 +886,74 @@ mod agent_beat {
             json!({ "container": sandbox.container }),
         );
         evidence
+    }
+
+    /// Answer one agent's dead run. See [`super::recover`].
+    pub(super) fn recover(
+        log: &EventLog,
+        actor: &str,
+        agent: &agents::AgentRecord,
+    ) -> Result<(), HeartbeatError> {
+        let run_addr = agents::run_address(&agent.name, agent.runs);
+        let events = log.about(&run_addr).map_err(db_error)?;
+        let count = |kind: &str| events.iter().filter(|e| e.kind == kind).count();
+        let fired = events
+            .iter()
+            .rev()
+            .find(|e| e.kind == HEARTBEAT_FIRED)
+            .map(|e| e.seq);
+        if agent.spec.image.is_some() {
+            let sandbox = Sandbox::named(&agent.name, agent.runs);
+            sandbox.remove();
+            if count(CONTAINER_STARTED) > count(CONTAINER_REMOVED) {
+                log.append(
+                    actor,
+                    CONTAINER_REMOVED,
+                    Some(&run_addr),
+                    fired,
+                    json!({ "container": sandbox.container, "reason": "the daemon stopped mid-run" }),
+                )
+                .map_err(db_error)?;
+            }
+        }
+        // A run already answered once was parked and resumed: this is the resumed part.
+        let kind = if count(HEARTBEAT_ANSWERED) > 0 {
+            agents::RUN_RESUMED
+        } else {
+            HEARTBEAT_ANSWERED
+        };
+        let why = "the run died: the daemon stopped while it was running";
+        let answered = log
+            .append(
+                actor,
+                kind,
+                Some(&run_addr),
+                fired,
+                json!({ "outcome": "missed", "status": "error", "error": why, "tokens": 0 }),
+            )
+            .map_err(db_error)?;
+        let evidence = vec![format!("colony://local/event/{answered}")];
+        post(
+            log,
+            actor,
+            &run_addr,
+            answered,
+            Report::from_output(why, true, evidence),
+        )?;
+        log.append(
+            actor,
+            AGENT_STATE_CHANGED,
+            Some(&agent.address()),
+            None,
+            json!({ "from": AgentState::Running, "to": AgentState::Sleeping, "run": agent.runs }),
+        )
+        .map_err(db_error)?;
+        tracing::warn!(
+            "{}: run {} died with the daemon; answered missed",
+            agent.name,
+            agent.runs
+        );
+        Ok(())
     }
 
     fn post(
@@ -1024,6 +1116,100 @@ fn find_heartbeat_md(start_dir: &std::path::Path) -> Result<PathBuf, HeartbeatEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod recovery {
+        use super::super::recover;
+        use crate::agents::*;
+        use crate::heartbeat::{HEARTBEAT_ANSWERED, HEARTBEAT_FIRED};
+        use colony_tuple::EventLog;
+        use serde_json::json;
+
+        fn running_agent(log: &EventLog) {
+            let spec = AgentSpec {
+                charter: "c".into(),
+                every_secs: 60,
+                mode: crate::heartbeat::SecurityMode::Notify,
+                workdir: "/w".into(),
+                timeout_secs: 30,
+                max_tool_calls: 5,
+                token_budget: 100,
+                daily_tokens: 1000,
+                notes: vec![],
+                image: None,
+                grants: vec![],
+            };
+            let agent = agent_address("a");
+            log.append(
+                "t",
+                AGENT_CREATED,
+                Some(&agent),
+                None,
+                serde_json::to_value(spec).unwrap(),
+            )
+            .unwrap();
+            log.append(
+                "d",
+                AGENT_STATE_CHANGED,
+                Some(&agent),
+                None,
+                json!({"from": "sleeping", "to": "running"}),
+            )
+            .unwrap();
+            log.append(
+                "d",
+                HEARTBEAT_FIRED,
+                Some(&run_address("a", 1)),
+                None,
+                json!({}),
+            )
+            .unwrap();
+        }
+
+        fn kinds(log: &EventLog) -> Vec<String> {
+            log.about(&run_address("a", 1))
+                .unwrap()
+                .into_iter()
+                .map(|e| e.kind)
+                .collect()
+        }
+
+        #[test]
+        fn a_run_that_died_with_the_daemon_is_answered_missed_and_the_agent_sleeps() {
+            let dir = tempfile::tempdir().unwrap();
+            let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+            running_agent(&log);
+            assert_eq!(recover(&log, "daemon").unwrap(), ["a"]);
+            assert_eq!(
+                kinds(&log),
+                [HEARTBEAT_FIRED, HEARTBEAT_ANSWERED, REPORT_POSTED]
+            );
+            let answer = log.of_kind(HEARTBEAT_ANSWERED, 1).unwrap().remove(0);
+            assert_eq!(answer.data["outcome"], "missed");
+            let report = log.of_kind(REPORT_POSTED, 1).unwrap().remove(0);
+            assert_eq!(report.data["status"], "blocked");
+            let agents = Agents::from_log(&log).unwrap();
+            assert_eq!(agents.get("a").unwrap().state, AgentState::Sleeping);
+            assert!(recover(&log, "daemon").unwrap().is_empty(), "once only");
+        }
+
+        #[test]
+        fn a_resumed_run_that_died_is_answered_as_a_resume() {
+            let dir = tempfile::tempdir().unwrap();
+            let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+            running_agent(&log);
+            log.append(
+                "d",
+                HEARTBEAT_ANSWERED,
+                Some(&run_address("a", 1)),
+                None,
+                json!({"outcome": "needs_you"}),
+            )
+            .unwrap();
+            recover(&log, "daemon").unwrap();
+            assert_eq!(kinds(&log).last().map(String::as_str), Some(REPORT_POSTED));
+            assert_eq!(log.of_kind(RUN_RESUMED, 5).unwrap().len(), 1);
+        }
+    }
 
     #[test]
     fn test_find_heartbeat_md_in_current_dir() {

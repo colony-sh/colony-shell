@@ -85,20 +85,37 @@ async fn run_agent(
     let prompt = build_checklist_prompt(checklist, None, &cwd, None);
     let limit = Duration::from_secs(config.timeout_secs);
 
-    let (status, raw_output) = match tokio::time::timeout(limit, turns(&mut agent, prompt)).await {
-        Err(_) => (
+    // Set from outside (a watch on the run's container) to stop the run now.
+    let cancelled = async {
+        let Some(flag) = config.cancel.as_ref() else {
+            return std::future::pending().await;
+        };
+        while !flag.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    };
+    let finished = tokio::select! {
+        r = tokio::time::timeout(limit, turns(&mut agent, prompt)) => Some(r),
+        () = cancelled => None,
+    };
+    let (status, raw_output) = match finished {
+        None => (
+            HeartbeatStatus::Error,
+            "stopped: the run was cancelled".to_string(),
+        ),
+        Some(Err(_)) => (
             HeartbeatStatus::Timeout,
             format!("stopped: no answer within {}s", config.timeout_secs),
         ),
-        Ok(Err(e)) => (HeartbeatStatus::Error, e.to_string()),
-        Ok(Ok(output)) if agent.budget_warning() == BudgetWarning::Exceeded => (
+        Some(Ok(Err(e))) => (HeartbeatStatus::Error, e.to_string()),
+        Some(Ok(Ok(output))) if agent.budget_warning() == BudgetWarning::Exceeded => (
             HeartbeatStatus::Error,
             format!(
                 "{output}\n[stopped: token budget of {} exceeded]",
                 config.token_budget
             ),
         ),
-        Ok(Ok(output)) => (derive_status(&extract_findings(&output)), output),
+        Some(Ok(Ok(output))) => (derive_status(&extract_findings(&output)), output),
     };
     let findings = match status {
         HeartbeatStatus::Timeout | HeartbeatStatus::Error => Vec::new(),
