@@ -148,3 +148,38 @@ park() {
     wait_for RunResumed 1
     [ "$(count HeartbeatFired)" -ge 1 ]
 }
+
+@test "a resumed run that asks again gets a new ask, which the viewport can answer" {
+    park
+    python3 -I -c 'import json; print(json.dumps(["(the first beat, already served)", "HEADLINE: Drafted a second reply\nASK: Send this one too?\nOPTIONS: yes | no", "PASS: sent both"]))' > "$work/ollama/script"
+    run answer yes
+    [ "$output" = "200" ]
+    # The resume asks again: a second ask, not the first one's address.
+    for _ in $(seq 100); do [ "$(count ReportPosted)" -ge 2 ] && break; sleep 0.1; done
+    run q "SELECT json_extract(data, '$.asks[0].address') FROM events WHERE kind = 'ReportPosted' ORDER BY seq DESC LIMIT 1"
+    [ "$output" = "colony://local/agent/lead-miner/run/1/ask/2" ]
+    for _ in $(seq 50); do "$COLONY" -c 'agent list' | grep -q parked && break; sleep 0.1; done
+    run curl -fsS "$(view)api/feed"
+    [[ "$output" == *'"needs_you":[{'*'"question":"Send this one too?"'*'"answer":null'* ]]
+
+    ASK='colony://local/agent/lead-miner/run/1/ask/2'
+    run answer yes
+    [ "$output" = "200" ]
+    wait_for RunResumed 2 100
+    [ "$(count HeartbeatFired)" -eq 1 ]
+}
+
+@test "a resume past the daily token budget is refused: the run ends missed and the agent sleeps" {
+    "$COLONY" -c 'agent new lead-miner --every 1s --daily-tokens 1 --charter "Find threads."'
+    wait_for ReportPosted 1
+    for _ in $(seq 50); do "$COLONY" -c 'agent list' | grep -q parked && break; sleep 0.1; done
+    run answer yes
+    [ "$output" = "200" ]
+    wait_for RunResumed 1 100
+    run q "SELECT json_extract(data, '$.outcome') || '|' || json_extract(data, '$.reason') FROM events WHERE kind = 'RunResumed'"
+    [[ "$output" == "missed|daily token budget spent ("*" of 1)" ]]
+    run q "SELECT json_extract(data, '$.status') FROM events WHERE kind = 'ReportPosted' ORDER BY seq DESC LIMIT 1"
+    [ "$output" = "blocked" ]
+    # Only the first part asked the model.
+    [ "$(wc -l < "$work/ollama/requests.jsonl")" -eq 1 ]
+}

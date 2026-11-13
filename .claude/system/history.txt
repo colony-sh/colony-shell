@@ -2333,3 +2333,11 @@
 [2026-11-13 18:10] REFACTOR: the viewport's /open address resolution became viewport::resolve and event_json, shared with the socket.
 [2026-11-13 18:30] TEST: 67_ade_socket.bats 5/5 (modes and status; agents/feed/open; answer resumes the run, actor ade; subscribe streams live and replays from a seq; bad requests keep the connection). BATS 54-67 79/79. colony-exec 575, colony-events 12; clippy clean.
 [2026-11-13 18:30] COMPLETE: F093.
+[2026-11-13 18:40] START: F094, fixes from helper-4's review of F082-F093. Each finding checked against the code before fixing.
+[2026-11-13 18:45] FIX: ask addresses were numbered per report, so a resumed run's ask reused ask/1, was shown answered, and could never be answered. They are now numbered across the run.
+[2026-11-13 18:50] FIX: recovery answered missed (and dropped the ask of) a run whose daemon died between ReportPosted and running->parked. It now finds the running part's start (HeartbeatFired or parked->running) and, if that part was answered, parks or sleeps the agent instead.
+[2026-11-13 18:55] FIX: a resume skipped the daily budget and got a fresh per-run token budget. It now gets what the run has left, and is refused past either budget.
+[2026-11-13 19:00] FIX: the login item dropped COLONY_VIEW_ADDR, so a reboot lost phone access. FIX: viewport and ADE socket SQLite calls moved to spawn_blocking. FIX: colony://local/view/reports resolved to nothing in the viewport and the socket.
+[2026-11-13 19:00] CORRECTION: the first slice was reported complete at step 8, but agent notes with approval (a kickoff decision) were never built. Opened F095.
+[2026-11-13 19:20] TEST: recovery units 4/4, login and view units; 64_ask_answer 7/7 (second ask in a run, resume past daily budget). BATS 54-67 81/81. colony-exec 579; clippy clean.
+[2026-11-13 19:20] COMPLETE: F094.

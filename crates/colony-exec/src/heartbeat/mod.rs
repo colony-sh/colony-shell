@@ -85,12 +85,13 @@ pub fn resume_agent(name: &str, actor: &str) -> Result<HeartbeatRun, HeartbeatEr
         .ok_or_else(|| HeartbeatError::NoProvider("no agent callback configured".to_string()))?;
     let path = crate::agents::checklist_path(name);
     let content = std::fs::read_to_string(&path)?;
-    let (config, _) = parse_heartbeat(&content);
+    let (mut config, _) = parse_heartbeat(&content);
     let charter = content
         .find("\n---")
         .map_or(content.as_str(), |i| &content[i + 4..]);
     let log = EventLog::open_default().map_err(db_error)?;
     let resumed = agent_beat::resume(&log, actor, name)?;
+    config.token_budget = resumed.tokens_left;
     let body = resumed.prompt(charter);
     run_beat(
         &log,
@@ -635,6 +636,8 @@ mod agent_beat {
         pub(super) beat: Beat,
         report: Report,
         answers: Vec<String>,
+        /// What is left of the run's token budget.
+        pub(super) tokens_left: u32,
     }
 
     impl Resumed {
@@ -771,12 +774,60 @@ mod agent_beat {
             .map(|a| a.at_ms)
             .unwrap_or_default();
         let run_addr = agents::run_address(name, agent.runs);
-        let outputs = log
-            .about(&run_addr)
-            .map_err(db_error)?
+        let run_events = log.about(&run_addr).map_err(db_error)?;
+        let outputs = run_events
             .iter()
             .filter(|ev| ev.kind == OUTPUT_RECORDED)
             .count() as u64;
+        // A resumed part spends from the same budgets as the beat it continues.
+        let used: u64 = run_events
+            .iter()
+            .filter(|e| e.kind == HEARTBEAT_ANSWERED || e.kind == agents::RUN_RESUMED)
+            .filter_map(|e| e.data["tokens"].as_u64())
+            .sum();
+        let tokens_left = u64::from(agent.spec.token_budget).saturating_sub(used);
+        let spent = agents::tokens_today(log, name).map_err(agent_err)?;
+        let refused = if spent >= agent.spec.daily_tokens {
+            Some(format!(
+                "daily token budget spent ({spent} of {})",
+                agent.spec.daily_tokens
+            ))
+        } else if tokens_left == 0 {
+            Some(format!(
+                "the run's token budget of {} is spent",
+                agent.spec.token_budget
+            ))
+        } else {
+            None
+        };
+        if let Some(why) = refused {
+            let answered = log
+                .append(
+                    actor,
+                    agents::RUN_RESUMED,
+                    Some(&run_addr),
+                    None,
+                    json!({ "outcome": "missed", "reason": why, "tokens": 0 }),
+                )
+                .map_err(db_error)?;
+            let evidence = vec![format!("colony://local/event/{answered}")];
+            post(
+                log,
+                actor,
+                &run_addr,
+                answered,
+                Report::from_output(&why, true, evidence),
+            )?;
+            log.append(
+                actor,
+                AGENT_STATE_CHANGED,
+                Some(&agent.address()),
+                None,
+                json!({ "from": AgentState::Parked, "to": AgentState::Sleeping, "run": agent.runs }),
+            )
+            .map_err(db_error)?;
+            return Err(agent_err(why));
+        }
         let changed = log
             .append(
                 actor,
@@ -796,6 +847,7 @@ mod agent_beat {
             },
             answers: answers.iter().map(|a| a.text.clone()).collect(),
             report,
+            tokens_left: u32::try_from(tokens_left).unwrap_or(u32::MAX),
         })
     }
 
@@ -888,20 +940,52 @@ mod agent_beat {
         evidence
     }
 
-    /// Answer one agent's dead run. See [`super::recover`].
+    /// Settle one agent's run that the log shows running with no daemon behind it. If the
+    /// part that was running (a beat, or a resume) had already been answered, the daemon died
+    /// just before putting the agent to rest: it parks if that part's report asks something,
+    /// else sleeps. Otherwise the part died: it is answered missed with a blocked report.
+    /// Either way its container goes.
     pub(super) fn recover(
         log: &EventLog,
         actor: &str,
         agent: &agents::AgentRecord,
     ) -> Result<(), HeartbeatError> {
         let run_addr = agents::run_address(&agent.name, agent.runs);
-        let events = log.about(&run_addr).map_err(db_error)?;
-        let count = |kind: &str| events.iter().filter(|e| e.kind == kind).count();
-        let fired = events
+        let run = run_addr.to_string();
+        let events = log.about(&agent.address()).map_err(db_error)?;
+        let about_run = |e: &&colony_tuple::Event| e.subject.as_deref() == Some(run.as_str());
+        // Where the running part began: the beat's fire, or the last parked-to-running.
+        let (start, resumed) = events
             .iter()
             .rev()
-            .find(|e| e.kind == HEARTBEAT_FIRED)
+            .filter(|e| {
+                (e.kind == HEARTBEAT_FIRED && about_run(e))
+                    || (e.kind == AGENT_STATE_CHANGED
+                        && e.data["from"] == "parked"
+                        && e.data["to"] == "running")
+            })
+            .map(|e| (e.seq, e.kind == AGENT_STATE_CHANGED))
+            .next()
+            .unwrap_or((0, false));
+        let after = |kind: &str| {
+            events
+                .iter()
+                .filter(about_run)
+                .rfind(|e| e.seq > start && e.kind == kind)
+        };
+        let count = |kind: &str| {
+            events
+                .iter()
+                .filter(about_run)
+                .filter(|e| e.kind == kind)
+                .count()
+        };
+        let fired = events
+            .iter()
+            .filter(about_run)
+            .rfind(|e| e.kind == HEARTBEAT_FIRED)
             .map(|e| e.seq);
+
         if agent.spec.image.is_some() {
             let sandbox = Sandbox::named(&agent.name, agent.runs);
             sandbox.remove();
@@ -916,43 +1000,56 @@ mod agent_beat {
                 .map_err(db_error)?;
             }
         }
-        // A run already answered once was parked and resumed: this is the resumed part.
-        let kind = if count(HEARTBEAT_ANSWERED) > 0 {
-            agents::RUN_RESUMED
+
+        let answered = after(HEARTBEAT_ANSWERED).or_else(|| after(agents::RUN_RESUMED));
+        let to = if let Some(answer) = answered {
+            let asks = after(REPORT_POSTED)
+                .filter(|r| r.seq > answer.seq)
+                .is_some_and(|r| r.data["asks"].as_array().is_some_and(|a| !a.is_empty()));
+            if asks {
+                AgentState::Parked
+            } else {
+                AgentState::Sleeping
+            }
         } else {
-            HEARTBEAT_ANSWERED
-        };
-        let why = "the run died: the daemon stopped while it was running";
-        let answered = log
-            .append(
+            let kind = if resumed {
+                agents::RUN_RESUMED
+            } else {
+                HEARTBEAT_ANSWERED
+            };
+            let why = "the run died: the daemon stopped while it was running";
+            let answered = log
+                .append(
+                    actor,
+                    kind,
+                    Some(&run_addr),
+                    fired,
+                    json!({ "outcome": "missed", "status": "error", "error": why, "tokens": 0 }),
+                )
+                .map_err(db_error)?;
+            let evidence = vec![format!("colony://local/event/{answered}")];
+            post(
+                log,
                 actor,
-                kind,
-                Some(&run_addr),
-                fired,
-                json!({ "outcome": "missed", "status": "error", "error": why, "tokens": 0 }),
-            )
-            .map_err(db_error)?;
-        let evidence = vec![format!("colony://local/event/{answered}")];
-        post(
-            log,
-            actor,
-            &run_addr,
-            answered,
-            Report::from_output(why, true, evidence),
-        )?;
+                &run_addr,
+                answered,
+                Report::from_output(why, true, evidence),
+            )?;
+            tracing::warn!(
+                "{}: run {} died with the daemon; answered missed",
+                agent.name,
+                agent.runs
+            );
+            AgentState::Sleeping
+        };
         log.append(
             actor,
             AGENT_STATE_CHANGED,
             Some(&agent.address()),
             None,
-            json!({ "from": AgentState::Running, "to": AgentState::Sleeping, "run": agent.runs }),
+            json!({ "from": AgentState::Running, "to": to, "run": agent.runs }),
         )
         .map_err(db_error)?;
-        tracing::warn!(
-            "{}: run {} died with the daemon; answered missed",
-            agent.name,
-            agent.runs
-        );
         Ok(())
     }
 
@@ -963,7 +1060,17 @@ mod agent_beat {
         cause: i64,
         mut report: Report,
     ) -> Result<(), HeartbeatError> {
-        for (n, ask) in (1..).zip(&mut report.asks) {
+        // Asks are numbered across the whole run: a resumed part's asks follow the earlier ones.
+        let earlier: usize = log
+            .about(run_addr)
+            .map_err(db_error)?
+            .iter()
+            .filter(|e| {
+                e.kind == REPORT_POSTED && e.subject.as_deref() == Some(&run_addr.to_string())
+            })
+            .filter_map(|e| e.data["asks"].as_array().map(Vec::len))
+            .sum();
+        for (n, ask) in (earlier + 1..).zip(&mut report.asks) {
             ask.address = format!("{run_addr}/ask/{n}");
         }
         let data = serde_json::to_value(report).map_err(|e| agent_err(e.to_string()))?;
@@ -1192,11 +1299,8 @@ mod tests {
             assert!(recover(&log, "daemon").unwrap().is_empty(), "once only");
         }
 
-        #[test]
-        fn a_resumed_run_that_died_is_answered_as_a_resume() {
-            let dir = tempfile::tempdir().unwrap();
-            let log = EventLog::open(&dir.path().join("m.db")).unwrap();
-            running_agent(&log);
+        fn asked(log: &EventLog) {
+            let ask = json!([{"address": "colony://local/agent/a/run/1/ask/1", "question": "Send?", "options": []}]);
             log.append(
                 "d",
                 HEARTBEAT_ANSWERED,
@@ -1205,9 +1309,86 @@ mod tests {
                 json!({"outcome": "needs_you"}),
             )
             .unwrap();
+            log.append(
+                "d",
+                REPORT_POSTED,
+                Some(&run_address("a", 1)),
+                None,
+                json!({"headline": "h", "status": "needs_you", "body": "b", "evidence": [], "asks": ask, "view": "reports"}),
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn a_resumed_run_that_died_is_answered_as_a_resume() {
+            let dir = tempfile::tempdir().unwrap();
+            let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+            running_agent(&log);
+            asked(&log);
+            let agent = agent_address("a");
+            log.append(
+                "d",
+                AGENT_STATE_CHANGED,
+                Some(&agent),
+                None,
+                json!({"from": "running", "to": "parked"}),
+            )
+            .unwrap();
+            log.append(
+                "d",
+                AGENT_STATE_CHANGED,
+                Some(&agent),
+                None,
+                json!({"from": "parked", "to": "running"}),
+            )
+            .unwrap();
             recover(&log, "daemon").unwrap();
-            assert_eq!(kinds(&log).last().map(String::as_str), Some(REPORT_POSTED));
-            assert_eq!(log.of_kind(RUN_RESUMED, 5).unwrap().len(), 1);
+            let resumed = log.of_kind(RUN_RESUMED, 5).unwrap();
+            assert_eq!(resumed.len(), 1);
+            assert_eq!(resumed[0].data["outcome"], "missed");
+            let a = Agents::from_log(&log).unwrap().get("a").cloned().unwrap();
+            assert_eq!(a.state, AgentState::Sleeping);
+        }
+
+        #[test]
+        fn a_daemon_that_died_after_its_run_asked_leaves_the_agent_parked() {
+            let dir = tempfile::tempdir().unwrap();
+            let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+            running_agent(&log);
+            asked(&log);
+            recover(&log, "daemon").unwrap();
+            assert_eq!(
+                log.of_kind(HEARTBEAT_ANSWERED, 5).unwrap().len(),
+                1,
+                "not answered again"
+            );
+            assert_eq!(
+                log.of_kind(REPORT_POSTED, 5).unwrap().len(),
+                1,
+                "no missed report"
+            );
+            let a = Agents::from_log(&log).unwrap().get("a").cloned().unwrap();
+            assert_eq!(a.state, AgentState::Parked);
+            assert_eq!(a.open_asks().count(), 1, "the ask is still open");
+        }
+
+        #[test]
+        fn a_daemon_that_died_after_an_idle_answer_leaves_the_agent_sleeping() {
+            let dir = tempfile::tempdir().unwrap();
+            let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+            running_agent(&log);
+            log.append(
+                "d",
+                HEARTBEAT_ANSWERED,
+                Some(&run_address("a", 1)),
+                None,
+                json!({"outcome": "idle"}),
+            )
+            .unwrap();
+            recover(&log, "daemon").unwrap();
+            assert!(log.of_kind(REPORT_POSTED, 5).unwrap().is_empty());
+            let a = Agents::from_log(&log).unwrap().get("a").cloned().unwrap();
+            assert_eq!(a.state, AgentState::Sleeping);
         }
     }
 

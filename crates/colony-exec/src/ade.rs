@@ -117,10 +117,20 @@ async fn connection(stream: UnixStream, log_path: &Path) -> std::io::Result<()> 
             )
             .await;
         }
-        let reply = match EventLog::open(log_path)
-            .map_err(|e| e.to_string())
-            .and_then(|log| handle(&log, method, &request["params"]))
-        {
+        // SQLite calls block: off the async workers.
+        let (path, method, params) = (
+            log_path.to_path_buf(),
+            method.to_string(),
+            request["params"].clone(),
+        );
+        let outcome = tokio::task::spawn_blocking(move || {
+            EventLog::open(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|log| handle(&log, &method, &params))
+        })
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
+        let reply = match outcome {
             Ok(result) => json!({ "id": id, "result": result }),
             Err(e) => json!({ "id": id, "error": e }),
         };
@@ -198,7 +208,7 @@ async fn subscribe(
     id: Value,
     after: Option<i64>,
 ) -> std::io::Result<()> {
-    let log = EventLog::open(log_path).map_err(std::io::Error::other)?;
+    let mut log = EventLog::open(log_path).map_err(std::io::Error::other)?;
     let mut seq = match after {
         Some(seq) => seq,
         None => log
@@ -213,7 +223,15 @@ async fn subscribe(
     )
     .await?;
     loop {
-        let page = log.after(seq, 500).map_err(std::io::Error::other)?;
+        // SQLite calls block: the log goes to a blocking thread and back each poll.
+        let (back, page) = tokio::task::spawn_blocking(move || {
+            let page = log.after(seq, 500);
+            (log, page)
+        })
+        .await
+        .map_err(std::io::Error::other)?;
+        log = back;
+        let page = page.map_err(std::io::Error::other)?;
         for ev in &page {
             send(write, &json!({ "id": id, "event": event_json(ev) })).await?;
             seq = ev.seq;

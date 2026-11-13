@@ -264,9 +264,17 @@ async fn script() -> Response {
     )
 }
 
-fn open_log(path: &std::path::Path) -> Result<EventLog, Box<Response>> {
-    EventLog::open(path)
-        .map_err(|e| Box::new(error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string())))
+/// Run `f` on the log off the async workers: SQLite calls block.
+async fn with_log(
+    path: Arc<std::path::PathBuf>,
+    f: impl FnOnce(&EventLog) -> Response + Send + 'static,
+) -> Response {
+    tokio::task::spawn_blocking(move || match EventLog::open(&path) {
+        Ok(log) => f(&log),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    })
+    .await
+    .unwrap_or_else(|e| error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
 }
 
 fn error(status: StatusCode, msg: &str) -> Response {
@@ -281,14 +289,11 @@ fn error(status: StatusCode, msg: &str) -> Response {
 }
 
 async fn feed(State(path): State<Arc<std::path::PathBuf>>) -> Response {
-    let log = match open_log(&path) {
-        Ok(log) => log,
-        Err(resp) => return *resp,
-    };
-    match read_feed(&log) {
+    with_log(path, |log| match read_feed(log) {
         Ok(feed) => secure(Json(feed).into_response()),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e),
-    }
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -316,14 +321,13 @@ async fn answer(
         || "viewport".to_string(),
         |Extension(ConnectInfo(addr))| format!("viewport@{}", addr.ip()),
     );
-    let log = match open_log(&path) {
-        Ok(log) => log,
-        Err(resp) => return *resp,
-    };
-    match answer_ask(&log, &actor, &body.ask, &body.answer) {
-        Ok(seq) => secure(Json(serde_json::json!({ "seq": seq, "by": actor })).into_response()),
-        Err(e) => error(StatusCode::CONFLICT, &e),
-    }
+    with_log(path, move |log| {
+        match answer_ask(log, &actor, &body.ask, &body.answer) {
+            Ok(seq) => secure(Json(serde_json::json!({ "seq": seq, "by": actor })).into_response()),
+            Err(e) => error(StatusCode::CONFLICT, &e),
+        }
+    })
+    .await
 }
 
 /// What an address resolves to.
@@ -347,7 +351,21 @@ pub fn resolve(
                 .map(|t| Resolved::Text(t.to_string()))
         }),
         Scope::Event(seq) => log.get(*seq)?.map(|ev| Resolved::Json(event_json(&ev))),
-        Scope::Agent(_) | Scope::Run { .. } | Scope::Ask { .. } | Scope::View(_) => {
+        // A view is its reports, oldest first, as `colony open` lists them.
+        Scope::View(name) => {
+            let mut events = log.of_kind(REPORT_POSTED, 1000)?;
+            events.retain(|ev| ev.data["view"] == name.as_str());
+            events.reverse();
+            (!events.is_empty()).then(|| {
+                Resolved::Json(serde_json::Value::Array(
+                    events
+                        .iter()
+                        .map(|ev| serde_json::json!({ "seq": ev.seq, "at": ev.at_ms, "kind": ev.kind, "subject": ev.subject, "headline": ev.data["headline"], "status": ev.data["status"] }))
+                        .collect(),
+                ))
+            })
+        }
+        Scope::Agent(_) | Scope::Run { .. } | Scope::Ask { .. } => {
             let events = log.about(addr)?;
             (!events.is_empty()).then(|| {
                 Resolved::Json(serde_json::Value::Array(
@@ -382,24 +400,16 @@ async fn open(State(path): State<Arc<std::path::PathBuf>>, Query(q): Query<OpenQ
     if !addr.is_local() {
         return error(StatusCode::NOT_FOUND, "only local addresses resolve");
     }
-    let log = match open_log(&path) {
-        Ok(log) => log,
-        Err(resp) => return *resp,
-    };
-    let found = resolve(&log, &addr).map(|found| {
-        found.map(|r| match r {
-            // Exact bytes, never rendered: text/plain with nosniff.
-            Resolved::Text(text) => {
-                ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response()
-            }
-            Resolved::Json(value) => Json(value).into_response(),
-        })
-    });
-    match found {
-        Ok(Some(resp)) => secure(resp),
+    with_log(path, move |log| match resolve(log, &addr) {
+        // Exact bytes, never rendered: text/plain with nosniff.
+        Ok(Some(Resolved::Text(text))) => {
+            secure(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response())
+        }
+        Ok(Some(Resolved::Json(value))) => secure(Json(value).into_response()),
         Ok(None) => error(StatusCode::NOT_FOUND, &format!("nothing at {addr}")),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
-    }
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -560,6 +570,40 @@ mod tests {
             StatusCode::CONFLICT,
             "same origin reaches the ask check"
         );
+    }
+
+    #[test]
+    fn a_view_address_resolves_to_its_reports() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+        let view: Address = "colony://local/view/reports".parse().unwrap();
+        assert_eq!(resolve(&log, &view).unwrap(), None);
+        for (run, h) in [(1, "first"), (2, "second")] {
+            log.append(
+                "d",
+                REPORT_POSTED,
+                Some(&run_address("a", run)),
+                None,
+                report(ReportStatus::Fine, h),
+            )
+            .unwrap();
+        }
+        let Some(Resolved::Json(v)) = resolve(&log, &view).unwrap() else {
+            panic!()
+        };
+        let heads: Vec<_> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["headline"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            heads,
+            ["first", "second"],
+            "oldest first, as colony open lists them"
+        );
+        let other: Address = "colony://local/view/other".parse().unwrap();
+        assert_eq!(resolve(&log, &other).unwrap(), None);
     }
 
     #[test]

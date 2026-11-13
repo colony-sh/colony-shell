@@ -14,8 +14,10 @@ use std::process::Command;
 const LABEL: &str = "sh.colony.events";
 
 /// Environment the daemon keeps from the shell that installs it. No secrets.
-const KEPT_ENV: [&str; 4] = [
+const KEPT_ENV: [&str; 5] = [
     "PATH",
+    // Where the viewport listens: the phone reaches it on the private network's address.
+    "COLONY_VIEW_ADDR",
     "COLONY_MODEL_PROVIDER",
     "COLONY_MODEL_NAME",
     "OLLAMA_HOST",
@@ -186,6 +188,17 @@ fn systemd_quote(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_login_item_keeps_the_viewport_address_and_no_keys() {
+        assert!(
+            KEPT_ENV.contains(&"COLONY_VIEW_ADDR"),
+            "a reboot must not lose phone access"
+        );
+        assert!(KEPT_ENV
+            .iter()
+            .all(|k| !k.contains("KEY") && !k.contains("TOKEN")));
+    }
 
     fn env() -> Vec<(String, String)> {
         vec![

@@ -1943,6 +1943,32 @@
       "notes": [
         "Completed 2026-11-13: 67_ade_socket.bats 5/5; BATS 54-67 79/79. Asked for by the user after step 8."
       ]
+    },
+    {
+      "id": "F094",
+      "name": "Fixes from the F082-F093 review",
+      "description": "Asks are numbered across a whole run, so a resumed part's ask is new and answerable. Recovery at daemon start parks an agent whose run had already posted an ask, and sleeps one already answered, instead of answering it missed. A resume spends from the run's token budget and is refused past the daily budget (RunResumed missed, blocked report, agent sleeps). The login item keeps COLONY_VIEW_ADDR. Viewport and ADE socket SQLite calls run off the async workers. colony://local/view/<v> resolves to its reports in the viewport and the socket, as in colony open.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": [
+        "F093"
+      ],
+      "notes": [
+        "Completed 2026-11-13: review by helper-4 (room artifact, cursor 166), each finding checked against the code first. 64_ask_answer 7/7; BATS 54-67 81/81"
+      ]
+    },
+    {
+      "id": "F095",
+      "name": "Agent notes, proposed by the agent and approved in the viewport",
+      "description": "First slice gap found in review: the kickoff decision says the agent proposes notes it carries between runs and you approve them in the viewport. AgentSpec.notes exists but nothing writes it. Not built; the first slice is not complete without it.",
+      "status": "new",
+      "priority": 1,
+      "dependencies": [
+        "F094"
+      ],
+      "notes": [
+        "Opened 2026-11-13 from the review. Estimate: about half a day."
+      ]
     }
   ]
 }
