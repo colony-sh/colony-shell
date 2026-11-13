@@ -121,6 +121,18 @@ async fn main() {
         }
         Err(e) => warn!("Viewport not served: {e}"),
     }
+    // The ADE application's socket.
+    {
+        let (sock, db) = (
+            colony_exec::ade::socket_path(),
+            colony_tuple::EventLog::default_path(),
+        );
+        tokio::spawn(async move {
+            if let Err(e) = colony_exec::ade::serve(sock.clone(), db).await {
+                warn!("ADE socket not served at {}: {e}", sock.display());
+            }
+        });
+    }
     let log = match EventLog::open_default() {
         Ok(log) => log,
         Err(e) => {
@@ -222,6 +234,7 @@ async fn main() {
     // Cleanup
     remove_pid_file();
     let _ = std::fs::remove_file(colony_exec::viewport::url_file());
+    let _ = std::fs::remove_file(colony_exec::ade::socket_path());
     info!("Daemon stopped");
 }
 

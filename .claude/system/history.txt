@@ -2328,3 +2328,8 @@
 [2026-11-13 17:30] PROGRESS: a 1s podman watch per containerized run cancels the run (HeartbeatConfig.cancel) when its container stops.
 [2026-11-13 17:45] TEST: 66_failure_restart.bats 6/6 (kill -9 the daemon mid-run, then restart: missed, blocked, container/proxy/net gone, next beat idle; podman kill the container: run stops at once; --timeout 1s and --run-tokens 10 answer missed with blocked reports; parked ask survives restart and resumes from the viewport; .env/.ssh/tls.key absent in the container, .env.example kept, skipped paths recorded). BATS 54-66 74/74. colony-agent 123, colony-events 12, colony-exec 574, colony-tuple 62; clippy clean.
 [2026-11-13 17:45] COMPLETE: F092. First slice build steps 1-8 done; criterion 13 (seven unattended days) is a soak, not a build step.
+[2026-11-13 18:00] START: F093 (ADE socket), asked for by the user after step 8.
+[2026-11-13 18:05] DECISION: newline-delimited JSON over a Unix socket owned by the daemon (the agents, asks and log live there), not OSC 2337 (shell to terminal, per session). Boundary: file mode 0600 plus a peer-uid check. No token: only this user can connect.
+[2026-11-13 18:10] REFACTOR: the viewport's /open address resolution became viewport::resolve and event_json, shared with the socket.
+[2026-11-13 18:30] TEST: 67_ade_socket.bats 5/5 (modes and status; agents/feed/open; answer resumes the run, actor ade; subscribe streams live and replays from a seq; bad requests keep the connection). BATS 54-67 79/79. colony-exec 575, colony-events 12; clippy clean.
+[2026-11-13 18:30] COMPLETE: F093.

@@ -326,6 +326,49 @@ async fn answer(
     }
 }
 
+/// What an address resolves to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Resolved {
+    /// An output's or a diff's exact content.
+    Text(String),
+    /// An event, or the events about an agent, run, ask or view.
+    Json(serde_json::Value),
+}
+
+/// Resolve a local address from the log. `None`: nothing is there.
+pub fn resolve(
+    log: &EventLog,
+    addr: &Address,
+) -> Result<Option<Resolved>, colony_tuple::StorageError> {
+    Ok(match &addr.scope {
+        Scope::Output { .. } | Scope::Diff { .. } => log.latest(addr)?.and_then(|ev| {
+            ev.data["content"]
+                .as_str()
+                .map(|t| Resolved::Text(t.to_string()))
+        }),
+        Scope::Event(seq) => log.get(*seq)?.map(|ev| Resolved::Json(event_json(&ev))),
+        Scope::Agent(_) | Scope::Run { .. } | Scope::Ask { .. } | Scope::View(_) => {
+            let events = log.about(addr)?;
+            (!events.is_empty()).then(|| {
+                Resolved::Json(serde_json::Value::Array(
+                    events
+                        .iter()
+                        .map(|ev| serde_json::json!({ "seq": ev.seq, "at": ev.at_ms, "kind": ev.kind, "subject": ev.subject }))
+                        .collect(),
+                ))
+            })
+        }
+    })
+}
+
+/// An event as JSON, every field.
+pub fn event_json(ev: &colony_tuple::Event) -> serde_json::Value {
+    serde_json::json!({
+        "seq": ev.seq, "at": ev.at_ms, "actor": ev.actor, "cause": ev.cause,
+        "kind": ev.kind, "subject": ev.subject, "data": ev.data,
+    })
+}
+
 #[derive(Deserialize)]
 struct OpenQuery {
     a: String,
@@ -343,33 +386,15 @@ async fn open(State(path): State<Arc<std::path::PathBuf>>, Query(q): Query<OpenQ
         Ok(log) => log,
         Err(resp) => return *resp,
     };
-    let found = match &addr.scope {
-        Scope::Output { .. } | Scope::Diff { .. } => log.latest(&addr).map(|ev| {
-            ev.and_then(|ev| ev.data["content"].as_str().map(str::to_string))
-                .map(|text| {
-                    // Exact bytes, never rendered: text/plain with nosniff.
-                    ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response()
-                })
-        }),
-        Scope::Event(seq) => log.get(*seq).map(|ev| {
-            ev.map(|ev| {
-                Json(serde_json::json!({
-                    "seq": ev.seq, "at": ev.at_ms, "actor": ev.actor, "cause": ev.cause,
-                    "kind": ev.kind, "subject": ev.subject, "data": ev.data,
-                }))
-                .into_response()
-            })
-        }),
-        Scope::Agent(_) | Scope::Run { .. } | Scope::Ask { .. } | Scope::View(_) => log.about(&addr).map(|events| {
-            (!events.is_empty()).then(|| {
-                let events: Vec<_> = events
-                    .iter()
-                    .map(|ev| serde_json::json!({ "seq": ev.seq, "at": ev.at_ms, "kind": ev.kind, "subject": ev.subject }))
-                    .collect();
-                Json(events).into_response()
-            })
-        }),
-    };
+    let found = resolve(&log, &addr).map(|found| {
+        found.map(|r| match r {
+            // Exact bytes, never rendered: text/plain with nosniff.
+            Resolved::Text(text) => {
+                ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response()
+            }
+            Resolved::Json(value) => Json(value).into_response(),
+        })
+    });
     match found {
         Ok(Some(resp)) => secure(resp),
         Ok(None) => error(StatusCode::NOT_FOUND, &format!("nothing at {addr}")),

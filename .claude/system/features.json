@@ -1930,6 +1930,19 @@
         "Started 2026-11-13",
         "Completed 2026-11-13: 66_failure_restart.bats 6/6; BATS 54-66 74/74. The secret-file exclusion came from the room (relayed for Jesse)."
       ]
+    },
+    {
+      "id": "F093",
+      "name": "The ADE socket: the Colony ADE application's channel to Colony",
+      "description": "The colony-events daemon serves a Unix socket at ~/.colony/events/ade.sock (0600, in a 0700 directory, peers with another uid refused) speaking newline-delimited JSON: hello, agents, feed, open {address}, answer {ask, answer} (actor 'ade'), and subscribe {after?}, which streams every log event as it is appended. Reads go through the same code as the viewport (read_feed, and resolve, extracted from the viewport's /open). on --daemon status names the socket.",
+      "status": "complete",
+      "priority": 2,
+      "dependencies": [
+        "F092"
+      ],
+      "notes": [
+        "Completed 2026-11-13: 67_ade_socket.bats 5/5; BATS 54-67 79/79. Asked for by the user after step 8."
+      ]
     }
   ]
 }

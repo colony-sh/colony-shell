@@ -536,6 +536,10 @@ fn cmd_daemon(subcmd: &str, rest: &[String]) -> BuiltinResult {
                 if let Ok(url) = std::fs::read_to_string(crate::viewport::url_file()) {
                     eprintln!("Viewport: {}", url.trim());
                 }
+                let sock = crate::ade::socket_path();
+                if sock.exists() {
+                    eprintln!("ADE socket: {}", sock.display());
+                }
 
                 // Show listener count
                 if let Ok(registry) = open_registry() {
