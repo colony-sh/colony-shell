@@ -6,6 +6,10 @@ Listens on 127.0.0.1 on a free port and writes the port to <dir>/port. Each /api
 request body is appended to <dir>/requests.jsonl. The reply is the text in <dir>/reply
 (default "PASS: ok"), streamed as Ollama NDJSON. If <dir>/delay exists, it waits that many
 seconds before answering.
+
+If <dir>/script exists, it is a JSON list read one entry per request, before <dir>/reply
+takes over: a string is a text reply, and {"tool_calls": [{"name", "arguments"}]} asks for
+those tool calls.
 """
 
 import json
@@ -51,9 +55,18 @@ class Handler(BaseHTTPRequestHandler):
         with open(os.path.join(DIR, "requests.jsonl"), "ab") as f:
             f.write(request.strip() + b"\n")
         time.sleep(float(read("delay", "0")))
-        reply = read("reply", "PASS: ok")
+        script = json.loads(read("script", "[]"))
+        served = int(read("served", "0"))
+        with open(os.path.join(DIR, "served"), "w") as f:
+            f.write(str(served + 1))
+        step = script[served] if served < len(script) else read("reply", "PASS: ok")
+        if isinstance(step, dict):
+            calls = [{"function": c} for c in step["tool_calls"]]
+            message = {"role": "assistant", "content": "", "tool_calls": calls}
+        else:
+            message = {"role": "assistant", "content": step}
         self.send_json_lines(
-            [{"message": {"role": "assistant", "content": reply}, "done": False}, {"done": True}]
+            [{"message": message, "done": False}, {"message": {"role": "assistant", "content": ""}, "done": True}]
         )
 
 

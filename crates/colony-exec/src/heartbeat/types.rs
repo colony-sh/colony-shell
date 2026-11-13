@@ -61,6 +61,10 @@ pub struct HeartbeatConfig {
     /// The only directory a run's tools may read. `None`: the checklist's directory.
     #[serde(default)]
     pub workdir: Option<std::path::PathBuf>,
+    /// The podman container this run's commands execute in. Set by the scheduler for a
+    /// named agent with an image, never by the checklist.
+    #[serde(skip)]
+    pub container: Option<String>,
 }
 
 impl Default for HeartbeatConfig {
@@ -73,6 +77,7 @@ impl Default for HeartbeatConfig {
             max_tool_calls: 20,
             token_budget: 10_000,
             workdir: None,
+            container: None,
         }
     }
 }

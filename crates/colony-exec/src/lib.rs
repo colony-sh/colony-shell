@@ -32,6 +32,7 @@ mod path;
 mod pipeline;
 mod process;
 mod redirect;
+pub mod sandbox;
 pub mod secret_builtin;
 pub mod serve;
 pub mod sidebar;

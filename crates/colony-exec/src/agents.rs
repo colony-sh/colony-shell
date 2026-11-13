@@ -34,6 +34,15 @@ pub const OUTPUT_RECORDED: &str = "OutputRecorded";
 pub const REPORT_POSTED: &str = "ReportPosted";
 /// Event: someone answered an ask. Subject: the ask. Actor: who answered. Data: `{answer}`.
 pub const ASK_ANSWERED: &str = "AskAnswered";
+/// Event: a run's container started. Subject: the run. Data: `{container, image, grants}`.
+pub const CONTAINER_STARTED: &str = "ContainerStarted";
+/// Event: a run's container was removed. Subject: the run. Data: `{container}`.
+pub const CONTAINER_REMOVED: &str = "ContainerRemoved";
+/// Event: a run's call to a host it was not granted was blocked. Subject: the run.
+/// Data: `{host, port}`.
+pub const NETWORK_BLOCKED: &str = "NetworkBlocked";
+/// Event: a run's diff against its workdir. Subject: the run's diff. Data: `{content}`.
+pub const DIFF_RECORDED: &str = "DiffRecorded";
 /// Event: a parked run went on with its answers and finished again. Subject: the run.
 /// Data: `{outcome, tokens}`, like a beat's answer.
 pub const RUN_RESUMED: &str = "RunResumed";
@@ -203,6 +212,13 @@ pub struct AgentSpec {
     /// What it carries between runs. Empty until note approval lands.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// The podman image its runs execute in. `None`: no container, so its tools only
+    /// read, on this machine.
+    #[serde(default)]
+    pub image: Option<String>,
+    /// The hosts its runs may reach from the container: `example.com` or `*.example.com`.
+    #[serde(default)]
+    pub grants: Vec<String>,
 }
 
 /// Where an agent is in its life.
@@ -579,6 +595,9 @@ fn print_help() {
         "agent new <name> --every <dur> --charter <text> [--in <dir>] [--mode notify|active|full]"
     );
     println!("                 [--timeout <dur>] [--daily-tokens <n>]");
+    println!("                 [--image run|<image> [--allow-host <host>]...]");
+    println!("                 --image runs each run in a fresh container that can reach only");
+    println!("                 the --allow-host hosts; `run` is the image scripts/build-run-image.sh makes");
     println!("agent list                     every agent, its state and its next beat");
     println!("agent pause|resume <name>      stop and restart its heartbeat");
     println!("agent retire <name>            stop it for good; the name stays taken");
@@ -624,6 +643,8 @@ fn cmd_new(log: &EventLog, args: &[String], actor: &str, cwd: &Path) -> Result<(
         token_budget: 50_000,
         daily_tokens: 200_000,
         notes: Vec::new(),
+        image: None,
+        grants: Vec::new(),
     };
     let mut it = flags.iter();
     while let Some(flag) = it.next() {
@@ -639,6 +660,14 @@ fn cmd_new(log: &EventLog, args: &[String], actor: &str, cwd: &Path) -> Result<(
             "--charter" => spec.charter = value.clone(),
             "--in" => spec.workdir = cwd.join(value),
             "--mode" => spec.mode = SecurityMode::from_str_lossy(value),
+            "--image" => {
+                spec.image = Some(if value == "run" {
+                    crate::sandbox::DEFAULT_IMAGE.to_string()
+                } else {
+                    value.clone()
+                });
+            }
+            "--allow-host" => spec.grants.push(crate::sandbox::check_grant(value)?),
             "--daily-tokens" => {
                 spec.daily_tokens = value
                     .parse()
@@ -649,6 +678,11 @@ fn cmd_new(log: &EventLog, args: &[String], actor: &str, cwd: &Path) -> Result<(
     }
     if spec.every_secs == 0 {
         return Err("missing --every".to_string());
+    }
+    if !spec.grants.is_empty() && spec.image.is_none() {
+        return Err(
+            "--allow-host needs --image: only a run in a container reaches hosts".to_string(),
+        );
     }
     if spec.charter.trim().is_empty() {
         return Err("missing --charter".to_string());
@@ -773,6 +807,8 @@ mod tests {
             token_budget: 100,
             daily_tokens: 1000,
             notes: vec![],
+            image: None,
+            grants: vec![],
         }
     }
 

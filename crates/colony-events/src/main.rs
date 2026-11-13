@@ -11,6 +11,7 @@
 //! ```text
 //! colony-events daemon          # run as background daemon (default)
 //! colony-events --foreground    # run in foreground (for debugging)
+//! colony-events proxy ...       # a run's allowlist proxy (see proxy.rs)
 //! ```
 //!
 //! ## Architecture
@@ -30,6 +31,7 @@
 #[allow(dead_code)]
 mod dashboard;
 mod handler;
+mod proxy;
 
 use colony_exec::agents::{self, AgentState, Agents};
 use colony_exec::events::{
@@ -67,6 +69,14 @@ const RETENTION_DAYS: i64 = 7;
 async fn main() {
     // Parse minimal CLI args
     let args: Vec<String> = std::env::args().collect();
+    // `proxy` runs inside the podman VM as a run's way out, not as the daemon.
+    if args.get(1).map(String::as_str) == Some("proxy") {
+        if let Err(e) = proxy::main(&args[2..]).await {
+            eprintln!("colony-events proxy: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let foreground = args.iter().any(|a| a == "--foreground" || a == "-f");
 
     // Initialize logging

@@ -1902,6 +1902,20 @@
         "Started 2026-11-13: viewport boundary = private network only (the recommended default); the log names a viewport answer viewport@<device IP>",
         "Completed 2026-11-13: 64_ask_answer.bats 5/5; BATS 54-64 64/64; no push notification yet (needs a push service, i.e. a host grant)"
       ]
+    },
+    {
+      "id": "F091",
+      "name": "Runs in a container, with only granted hosts reachable",
+      "description": "Colony first slice, build step 7: a named agent created with --image (run = localhost/colony-run:latest, built by scripts/build-run-image.sh from this checkout for Linux) runs each beat in a fresh podman container. Its workdir is copied into /work in the container's layer; its one tool, shell, runs commands there through Colony's shell (podman exec colony -c). The container sits on a per-run internal network whose only way out is colony-events proxy, which lets through only the agent's --allow-host grants. At the end the run records NetworkBlocked per refused call, DiffRecorded at run/<r>/diff, and ContainerStarted/ContainerRemoved; the diff and the blocks are report evidence. The Ollama provider gained tool calls.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": [
+        "F090"
+      ],
+      "notes": [
+        "Started 2026-11-13: user picked: build colony for Linux in rust:1-bookworm (grant: docker.io, crates.io); allowlist proxy; keep the rootful podman machine and harden each container",
+        "Completed 2026-11-13: 65_container_runs.bats 4/4; BATS 54-65 68/68"
+      ]
     }
   ]
 }

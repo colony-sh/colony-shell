@@ -92,15 +92,46 @@ pub fn resume_agent(name: &str, actor: &str) -> Result<HeartbeatRun, HeartbeatEr
     let log = EventLog::open_default().map_err(db_error)?;
     let resumed = agent_beat::resume(&log, actor, name)?;
     let body = resumed.prompt(charter);
-    let outcome = callback(&config, &path, &body);
-    agent_beat::finish(
+    run_beat(
         &log,
         actor,
         &resumed.beat,
         crate::agents::RUN_RESUMED,
-        &outcome,
-    )?;
-    outcome
+        config,
+        &path,
+        &body,
+        &*callback,
+    )?
+}
+
+/// Run a beat (or a resumed run) of a named agent: in a fresh container if it has an image,
+/// then answer it. The outer error is the log's; the inner one is the run's, already answered.
+// ponytail: a resumed run gets a fresh container, so what the parked part wrote is gone; keep the
+// container while parked if a run needs its files after an answer.
+#[allow(clippy::too_many_arguments)]
+fn run_beat(
+    log: &EventLog,
+    actor: &str,
+    beat: &agent_beat::Beat,
+    kind: &str,
+    mut config: HeartbeatConfig,
+    path: &Path,
+    body: &str,
+    callback: &AgentCallback,
+) -> Result<Result<HeartbeatRun, HeartbeatError>, HeartbeatError> {
+    let (outcome, evidence) = match agent_beat::open_sandbox(log, actor, beat) {
+        Err(e) => (Err(e), Vec::new()),
+        Ok(sandbox) => {
+            config.container = sandbox.as_ref().map(|s| s.container.clone());
+            let outcome = callback(&config, path, body);
+            let evidence = sandbox
+                .map(|s| agent_beat::close_sandbox(log, actor, beat, &s))
+                .unwrap_or_default();
+            (outcome, evidence)
+        }
+    };
+    agent_beat::finish(log, actor, beat, kind, &outcome, evidence)?;
+    Ok(outcome)
 }
 
 fn db_error(e: impl std::fmt::Display) -> HeartbeatError {
@@ -335,8 +366,16 @@ impl HeartbeatScheduler {
             // An agent's state is the log: no log, no beat.
             let log = EventLog::open_default().map_err(db_error)?;
             let beat = agent_beat::start(&log, &actor, name)?;
-            let outcome = callback(&config, &path, body);
-            agent_beat::finish(&log, &actor, &beat, HEARTBEAT_ANSWERED, &outcome)?;
+            let outcome = run_beat(
+                &log,
+                &actor,
+                &beat,
+                HEARTBEAT_ANSWERED,
+                config.clone(),
+                &path,
+                body,
+                &*callback,
+            )?;
             let mut run = outcome?;
             run.checklist_path = path.display().to_string();
             run.interval_secs = config.interval_secs;
@@ -550,13 +589,16 @@ mod agent_beat {
     use super::{db_error, HeartbeatError, HeartbeatRun, HeartbeatStatus};
     use super::{HEARTBEAT_ANSWERED, HEARTBEAT_FIRED};
     use crate::agents::{
-        self, AgentState, Agents, Report, AGENT_STATE_CHANGED, OUTPUT_RECORDED, REPORT_POSTED,
+        self, AgentSpec, AgentState, Agents, Report, AGENT_STATE_CHANGED, CONTAINER_REMOVED,
+        CONTAINER_STARTED, DIFF_RECORDED, NETWORK_BLOCKED, OUTPUT_RECORDED, REPORT_POSTED,
     };
+    use crate::sandbox::Sandbox;
 
     /// A beat, or a resumed run, in progress.
     pub(super) struct Beat {
         name: String,
         run: u64,
+        spec: AgentSpec,
         /// The event it follows from: the beat's fire, or the last answer.
         fired: i64,
         /// The number its first output takes.
@@ -670,6 +712,7 @@ mod agent_beat {
         Ok(Beat {
             name: name.to_string(),
             run,
+            spec: agent.spec.clone(),
             fired,
             first_output: 1,
         })
@@ -722,12 +765,103 @@ mod agent_beat {
             beat: Beat {
                 name: name.to_string(),
                 run: agent.runs,
+                spec: agent.spec.clone(),
                 fired: changed,
                 first_output: outputs + 1,
             },
             answers: answers.iter().map(|a| a.text.clone()).collect(),
             report,
         })
+    }
+
+    /// Start the beat's container if its agent has an image. `None`: it runs without one.
+    /// A container that does not start fails the run: it never falls back to this machine.
+    pub(super) fn open_sandbox(
+        log: &EventLog,
+        actor: &str,
+        beat: &Beat,
+    ) -> Result<Option<Sandbox>, HeartbeatError> {
+        let Some(image) = &beat.spec.image else {
+            return Ok(None);
+        };
+        let sandbox = Sandbox::start(
+            &beat.name,
+            beat.run,
+            image,
+            &beat.spec.workdir,
+            &beat.spec.grants,
+        )
+        .map_err(|e| agent_err(format!("the run's container did not start: {e}")))?;
+        let run_addr = agents::run_address(&beat.name, beat.run);
+        let data =
+            json!({ "container": sandbox.container, "image": image, "grants": beat.spec.grants });
+        if let Err(e) = log.append(
+            actor,
+            CONTAINER_STARTED,
+            Some(&run_addr),
+            Some(beat.fired),
+            data,
+        ) {
+            sandbox.remove();
+            return Err(db_error(e));
+        }
+        Ok(Some(sandbox))
+    }
+
+    /// Record what the run's container saw and changed, then remove it. Returns the
+    /// evidence: the diff, and each blocked call. Never fails: a log error is a warning.
+    pub(super) fn close_sandbox(
+        log: &EventLog,
+        actor: &str,
+        beat: &Beat,
+        sandbox: &Sandbox,
+    ) -> Vec<String> {
+        let verdicts = sandbox.verdicts();
+        let diff = sandbox.diff();
+        sandbox.remove();
+        let run_addr = agents::run_address(&beat.name, beat.run);
+        let mut evidence = Vec::new();
+        let append = |kind: &str, subject: &Address, data: serde_json::Value| match log.append(
+            actor,
+            kind,
+            Some(subject),
+            Some(beat.fired),
+            data,
+        ) {
+            Ok(seq) => Some(seq),
+            Err(e) => {
+                tracing::warn!("{}: could not record {kind}: {e}", beat.name);
+                None
+            }
+        };
+        for v in verdicts.iter().filter(|v| !v.allowed) {
+            if let Some(seq) = append(
+                NETWORK_BLOCKED,
+                &run_addr,
+                json!({ "host": v.host, "port": v.port }),
+            ) {
+                evidence.push(format!("colony://local/event/{seq}"));
+            }
+        }
+        match diff {
+            Ok(text) if !text.is_empty() => {
+                let addr = Address::local(Scope::Diff {
+                    agent: beat.name.clone(),
+                    run: beat.run,
+                });
+                if append(DIFF_RECORDED, &addr, json!({ "content": text })).is_some() {
+                    evidence.push(addr.to_string());
+                }
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("{}: no diff for run {}: {e}", beat.name, beat.run),
+        }
+        append(
+            CONTAINER_REMOVED,
+            &run_addr,
+            json!({ "container": sandbox.container }),
+        );
+        evidence
     }
 
     fn post(
@@ -756,6 +890,7 @@ mod agent_beat {
         beat: &Beat,
         kind: &str,
         outcome_of_run: &Result<HeartbeatRun, HeartbeatError>,
+        sandbox_evidence: Vec<String>,
     ) -> Result<(), HeartbeatError> {
         let run_addr = agents::run_address(&beat.name, beat.run);
         let mut evidence = Vec::new();
@@ -802,6 +937,7 @@ mod agent_beat {
             ),
         };
         let mut answer = answer;
+        evidence.extend(sandbox_evidence);
         let mut report = Report::from_output(&text, missed, evidence);
         // An idle run that asks something still needs you.
         if !report.asks.is_empty() {
