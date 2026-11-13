@@ -446,13 +446,17 @@ struct Heartbeats {
     agents: Agents,
     /// A scheduler per awake agent.
     agents_running: HashMap<String, HeartbeatScheduler>,
+    /// Parked runs going on with their answers, by agent.
+    resuming: HashMap<String, tokio::task::JoinHandle<()>>,
 }
 
 impl Heartbeats {
     /// Read the events appended since the last call, then start and stop schedulers to
     /// match. The first call replays the whole log.
     fn catch_up(&mut self, log: &EventLog) {
-        let mut changed = false;
+        let before = self.resuming.len();
+        self.resuming.retain(|_, task| !task.is_finished());
+        let mut changed = self.resuming.len() != before;
         loop {
             let page = match log.after(self.seq, 1000) {
                 Ok(page) => page,
@@ -472,6 +476,7 @@ impl Heartbeats {
                         | heartbeat::HEARTBEAT_PAUSED
                         | agents::AGENT_CREATED
                         | agents::AGENT_STATE_CHANGED
+                        | agents::ASK_ANSWERED
                 );
             }
         }
@@ -506,21 +511,42 @@ impl Heartbeats {
 }
 
 impl Heartbeats {
-    /// Run a scheduler for each sleeping or running agent; stop the rest.
+    /// Run a scheduler for each sleeping or running agent and stop the rest; go on with
+    /// each parked run whose asks are all answered.
     // ponytail: an agent the log says is running when the daemon starts died mid-run; it is
     // treated as asleep until failure handling (step 8) answers that run missed.
     fn reconcile_agents(&mut self) {
-        let awake = |state: AgentState| matches!(state, AgentState::Sleeping | AgentState::Running);
+        for agent in self.agents.iter().filter(|a| a.ready_to_resume()) {
+            if self.resuming.contains_key(&agent.name) {
+                continue;
+            }
+            let name = agent.name.clone();
+            info!("Agent {name}: answered, resuming its run");
+            let task = tokio::task::spawn_blocking({
+                let name = name.clone();
+                move || {
+                    if let Err(e) = heartbeat::resume_agent(&name, "daemon") {
+                        warn!("Agent {name}: resume failed: {e}");
+                    }
+                }
+            });
+            self.resuming.insert(name, task);
+        }
+        let resuming = &self.resuming;
+        let awake = |a: &agents::AgentRecord| {
+            matches!(a.state, AgentState::Sleeping | AgentState::Running)
+                && !resuming.contains_key(&a.name)
+        };
         let agents = &self.agents;
         self.agents_running.retain(|name, scheduler| {
-            let keep = agents.get(name).is_some_and(|a| awake(a.state));
+            let keep = agents.get(name).is_some_and(awake);
             if !keep {
                 let _ = scheduler.stop();
                 info!("Agent {name}: heartbeat stopped");
             }
             keep
         });
-        for agent in self.agents.iter().filter(|a| awake(a.state)) {
+        for agent in self.agents.iter().filter(|a| awake(a)) {
             if self.agents_running.contains_key(&agent.name) {
                 continue;
             }

@@ -75,6 +75,34 @@ pub fn active_checklists(log: &EventLog) -> Result<BTreeSet<PathBuf>, HeartbeatE
     }
 }
 
+/// Go on with a parked agent's run now that every ask in it is answered: the model gets
+/// its charter, what it said and the answers, under the same limits as a beat.
+/// The daemon calls this from a blocking context.
+pub fn resume_agent(name: &str, actor: &str) -> Result<HeartbeatRun, HeartbeatError> {
+    let callback = DEFAULT_AGENT_CALLBACK
+        .get()
+        .cloned()
+        .ok_or_else(|| HeartbeatError::NoProvider("no agent callback configured".to_string()))?;
+    let path = crate::agents::checklist_path(name);
+    let content = std::fs::read_to_string(&path)?;
+    let (config, _) = parse_heartbeat(&content);
+    let charter = content
+        .find("\n---")
+        .map_or(content.as_str(), |i| &content[i + 4..]);
+    let log = EventLog::open_default().map_err(db_error)?;
+    let resumed = agent_beat::resume(&log, actor, name)?;
+    let body = resumed.prompt(charter);
+    let outcome = callback(&config, &path, &body);
+    agent_beat::finish(
+        &log,
+        actor,
+        &resumed.beat,
+        crate::agents::RUN_RESUMED,
+        &outcome,
+    )?;
+    outcome
+}
+
 fn db_error(e: impl std::fmt::Display) -> HeartbeatError {
     HeartbeatError::Database(e.to_string())
 }
@@ -308,7 +336,7 @@ impl HeartbeatScheduler {
             let log = EventLog::open_default().map_err(db_error)?;
             let beat = agent_beat::start(&log, &actor, name)?;
             let outcome = callback(&config, &path, body);
-            agent_beat::end(&log, &actor, &beat, &outcome)?;
+            agent_beat::finish(&log, &actor, &beat, HEARTBEAT_ANSWERED, &outcome)?;
             let mut run = outcome?;
             run.checklist_path = path.display().to_string();
             run.interval_secs = config.interval_secs;
@@ -525,11 +553,37 @@ mod agent_beat {
         self, AgentState, Agents, Report, AGENT_STATE_CHANGED, OUTPUT_RECORDED, REPORT_POSTED,
     };
 
-    /// A beat in progress.
+    /// A beat, or a resumed run, in progress.
     pub(super) struct Beat {
         name: String,
         run: u64,
+        /// The event it follows from: the beat's fire, or the last answer.
         fired: i64,
+        /// The number its first output takes.
+        first_output: u64,
+    }
+
+    /// A parked run going on.
+    pub(super) struct Resumed {
+        pub(super) beat: Beat,
+        report: Report,
+        answers: Vec<String>,
+    }
+
+    impl Resumed {
+        /// What the model is told: its charter, what it said, and the answers.
+        pub(super) fn prompt(&self, charter: &str) -> String {
+            let mut out = format!(
+                "{}\n\n## Your run so far\n\nYou wrote:\n\n{}\n\nYou asked, and were answered:\n",
+                charter.trim(),
+                self.report.body
+            );
+            for (ask, answer) in self.report.asks.iter().zip(&self.answers) {
+                out.push_str(&format!("\nASKED: {}\nANSWER: {answer}\n", ask.question));
+            }
+            out.push_str("\nGo on with the run using these answers. Report as before.\n");
+            out
+        }
     }
 
     /// What a beat's status means for the agent's answer.
@@ -617,6 +671,62 @@ mod agent_beat {
             name: name.to_string(),
             run,
             fired,
+            first_output: 1,
+        })
+    }
+
+    /// Wake a parked agent whose asks are all answered: parked to running, on the same run.
+    pub(super) fn resume(
+        log: &EventLog,
+        actor: &str,
+        name: &str,
+    ) -> Result<Resumed, HeartbeatError> {
+        let all = Agents::from_log(log).map_err(agent_err)?;
+        let agent = all
+            .get(name)
+            .ok_or_else(|| agent_err(format!("no agent named {name}")))?;
+        if !agent.ready_to_resume() {
+            return Err(agent_err(format!("{name} is not waiting to resume")));
+        }
+        let report = agent
+            .pending
+            .clone()
+            .expect("ready_to_resume checks pending");
+        let answers: Vec<_> = report
+            .asks
+            .iter()
+            .filter_map(|a| agent.answers.get(&a.address))
+            .collect();
+        let last_answer = answers
+            .iter()
+            .max_by_key(|a| a.at_ms)
+            .map(|a| a.at_ms)
+            .unwrap_or_default();
+        let run_addr = agents::run_address(name, agent.runs);
+        let outputs = log
+            .about(&run_addr)
+            .map_err(db_error)?
+            .iter()
+            .filter(|ev| ev.kind == OUTPUT_RECORDED)
+            .count() as u64;
+        let changed = log
+            .append(
+                actor,
+                AGENT_STATE_CHANGED,
+                Some(&agent.address()),
+                None,
+                json!({ "from": AgentState::Parked, "to": AgentState::Running, "run": agent.runs, "answered_at": last_answer }),
+            )
+            .map_err(db_error)?;
+        Ok(Resumed {
+            beat: Beat {
+                name: name.to_string(),
+                run: agent.runs,
+                fired: changed,
+                first_output: outputs + 1,
+            },
+            answers: answers.iter().map(|a| a.text.clone()).collect(),
+            report,
         })
     }
 
@@ -625,20 +735,26 @@ mod agent_beat {
         actor: &str,
         run_addr: &Address,
         cause: i64,
-        report: Report,
+        mut report: Report,
     ) -> Result<(), HeartbeatError> {
+        for (n, ask) in (1..).zip(&mut report.asks) {
+            ask.address = format!("{run_addr}/ask/{n}");
+        }
         let data = serde_json::to_value(report).map_err(|e| agent_err(e.to_string()))?;
         log.append(actor, REPORT_POSTED, Some(run_addr), Some(cause), data)
             .map_err(db_error)?;
         Ok(())
     }
 
-    /// Answer a beat: record its outputs, its answer and, unless it was idle, its report;
-    /// then put the agent back to sleep unless something else (a pause) changed its state.
-    pub(super) fn end(
+    /// Answer a beat (`kind` is `HeartbeatAnswered`) or a resumed run (`RunResumed`):
+    /// record its outputs, its answer and, unless it was idle, its report. Then the agent
+    /// parks if the report asks something, else sleeps; unless something else (a pause)
+    /// changed its state meanwhile.
+    pub(super) fn finish(
         log: &EventLog,
         actor: &str,
         beat: &Beat,
+        kind: &str,
         outcome_of_run: &Result<HeartbeatRun, HeartbeatError>,
     ) -> Result<(), HeartbeatError> {
         let run_addr = agents::run_address(&beat.name, beat.run);
@@ -656,10 +772,11 @@ mod agent_beat {
         };
         let (answer, text, missed) = match outcome_of_run {
             Ok(run) => {
+                let first = beat.first_output;
                 if !run.raw_output.is_empty() {
-                    record(1, json!({ "content": run.raw_output }))?;
+                    record(first, json!({ "content": run.raw_output }))?;
                 }
-                for (n, call) in (2..).zip(&run.tool_calls) {
+                for (n, call) in (first + 1..).zip(&run.tool_calls) {
                     record(
                         n,
                         json!({ "content": call.output, "tool": call.tool, "input": call.input }),
@@ -684,27 +801,24 @@ mod agent_beat {
                 true,
             ),
         };
+        let mut answer = answer;
+        let mut report = Report::from_output(&text, missed, evidence);
+        // An idle run that asks something still needs you.
+        if !report.asks.is_empty() {
+            answer["outcome"] = json!("needs_you");
+        }
         let idle = answer["outcome"] == "idle";
+        let parks = !report.asks.is_empty();
         let answered = log
-            .append(
-                actor,
-                HEARTBEAT_ANSWERED,
-                Some(&run_addr),
-                Some(beat.fired),
-                answer,
-            )
+            .append(actor, kind, Some(&run_addr), Some(beat.fired), answer)
             .map_err(db_error)?;
         if !idle {
-            if evidence.is_empty() {
-                evidence.push(format!("colony://local/event/{answered}"));
+            if report.evidence.is_empty() {
+                report
+                    .evidence
+                    .push(format!("colony://local/event/{answered}"));
             }
-            post(
-                log,
-                actor,
-                &run_addr,
-                answered,
-                Report::from_output(&text, missed, evidence),
-            )?;
+            post(log, actor, &run_addr, answered, report)?;
         }
 
         let all = Agents::from_log(log).map_err(agent_err)?;
@@ -712,12 +826,17 @@ mod agent_beat {
             .get(&beat.name)
             .filter(|a| a.state == AgentState::Running)
         {
+            let to = if parks {
+                AgentState::Parked
+            } else {
+                AgentState::Sleeping
+            };
             log.append(
                 actor,
                 AGENT_STATE_CHANGED,
                 Some(&agent.address()),
                 None,
-                json!({ "from": AgentState::Running, "to": AgentState::Sleeping, "run": beat.run }),
+                json!({ "from": AgentState::Running, "to": to, "run": beat.run }),
             )
             .map_err(db_error)?;
         }

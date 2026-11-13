@@ -1,7 +1,8 @@
 //! The reports viewport: a web page the `colony-events` daemon serves, usable on a phone.
 //!
-//! It shows what needs you first (blocked reports, later asks), then the feed of every
-//! report, newest first. Each evidence address opens the exact output it names.
+//! It shows what needs you first (blocked reports, and reports with an ask nobody has
+//! answered), then the feed of every report, newest first. Each evidence address opens the
+//! exact output it names. Answering an ask here resumes the run that asked it.
 //!
 //! | Route | What it returns |
 //! |---|---|
@@ -9,10 +10,16 @@
 //! | `GET /app.js` | its script |
 //! | `GET /api/feed` | `{needs_you: [Item], feed: [Item]}` |
 //! | `GET /open?a=<colony://...>` | an output's or diff's exact content as `text/plain`, or an event as JSON |
+//! | `POST /api/answer` | `{ask, answer}` answers an ask; the log records the device's IP as who |
 //!
 //! It binds `COLONY_VIEW_ADDR`, default `127.0.0.1:7337`: only this machine. To open it on
 //! your phone, bind the machine's address on your private network (its Tailscale IP, say).
-//! The page is read-only and has no login; the private network is the boundary.
+//! The page has no login; the private network is the boundary, and the log names each
+//! answer's device by its address on that network.
+//!
+//! A `POST` must carry an `Origin` naming this server and a JSON body, so another web
+//! page in your browser cannot answer for you: its own origin fails the check, and a
+//! cross-origin JSON post needs a CORS preflight this server never grants.
 //!
 //! Report text comes from a model, so the page builds every node with `textContent`
 //! (never `innerHTML`) and the CSP allows no inline script.
@@ -24,15 +31,18 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use std::collections::HashMap;
+
+use axum::extract::connect_info::ConnectInfo;
 use axum::extract::{Query, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::routing::{get, post};
+use axum::{Extension, Json, Router};
 use colony_tuple::{Address, EventLog, Scope};
 use serde::{Deserialize, Serialize};
 
-use crate::agents::{Report, ReportStatus, REPORTS_VIEW, REPORT_POSTED};
+use crate::agents::{answer_ask, Report, ReportStatus, ASK_ANSWERED, REPORTS_VIEW, REPORT_POSTED};
 
 /// Where the viewport listens unless `COLONY_VIEW_ADDR` says otherwise.
 pub const DEFAULT_ADDR: &str = "127.0.0.1:7337";
@@ -65,7 +75,12 @@ pub async fn serve(addr: SocketAddr, log_path: std::path::PathBuf) -> std::io::R
     let url = format!("http://{bound}/");
     let _ = std::fs::write(url_file(), &url);
     tracing::info!("Viewport at {url}");
-    axum::serve(listener, router(Arc::new(log_path), allowed_hosts(bound))).await
+    let app = router(Arc::new(log_path), allowed_hosts(bound));
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
 }
 
 /// The `Host` values a request may carry for a server bound to `bound`.
@@ -84,6 +99,7 @@ fn router(log_path: Arc<std::path::PathBuf>, hosts: Arc<Vec<String>>) -> Router 
         .route("/app.js", get(script))
         .route("/api/feed", get(feed))
         .route("/open", get(open))
+        .route("/api/answer", post(answer))
         .with_state(log_path)
         .layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
@@ -117,6 +133,20 @@ pub struct Item {
     pub status: ReportStatus,
     pub body: String,
     pub evidence: Vec<String>,
+    pub asks: Vec<AskItem>,
+}
+
+/// One ask in a report, and its answer once it has one.
+#[derive(Debug, Clone, Serialize)]
+pub struct AskItem {
+    pub address: String,
+    pub question: String,
+    pub options: Vec<String>,
+    pub answer: Option<String>,
+    /// Who answered.
+    pub by: Option<String>,
+    /// When, Unix ms.
+    pub answered_at: Option<i64>,
 }
 
 /// What the page shows: what needs you, then everything.
@@ -131,6 +161,21 @@ pub fn read_feed(log: &EventLog) -> Result<Feed, String> {
     let events = log
         .of_kind(REPORT_POSTED, FEED_MAX)
         .map_err(|e| e.to_string())?;
+    // Oldest first, so the first answer to each ask wins, as in the agent's fold.
+    let mut answers: HashMap<String, (String, String, i64)> = HashMap::new();
+    for ev in log
+        .of_kind(ASK_ANSWERED, FEED_MAX * 3)
+        .map_err(|e| e.to_string())?
+        .iter()
+        .rev()
+    {
+        let (Some(subject), Some(text)) = (ev.subject.clone(), ev.data["answer"].as_str()) else {
+            continue;
+        };
+        answers
+            .entry(subject)
+            .or_insert_with(|| (text.to_string(), ev.actor.clone(), ev.at_ms));
+    }
     let feed: Vec<Item> = events
         .iter()
         .filter_map(|ev| {
@@ -151,12 +196,27 @@ pub fn read_feed(log: &EventLog) -> Result<Feed, String> {
                 status: report.status,
                 body: report.body,
                 evidence: report.evidence,
+                asks: report
+                    .asks
+                    .into_iter()
+                    .map(|a| {
+                        let answered = answers.get(&a.address);
+                        AskItem {
+                            answer: answered.map(|(t, _, _)| t.clone()),
+                            by: answered.map(|(_, b, _)| b.clone()),
+                            answered_at: answered.map(|(_, _, at)| *at),
+                            address: a.address,
+                            question: a.question,
+                            options: a.options,
+                        }
+                    })
+                    .collect(),
             })
         })
         .collect();
     let needs_you = feed
         .iter()
-        .filter(|i| matches!(i.status, ReportStatus::Blocked | ReportStatus::NeedsYou))
+        .filter(|i| i.status == ReportStatus::Blocked || i.asks.iter().any(|a| a.answer.is_none()))
         .map(|i| Item {
             address: i.address.clone(),
             agent: i.agent.clone(),
@@ -166,6 +226,7 @@ pub fn read_feed(log: &EventLog) -> Result<Feed, String> {
             status: i.status,
             body: i.body.clone(),
             evidence: i.evidence.clone(),
+            asks: i.asks.clone(),
         })
         .collect();
     Ok(Feed { needs_you, feed })
@@ -231,6 +292,41 @@ async fn feed(State(path): State<Arc<std::path::PathBuf>>) -> Response {
 }
 
 #[derive(Deserialize)]
+struct AnswerBody {
+    ask: String,
+    answer: String,
+}
+
+/// `POST /api/answer`. The `Host` check has already passed; the `Origin` must match it.
+async fn answer(
+    State(path): State<Arc<std::path::PathBuf>>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    Json(body): Json<AnswerBody>,
+) -> Response {
+    let text = |h: header::HeaderName| headers.get(h).and_then(|v| v.to_str().ok());
+    let same_origin = matches!(
+        (text(header::ORIGIN), text(header::HOST)),
+        (Some(origin), Some(host)) if origin.eq_ignore_ascii_case(&format!("http://{host}"))
+    );
+    if !same_origin {
+        return error(StatusCode::FORBIDDEN, "cross-origin answers are refused");
+    }
+    let actor = peer.map_or_else(
+        || "viewport".to_string(),
+        |Extension(ConnectInfo(addr))| format!("viewport@{}", addr.ip()),
+    );
+    let log = match open_log(&path) {
+        Ok(log) => log,
+        Err(resp) => return *resp,
+    };
+    match answer_ask(&log, &actor, &body.ask, &body.answer) {
+        Ok(seq) => secure(Json(serde_json::json!({ "seq": seq, "by": actor })).into_response()),
+        Err(e) => error(StatusCode::CONFLICT, &e),
+    }
+}
+
+#[derive(Deserialize)]
 struct OpenQuery {
     a: String,
 }
@@ -264,7 +360,7 @@ async fn open(State(path): State<Arc<std::path::PathBuf>>, Query(q): Query<OpenQ
                 .into_response()
             })
         }),
-        Scope::Agent(_) | Scope::Run { .. } | Scope::View(_) => log.about(&addr).map(|events| {
+        Scope::Agent(_) | Scope::Run { .. } | Scope::Ask { .. } | Scope::View(_) => log.about(&addr).map(|events| {
             (!events.is_empty()).then(|| {
                 let events: Vec<_> = events
                     .iter()
@@ -362,6 +458,83 @@ mod tests {
             let resp = app.clone().oneshot(get(host)).await.unwrap();
             assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST, "{host}");
         }
+    }
+
+    #[test]
+    fn a_report_with_an_open_ask_needs_you_until_it_is_answered() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = EventLog::open(&dir.path().join("m.db")).unwrap();
+        let mut r: Report = serde_json::from_value(report(ReportStatus::NeedsYou, "asks")).unwrap();
+        let ask = "colony://local/agent/a/run/1/ask/1";
+        r.asks = vec![crate::agents::Ask {
+            address: ask.into(),
+            question: "Send?".into(),
+            options: vec!["yes".into(), "no".into()],
+        }];
+        log.append(
+            "d",
+            REPORT_POSTED,
+            Some(&run_address("a", 1)),
+            None,
+            serde_json::to_value(r).unwrap(),
+        )
+        .unwrap();
+        let feed = read_feed(&log).unwrap();
+        assert_eq!(feed.needs_you.len(), 1);
+        assert_eq!(feed.needs_you[0].asks[0].options, ["yes", "no"]);
+
+        let ask_addr: Address = ask.parse().unwrap();
+        for (who, answer) in [("viewport@100.64.0.2", "yes"), ("late", "no")] {
+            log.append(
+                who,
+                ASK_ANSWERED,
+                Some(&ask_addr),
+                None,
+                json!({"answer": answer}),
+            )
+            .unwrap();
+        }
+        let feed = read_feed(&log).unwrap();
+        assert!(feed.needs_you.is_empty());
+        let asked = &feed.feed[0].asks[0];
+        assert_eq!(asked.answer.as_deref(), Some("yes"));
+        assert_eq!(asked.by.as_deref(), Some("viewport@100.64.0.2"));
+    }
+
+    #[tokio::test]
+    async fn an_answer_from_another_origin_is_refused() {
+        use tower::ServiceExt;
+        let dir = tempfile::tempdir().unwrap();
+        let bound: SocketAddr = "127.0.0.1:7337".parse().unwrap();
+        let app = router(Arc::new(dir.path().join("m.db")), allowed_hosts(bound));
+        let post = |origin: Option<&str>| {
+            let mut req = axum::http::Request::builder()
+                .method("POST")
+                .uri("/api/answer")
+                .header(header::HOST, "127.0.0.1:7337")
+                .header(header::CONTENT_TYPE, "application/json");
+            if let Some(o) = origin {
+                req = req.header(header::ORIGIN, o);
+            }
+            req.body(axum::body::Body::from(
+                r#"{"ask":"colony://local/agent/a/run/1/ask/1","answer":"yes"}"#,
+            ))
+            .unwrap()
+        };
+        for origin in [None, Some("http://evil.example"), Some("null")] {
+            let resp = app.clone().oneshot(post(origin)).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::FORBIDDEN, "{origin:?}");
+        }
+        let resp = app
+            .clone()
+            .oneshot(post(Some("http://127.0.0.1:7337")))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::CONFLICT,
+            "same origin reaches the ask check"
+        );
     }
 
     #[test]

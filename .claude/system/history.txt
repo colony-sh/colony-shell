@@ -2304,3 +2304,11 @@
 [2026-11-12 13:50] FIX: security review. The viewport had no Host check, so a web page could read the feed from 127.0.0.1 by DNS rebinding. Every request must now name the bound address (or localhost:<port> on loopback) in Host, else 421.
 [2026-11-12 13:55] TEST: 63_reports_viewport.bats 6/6 (report with headline/status/evidence and the feed; idle posts nothing; blocked needs you; CSP/text-plain/400/404; status shows the URL; Host refusal). BATS 54-63 59/59. colony-agent 122, colony-events 9, colony-exec 563, colony-tuple 62; clippy clean. Tests bind COLONY_VIEW_ADDR=127.0.0.1:0.
 [2026-11-12 13:55] COMPLETE: F089.
+[2026-11-13 15:40] START: F090 (build step 6: ask and answer, with parked runs).
+[2026-11-13 15:45] DECISION: no viewport login for now; the private network is the boundary (the default recommended at step 5). A POST must carry a same-origin Origin header and a JSON body, so another page in the browser cannot answer.
+[2026-11-13 15:50] DECISION: asks are text lines (ASK:, OPTIONS:) like HEADLINE:, not a tool, so every provider and the read-only notify mode can ask. Each gets an address: .../run/<r>/ask/<k>.
+[2026-11-13 15:55] DECISION: a resume continues the same run (outputs numbered after the earlier ones) and is answered RunResumed, which also counts toward the daily token budget and resets the beat clock, so the beats skipped while parked do not fire at once on waking.
+[2026-11-13 16:30] PROGRESS: viewport POST /api/answer (Host, then same-origin Origin, then JSON); the page shows each ask with option buttons or a text box, and does not refresh over a half-typed answer.
+[2026-11-13 16:35] TEST: 64_ask_answer.bats 5/5 (ask parks, no beats while parked; viewport answer resumes the same run in well under 10s with who=viewport@127.0.0.1; options enforced, cross-origin 403; agent answer; answer while the daemon is down resumes on start). BATS 54-64 64/64. colony-agent 122, colony-events 9, colony-exec 568, colony-tuple 62; clippy clean.
+[2026-11-13 16:35] COMPLETE: F090.
+[2026-11-13 16:36] NEXT: step 7 must gate any send on the AskAnswered event itself, not on the model saying it was approved: a quoted forum post can contain a fake ANSWER line.

@@ -82,7 +82,7 @@ pub fn colony_open(args: &[String]) -> Result<BuiltinResult> {
                 events.iter().for_each(|ev| println!("{}", line(ev)));
                 (!events.is_empty()).then_some(())
             }),
-        Scope::Agent(_) | Scope::Run { .. } => log.about(&addr).map(|events| {
+        Scope::Agent(_) | Scope::Run { .. } | Scope::Ask { .. } => log.about(&addr).map(|events| {
             events.iter().for_each(|ev| println!("{}", line(ev)));
             (!events.is_empty()).then_some(())
         }),

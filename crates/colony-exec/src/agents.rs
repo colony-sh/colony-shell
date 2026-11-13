@@ -32,6 +32,11 @@ pub const AGENT_STATE_CHANGED: &str = "AgentStateChanged";
 pub const OUTPUT_RECORDED: &str = "OutputRecorded";
 /// Event: a run reported to a viewport. Subject: the run. Data: its [`Report`].
 pub const REPORT_POSTED: &str = "ReportPosted";
+/// Event: someone answered an ask. Subject: the ask. Actor: who answered. Data: `{answer}`.
+pub const ASK_ANSWERED: &str = "AskAnswered";
+/// Event: a parked run went on with its answers and finished again. Subject: the run.
+/// Data: `{outcome, tokens}`, like a beat's answer.
+pub const RUN_RESUMED: &str = "RunResumed";
 
 /// The viewport every agent reports to, for now.
 pub const REPORTS_VIEW: &str = "reports";
@@ -43,8 +48,30 @@ pub enum ReportStatus {
     Fine,
     Attention,
     Blocked,
-    /// It has an ask waiting on you. Nothing asks yet.
+    /// It has an ask waiting on you.
     NeedsYou,
+}
+
+/// A question a run asks you. The run is parked until every ask it made is answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ask {
+    /// Its `colony://` address, set when the report is posted.
+    #[serde(default)]
+    pub address: String,
+    pub question: String,
+    /// The answers it takes. Empty means any text.
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
+/// One answer to an ask, as the log has it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Answer {
+    pub text: String,
+    /// Who answered: the log event's actor.
+    pub by: String,
+    /// When, Unix ms.
+    pub at_ms: i64,
 }
 
 /// What an agent sends you after a run that acted or missed.
@@ -55,20 +82,29 @@ pub struct Report {
     pub body: String,
     /// `colony://` addresses of the outputs behind it.
     pub evidence: Vec<String>,
-    /// Questions for you. Empty until asks land.
+    /// Questions for you. A report with any parks its run.
     #[serde(default)]
-    pub asks: Vec<serde_json::Value>,
+    pub asks: Vec<Ask>,
     /// The viewport it is posted to.
     pub view: String,
 }
 
 /// Longest headline kept, in characters.
 const HEADLINE_MAX: usize = 120;
+/// Most asks one report carries; more are dropped.
+const ASKS_MAX: usize = 3;
+/// Longest question, option and answer kept, in characters.
+const QUESTION_MAX: usize = 500;
+const OPTION_MAX: usize = 60;
+const OPTIONS_MAX: usize = 6;
+pub const ANSWER_MAX: usize = 2000;
 
 impl Report {
     /// The report for a run's model text. `missed` marks a run that did not finish.
     /// The model may set the headline and status with `HEADLINE:` and `STATUS:` lines;
     /// otherwise the headline is the first WARN or ALERT finding, or the first line.
+    /// Each `ASK:` line is a question for you, and an `OPTIONS: a | b` line after it
+    /// limits its answers. A missed run asks nothing.
     pub fn from_output(text: &str, missed: bool, evidence: Vec<String>) -> Self {
         let tagged = |tag: &str| {
             text.lines().find_map(|l| {
@@ -89,8 +125,10 @@ impl Report {
             })
             .filter(|h| !h.is_empty())
             .unwrap_or_else(|| "The run wrote nothing".to_string());
+        let asks = if missed { Vec::new() } else { parse_asks(text) };
         let status = match tagged("STATUS:").map(|s| s.to_ascii_lowercase()) {
             _ if missed => ReportStatus::Blocked,
+            _ if !asks.is_empty() => ReportStatus::NeedsYou,
             Some(s) if s == "fine" => ReportStatus::Fine,
             Some(s) if s == "blocked" => ReportStatus::Blocked,
             _ => ReportStatus::Attention,
@@ -100,10 +138,38 @@ impl Report {
             status,
             body: text.trim().to_string(),
             evidence,
-            asks: Vec::new(),
+            asks,
             view: REPORTS_VIEW.to_string(),
         }
     }
+}
+
+/// The `ASK:` and `OPTIONS:` lines of a run's text.
+fn parse_asks(text: &str) -> Vec<Ask> {
+    let strip = |line: &str, tag: &str| {
+        line.get(..tag.len())
+            .filter(|p| p.eq_ignore_ascii_case(tag))
+            .map(|_| line[tag.len()..].trim().to_string())
+    };
+    let mut asks: Vec<Ask> = Vec::new();
+    for line in text.lines().map(str::trim) {
+        if let Some(q) = strip(line, "ASK:").filter(|q| !q.is_empty()) {
+            asks.push(Ask {
+                address: String::new(),
+                question: cut(&q, QUESTION_MAX),
+                options: Vec::new(),
+            });
+        } else if let (Some(opts), Some(ask)) = (strip(line, "OPTIONS:"), asks.last_mut()) {
+            ask.options = opts
+                .split('|')
+                .map(|o| cut(o.trim(), OPTION_MAX))
+                .filter(|o| !o.is_empty())
+                .take(OPTIONS_MAX)
+                .collect();
+        }
+    }
+    asks.truncate(ASKS_MAX);
+    asks
 }
 
 fn cut(s: &str, max: usize) -> String {
@@ -175,12 +241,31 @@ pub struct AgentRecord {
     pub last_fired_ms: Option<i64>,
     /// How many beats have fired.
     pub runs: u64,
+    /// The report its parked run is waiting on, with the asks in it.
+    pub pending: Option<Report>,
+    /// Answers to the pending report's asks, by ask address. The first answer wins.
+    pub answers: BTreeMap<String, Answer>,
 }
 
 impl AgentRecord {
     /// The agent's address.
     pub fn address(&self) -> Address {
         agent_address(&self.name)
+    }
+
+    /// The pending asks nobody has answered yet.
+    pub fn open_asks(&self) -> impl Iterator<Item = &Ask> {
+        self.pending
+            .iter()
+            .flat_map(|r| &r.asks)
+            .filter(|a| !self.answers.contains_key(&a.address))
+    }
+
+    /// Whether it is parked and every ask is answered, so its run can go on.
+    pub fn ready_to_resume(&self) -> bool {
+        self.state == AgentState::Parked
+            && self.pending.is_some()
+            && self.open_asks().next().is_none()
     }
 
     /// When its next beat fires, Unix ms: one interval after the last beat, or after its
@@ -243,6 +328,8 @@ impl Agents {
                     created_ms: ev.at_ms,
                     last_fired_ms: None,
                     runs: 0,
+                    pending: None,
+                    answers: BTreeMap::new(),
                 });
             }
             (AGENT_STATE_CHANGED, Scope::Agent(name)) => {
@@ -260,6 +347,47 @@ impl Agents {
                 if let Some(agent) = self.by_name.get_mut(&agent) {
                     agent.runs += 1;
                     agent.last_fired_ms = Some(ev.at_ms);
+                }
+            }
+            // A resumed run counts as a beat for the schedule: the beats skipped while it
+            // was parked do not all fire the moment it wakes.
+            (RUN_RESUMED, Scope::Run { agent, .. }) => {
+                if let Some(agent) = self.by_name.get_mut(&agent) {
+                    agent.last_fired_ms = Some(ev.at_ms);
+                }
+            }
+            (REPORT_POSTED, Scope::Run { agent, .. }) => {
+                let (Some(agent), Ok(report)) = (
+                    self.by_name.get_mut(&agent),
+                    serde_json::from_value::<Report>(ev.data.clone()),
+                ) else {
+                    return;
+                };
+                agent.answers.clear();
+                agent.pending = (!report.asks.is_empty()).then_some(report);
+            }
+            (ASK_ANSWERED, Scope::Ask { agent, .. }) => {
+                let (Some(agent), Some(subject), Some(text)) = (
+                    self.by_name.get_mut(&agent),
+                    ev.subject.as_deref(),
+                    ev.data["answer"].as_str(),
+                ) else {
+                    return;
+                };
+                let asked = agent
+                    .pending
+                    .iter()
+                    .flat_map(|r| &r.asks)
+                    .any(|a| a.address == subject);
+                if asked {
+                    agent
+                        .answers
+                        .entry(subject.to_string())
+                        .or_insert_with(|| Answer {
+                            text: text.to_string(),
+                            by: ev.actor.clone(),
+                            at_ms: ev.at_ms,
+                        });
                 }
             }
             _ => {}
@@ -288,6 +416,68 @@ pub fn run_address(name: &str, run: u64) -> Address {
     })
 }
 
+/// Answer an ask. The agent must be parked on the run that asked it, the ask still open,
+/// and the answer one of its options if it has any. Returns the answer's event.
+pub fn answer_ask(log: &EventLog, actor: &str, ask: &str, answer: &str) -> Result<i64, String> {
+    let addr: Address = ask
+        .parse()
+        .map_err(|e: colony_tuple::AddressError| e.to_string())?;
+    let Scope::Ask { agent: name, .. } = &addr.scope else {
+        return Err(format!("{addr} is not an ask"));
+    };
+    let agents = Agents::from_log(log)?;
+    let agent = agents
+        .get(name)
+        .ok_or_else(|| format!("no agent named {name}"))?;
+    let addr = addr.to_string();
+    let Some(asked) = agent
+        .pending
+        .iter()
+        .flat_map(|r| &r.asks)
+        .find(|a| a.address == addr)
+    else {
+        return Err(format!("{addr}: no open ask there"));
+    };
+    if agent.state != AgentState::Parked {
+        return Err(format!(
+            "{name} is {}, not waiting on an answer",
+            agent.state
+        ));
+    }
+    if agent.answers.contains_key(&addr) {
+        return Err(format!("{addr} is already answered"));
+    }
+    let answer = answer.trim();
+    if answer.is_empty() {
+        return Err("the answer is empty".to_string());
+    }
+    if answer.chars().count() > ANSWER_MAX {
+        return Err(format!("the answer is longer than {ANSWER_MAX} characters"));
+    }
+    let answer = if asked.options.is_empty() {
+        answer.to_string()
+    } else {
+        asked
+            .options
+            .iter()
+            .find(|o| o.eq_ignore_ascii_case(answer))
+            .cloned()
+            .ok_or_else(|| format!("answer one of: {}", asked.options.join(", ")))?
+    };
+    // ponytail: two answers racing both land; the fold keeps the first.
+    let address: Address = addr
+        .parse()
+        .map_err(|e: colony_tuple::AddressError| e.to_string())?;
+    log.append(
+        actor,
+        ASK_ANSWERED,
+        Some(&address),
+        None,
+        serde_json::json!({ "answer": answer }),
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Tokens the agent's answered beats used since the start of today (UTC).
 pub fn tokens_today(log: &EventLog, name: &str) -> Result<u64, String> {
     let midnight = chrono::Utc::now()
@@ -297,7 +487,9 @@ pub fn tokens_today(log: &EventLog, name: &str) -> Result<u64, String> {
     let events = log.about(&agent_address(name)).map_err(|e| e.to_string())?;
     Ok(events
         .iter()
-        .filter(|ev| ev.kind == HEARTBEAT_ANSWERED && ev.at_ms >= midnight)
+        .filter(|ev| {
+            (ev.kind == HEARTBEAT_ANSWERED || ev.kind == RUN_RESUMED) && ev.at_ms >= midnight
+        })
         .filter_map(|ev| ev.data["tokens"].as_u64())
         .sum())
 }
@@ -352,7 +544,7 @@ pub fn local_time(ms: i64) -> String {
 
 /// The `agent` subcommands this module handles. The REPL's own (`status`, `model`, ...)
 /// drive the chat agent and never reach here.
-pub const SUBCOMMANDS: [&str; 6] = ["new", "list", "pause", "resume", "retire", "help"];
+pub const SUBCOMMANDS: [&str; 7] = ["new", "list", "pause", "resume", "retire", "answer", "help"];
 
 /// `agent new|list|pause|resume|retire`. `actor` is who the log records.
 pub fn builtin_agent(args: &[String], actor: &str, cwd: &Path) -> BuiltinResult {
@@ -366,6 +558,7 @@ pub fn builtin_agent(args: &[String], actor: &str, cwd: &Path) -> BuiltinResult 
             "pause" => change_state(&log, rest, actor, AgentState::Paused),
             "resume" => change_state(&log, rest, actor, AgentState::Sleeping),
             "retire" => change_state(&log, rest, actor, AgentState::Retired),
+            "answer" => cmd_answer(&log, rest, actor),
             "help" | "--help" | "-h" => {
                 print_help();
                 Ok(())
@@ -389,6 +582,25 @@ fn print_help() {
     println!("agent list                     every agent, its state and its next beat");
     println!("agent pause|resume <name>      stop and restart its heartbeat");
     println!("agent retire <name>            stop it for good; the name stays taken");
+    println!("agent answer <name> <answer>   answer its next open ask; its run goes on");
+}
+
+fn cmd_answer(log: &EventLog, args: &[String], actor: &str) -> Result<(), String> {
+    let Some((name, words)) = args.split_first().filter(|(_, w)| !w.is_empty()) else {
+        return Err("usage: agent answer <name> <answer>".to_string());
+    };
+    let agents = Agents::from_log(log)?;
+    let agent = agents
+        .get(name)
+        .ok_or_else(|| format!("no agent named {name}"))?;
+    let ask = agent
+        .open_asks()
+        .next()
+        .ok_or_else(|| format!("{name} has no open ask"))?;
+    answer_ask(log, actor, &ask.address, &words.join(" "))?;
+    crate::events::ensure_daemon()?;
+    println!("{}: answered", ask.address);
+    Ok(())
 }
 
 fn cmd_new(log: &EventLog, args: &[String], actor: &str, cwd: &Path) -> Result<(), String> {
@@ -695,6 +907,118 @@ mod tests {
                 .count(),
             HEADLINE_MAX
         );
+    }
+
+    #[test]
+    fn ask_lines_become_asks_and_the_report_needs_you() {
+        let r = Report::from_output(
+            "HEADLINE: Drafted a reply\nASK: Send the reply to thread 4?\nOPTIONS: yes | no |  \nask: Anything else?",
+            false,
+            vec![],
+        );
+        assert_eq!(r.status, ReportStatus::NeedsYou);
+        assert_eq!(r.asks.len(), 2);
+        assert_eq!(r.asks[0].question, "Send the reply to thread 4?");
+        assert_eq!(r.asks[0].options, ["yes", "no"]);
+        assert!(r.asks[1].options.is_empty());
+        assert!(Report::from_output("ASK: x", true, vec![]).asks.is_empty());
+        let many = "ASK: a\nASK: b\nASK: c\nASK: d";
+        assert_eq!(
+            Report::from_output(many, false, vec![]).asks.len(),
+            ASKS_MAX
+        );
+    }
+
+    fn parked(log: &EventLog, options: &[&str]) {
+        log.append(
+            "t",
+            AGENT_CREATED,
+            Some(&agent_address("a")),
+            None,
+            serde_json::to_value(spec()).unwrap(),
+        )
+        .unwrap();
+        log.append(
+            "d",
+            HEARTBEAT_FIRED,
+            Some(&run_address("a", 1)),
+            None,
+            json!({}),
+        )
+        .unwrap();
+        state(log, AgentState::Sleeping, AgentState::Running);
+        let report = Report {
+            headline: "h".into(),
+            status: ReportStatus::NeedsYou,
+            body: "b".into(),
+            evidence: vec![],
+            asks: vec![Ask {
+                address: "colony://local/agent/a/run/1/ask/1".into(),
+                question: "Send?".into(),
+                options: options.iter().map(|o| (*o).to_string()).collect(),
+            }],
+            view: REPORTS_VIEW.into(),
+        };
+        log.append(
+            "d",
+            REPORT_POSTED,
+            Some(&run_address("a", 1)),
+            None,
+            serde_json::to_value(report).unwrap(),
+        )
+        .unwrap();
+        state(log, AgentState::Running, AgentState::Parked);
+    }
+
+    #[test]
+    fn an_answer_readies_a_parked_run_and_the_first_answer_wins() {
+        let (log, _d) = log();
+        parked(&log, &["yes", "no"]);
+        let ask = "colony://local/agent/a/run/1/ask/1";
+        let a = Agents::from_log(&log).unwrap().get("a").cloned().unwrap();
+        assert!(!a.ready_to_resume());
+        assert_eq!(a.next_beat_ms(), None, "no beats while parked");
+
+        let err = answer_ask(&log, "me", ask, "maybe").unwrap_err();
+        assert!(err.contains("answer one of: yes, no"), "{err}");
+        answer_ask(&log, "me", ask, "YES").unwrap();
+        let err = answer_ask(&log, "me", ask, "no").unwrap_err();
+        assert!(err.contains("already answered"), "{err}");
+
+        // A racing second answer lands in the log, but the fold keeps the first.
+        log.append(
+            "other",
+            ASK_ANSWERED,
+            Some(&ask.parse().unwrap()),
+            None,
+            json!({"answer": "no"}),
+        )
+        .unwrap();
+        let a = Agents::from_log(&log).unwrap().get("a").cloned().unwrap();
+        assert!(a.ready_to_resume());
+        let answer = &a.answers[ask];
+        assert_eq!((answer.text.as_str(), answer.by.as_str()), ("yes", "me"));
+    }
+
+    #[test]
+    fn only_an_open_ask_of_a_parked_agent_can_be_answered() {
+        let (log, _d) = log();
+        parked(&log, &[]);
+        let err = answer_ask(&log, "me", "colony://local/agent/a/run/1/ask/2", "x").unwrap_err();
+        assert!(err.contains("no open ask"), "{err}");
+        let err = answer_ask(&log, "me", "colony://local/agent/a/run/1", "x").unwrap_err();
+        assert!(err.contains("not an ask"), "{err}");
+        let ask = "colony://local/agent/a/run/1/ask/1";
+        assert!(answer_ask(&log, "me", ask, "   ")
+            .unwrap_err()
+            .contains("empty"));
+        let long = "x".repeat(ANSWER_MAX + 1);
+        assert!(answer_ask(&log, "me", ask, &long)
+            .unwrap_err()
+            .contains("longer"));
+        state(&log, AgentState::Parked, AgentState::Paused);
+        let err = answer_ask(&log, "me", ask, "go").unwrap_err();
+        assert!(err.contains("a is paused"), "{err}");
     }
 
     #[test]

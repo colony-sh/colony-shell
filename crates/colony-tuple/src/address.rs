@@ -7,6 +7,7 @@
 //! colony://local/agent/lead-miner/run/3             one of its runs
 //! colony://local/agent/lead-miner/run/3/output/1    one output of that run
 //! colony://local/agent/lead-miner/run/3/diff        the run's diff
+//! colony://local/agent/lead-miner/run/3/ask/1       a question that run asked you
 //! colony://local/view/reports                       a viewport
 //! colony://local/event/42                           one event in the log
 //! ```
@@ -60,6 +61,8 @@ pub enum Scope {
     Output { agent: String, run: u64, n: u64 },
     /// A run's diff against its scratch worktree.
     Diff { agent: String, run: u64 },
+    /// One question a run asked. Asks count up from 1 per run.
+    Ask { agent: String, run: u64, n: u64 },
     /// A viewport.
     View(String),
     /// One event in the log, by sequence number.
@@ -89,6 +92,7 @@ impl fmt::Display for Address {
             Scope::Run { agent, run } => write!(f, "agent/{agent}/run/{run}"),
             Scope::Output { agent, run, n } => write!(f, "agent/{agent}/run/{run}/output/{n}"),
             Scope::Diff { agent, run } => write!(f, "agent/{agent}/run/{run}/diff"),
+            Scope::Ask { agent, run, n } => write!(f, "agent/{agent}/run/{run}/ask/{n}"),
             Scope::View(name) => write!(f, "view/{name}"),
             Scope::Event(seq) => write!(f, "event/{seq}"),
         }
@@ -121,6 +125,11 @@ impl FromStr for Address {
             ["agent", a, "run", r, "diff"] => Scope::Diff {
                 agent: name(a)?,
                 run: number(r)?,
+            },
+            ["agent", a, "run", r, "ask", n] => Scope::Ask {
+                agent: name(a)?,
+                run: number(r)?,
+                n: number(n)?,
             },
             ["view", v] => Scope::View(name(v)?),
             ["event", e] => Scope::Event(
@@ -168,6 +177,7 @@ mod tests {
             "colony://local/agent/lead-miner/run/3",
             "colony://local/agent/lead-miner/run/3/output/1",
             "colony://local/agent/lead-miner/run/12/diff",
+            "colony://local/agent/lead-miner/run/3/ask/2",
             "colony://local/view/reports",
             "colony://buildbox/event/42",
         ];

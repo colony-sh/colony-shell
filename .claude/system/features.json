@@ -1271,7 +1271,7 @@
     {
       "id": "F054",
       "name": "Colony Cloud (Managed LLM Service)",
-      "description": "Managed LLM service wrapping AWS Bedrock. REST API (OpenAI-compatible) + native Rust SDK. Tiered subscriptions (Free/Pro/Enterprise), usage tracking, rate limiting, prompt caching. Includes Recipe Registry for sharing recipes/plugins/skills/bundles. SDK complete — server deferred.",
+      "description": "Managed LLM service wrapping AWS Bedrock. REST API (OpenAI-compatible) + native Rust SDK. Tiered subscriptions (Free/Pro/Enterprise), usage tracking, rate limiting, prompt caching. Includes Recipe Registry for sharing recipes/plugins/skills/bundles. SDK complete \u2014 server deferred.",
       "status": "paused",
       "priority": 6,
       "dependencies": [
@@ -1428,7 +1428,9 @@
       "description": "Encrypted environment variable storage and retrieval. SecureRegistry for storing sensitive values with encryption at rest. Integrated into shell startup via init_secure_registry(). SecureAccess/SecureAccessResponse protocol messages for terminal-mediated approval.",
       "status": "complete",
       "priority": 4,
-      "dependencies": ["F009"],
+      "dependencies": [
+        "F009"
+      ],
       "notes": [
         "2026-01-25: Created colony-secure crate with encrypted env var storage",
         "2026-01-25: SecureRegistry with file-backed encrypted storage",
@@ -1464,7 +1466,10 @@
       "description": "Event worker that evaluates rules against tuple space events. Rules define conditions and actions (notify, log, run, webhook, refresh, plugin_action). Receives EventRules via OSC 2337 from colony-nerve terminal.",
       "status": "complete",
       "priority": 5,
-      "dependencies": ["F010", "F009"],
+      "dependencies": [
+        "F010",
+        "F009"
+      ],
       "notes": [
         "2026-03-09: Created event_worker.rs in colony-shell",
         "2026-03-09: EventRules protocol message added to colony-protocol",
@@ -1479,7 +1484,9 @@
       "description": "Unix socket IPC server for interactive widget communication between shell and terminal. WidgetServer manages socket lifecycle. WidgetHandler routes WidgetRequest/WidgetAction messages via OSC 2337. Supports branch picker and extensible widget types.",
       "status": "complete",
       "priority": 5,
-      "dependencies": ["F009"],
+      "dependencies": [
+        "F009"
+      ],
       "notes": [
         "2026-02-09: Created widget_server.rs with Unix socket IPC",
         "2026-02-09: Created widget_handler.rs for routing widget messages",
@@ -1493,7 +1500,9 @@
       "description": "Interactive git branch selection widget. gather_branch_data() collects local/remote branches with tracking info. switch_branch(), create_branch(), checkout_remote() operations. Integrated via widget handler and OSC 2337.",
       "status": "complete",
       "priority": 5,
-      "dependencies": ["F063"],
+      "dependencies": [
+        "F063"
+      ],
       "notes": [
         "2026-02-09: Created widgets/branch_picker.rs in colony-ui-core",
         "2026-02-09: BranchPickerData with LocalBranch and RemoteBranch types",
@@ -1509,7 +1518,10 @@
       "description": "General framework for interactive prompt widgets rendered by terminal. Widget lifecycle: shell emits widget request via OSC 2337, terminal renders UI, user interacts, result returned to shell. Extends beyond branch picker to support file picker, tool approval, and custom widgets.",
       "status": "new",
       "priority": 5,
-      "dependencies": ["F063", "F064"],
+      "dependencies": [
+        "F063",
+        "F064"
+      ],
       "notes": [
         "2025-12-29: Design document created (docs/plans/2025-12-29-interactive-prompt-widgets-design.md)",
         "2026-02-09: Branch picker widget implemented as first concrete widget",
@@ -1524,7 +1536,9 @@
       "description": "Complete vim-style editing in TUI: delete operators (d, dd, D), yank/paste (y, p, P), undo/redo (u, Ctrl+r), and search (/pattern). Currently stubbed in app.rs action handlers.",
       "status": "new",
       "priority": 4,
-      "dependencies": ["F053"],
+      "dependencies": [
+        "F053"
+      ],
       "notes": [
         "2026-01-26: Action enums defined (DeletePending, YankPending, PasteAfter, PasteBefore, Undo, Redo)",
         "2026-01-26: Keybindings mapped but handlers return early with no-op",
@@ -1540,7 +1554,9 @@
       "description": "Complete job control with SIGCONT for suspended processes. fg builtin resumes stopped job in foreground with terminal control. bg builtin resumes stopped job in background. Currently fg/bg are stubs that validate but don't send signals.",
       "status": "complete",
       "priority": 3,
-      "dependencies": ["F008"],
+      "dependencies": [
+        "F008"
+      ],
       "notes": [
         "2025-12-17: Job table infrastructure complete (F008)",
         "2025-12-17: fg/bg builtins exist but return 'not implemented' for actual resumption",
@@ -1558,7 +1574,9 @@
       "description": "Implement proper streaming responses for OpenAI and Ollama providers. Currently responses are collected in full before returning. Need SSE parsing for OpenAI and NDJSON parsing for Ollama streaming endpoints.",
       "status": "complete",
       "priority": 4,
-      "dependencies": ["F014"],
+      "dependencies": [
+        "F014"
+      ],
       "notes": [
         "2025-12-17: Provider trait defined with stream_chat method",
         "2025-12-17: Anthropic streaming works via claude-sdk",
@@ -1574,7 +1592,9 @@
       "description": "Bash-compatible dynamic shell variables that return different values on each access. RANDOM (0-32767), SECONDS (elapsed time), LINENO (current line), BASHPID (current subshell PID), EPOCHSECONDS, EPOCHREALTIME, SRANDOM.",
       "status": "complete",
       "priority": 3,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-23: Design document created (docs/plans/2025-12-23-dynamic-variables.md)",
         "Completed: All 7 dynamic vars implemented in colony-expand/src/context.rs",
@@ -1588,7 +1608,9 @@
       "description": "Bash-compatible function export via environment variables. export -f serializes function body into BASH_FUNC_name%% env vars. Child processes can inherit shell functions.",
       "status": "complete",
       "priority": 3,
-      "dependencies": ["F007"],
+      "dependencies": [
+        "F007"
+      ],
       "notes": [
         "2025-12-23: Design document created (docs/plans/2025-12-23-export-functions.md)",
         "Completed 2026-03-16: Full implementation with 13 unit tests. export -f, export -fn, export -pf, serialization, env var round-trip, startup import all verified."
@@ -1600,7 +1622,10 @@
       "description": "Comprehensive debugging capabilities for shell scripts: breakpoints, stepping (step into/over/out), variable inspection, call stack visualization. Integration with TUI for interactive debugging sessions.",
       "status": "new",
       "priority": 6,
-      "dependencies": ["F021", "F053"],
+      "dependencies": [
+        "F021",
+        "F053"
+      ],
       "notes": [
         "2025-12-24: Design document created (docs/plans/2025-12-24-debugger-support.md)",
         "Status: paused/design phase"
@@ -1609,10 +1634,12 @@
     {
       "id": "F072",
       "name": "WASM Web Playground",
-      "description": "Browser-based Colony Shell playground compiled to WebAssembly. Interactive tutorial environment, shareable scripts, no install required. Uses wasm-bindgen for Rust→WASM compilation.",
+      "description": "Browser-based Colony Shell playground compiled to WebAssembly. Interactive tutorial environment, shareable scripts, no install required. Uses wasm-bindgen for Rust\u2192WASM compilation.",
       "status": "new",
       "priority": 7,
-      "dependencies": ["F021"],
+      "dependencies": [
+        "F021"
+      ],
       "notes": [
         "2025-12-24: Design document created (docs/plans/2025-12-24-wasm-web-playground.md)"
       ]
@@ -1623,7 +1650,11 @@
       "description": "Per-directory TUI widgets defined in .colonyrc or widget definition files. Render in sidepanel with contextual info. Built-in widgets: Git (branch/status/stash), Project (package.json/Cargo.toml), Docker, and custom user-defined widgets.",
       "status": "new",
       "priority": 5,
-      "dependencies": ["F052", "F053", "F020"],
+      "dependencies": [
+        "F052",
+        "F053",
+        "F020"
+      ],
       "notes": [
         "2025-12-24: Design document created (docs/plans/2025-12-24-programmable-tui-widgets.md)"
       ]
@@ -1634,7 +1665,10 @@
       "description": "Real-time command recommendation system with inline ghost text suggestions, contextual help, and AI-powered recommendations. History-based, context-aware, and directory-sensitive suggestions.",
       "status": "new",
       "priority": 5,
-      "dependencies": ["F014", "F013"],
+      "dependencies": [
+        "F014",
+        "F013"
+      ],
       "notes": [
         "Design document: docs/design/COMMAND_RECOMMENDATIONS.md",
         "Ghost completion infrastructure exists in colony-tui (F053)",
@@ -1647,7 +1681,10 @@
       "description": "First-class AI interaction context management. Context windows, automatic summarization, context sharing between agents, context persistence across sessions. Builds on extended channels (fd 3) for context tracking.",
       "status": "in_progress",
       "priority": 5,
-      "dependencies": ["F024", "F013"],
+      "dependencies": [
+        "F024",
+        "F013"
+      ],
       "notes": [
         "Spec: docs/spec/16-context.md",
         "Context channel (fd 3) infrastructure exists via F024",
@@ -1675,7 +1712,10 @@
       "description": "Colony gradual type system. Optional type annotations for variables, function parameters, and return values. Type inference for simple cases. Type checking at parse time with runtime validation. Builds on proc definitions.",
       "status": "new",
       "priority": 6,
-      "dependencies": ["F057", "F021"],
+      "dependencies": [
+        "F057",
+        "F021"
+      ],
       "notes": [
         "Spec: docs/spec/3-type-system.md",
         "Proc definitions (F057) provide the function syntax for typed parameters"
@@ -1687,9 +1727,11 @@
       "description": "Support backslash-newline line continuation in heredoc delimiters. Currently heredoc preprocessing detects delimiters before line continuation runs, so 'cat <<EO\\<newline>F' sees 'EO\\' as the delimiter instead of 'EOF'. Fix requires refactoring preprocessor ordering or adding delimiter-aware line continuation in heredoc.rs. Affects 3 skipped BATS tests (#20, #22, #24).",
       "status": "new",
       "priority": 6,
-      "dependencies": ["F039"],
+      "dependencies": [
+        "F039"
+      ],
       "notes": [
-        "2026-03-16: Split from F039 (complete). Edge case — rare in real-world shell scripts.",
+        "2026-03-16: Split from F039 (complete). Edge case \u2014 rare in real-world shell scripts.",
         "Root cause: preprocess_heredocs() runs before preprocess_line_continuations().",
         "Fix options: (a) reorder preprocessors, (b) add line continuation to heredoc.rs.",
         "Risk: reordering could affect other preprocessor interactions."
@@ -1701,12 +1743,14 @@
       "description": "Support multiple heredocs directed to different file descriptors in a single command (e.g., 'while read line1; do read line2 <&3; done <<EOF1 3<<EOF2'). Currently causes tokio panic due to concurrent pipe/FD handling. Affects 1 skipped BATS test (#11).",
       "status": "new",
       "priority": 7,
-      "dependencies": ["F039"],
+      "dependencies": [
+        "F039"
+      ],
       "notes": [
-        "2026-03-16: Split from F039 (complete). Advanced feature — multiple FD heredocs are uncommon.",
+        "2026-03-16: Split from F039 (complete). Advanced feature \u2014 multiple FD heredocs are uncommon.",
         "Root cause: multiple pipe FDs with tokio async execution creates race condition.",
         "Fix options: (a) serialize heredoc pipe setup, (b) use select/epoll for coordination.",
-        "Risk: High — requires execution pipeline refactoring for FD management."
+        "Risk: High \u2014 requires execution pipeline refactoring for FD management."
       ]
     },
     {
@@ -1736,14 +1780,16 @@
         "Started 2026-10-29: mapping Phoenix widgets/whiteboard items onto Bellman surface kinds",
         "Completed 2026-10-30: announce, widget create/move/resize/remove/config, markdown and draw write through the door; 57_canvas_door_writes.bats 4/4; full BATS adds no failures over main (72 vs 76, the 4 being the new write tests)"
       ]
-        },
+    },
     {
       "id": "F082",
       "name": "Colony event log and colony:// addresses",
       "description": "Colony first slice, build step 2: one append-only, totally ordered event log per machine (an events table in ~/.config/colony/tuple-space.db beside the tuple space; UPDATE and DELETE refused by triggers) and colony:// addresses for agents, runs, outputs, diffs, viewports and events, resolved from the shell by `colony log` and `colony open`.",
       "status": "complete",
       "priority": 1,
-      "dependencies": ["F083"],
+      "dependencies": [
+        "F083"
+      ],
       "notes": [
         "Started 2026-11-11: built before the room reordered the build order, parked, then rebased onto F083 as step 2",
         "Completed 2026-11-11: 9 colony-tuple unit tests, 59_colony_log.bats 6/6. Nothing writes events yet: the scheduler and agents start writing them in steps 3 and 4"
@@ -1760,73 +1806,101 @@
         "Started 2026-11-11: heartbeat run confirmed to fail with 'no agent callback configured' after start, and 'no HEARTBEAT.md found' without start",
         "Completed 2026-11-11: callback installed process-wide; 58_heartbeat_agent.bats 4/4 against a fake local Ollama; colony-agent 112 and colony-exec 550 lib tests pass; clippy -D warnings clean. F082 is taken by the parked event-log work (branch colony/f082-event-log, uncommitted)"
       ]
-        },
+    },
     {
       "id": "F084",
       "name": "Heartbeats run in the colony-events daemon, which starts at login",
       "description": "Colony first slice, build step 3: `heartbeat start`/`stop` append HeartbeatSet/HeartbeatPaused to the event log and hand the checklist to the colony-events daemon, which replays the log and runs the existing scheduler for each checklist with no shell open. Each tick appends HeartbeatFired/HeartbeatAnswered. One daemon per user (flock). `on --daemon install` writes and loads a launchd agent (macOS) or systemd user unit (Linux).",
       "status": "complete",
       "priority": 1,
-      "dependencies": ["F082", "F083"],
+      "dependencies": [
+        "F082",
+        "F083"
+      ],
       "notes": [
         "Started 2026-11-11: heartbeat runner moved from colony-shell to colony-agent::heartbeat so the daemon can install it",
         "Completed 2026-11-11: 60_heartbeat_daemon.bats 5/5; `on --daemon install` itself not run here (it would change this machine's login items); only --print is tested"
       ]
-        },
+    },
     {
       "id": "F085",
       "name": "Named agents with a lifecycle and a heartbeat each",
       "description": "Colony first slice, build step 4: `agent new <name> --every <dur> --charter <text>` creates a named agent whose charter, grants (security mode, one readable directory), per-run and daily budgets and state (sleeping, running, parked, paused, retired) live in the event log as events about colony://local/agent/<name>. The daemon runs one heartbeat per awake agent; each beat is a run at colony://local/agent/<name>/run/<n> with its output recorded and its answer (idle, acted, missed) logged. `agent list`, `agent pause|resume|retire`.",
       "status": "complete",
       "priority": 1,
-      "dependencies": ["F084"],
+      "dependencies": [
+        "F084"
+      ],
       "notes": [
         "Started 2026-11-11: agent model in colony-exec/src/agents.rs, folded from the log",
         "Completed 2026-11-11: 61_named_agents.bats 6/6; notes are a field with no writer yet (proposal and approval need the viewport, step 5)"
       ]
-        },
+    },
     {
       "id": "F086",
       "name": "Provider API keys in the OS keychain",
       "description": "`colony secret set|has|rm <NAME>` stores API keys as keychain items (service `colony`, account = the variable name). colony-agent's provider detection uses the environment variable when set, else the keychain item, so the colony-events daemon started at login can use Anthropic or OpenAI without a key on disk. macOS only: keyring's apple-native backend is now enabled; before this every keyring call in the repo went to its in-memory mock store.",
       "status": "complete",
       "priority": 1,
-      "dependencies": ["F084"],
+      "dependencies": [
+        "F084"
+      ],
       "notes": [
         "Completed 2026-11-12: 62_colony_secret.bats 4/4 (no keychain writes), colony-secure secrets tests 3; real set/read not run here (it writes to the user's keychain)"
       ]
-        },
+    },
     {
       "id": "F087",
       "name": "Ship colony-events with colony",
       "description": "release.yml builds colony-events beside colony and puts both in every tarball; the Homebrew formula installs both; scripts/build.sh builds and installs both. colony finds colony-events next to itself, so heartbeat start and agent new can start the daemon on an installed Colony.",
       "status": "complete",
       "priority": 1,
-      "dependencies": ["F084"],
+      "dependencies": [
+        "F084"
+      ],
       "notes": [
         "Completed 2026-11-12: local release build of both binaries; colony-events links only system libraries (otool). The workflow itself runs on the next tag"
       ]
-        },
+    },
     {
       "id": "F088",
       "name": "Anthropic provider works on the current API: tools and model",
       "description": "Three bugs found running the first live heartbeat on Anthropic: tool definitions carried disable_user_input/input_examples, which the Messages API rejects (400); the default model claude-3-5-sonnet-20241022 is retired (404); and streamed tool calls were never completed (input_json_delta was dropped, ToolCallComplete never emitted), so no Anthropic tool ever ran. Default is now claude-opus-5-5.",
       "status": "complete",
       "priority": 1,
-      "dependencies": ["F086"],
+      "dependencies": [
+        "F086"
+      ],
       "notes": [
         "Completed 2026-11-12: live heartbeat run with the key from the keychain: pass in 9.8s, the model used search; 4 new provider unit tests"
       ]
-        },
+    },
     {
       "id": "F089",
       "name": "Reports with evidence, and the reports viewport",
       "description": "Colony first slice, build step 5: a named agent's run that acted or missed posts a ReportPosted event (headline, status fine|attention|blocked|needs_you, body, evidence addresses, asks) to the reports viewport; idle runs post nothing. Each tool call a run makes is recorded as an output (output/2.., with tool and input) and listed as evidence beside the model's text (output/1). The colony-events daemon serves the viewport (COLONY_VIEW_ADDR, default 127.0.0.1:7337): needs-you first, then the feed; evidence links open the exact output.",
       "status": "complete",
       "priority": 1,
-      "dependencies": ["F085", "F088"],
+      "dependencies": [
+        "F085",
+        "F088"
+      ],
       "notes": [
         "Completed 2026-11-12: 63_reports_viewport.bats 6/6; read-only (answering is step 6); phone reach = bind the machine's private-network address"
+      ]
+    },
+    {
+      "id": "F090",
+      "name": "Ask and answer, with parked runs",
+      "description": "Colony first slice, build step 6: a run's ASK: lines (with an optional OPTIONS: a | b) become asks in its report, at colony://local/agent/<n>/run/<r>/ask/<k>; the beat is answered needs_you and the agent parks, with no beats until every ask is answered. Answering (POST /api/answer from the viewport, or agent answer <name> <answer>) appends AskAnswered with who answered as its actor; the daemon then resumes the same run with the charter, its text and the answers, records its outputs after the earlier ones, answers RunResumed, posts a report, and sleeps or parks again.",
+      "status": "complete",
+      "priority": 1,
+      "dependencies": [
+        "F089"
+      ],
+      "notes": [
+        "Started 2026-11-13: viewport boundary = private network only (the recommended default); the log names a viewport answer viewport@<device IP>",
+        "Completed 2026-11-13: 64_ask_answer.bats 5/5; BATS 54-64 64/64; no push notification yet (needs a push service, i.e. a host grant)"
       ]
     }
   ]
