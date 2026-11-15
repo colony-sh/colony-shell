@@ -12,7 +12,15 @@
 //!                  [--timeout <dur>] [--daily-tokens <n>]
 //! agent list
 //! agent pause|resume|retire <name>
+//! agent answer <name> <answer>
+//! agent notes <name>
+//! agent forget <name> <n>
 //! ```
+//!
+//! An agent carries notes between runs. A run proposes one with a `NOTE:` line; the
+//! proposal is an ask with the answers `keep` and `drop` that does not park the run. Only a
+//! `keep` in an [`ASK_ANSWERED`] event makes it a note: the fold never takes one from the
+//! model's text. Its kept notes go into every later run's prompt.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -46,6 +54,13 @@ pub const DIFF_RECORDED: &str = "DiffRecorded";
 /// Event: a parked run went on with its answers and finished again. Subject: the run.
 /// Data: `{outcome, tokens}`, like a beat's answer.
 pub const RUN_RESUMED: &str = "RunResumed";
+/// Event: a kept note was dropped. Subject: the agent. Actor: who dropped it.
+/// Data: `{note}`, its text.
+pub const NOTE_FORGOTTEN: &str = "NoteForgotten";
+
+/// The answers a note proposal takes.
+pub const KEEP: &str = "keep";
+pub const DROP: &str = "drop";
 
 /// The viewport every agent reports to, for now.
 pub const REPORTS_VIEW: &str = "reports";
@@ -94,6 +109,10 @@ pub struct Report {
     /// Questions for you. A report with any parks its run.
     #[serde(default)]
     pub asks: Vec<Ask>,
+    /// Notes the run proposes to carry into later runs, each an ask whose question is the
+    /// note's text and whose options are `keep` and `drop`. They do not park the run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Ask>,
     /// The viewport it is posted to.
     pub view: String,
 }
@@ -107,13 +126,19 @@ const QUESTION_MAX: usize = 500;
 const OPTION_MAX: usize = 60;
 const OPTIONS_MAX: usize = 6;
 pub const ANSWER_MAX: usize = 2000;
+/// Most notes one report proposes, and longest note, in characters.
+const NOTES_PROPOSED_MAX: usize = 3;
+const NOTE_MAX: usize = 500;
+/// Most notes an agent keeps. A keep past it is refused until one is forgotten.
+pub const NOTES_KEPT_MAX: usize = 20;
 
 impl Report {
     /// The report for a run's model text. `missed` marks a run that did not finish.
     /// The model may set the headline and status with `HEADLINE:` and `STATUS:` lines;
     /// otherwise the headline is the first WARN or ALERT finding, or the first line.
     /// Each `ASK:` line is a question for you, and an `OPTIONS: a | b` line after it
-    /// limits its answers. A missed run asks nothing.
+    /// limits its answers. Each `NOTE:` line proposes a note. A missed run asks and proposes
+    /// nothing.
     pub fn from_output(text: &str, missed: bool, evidence: Vec<String>) -> Self {
         let tagged = |tag: &str| {
             text.lines().find_map(|l| {
@@ -135,6 +160,11 @@ impl Report {
             .filter(|h| !h.is_empty())
             .unwrap_or_else(|| "The run wrote nothing".to_string());
         let asks = if missed { Vec::new() } else { parse_asks(text) };
+        let notes = if missed {
+            Vec::new()
+        } else {
+            parse_notes(text)
+        };
         let status = match tagged("STATUS:").map(|s| s.to_ascii_lowercase()) {
             _ if missed => ReportStatus::Blocked,
             _ if !asks.is_empty() => ReportStatus::NeedsYou,
@@ -148,6 +178,7 @@ impl Report {
             body: text.trim().to_string(),
             evidence,
             asks,
+            notes,
             view: REPORTS_VIEW.to_string(),
         }
     }
@@ -181,6 +212,25 @@ fn parse_asks(text: &str) -> Vec<Ask> {
     asks
 }
 
+/// The `NOTE:` lines of a run's text, as proposals.
+fn parse_notes(text: &str) -> Vec<Ask> {
+    text.lines()
+        .map(str::trim)
+        .filter_map(|l| {
+            l.get(..5)
+                .filter(|p| p.eq_ignore_ascii_case("NOTE:"))
+                .map(|_| l[5..].trim())
+        })
+        .filter(|n| !n.is_empty())
+        .take(NOTES_PROPOSED_MAX)
+        .map(|n| Ask {
+            address: String::new(),
+            question: cut(n, NOTE_MAX),
+            options: vec![KEEP.to_string(), DROP.to_string()],
+        })
+        .collect()
+}
+
 fn cut(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -209,9 +259,6 @@ pub struct AgentSpec {
     pub token_budget: u32,
     /// Most tokens across a day's runs (UTC day). A beat past it is missed.
     pub daily_tokens: u64,
-    /// What it carries between runs. Empty until note approval lands.
-    #[serde(default)]
-    pub notes: Vec<String>,
     /// The podman image its runs execute in. `None`: no container, so its tools only
     /// read, on this machine.
     #[serde(default)]
@@ -261,6 +308,10 @@ pub struct AgentRecord {
     pub pending: Option<Report>,
     /// Answers to the pending report's asks, by ask address. The first answer wins.
     pub answers: BTreeMap<String, Answer>,
+    /// The notes it carries into every run, oldest first: each one kept by an answer.
+    pub notes: Vec<String>,
+    /// Notes its runs proposed that nobody has kept or dropped yet.
+    pub proposed: Vec<Ask>,
 }
 
 impl AgentRecord {
@@ -275,6 +326,11 @@ impl AgentRecord {
             .iter()
             .flat_map(|r| &r.asks)
             .filter(|a| !self.answers.contains_key(&a.address))
+    }
+
+    /// Whether `ask` is one of its open note proposals.
+    pub fn proposal(&self, ask: &str) -> Option<&Ask> {
+        self.proposed.iter().find(|p| p.address == ask)
     }
 
     /// Whether it is parked and every ask is answered, so its run can go on.
@@ -346,6 +402,8 @@ impl Agents {
                     runs: 0,
                     pending: None,
                     answers: BTreeMap::new(),
+                    notes: Vec::new(),
+                    proposed: Vec::new(),
                 });
             }
             (AGENT_STATE_CHANGED, Scope::Agent(name)) => {
@@ -380,6 +438,7 @@ impl Agents {
                     return;
                 };
                 agent.answers.clear();
+                agent.proposed.extend(report.notes.iter().cloned());
                 agent.pending = (!report.asks.is_empty()).then_some(report);
             }
             (ASK_ANSWERED, Scope::Ask { agent, .. }) => {
@@ -390,6 +449,14 @@ impl Agents {
                 ) else {
                     return;
                 };
+                // A note proposal: only a keep here makes it a note.
+                if let Some(i) = agent.proposed.iter().position(|p| p.address == subject) {
+                    let note = agent.proposed.remove(i).question;
+                    if text == KEEP && agent.notes.len() < NOTES_KEPT_MAX {
+                        agent.notes.push(note);
+                    }
+                    return;
+                }
                 let asked = agent
                     .pending
                     .iter()
@@ -404,6 +471,16 @@ impl Agents {
                             by: ev.actor.clone(),
                             at_ms: ev.at_ms,
                         });
+                }
+            }
+            (NOTE_FORGOTTEN, Scope::Agent(name)) => {
+                let (Some(agent), Some(note)) =
+                    (self.by_name.get_mut(&name), ev.data["note"].as_str())
+                else {
+                    return;
+                };
+                if let Some(i) = agent.notes.iter().position(|n| n == note) {
+                    agent.notes.remove(i);
                 }
             }
             _ => {}
@@ -446,6 +523,9 @@ pub fn answer_ask(log: &EventLog, actor: &str, ask: &str, answer: &str) -> Resul
         .get(name)
         .ok_or_else(|| format!("no agent named {name}"))?;
     let addr = addr.to_string();
+    if let Some(proposal) = agent.proposal(&addr) {
+        return answer_proposal(log, actor, agent, &proposal.address, answer);
+    }
     let Some(asked) = agent
         .pending
         .iter()
@@ -492,6 +572,53 @@ pub fn answer_ask(log: &EventLog, actor: &str, ask: &str, answer: &str) -> Resul
         serde_json::json!({ "answer": answer }),
     )
     .map_err(|e| e.to_string())
+}
+
+/// Keep or drop a proposed note. It needs no parked run: a proposal waits on its own.
+fn answer_proposal(
+    log: &EventLog,
+    actor: &str,
+    agent: &AgentRecord,
+    ask: &str,
+    answer: &str,
+) -> Result<i64, String> {
+    let answer = match answer.trim().to_ascii_lowercase().as_str() {
+        KEEP => KEEP,
+        DROP => DROP,
+        _ => return Err(format!("answer one of: {KEEP}, {DROP}")),
+    };
+    if answer == KEEP && agent.notes.len() >= NOTES_KEPT_MAX {
+        return Err(format!(
+            "{} keeps {NOTES_KEPT_MAX} notes already; forget one first (agent forget)",
+            agent.name
+        ));
+    }
+    let address: Address = ask
+        .parse()
+        .map_err(|e: colony_tuple::AddressError| e.to_string())?;
+    log.append(
+        actor,
+        ASK_ANSWERED,
+        Some(&address),
+        None,
+        serde_json::json!({ "answer": answer }),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// The notes section a run's prompt ends with, or nothing when it keeps none.
+pub fn notes_prompt(notes: &[String]) -> String {
+    if notes.is_empty() {
+        return String::new();
+    }
+    let mut out =
+        "\n\n## Your notes\n\nNotes you kept from earlier runs, approved by your human:\n"
+            .to_string();
+    for note in notes {
+        out.push_str(&format!("\n- {note}"));
+    }
+    out.push('\n');
+    out
 }
 
 /// Tokens the agent's answered beats used since the start of today (UTC).
@@ -560,7 +687,9 @@ pub fn local_time(ms: i64) -> String {
 
 /// The `agent` subcommands this module handles. The REPL's own (`status`, `model`, ...)
 /// drive the chat agent and never reach here.
-pub const SUBCOMMANDS: [&str; 7] = ["new", "list", "pause", "resume", "retire", "answer", "help"];
+pub const SUBCOMMANDS: [&str; 9] = [
+    "new", "list", "pause", "resume", "retire", "answer", "notes", "forget", "help",
+];
 
 /// `agent new|list|pause|resume|retire`. `actor` is who the log records.
 pub fn builtin_agent(args: &[String], actor: &str, cwd: &Path) -> BuiltinResult {
@@ -575,6 +704,8 @@ pub fn builtin_agent(args: &[String], actor: &str, cwd: &Path) -> BuiltinResult 
             "resume" => change_state(&log, rest, actor, AgentState::Sleeping),
             "retire" => change_state(&log, rest, actor, AgentState::Retired),
             "answer" => cmd_answer(&log, rest, actor),
+            "notes" => cmd_notes(&log, rest),
+            "forget" => cmd_forget(&log, rest, actor),
             "help" | "--help" | "-h" => {
                 print_help();
                 Ok(())
@@ -601,7 +732,10 @@ fn print_help() {
     println!("agent list                     every agent, its state and its next beat");
     println!("agent pause|resume <name>      stop and restart its heartbeat");
     println!("agent retire <name>            stop it for good; the name stays taken");
-    println!("agent answer <name> <answer>   answer its next open ask; its run goes on");
+    println!("agent answer <name> <answer>   answer its next open ask (its run goes on), else");
+    println!("                               keep or drop its next proposed note");
+    println!("agent notes <name>             the notes it keeps and the ones it proposed");
+    println!("agent forget <name> <n>        drop kept note n (as agent notes numbers them)");
 }
 
 fn cmd_answer(log: &EventLog, args: &[String], actor: &str) -> Result<(), String> {
@@ -614,11 +748,57 @@ fn cmd_answer(log: &EventLog, args: &[String], actor: &str) -> Result<(), String
         .ok_or_else(|| format!("no agent named {name}"))?;
     let ask = agent
         .open_asks()
+        .chain(&agent.proposed)
         .next()
-        .ok_or_else(|| format!("{name} has no open ask"))?;
+        .ok_or_else(|| format!("{name} has no open ask or proposed note"))?;
     answer_ask(log, actor, &ask.address, &words.join(" "))?;
     crate::events::ensure_daemon()?;
     println!("{}: answered", ask.address);
+    Ok(())
+}
+
+fn cmd_notes(log: &EventLog, args: &[String]) -> Result<(), String> {
+    let [name] = args else {
+        return Err("usage: agent notes <name>".to_string());
+    };
+    let agents = Agents::from_log(log)?;
+    let agent = agents
+        .get(name)
+        .ok_or_else(|| format!("no agent named {name}"))?;
+    if agent.notes.is_empty() && agent.proposed.is_empty() {
+        println!("{name} keeps no notes.");
+    }
+    for (n, note) in (1..).zip(&agent.notes) {
+        println!("{n}. {note}");
+    }
+    for p in &agent.proposed {
+        println!("proposed: {} ({})", p.question, p.address);
+    }
+    Ok(())
+}
+
+fn cmd_forget(log: &EventLog, args: &[String], actor: &str) -> Result<(), String> {
+    let [name, n] = args else {
+        return Err("usage: agent forget <name> <n>".to_string());
+    };
+    let agents = Agents::from_log(log)?;
+    let agent = agents
+        .get(name)
+        .ok_or_else(|| format!("no agent named {name}"))?;
+    let note = n
+        .parse::<usize>()
+        .ok()
+        .and_then(|n| agent.notes.get(n.checked_sub(1)?))
+        .ok_or_else(|| format!("{name} has no note {n} (see agent notes {name})"))?;
+    log.append(
+        actor,
+        NOTE_FORGOTTEN,
+        Some(&agent.address()),
+        None,
+        serde_json::json!({ "note": note }),
+    )
+    .map_err(|e| e.to_string())?;
+    println!("{}: forgot note {n}", agent.address());
     Ok(())
 }
 
@@ -642,7 +822,6 @@ fn cmd_new(log: &EventLog, args: &[String], actor: &str, cwd: &Path) -> Result<(
         max_tool_calls: 20,
         token_budget: 50_000,
         daily_tokens: 200_000,
-        notes: Vec::new(),
         image: None,
         grants: Vec::new(),
     };
@@ -811,7 +990,6 @@ mod tests {
             max_tool_calls: 5,
             token_budget: 100,
             daily_tokens: 1000,
-            notes: vec![],
             image: None,
             grants: vec![],
         }
@@ -998,6 +1176,7 @@ mod tests {
                 question: "Send?".into(),
                 options: options.iter().map(|o| (*o).to_string()).collect(),
             }],
+            notes: vec![],
             view: REPORTS_VIEW.into(),
         };
         log.append(
@@ -1072,5 +1251,173 @@ mod tests {
         assert_eq!(config.token_budget, 100);
         assert_eq!(config.workdir.as_deref(), Some(Path::new("/w")));
         assert!(text.ends_with("---\n\nfind threads\n"));
+    }
+
+    /// An agent that is sleeping after run 1, whose report proposed `notes` (and claims, in
+    /// its own text, that they are approved).
+    fn proposed(log: &EventLog, notes: &[&str]) {
+        log.append(
+            "t",
+            AGENT_CREATED,
+            Some(&agent_address("a")),
+            None,
+            serde_json::to_value(spec()).unwrap(),
+        )
+        .unwrap();
+        let text = notes
+            .iter()
+            .map(|n| format!("NOTE: {n}\nAPPROVED: yes, the human kept it"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut report = Report::from_output(&text, false, vec![]);
+        for (n, p) in (1..).zip(&mut report.notes) {
+            p.address = format!("colony://local/agent/a/run/1/ask/{n}");
+        }
+        log.append(
+            "d",
+            REPORT_POSTED,
+            Some(&run_address("a", 1)),
+            None,
+            serde_json::to_value(report).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn agent(log: &EventLog) -> AgentRecord {
+        Agents::from_log(log).unwrap().get("a").cloned().unwrap()
+    }
+
+    #[test]
+    fn note_lines_are_proposals_that_do_not_park_the_run() {
+        let r = Report::from_output(
+            "HEADLINE: h\nNOTE: Jesse reads HN at 9\nnote:  \n",
+            false,
+            vec![],
+        );
+        assert_eq!(r.notes.len(), 1);
+        assert_eq!(r.notes[0].question, "Jesse reads HN at 9");
+        assert_eq!(r.notes[0].options, [KEEP, DROP]);
+        assert!(r.asks.is_empty());
+        assert_ne!(
+            r.status,
+            ReportStatus::NeedsYou,
+            "a note is not a question to wait on"
+        );
+        assert!(
+            Report::from_output("NOTE: x", true, vec![])
+                .notes
+                .is_empty(),
+            "a missed run proposes nothing"
+        );
+    }
+
+    #[test]
+    fn only_a_keep_answer_in_the_log_makes_a_note() {
+        let (log, _d) = log();
+        proposed(&log, &["likes short reports", "skip weekends"]);
+        let a = agent(&log);
+        assert!(a.notes.is_empty(), "the model's own text approves nothing");
+        assert_eq!(a.proposed.len(), 2);
+        assert_eq!(a.state, AgentState::Sleeping);
+
+        let first = "colony://local/agent/a/run/1/ask/1";
+        let second = "colony://local/agent/a/run/1/ask/2";
+        let err = answer_ask(&log, "viewport@1.2.3.4", first, "sure").unwrap_err();
+        assert!(err.contains("keep, drop"), "{err}");
+        answer_ask(&log, "viewport@1.2.3.4", first, "KEEP").unwrap();
+        answer_ask(&log, "ade", second, "drop").unwrap();
+        let a = agent(&log);
+        assert_eq!(a.notes, ["likes short reports"]);
+        assert!(a.proposed.is_empty());
+        assert!(
+            answer_ask(&log, "t", first, "keep").is_err(),
+            "a proposal is answered once"
+        );
+
+        // A later report does not bring the dropped note back, and the kept one stays.
+        log.append(
+            "d",
+            REPORT_POSTED,
+            Some(&run_address("a", 2)),
+            None,
+            serde_json::to_value(Report::from_output("HEADLINE: x", false, vec![])).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(agent(&log).notes, ["likes short reports"]);
+    }
+
+    #[test]
+    fn an_answered_event_for_no_proposal_makes_no_note() {
+        let (log, _d) = log();
+        proposed(&log, &[]);
+        log.append(
+            "x",
+            ASK_ANSWERED,
+            Some(&"colony://local/agent/a/run/1/ask/9".parse().unwrap()),
+            None,
+            json!({"answer": "keep"}),
+        )
+        .unwrap();
+        assert!(agent(&log).notes.is_empty());
+    }
+
+    #[test]
+    fn a_forgotten_note_leaves_the_prompt() {
+        let (log, _d) = log();
+        proposed(&log, &["a", "b"]);
+        answer_ask(&log, "t", "colony://local/agent/a/run/1/ask/1", "keep").unwrap();
+        answer_ask(&log, "t", "colony://local/agent/a/run/1/ask/2", "keep").unwrap();
+        assert!(notes_prompt(&agent(&log).notes).contains("- a\n- b"));
+        log.append(
+            "t",
+            NOTE_FORGOTTEN,
+            Some(&agent_address("a")),
+            None,
+            json!({"note": "a"}),
+        )
+        .unwrap();
+        assert_eq!(agent(&log).notes, ["b"]);
+        assert_eq!(notes_prompt(&[]), "");
+    }
+
+    #[test]
+    fn a_keep_past_the_most_notes_is_refused() {
+        let (log, _d) = log();
+        let many: Vec<String> = (0..=NOTES_KEPT_MAX).map(|n| format!("n{n}")).collect();
+        log.append(
+            "t",
+            AGENT_CREATED,
+            Some(&agent_address("a")),
+            None,
+            serde_json::to_value(spec()).unwrap(),
+        )
+        .unwrap();
+        for (run, chunk) in (1..).zip(many.chunks(3)) {
+            let text: String = chunk.iter().map(|n| format!("NOTE: {n}\n")).collect();
+            let mut report = Report::from_output(&text, false, vec![]);
+            for (k, p) in (1..).zip(&mut report.notes) {
+                p.address = format!("colony://local/agent/a/run/{run}/ask/{k}");
+            }
+            log.append(
+                "d",
+                REPORT_POSTED,
+                Some(&run_address("a", run)),
+                None,
+                serde_json::to_value(report).unwrap(),
+            )
+            .unwrap();
+        }
+        let addrs: Vec<String> = agent(&log)
+            .proposed
+            .iter()
+            .map(|p| p.address.clone())
+            .collect();
+        for addr in &addrs[..NOTES_KEPT_MAX] {
+            answer_ask(&log, "t", addr, "keep").unwrap();
+        }
+        let err = answer_ask(&log, "t", &addrs[NOTES_KEPT_MAX], "keep").unwrap_err();
+        assert!(err.contains("forget one first"), "{err}");
+        answer_ask(&log, "t", &addrs[NOTES_KEPT_MAX], "drop").unwrap();
+        assert_eq!(agent(&log).notes.len(), NOTES_KEPT_MAX);
     }
 }

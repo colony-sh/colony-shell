@@ -78,7 +78,12 @@ pub fn build_system_prompt() -> String {
      ASK: <one question>\n\
      OPTIONS: <answer> | <answer>\n\
      Your run then waits for the answer and goes on with it. Never act on a decision you \
-     asked about before it is answered."
+     asked about before it is answered.\n\n\
+     If you learned something your later runs should know, propose it as a note on its \
+     own line:\n\
+     NOTE: <one fact or preference, in one sentence>\n\
+     The person you work for keeps or drops it. Only kept notes reach your later runs; \
+     your run does not wait for the choice."
         .to_string()
 }
 

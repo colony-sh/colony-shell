@@ -2341,3 +2341,7 @@
 [2026-11-13 19:00] CORRECTION: the first slice was reported complete at step 8, but agent notes with approval (a kickoff decision) were never built. Opened F095.
 [2026-11-13 19:20] TEST: recovery units 4/4, login and view units; 64_ask_answer 7/7 (second ask in a run, resume past daily budget). BATS 54-67 81/81. colony-exec 579; clippy clean.
 [2026-11-13 19:20] COMPLETE: F094.
+[2026-11-14 10:00] START: F095 agent notes with approval in the viewport (asked by the user in the terminal after lead-3 relayed it)
+[2026-11-14 10:20] DECISION: a note proposal is an Ask in Report.notes, numbered with the run's asks, options keep|drop; it does not park the run, so heartbeats go on while it waits
+[2026-11-14 10:20] DECISION: kept notes are folded from AskAnswered 'keep' only; model text never makes a note. AgentSpec.notes removed: the log is the one source
+[2026-11-14 10:40] COMPLETE: F095; colony-exec 584 unit tests, 68_agent_notes 3/3, clippy clean

@@ -127,7 +127,8 @@ fn run_beat(
             let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             config.cancel = Some(std::sync::Arc::clone(&cancel));
             let watch = sandbox.as_ref().map(|s| s.watch(cancel));
-            let mut outcome = callback(&config, path, body);
+            let body = format!("{body}{}", crate::agents::notes_prompt(&beat.notes));
+            let mut outcome = callback(&config, path, &body);
             if watch.is_some_and(crate::sandbox::Watch::stop) {
                 outcome = Err(HeartbeatError::Agent(
                     "the run's container stopped mid-run; the run was ended".to_string(),
@@ -625,6 +626,8 @@ mod agent_beat {
         name: String,
         run: u64,
         spec: AgentSpec,
+        /// The notes it keeps, which its prompt ends with.
+        pub(super) notes: Vec<String>,
         /// The event it follows from: the beat's fire, or the last answer.
         fired: i64,
         /// The number its first output takes.
@@ -741,6 +744,7 @@ mod agent_beat {
             name: name.to_string(),
             run,
             spec: agent.spec.clone(),
+            notes: agent.notes.clone(),
             fired,
             first_output: 1,
         })
@@ -842,6 +846,7 @@ mod agent_beat {
                 name: name.to_string(),
                 run: agent.runs,
                 spec: agent.spec.clone(),
+                notes: agent.notes.clone(),
                 fired: changed,
                 first_output: outputs + 1,
             },
@@ -1060,7 +1065,8 @@ mod agent_beat {
         cause: i64,
         mut report: Report,
     ) -> Result<(), HeartbeatError> {
-        // Asks are numbered across the whole run: a resumed part's asks follow the earlier ones.
+        // Asks and note proposals are numbered across the whole run: a resumed part's
+        // follow the earlier ones.
         let earlier: usize = log
             .about(run_addr)
             .map_err(db_error)?
@@ -1068,9 +1074,9 @@ mod agent_beat {
             .filter(|e| {
                 e.kind == REPORT_POSTED && e.subject.as_deref() == Some(&run_addr.to_string())
             })
-            .filter_map(|e| e.data["asks"].as_array().map(Vec::len))
+            .flat_map(|e| ["asks", "notes"].map(|k| e.data[k].as_array().map_or(0, Vec::len)))
             .sum();
-        for (n, ask) in (earlier + 1..).zip(&mut report.asks) {
+        for (n, ask) in (earlier + 1..).zip(report.asks.iter_mut().chain(&mut report.notes)) {
             ask.address = format!("{run_addr}/ask/{n}");
         }
         let data = serde_json::to_value(report).map_err(|e| agent_err(e.to_string()))?;
@@ -1142,7 +1148,8 @@ mod agent_beat {
         if !report.asks.is_empty() {
             answer["outcome"] = json!("needs_you");
         }
-        let idle = answer["outcome"] == "idle";
+        // An idle run that proposes a note still reports, so the proposal reaches you.
+        let idle = answer["outcome"] == "idle" && report.notes.is_empty();
         let parks = !report.asks.is_empty();
         let answered = log
             .append(actor, kind, Some(&run_addr), Some(beat.fired), answer)
@@ -1241,7 +1248,6 @@ mod tests {
                 max_tool_calls: 5,
                 token_budget: 100,
                 daily_tokens: 1000,
-                notes: vec![],
                 image: None,
                 grants: vec![],
             };

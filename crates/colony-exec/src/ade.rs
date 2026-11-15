@@ -14,10 +14,10 @@
 //! | Method | Params | Result |
 //! |---|---|---|
 //! | `hello` | | `{protocol, pid, viewport}` |
-//! | `agents` | | every agent: `{name, state, every_secs, next_beat, runs, image, grants, open_asks}` |
+//! | `agents` | | every agent: `{name, state, every_secs, next_beat, runs, image, grants, open_asks, notes, proposed_notes}` |
 //! | `feed` | | what the viewport shows: `{needs_you, feed}` |
 //! | `open` | `{address}` | `{text}` for an output or diff, else `{json}` |
-//! | `answer` | `{ask, answer}` | `{seq}`; the log names the answer's actor `ade` |
+//! | `answer` | `{ask, answer}` | `{seq}`; the log names the answer's actor `ade`. A proposed note's address takes `keep` or `drop` |
 //! | `subscribe` | `{after?}` | `{subscribed: true}`, then `{"id", "event": {...}}` for every event after `after` (default: the newest), as it is appended, until the connection closes |
 //!
 //! A connection that subscribes sends nothing more; open another for requests.
@@ -173,6 +173,8 @@ fn handle(log: &EventLog, method: &str, params: &Value) -> Result<Value, String>
                             "image": a.spec.image,
                             "grants": a.spec.grants,
                             "open_asks": a.open_asks().map(|q| q.address.clone()).collect::<Vec<_>>(),
+                            "notes": a.notes,
+                            "proposed_notes": a.proposed.iter().map(|p| json!({"address": p.address, "note": p.question})).collect::<Vec<_>>(),
                         })
                     })
                     .collect(),

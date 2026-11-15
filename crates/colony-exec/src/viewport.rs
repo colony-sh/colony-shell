@@ -142,6 +142,8 @@ pub struct AskItem {
     pub address: String,
     pub question: String,
     pub options: Vec<String>,
+    /// A proposed note, kept or dropped, rather than a question its run waits on.
+    pub note: bool,
     pub answer: Option<String>,
     /// Who answered.
     pub by: Option<String>,
@@ -199,7 +201,9 @@ pub fn read_feed(log: &EventLog) -> Result<Feed, String> {
                 asks: report
                     .asks
                     .into_iter()
-                    .map(|a| {
+                    .map(|a| (a, false))
+                    .chain(report.notes.into_iter().map(|n| (n, true)))
+                    .map(|(a, note)| {
                         let answered = answers.get(&a.address);
                         AskItem {
                             answer: answered.map(|(t, _, _)| t.clone()),
@@ -208,6 +212,7 @@ pub fn read_feed(log: &EventLog) -> Result<Feed, String> {
                             address: a.address,
                             question: a.question,
                             options: a.options,
+                            note,
                         }
                     })
                     .collect(),
@@ -425,6 +430,7 @@ mod tests {
             body: "b".into(),
             evidence: vec!["colony://local/agent/a/run/1/output/1".into()],
             asks: vec![],
+            notes: vec![],
             view: REPORTS_VIEW.into(),
         })
         .unwrap()

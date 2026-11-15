@@ -79,7 +79,7 @@ park() {
     [[ "${lines[1]}" =~ ^lead-miner\ +parked\ +1s\ +-\  ]]
 
     run curl -fsS "$(view)api/feed"
-    [[ "$output" == *'"needs_you":[{'*'"question":"Send the reply to thread 4?","options":["yes","no"],"answer":null'* ]]
+    [[ "$output" == *'"needs_you":[{'*'"question":"Send the reply to thread 4?","options":["yes","no"],"note":false,"answer":null'* ]]
 }
 
 @test "answering from the viewport resumes the run within ten seconds, and the log says who and when" {

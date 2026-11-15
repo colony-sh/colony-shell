@@ -1961,13 +1961,14 @@
       "id": "F095",
       "name": "Agent notes, proposed by the agent and approved in the viewport",
       "description": "First slice gap found in review: the kickoff decision says the agent proposes notes it carries between runs and you approve them in the viewport. AgentSpec.notes exists but nothing writes it. Not built; the first slice is not complete without it.",
-      "status": "new",
+      "status": "complete",
       "priority": 1,
       "dependencies": [
         "F094"
       ],
       "notes": [
-        "Opened 2026-11-13 from the review. Estimate: about half a day."
+        "Opened 2026-11-13 from the review. Estimate: about half a day.",
+        "Completed 2026-11-14: a run proposes a note with a NOTE: line; the proposal is an ask (keep | drop) that does not park the run. Only an AskAnswered 'keep' makes it a note (Agents fold); kept notes (at most 20) end every later prompt. Viewport shows proposals with keep/drop; agent notes / agent forget in the shell; ADE agents lists notes and proposals. 68_agent_notes 3/3"
       ]
     }
   ]

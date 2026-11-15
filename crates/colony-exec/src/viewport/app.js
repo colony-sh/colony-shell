@@ -34,6 +34,7 @@ async function send(ask, answer, status) {
 
 function askNode(ask) {
   const box = el("div", { class: "ask" });
+  if (ask.note) box.append(el("div", { class: "answered" }, "Proposed note. Keep it for later runs?"));
   box.append(el("div", { class: "question" }, ask.question));
   if (ask.answer !== null) {
     box.append(el("div", { class: "answered" },
