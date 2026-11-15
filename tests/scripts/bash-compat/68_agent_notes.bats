@@ -93,7 +93,7 @@ wait_requests() {
     n="$(requests)"
     wait_requests $((n + 1))
     tail -1 "$work/ollama/requests.jsonl" | grep -q 'Your notes'
-    tail -1 "$work/ollama/requests.jsonl" | grep -q -- '- Jesse wants replies under 50 words'
+    tail -1 "$work/ollama/requests.jsonl" | grep -q -- '- \\"Jesse wants replies under 50 words\\"'
 
     run "$COLONY" -c 'agent notes lead-miner'
     [ "$output" = "1. Jesse wants replies under 50 words" ]
