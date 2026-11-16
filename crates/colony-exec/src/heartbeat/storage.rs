@@ -201,6 +201,8 @@ impl HeartbeatStore {
             raw_output,
             checklist_path,
             interval_secs,
+            tokens_used: 0,
+            tool_calls: Vec::new(),
         })
     }
 }
@@ -223,6 +225,8 @@ mod tests {
             raw_output: "PASS: Tests passing (42/42)".to_string(),
             checklist_path: "/tmp/HEARTBEAT.md".to_string(),
             interval_secs: 1800,
+            tokens_used: 0,
+            tool_calls: Vec::new(),
         }
     }
 

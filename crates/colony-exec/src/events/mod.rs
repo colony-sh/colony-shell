@@ -12,6 +12,7 @@
 //! and the daemon -- no custom IPC protocol needed.
 
 pub mod filter;
+pub mod login;
 pub mod registry;
 
 pub use filter::{evaluate_filter, matches_filter, parse_filter, FilterError, FilterExpr};
@@ -89,6 +90,11 @@ fn daemon_binary_path() -> PathBuf {
     PathBuf::from("colony-events")
 }
 
+/// Start the daemon if it is not already running.
+pub fn ensure_daemon() -> Result<(), String> {
+    start_daemon()
+}
+
 /// Start the daemon if not already running.
 fn start_daemon() -> Result<(), String> {
     if daemon_pid().is_some() {
@@ -111,9 +117,18 @@ fn start_daemon() -> Result<(), String> {
 
     match result {
         Ok(_child) => {
-            // Give the daemon a moment to start and write PID file
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            Ok(())
+            // Wait for the daemon to write its PID file, so a caller that stops it next
+            // (or a test teardown) can find it.
+            for _ in 0..50 {
+                if daemon_pid().is_some() {
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(format!(
+                "started {}, but it wrote no PID file within 5s; see ~/.colony/events/",
+                binary.display()
+            ))
         }
         Err(e) => Err(format!(
             "failed to start colony-events daemon ({}): {e}",
@@ -181,7 +196,7 @@ pub fn builtin_on(args: &[String]) -> crate::Result<BuiltinResult> {
         }
         "--daemon" | "-d" => {
             let subcmd = args.get(1).map(String::as_str).unwrap_or("status");
-            cmd_daemon(subcmd)
+            cmd_daemon(subcmd, args.get(2..).unwrap_or_default())
         }
         "--render" => cmd_render(),
         "--export" => cmd_export(),
@@ -411,9 +426,69 @@ fn cmd_disable(id: &str) -> BuiltinResult {
     }
 }
 
+/// The colony-events binary as an absolute path, for a login item.
+fn absolute_daemon_binary() -> Result<PathBuf, String> {
+    let binary = daemon_binary_path();
+    if binary.is_absolute() {
+        return Ok(binary);
+    }
+    std::env::var_os("PATH")
+        .iter()
+        .flat_map(std::env::split_paths)
+        .map(|dir| dir.join(&binary))
+        .find(|p| p.is_file())
+        .ok_or_else(|| "colony-events not found next to colony or on PATH".to_string())
+}
+
+/// `on --daemon install [--print]` and `on --daemon uninstall`.
+fn cmd_login(subcmd: &str, rest: &[String]) -> BuiltinResult {
+    let Some(home) = dirs::home_dir() else {
+        eprintln!("on --daemon {subcmd}: no home directory");
+        return BuiltinResult::Failure(1);
+    };
+    let binary = match absolute_daemon_binary() {
+        Ok(binary) => binary,
+        Err(e) => {
+            eprintln!("on --daemon {subcmd}: {e}");
+            return BuiltinResult::Failure(1);
+        }
+    };
+    let item = login::login_item(&binary, &home, &login::kept_env());
+    let outcome = match (subcmd, rest) {
+        ("install", [flag]) if flag == "--print" => {
+            println!("# {}", item.path.display());
+            print!("{}", item.contents);
+            return BuiltinResult::Success(0);
+        }
+        ("install", []) => {
+            // A daemon started by a shell holds the lock; the login item's would exit.
+            let _ = stop_daemon();
+            login::install(&item).map(|()| {
+                eprintln!("colony-events starts at login: {}", item.path.display());
+                eprintln!(
+                    "It reads API keys from the keychain: colony secret set ANTHROPIC_API_KEY"
+                );
+                eprintln!("Its log: ~/.colony/events/daemon.log");
+            })
+        }
+        ("uninstall", []) => login::uninstall(&item).map(|()| {
+            eprintln!("colony-events no longer starts at login");
+        }),
+        _ => Err("usage: on --daemon install [--print] | uninstall".to_string()),
+    };
+    match outcome {
+        Ok(()) => BuiltinResult::Success(0),
+        Err(e) => {
+            eprintln!("on --daemon {subcmd}: {e}");
+            BuiltinResult::Failure(1)
+        }
+    }
+}
+
 /// Daemon management subcommand.
-fn cmd_daemon(subcmd: &str) -> BuiltinResult {
+fn cmd_daemon(subcmd: &str, rest: &[String]) -> BuiltinResult {
     match subcmd {
+        "install" | "uninstall" => cmd_login(subcmd, rest),
         "start" => match start_daemon() {
             Ok(()) => {
                 if let Some(pid) = daemon_pid() {
@@ -458,6 +533,13 @@ fn cmd_daemon(subcmd: &str) -> BuiltinResult {
         "status" => {
             if let Some(pid) = daemon_pid() {
                 eprintln!("Event router daemon: running (pid {pid})");
+                if let Ok(url) = std::fs::read_to_string(crate::viewport::url_file()) {
+                    eprintln!("Viewport: {}", url.trim());
+                }
+                let sock = crate::ade::socket_path();
+                if sock.exists() {
+                    eprintln!("ADE socket: {}", sock.display());
+                }
 
                 // Show listener count
                 if let Ok(registry) = open_registry() {
@@ -480,7 +562,7 @@ fn cmd_daemon(subcmd: &str) -> BuiltinResult {
 
         _ => {
             eprintln!("on --daemon: unknown subcommand: {subcmd}");
-            eprintln!("Usage: on --daemon start|stop|status|restart");
+            eprintln!("Usage: on --daemon start|stop|status|restart|install [--print]|uninstall");
             BuiltinResult::Failure(1)
         }
     }
@@ -563,6 +645,10 @@ fn print_usage() {
     eprintln!("       on --enable <id>                  Enable a disabled listener");
     eprintln!("       on --disable <id>                 Disable a listener");
     eprintln!("       on --daemon start|stop|status     Manage event router daemon");
+    eprintln!(
+        "       on --daemon install [--print]     Start the daemon at login (launchd/systemd)"
+    );
+    eprintln!("       on --daemon uninstall             Stop starting it at login");
     eprintln!("       on --render                       Output HTML dashboard");
     eprintln!("       on --export                       Export listeners as TOML");
     eprintln!("       on --import <file>                Import listeners from TOML");

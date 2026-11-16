@@ -58,6 +58,16 @@ pub struct HeartbeatConfig {
     pub timeout_secs: u64,
     pub max_tool_calls: u32,
     pub token_budget: u32,
+    /// The only directory a run's tools may read. `None`: the checklist's directory.
+    #[serde(default)]
+    pub workdir: Option<std::path::PathBuf>,
+    /// The podman container this run's commands execute in. Set by the scheduler for a
+    /// named agent with an image, never by the checklist.
+    #[serde(skip)]
+    pub container: Option<String>,
+    /// Set to stop the run at once. Set by the scheduler, never by the checklist.
+    #[serde(skip)]
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for HeartbeatConfig {
@@ -69,6 +79,9 @@ impl Default for HeartbeatConfig {
             timeout_secs: 60,
             max_tool_calls: 20,
             token_budget: 10_000,
+            workdir: None,
+            container: None,
+            cancel: None,
         }
     }
 }
@@ -158,6 +171,21 @@ pub struct HeartbeatRun {
     pub raw_output: String,
     pub checklist_path: String,
     pub interval_secs: u64,
+    /// Tokens the run used, estimated. Not stored in `heartbeat_runs`; the event log has it.
+    #[serde(default)]
+    pub tokens_used: u64,
+    /// The tool calls the run made, in order. Not stored in `heartbeat_runs`; a named
+    /// agent's run records each as an output in the event log.
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCall>,
+}
+
+/// One tool call a run made.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub tool: String,
+    pub input: serde_json::Value,
+    pub output: String,
 }
 
 /// Errors that can occur during heartbeat operations.

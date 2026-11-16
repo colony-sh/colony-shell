@@ -4,6 +4,7 @@ mod encrypt;
 mod keychain;
 mod lineage;
 mod registry;
+pub mod secrets;
 
 pub use approvals::{ApprovalDatabase, ApprovalScope, SecureApproval, GRANTED_BY_INTERACTIVE};
 pub use config::SecureConfig;

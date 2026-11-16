@@ -52,7 +52,8 @@ impl ProviderType {
     pub fn default_model(&self) -> &'static str {
         match self {
             Self::Cloud => "claude-3.5-sonnet",
-            Self::Anthropic => "claude-3-5-sonnet-20241022",
+            // claude-3-5-sonnet-20241022 was retired on 2025-10-28; requests to it 404.
+            Self::Anthropic => "claude-opus-5-5",
             Self::OpenAI => "gpt-4-turbo",
             Self::Ollama => "llama3",
         }
@@ -69,7 +70,25 @@ impl ProviderType {
     }
 }
 
+/// A provider's API key: its environment variable, else the OS keychain item of the same
+/// name (`colony secret set`).
+fn provider_key(var: &str) -> Option<String> {
+    colony_secure::secrets::lookup(var)
+}
+
 impl ModelRouter {
+    /// A router over a given provider, for tests.
+    #[cfg(test)]
+    pub(crate) fn with_provider(provider: Box<dyn ModelProvider>) -> Self {
+        Self {
+            provider,
+            config: RouterConfig {
+                provider_type: ProviderType::Ollama,
+                model_name: "test".to_string(),
+            },
+        }
+    }
+
     /// Create router with auto-detected provider
     ///
     /// Detection order:
@@ -101,7 +120,7 @@ impl ModelRouter {
 
         // Try Colony Cloud (highest priority after explicit override)
         #[cfg(feature = "cloud")]
-        if env::var("COLONY_API_KEY").is_ok() {
+        if provider_key("COLONY_API_KEY").is_some() {
             info!("Found COLONY_API_KEY, using Colony Cloud provider");
             let model = env::var("COLONY_MODEL_NAME")
                 .unwrap_or_else(|_| ProviderType::Cloud.default_model().to_string());
@@ -123,7 +142,7 @@ impl ModelRouter {
         }
 
         // Try Anthropic
-        if let Ok(api_key) = env::var("ANTHROPIC_API_KEY") {
+        if let Some(api_key) = provider_key("ANTHROPIC_API_KEY") {
             info!("Found ANTHROPIC_API_KEY, using Anthropic provider");
             let model = env::var("COLONY_MODEL_NAME")
                 .unwrap_or_else(|_| ProviderType::Anthropic.default_model().to_string());
@@ -140,7 +159,7 @@ impl ModelRouter {
         }
 
         // Try OpenAI
-        if let Ok(api_key) = env::var("OPENAI_API_KEY") {
+        if let Some(api_key) = provider_key("OPENAI_API_KEY") {
             info!("Found OPENAI_API_KEY, using OpenAI provider");
             let model = env::var("COLONY_MODEL_NAME")
                 .unwrap_or_else(|_| ProviderType::OpenAI.default_model().to_string());
@@ -194,9 +213,9 @@ impl ModelRouter {
             }
 
             ProviderType::Anthropic => {
-                let api_key = env::var("ANTHROPIC_API_KEY").map_err(|_| {
+                let api_key = provider_key("ANTHROPIC_API_KEY").ok_or_else(|| {
                     crate::AgentError::Protocol(
-                        "ANTHROPIC_API_KEY not set. Get key at console.anthropic.com".to_string(),
+                        "ANTHROPIC_API_KEY not set or stored (colony secret set ANTHROPIC_API_KEY). Get a key at console.anthropic.com".to_string(),
                     )
                 })?;
 
@@ -204,9 +223,9 @@ impl ModelRouter {
             }
 
             ProviderType::OpenAI => {
-                let api_key = env::var("OPENAI_API_KEY").map_err(|_| {
+                let api_key = provider_key("OPENAI_API_KEY").ok_or_else(|| {
                     crate::AgentError::Protocol(
-                        "OPENAI_API_KEY not set. Get key at platform.openai.com".to_string(),
+                        "OPENAI_API_KEY not set or stored (colony secret set OPENAI_API_KEY). Get a key at platform.openai.com".to_string(),
                     )
                 })?;
 
@@ -253,7 +272,7 @@ impl ModelRouter {
         let mut available = Vec::new();
 
         // Check Colony Cloud
-        if env::var("COLONY_API_KEY").is_ok() {
+        if provider_key("COLONY_API_KEY").is_some() {
             available.push(ProviderInfo {
                 provider_type: ProviderType::Cloud,
                 model: ProviderType::Cloud.default_model().to_string(),
@@ -263,7 +282,7 @@ impl ModelRouter {
         }
 
         // Check Anthropic
-        if env::var("ANTHROPIC_API_KEY").is_ok() {
+        if provider_key("ANTHROPIC_API_KEY").is_some() {
             available.push(ProviderInfo {
                 provider_type: ProviderType::Anthropic,
                 model: ProviderType::Anthropic.default_model().to_string(),
@@ -273,7 +292,7 @@ impl ModelRouter {
         }
 
         // Check OpenAI
-        if env::var("OPENAI_API_KEY").is_ok() {
+        if provider_key("OPENAI_API_KEY").is_some() {
             available.push(ProviderInfo {
                 provider_type: ProviderType::OpenAI,
                 model: ProviderType::OpenAI.default_model().to_string(),
@@ -356,10 +375,7 @@ mod tests {
     #[test]
     fn test_default_models() {
         assert_eq!(ProviderType::Cloud.default_model(), "claude-3.5-sonnet");
-        assert_eq!(
-            ProviderType::Anthropic.default_model(),
-            "claude-3-5-sonnet-20241022"
-        );
+        assert_eq!(ProviderType::Anthropic.default_model(), "claude-opus-5-5");
         assert_eq!(ProviderType::OpenAI.default_model(), "gpt-4-turbo");
         assert_eq!(ProviderType::Ollama.default_model(), "llama3");
     }

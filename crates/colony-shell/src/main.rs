@@ -15,5 +15,6 @@ mod widget_server;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
+    colony_agent::heartbeat::install();
     shell::run().await
 }

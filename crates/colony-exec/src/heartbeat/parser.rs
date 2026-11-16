@@ -124,6 +124,9 @@ fn parse_frontmatter(yaml: Option<&str>) -> HeartbeatConfig {
                     config.token_budget = n;
                 }
             }
+            "workdir" if !value.is_empty() => {
+                config.workdir = Some(std::path::PathBuf::from(value));
+            }
             _ => {} // Unknown keys silently ignored
         }
     }

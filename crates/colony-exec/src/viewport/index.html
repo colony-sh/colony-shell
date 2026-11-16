@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Colony reports</title>
+<style>
+:root {
+  --bg: #f4f5f2; --card: #ffffff; --ink: #1c2321; --muted: #5d6965; --line: #d6dcd8;
+  --attention: #9a5b00; --blocked: #b3261e; --fine: #2e6b3f; --link: #0f5f8a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111514; --card: #1a1f1e; --ink: #e4eae7; --muted: #95a39e; --line: #2c3533;
+    --attention: #f0b357; --blocked: #ff8a80; --fine: #8fd19e; --link: #79c3ec;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 720px; margin: 0 auto; padding: 16px 16px 48px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+h1 { font-size: 22px; margin: 4px 0 12px; }
+h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 24px 0 8px; }
+#updated { font-size: 13px; color: var(--muted); }
+ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+li { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+li.blocked, li.needs_you { border-left: 4px solid var(--blocked); }
+li.attention { border-left: 4px solid var(--attention); }
+li.fine { border-left: 4px solid var(--fine); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; color: var(--muted); }
+.status { font-weight: 600; }
+.blocked .status, .needs_you .status { color: var(--blocked); }
+.attention .status { color: var(--attention); }
+.fine .status { color: var(--fine); }
+.headline { font-weight: 600; margin: 4px 0; overflow-wrap: anywhere; }
+details { margin-top: 6px; }
+summary { cursor: pointer; color: var(--muted); font-size: 14px; min-height: 32px; display: flex; align-items: center; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; margin: 6px 0 0; }
+.evidence { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.evidence a { color: var(--link); font: 13px ui-monospace, Menlo, monospace; overflow-wrap: anywhere; padding: 4px 0; }
+.empty { color: var(--muted); font-size: 15px; }
+.ask { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.question { font-weight: 600; overflow-wrap: anywhere; }
+.answers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.answers button { min-height: 44px; min-width: 64px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); font: inherit; cursor: pointer; }
+.answers textarea { flex: 1 1 100%; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); }
+.answered, .send-status { font-size: 14px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Colony reports</h1>
+    <span id="updated" aria-live="polite"></span>
+  </header>
+  <h2>Needs you</h2>
+  <ul id="needs-you"></ul>
+  <h2>Feed</h2>
+  <ul id="feed"></ul>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

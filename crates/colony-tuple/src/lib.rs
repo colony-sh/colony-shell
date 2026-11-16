@@ -50,12 +50,16 @@
 //! - **Event Notification**: `out("file_change", path, mtime)`
 //! - **Request/Response**: `out("request", id, data)` → `in("response", id, *)`
 
+pub mod address;
+pub mod event_log;
 mod ipc;
 mod persistent;
 pub mod subscription;
 pub mod transaction;
 pub mod ttl;
 
+pub use address::{Address, AddressError, Scope};
+pub use event_log::{Event, EventLog};
 pub use ipc::{IpcError, IpcTupleSpace, TupleNotification};
 pub use persistent::{PersistentTupleSpace, StorageError};
 pub use subscription::{SubscriptionId, SubscriptionManager, TupleEvent};

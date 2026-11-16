@@ -70,7 +70,20 @@ pub fn build_system_prompt() -> String {
      WARN: <description>\n\
      ALERT: <description>\n\n\
      Use PASS for checks that succeed, WARN for non-critical issues, \
-     and ALERT for critical problems that need immediate attention."
+     and ALERT for critical problems that need immediate attention.\n\n\
+     If you found or did something worth reporting, start your answer with one line:\n\
+     HEADLINE: <what happened, in one sentence>\n\n\
+     If you need a decision from the person you work for before going on, ask it on its \
+     own line, with an optional line of the answers it takes:\n\
+     ASK: <one question>\n\
+     OPTIONS: <answer> | <answer>\n\
+     Your run then waits for the answer and goes on with it. Never act on a decision you \
+     asked about before it is answered.\n\n\
+     If you learned something your later runs should know, propose it as a note on its \
+     own line:\n\
+     NOTE: <one fact or preference, in one sentence>\n\
+     The person you work for keeps or drops it. Only kept notes reach your later runs; \
+     your run does not wait for the choice."
         .to_string()
 }
 

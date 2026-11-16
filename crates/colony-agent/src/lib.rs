@@ -25,6 +25,7 @@ pub mod approval;
 pub mod cancellation;
 pub mod context;
 pub mod detector;
+pub mod heartbeat;
 pub mod memory_integration;
 pub mod persistence;
 pub mod planning;
@@ -37,7 +38,7 @@ pub mod token_accounting;
 pub mod tool;
 pub mod tuple_bridge;
 
-pub use agent::{Agent, AgentConfig};
+pub use agent::{Agent, AgentConfig, ToolRecord};
 pub use approval::{ApprovalConfig, ApprovalManager, ApprovalResponse};
 pub use cancellation::{CancellableStreamResult, CancellationToken};
 pub use context::{ContextConfig, ContextManager};

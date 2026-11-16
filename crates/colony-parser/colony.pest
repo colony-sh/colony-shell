@@ -1340,8 +1340,10 @@ ReservedKeyword = @{
   | "var" | "const" | "setvar"
   | "try" | "catch" | "finally"
   | "match" | "return" | "break" | "continue"
-  | "proc" | "func" | "agent"
+  | "proc" | "func"
 }
+// `agent` is not reserved: `agent name { ... }` is an AgentDef (tried first in Statement),
+// and any other `agent ...` is the named-agent builtin.
 
 WordBoundary = { !ASCII_ALPHANUMERIC ~ !"_" | EOI }
 

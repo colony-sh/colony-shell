@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 colony-exec = { path = "../colony-exec" }
+colony-agent = { path = "../colony-agent" }
 colony-tuple = { path = "../colony-tuple" }
 tokio = { workspace = true }
 rusqlite = { workspace = true }

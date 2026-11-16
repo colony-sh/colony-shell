@@ -37,6 +37,19 @@ pub struct Agent {
     observer: Option<Arc<dyn ReflectionObserver>>,
     /// Channel writer for LLM conversation (fd 4 / stdllm)
     llm_channel_tx: Option<mpsc::UnboundedSender<LlmMessage>>,
+    /// Tool calls the model has asked for since this agent was created, refused ones included.
+    tool_calls: u32,
+    /// Every tool call that ran, in order, with its result.
+    tool_log: Vec<ToolRecord>,
+}
+
+/// One tool call that ran: what was asked and what came back.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ToolRecord {
+    pub name: String,
+    pub input: serde_json::Value,
+    /// The tool's result as the model saw it (JSON text).
+    pub output: String,
 }
 
 /// Agent configuration
@@ -52,6 +65,10 @@ pub struct AgentConfig {
     pub persistence_enabled: bool,
     pub memory_enabled: bool,
     pub auto_approve_patterns: Vec<String>,
+    /// Most tool calls this agent may run. Calls past it are refused and the model is told so.
+    pub max_tool_calls: Option<u32>,
+    /// Print the model's text to stdout as it streams (`process_full`). Off for unattended runs.
+    pub echo_stream: bool,
 }
 
 impl Default for AgentConfig {
@@ -67,6 +84,8 @@ impl Default for AgentConfig {
             persistence_enabled: false,
             memory_enabled: false,
             auto_approve_patterns: Vec::new(),
+            max_tool_calls: None,
+            echo_stream: true,
         }
     }
 }
@@ -228,6 +247,8 @@ impl Agent {
             conversation_id: None,
             observer: None,
             llm_channel_tx: None,
+            tool_calls: 0,
+            tool_log: Vec::new(),
         })
     }
 
@@ -411,23 +432,8 @@ impl Agent {
 
         let response_text = result.text;
 
-        let input_tokens_est = self
-            .messages
-            .iter()
-            .map(|m| match &m.content {
-                MessageContent::Text(t) => t.len() as u64 / 4,
-                MessageContent::Blocks(_) => 50,
-            })
-            .sum::<u64>();
-
-        let output_tokens_est = response_text.len() as u64 / 4;
-
-        let budget_warning = self.token_tracker.record(RequestUsage {
-            input_tokens: input_tokens_est,
-            output_tokens: output_tokens_est,
-        });
-
-        match budget_warning {
+        let output_tokens_est = self.record_usage_estimate(&response_text);
+        match self.token_tracker.budget_warning() {
             BudgetWarning::Warning => {
                 warn!(
                     "Token budget warning: {} remaining",
@@ -510,7 +516,9 @@ impl Agent {
             match event? {
                 StreamEvent::TextDelta { text, .. } => {
                     response_text.push_str(&text);
-                    emit_thought(&text)?;
+                    if self.config.echo_stream {
+                        emit_thought(&text)?;
+                    }
                 }
 
                 StreamEvent::ToolCallStart { id, name } => {
@@ -546,6 +554,7 @@ impl Agent {
             });
         }
 
+        self.record_usage_estimate(&response_text);
         self.context_manager.update_estimate(&self.messages);
 
         // Record agent chat observation
@@ -563,6 +572,36 @@ impl Agent {
         }
 
         Ok(response_text)
+    }
+
+    /// Record a request's token usage, estimated at four characters a token (the providers'
+    /// streams carry no usage counts). Returns the output estimate.
+    // ponytail: character estimate, replace with provider usage counts once streams report them
+    fn record_usage_estimate(&mut self, response_text: &str) -> u64 {
+        let input_tokens = self
+            .messages
+            .iter()
+            .map(|m| match &m.content {
+                MessageContent::Text(t) => t.len() as u64 / 4,
+                MessageContent::Blocks(_) => 50,
+            })
+            .sum::<u64>();
+        let output_tokens = response_text.len() as u64 / 4;
+        self.token_tracker.record(RequestUsage {
+            input_tokens,
+            output_tokens,
+        });
+        output_tokens
+    }
+
+    /// Every tool call that ran so far, with its result.
+    pub fn tool_log(&self) -> &[ToolRecord] {
+        &self.tool_log
+    }
+
+    /// Tool calls the model has asked for so far, refused ones included.
+    pub fn tool_call_count(&self) -> u32 {
+        self.tool_calls
     }
 
     fn convert_tool_definitions(&self) -> Vec<ToolDefinition> {
@@ -585,11 +624,29 @@ impl Agent {
     ) -> Result<()> {
         info!("Tool use: {} (id: {})", tool_name, tool_use_id);
 
+        self.tool_calls += 1;
+        if let Some(max) = self
+            .config
+            .max_tool_calls
+            .filter(|max| self.tool_calls > *max)
+        {
+            warn!("Tool call {} refused: limit of {} reached", tool_name, max);
+            self.messages.push(Message {
+                role: MessageRole::User,
+                content: MessageContent::Text(format!(
+                    "Tool result: refused, the limit of {max} tool calls is reached. \
+                     Answer with what you have."
+                )),
+            });
+            return Ok(());
+        }
+
         let classification = self
             .tools
             .classification(&tool_name)
             .ok_or_else(|| AgentError::ToolExecution(format!("unknown tool: {}", tool_name)))?;
 
+        let asked = input.clone();
         let result = if self.approval.needs_approval(&tool_name, classification)
             && !self.tools.is_auto_approved(&tool_name)
         {
@@ -613,6 +670,11 @@ impl Agent {
         };
 
         let result_str = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
+        self.tool_log.push(ToolRecord {
+            name: tool_name.clone(),
+            input: asked,
+            output: result_str.clone(),
+        });
 
         // Emit tool result to LLM channel (fd 4) for conversation logging
         self.emit_to_llm_channel(
@@ -698,6 +760,120 @@ fn infer_provider_from_model(model_name: &str) -> ProviderType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A provider whose every turn asks for `file_read` of one file `calls` times, then says `text`.
+    struct Scripted {
+        path: String,
+        calls: usize,
+        text: &'static str,
+    }
+
+    #[async_trait::async_trait]
+    impl ModelProvider for Scripted {
+        async fn complete(
+            &mut self,
+            _request: CompletionRequest,
+        ) -> Result<crate::provider::CompletionStream> {
+            let mut events: Vec<Result<StreamEvent>> = (0..self.calls)
+                .map(|i| {
+                    Ok(StreamEvent::ToolCallComplete {
+                        id: format!("t{i}"),
+                        name: "file_read".to_string(),
+                        input: serde_json::json!({ "path": self.path }),
+                    })
+                })
+                .collect();
+            events.push(Ok(StreamEvent::TextDelta {
+                text: self.text.to_string(),
+                index: 0,
+            }));
+            events.push(Ok(StreamEvent::Done));
+            Ok(Box::pin(futures::stream::iter(events)))
+        }
+        fn max_context_tokens(&self) -> usize {
+            100_000
+        }
+        fn provider_name(&self) -> &str {
+            "scripted"
+        }
+        fn model_name(&self) -> &str {
+            "scripted"
+        }
+        async fn health_check(&self) -> Result<crate::provider::ProviderHealth> {
+            unimplemented!("not used")
+        }
+    }
+
+    fn scripted_agent(
+        calls: usize,
+        text: &'static str,
+        config: AgentConfig,
+    ) -> (Agent, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("note.txt");
+        std::fs::write(&path, "secret-free note").unwrap();
+        let provider = Scripted {
+            path: path.display().to_string(),
+            calls,
+            text,
+        };
+        let agent =
+            Agent::from_router(ModelRouter::with_provider(Box::new(provider)), config).unwrap();
+        (agent, dir)
+    }
+
+    fn tool_results(agent: &Agent) -> Vec<String> {
+        agent
+            .messages
+            .iter()
+            .filter_map(|m| match &m.content {
+                MessageContent::Text(t) if t.starts_with("Tool result:") => Some(t.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn tool_calls_past_the_limit_are_refused_not_run() {
+        let config = AgentConfig {
+            max_tool_calls: Some(2),
+            echo_stream: false,
+            ..AgentConfig::default()
+        };
+        let (mut agent, _dir) = scripted_agent(3, "PASS: done", config);
+        let text = agent.process_full("go").await.unwrap();
+
+        assert_eq!(text, "PASS: done");
+        assert_eq!(agent.tool_call_count(), 3);
+        let results = tool_results(&agent);
+        assert_eq!(results.len(), 3);
+        assert!(results[0].contains("secret-free note") && results[1].contains("secret-free note"));
+        assert!(
+            results[2].contains("limit of 2 tool calls"),
+            "{}",
+            results[2]
+        );
+        assert_eq!(agent.tool_log().len(), 2, "a refused call does not run");
+        assert_eq!(agent.tool_log()[0].name, "file_read");
+        assert!(agent.tool_log()[0].output.contains("secret-free note"));
+    }
+
+    #[tokio::test]
+    async fn process_full_counts_against_the_token_budget() {
+        let config = AgentConfig {
+            token_budget: Some(TokenBudget::new(10)),
+            echo_stream: false,
+            ..AgentConfig::default()
+        };
+        let (mut agent, _dir) = scripted_agent(
+            0,
+            "a reply long enough to pass ten tokens of budget",
+            config,
+        );
+        assert_eq!(agent.budget_warning(), BudgetWarning::None);
+        agent.process_full("go").await.unwrap();
+        assert_eq!(agent.budget_warning(), BudgetWarning::Exceeded);
+    }
 
     #[test]
     fn test_infer_provider_claude_models() {

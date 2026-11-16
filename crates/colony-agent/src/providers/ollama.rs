@@ -15,6 +15,9 @@
 //! {"message":{"role":"assistant","content":" world"},"done":false}
 //! {"message":{"role":"assistant","content":""},"done":true}
 //! ```
+//!
+//! Tools are offered as Ollama `tools` (function definitions). A chunk whose message has
+//! `tool_calls` becomes a `ToolCallStart` and a `ToolCallComplete` per call.
 
 use crate::provider::{
     CompletionRequest, CompletionStream, ModelProvider, ProviderHealth,
@@ -35,16 +38,26 @@ pub struct OllamaProvider {
     base_url: String,
 }
 
+/// The server URL for an `OLLAMA_HOST` value.
+fn base_url_from(host: Option<&str>) -> String {
+    match host.map(str::trim).filter(|h| !h.is_empty()) {
+        None => "http://localhost:11434".to_string(),
+        Some(h) if h.contains("://") => h.trim_end_matches('/').to_string(),
+        Some(h) => format!("http://{}", h.trim_end_matches('/')),
+    }
+}
+
 impl OllamaProvider {
     /// Create provider with model name
     ///
-    /// Default base_url: http://localhost:11434
+    /// Base URL: `OLLAMA_HOST` when set (`host:port` or a full URL, as the Ollama CLI
+    /// accepts it), else http://localhost:11434.
     /// Common models: llama3, mistral, codellama, phi3
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             client: Client::new(),
             model: model.into(),
-            base_url: "http://localhost:11434".to_string(),
+            base_url: base_url_from(std::env::var("OLLAMA_HOST").ok().as_deref()),
         }
     }
 
@@ -87,6 +100,7 @@ impl OllamaProvider {
             messages.push(OllamaMessage {
                 role: "system".to_string(),
                 content: system.clone(),
+                tool_calls: Vec::new(),
             });
         }
 
@@ -104,6 +118,7 @@ impl OllamaProvider {
                         .collect::<Vec<_>>()
                         .join("\n"),
                 },
+                tool_calls: Vec::new(),
             });
         }
 
@@ -123,6 +138,20 @@ impl ModelProvider for OllamaProvider {
             options: Some(OllamaOptions {
                 temperature: request.temperature,
             }),
+            tools: request
+                .tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        }
+                    })
+                })
+                .collect(),
         };
 
         let response = self
@@ -226,6 +255,10 @@ impl ModelProvider for OllamaProvider {
 struct NdjsonState<S> {
     inner: S,
     buffer: String,
+    /// Events parsed from one line, not yet handed out.
+    pending: std::collections::VecDeque<ProviderStreamEvent>,
+    /// Tool calls seen so far, to number their ids.
+    calls: usize,
 }
 
 /// Parse an NDJSON byte stream from Ollama into `ProviderStreamEvent` values.
@@ -244,9 +277,14 @@ fn parse_ollama_ndjson_stream(
         NdjsonState {
             inner: Box::pin(byte_stream),
             buffer: String::new(),
+            pending: std::collections::VecDeque::new(),
+            calls: 0,
         },
         |mut state| async move {
             loop {
+                if let Some(event) = state.pending.pop_front() {
+                    return Some((Ok(event), state));
+                }
                 // Try to extract a complete line from the buffer
                 while let Some(line_end) = state.buffer.find('\n') {
                     let line = state.buffer[..line_end].trim_end_matches('\r').to_string();
@@ -264,21 +302,34 @@ fn parse_ollama_ndjson_stream(
                         }
                     };
 
-                    // Terminal chunk
-                    if chunk.done {
-                        return Some((Ok(ProviderStreamEvent::Done), state));
-                    }
-
-                    // Emit text delta
                     let content = chunk.message.content;
                     if !content.is_empty() {
-                        return Some((
-                            Ok(ProviderStreamEvent::TextDelta {
-                                text: content,
-                                index: 0,
-                            }),
-                            state,
-                        ));
+                        state.pending.push_back(ProviderStreamEvent::TextDelta {
+                            text: content,
+                            index: 0,
+                        });
+                    }
+                    for call in chunk.message.tool_calls {
+                        state.calls += 1;
+                        let id = format!("ollama-call-{}", state.calls);
+                        state.pending.push_back(ProviderStreamEvent::ToolCallStart {
+                            id: id.clone(),
+                            name: call.function.name.clone(),
+                        });
+                        state
+                            .pending
+                            .push_back(ProviderStreamEvent::ToolCallComplete {
+                                id,
+                                name: call.function.name,
+                                input: call.function.arguments,
+                            });
+                    }
+                    // Terminal chunk
+                    if chunk.done {
+                        state.pending.push_back(ProviderStreamEvent::Done);
+                    }
+                    if let Some(event) = state.pending.pop_front() {
+                        return Some((Ok(event), state));
                     }
                 }
 
@@ -325,12 +376,29 @@ struct OllamaRequest {
     stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<OllamaOptions>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct OllamaMessage {
     role: String,
+    #[serde(default)]
     content: String,
+    #[serde(default, skip_serializing)]
+    tool_calls: Vec<OllamaToolCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaToolCall {
+    function: OllamaFunctionCall,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaFunctionCall {
+    name: String,
+    #[serde(default)]
+    arguments: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -376,6 +444,20 @@ mod tests {
         assert_eq!(provider.provider_name(), "ollama");
         assert_eq!(provider.model_name(), "llama3");
         assert!(provider.supports_streaming());
+    }
+
+    #[test]
+    fn test_base_url_from_ollama_host() {
+        assert_eq!(base_url_from(None), "http://localhost:11434");
+        assert_eq!(base_url_from(Some(" ")), "http://localhost:11434");
+        assert_eq!(
+            base_url_from(Some("127.0.0.1:9999")),
+            "http://127.0.0.1:9999"
+        );
+        assert_eq!(
+            base_url_from(Some("https://gpu:11434/")),
+            "https://gpu:11434"
+        );
     }
 
     #[test]
@@ -430,6 +512,47 @@ mod tests {
 
         assert_eq!(texts.join(""), "Hello world!");
         assert!(done);
+    }
+
+    #[tokio::test]
+    async fn a_tool_call_becomes_start_and_complete_events() {
+        let ndjson_body = concat!(
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[",
+            "{\"function\":{\"name\":\"shell\",\"arguments\":{\"command\":\"ls\"}}},",
+            "{\"function\":{\"name\":\"shell\",\"arguments\":{\"command\":\"pwd\"}}}]},\"done\":false}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n",
+        );
+        let byte_stream = futures::stream::once(async move { Ok(bytes::Bytes::from(ndjson_body)) });
+        let response = build_mock_response(byte_stream);
+        let events: Vec<_> = Box::pin(parse_ollama_ndjson_stream(response))
+            .map(|e| e.unwrap())
+            .collect()
+            .await;
+        let calls: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                ProviderStreamEvent::ToolCallComplete { id, name, input } => {
+                    Some((id.clone(), name.clone(), input["command"].clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            calls,
+            [
+                (
+                    "ollama-call-1".to_string(),
+                    "shell".to_string(),
+                    serde_json::json!("ls")
+                ),
+                (
+                    "ollama-call-2".to_string(),
+                    "shell".to_string(),
+                    serde_json::json!("pwd")
+                ),
+            ]
+        );
+        assert!(matches!(events.last(), Some(ProviderStreamEvent::Done)));
     }
 
     /// Test that partial TCP chunks are handled correctly
